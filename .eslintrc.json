@@ -1,0 +1,8 @@
+{
+    "extends": [
+        "@rocketseat/eslint-config/node"
+    ],
+    "env": {
+        "vitest-globals/env": true
+    }
+}
