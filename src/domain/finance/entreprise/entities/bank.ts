@@ -5,8 +5,6 @@ import { UniqueEntityId } from "src/core/entities/unique-entity-id";
 export interface BankProps {
     accountHolderId: UniqueEntityId
     name: string
-    currentBalance: number
-    hasCredit: boolean
     creditClosingDay?: number
     creaditDueDay?: number
     createdAt: Date
@@ -19,14 +17,6 @@ export class Bank extends Entity<BankProps>{
 
     get name() {
         return this.props.name
-    }
-
-    get currentBalance() {
-        return this.props.currentBalance
-    }
-
-    get hasCredit() {
-        return this.props.hasCredit
     }
 
     get creditClosingDay() {

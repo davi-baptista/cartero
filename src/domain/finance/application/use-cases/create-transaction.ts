@@ -1,6 +1,6 @@
 import { UniqueEntityId } from "src/core/entities/unique-entity-id";
 import { TransactionsRepository } from "../repositories/transations-repository";
-import { Either, left, right } from "@/core/either";
+import { Either, right } from "@/core/either";
 import { Transaction } from "../../entreprise/entities/transaction";
 
 interface CreateTransactionUseCaseRequest {
@@ -8,6 +8,7 @@ interface CreateTransactionUseCaseRequest {
     bankId: UniqueEntityId
     type: "EXPENSE" | "INCOME"
     isPaymentInCredit: boolean
+    ocurredAt: Date
 }
 
 type CreateTransactionUseCaseResponse = Either<
@@ -20,8 +21,8 @@ type CreateTransactionUseCaseResponse = Either<
 export class CreateTransactionUseCase {
     constructor(private transactionsRepository: TransactionsRepository) {}
 
-    async execute({ accountHolderId, bankId, type, isPaymentInCredit }: CreateTransactionUseCaseRequest): Promise<CreateTransactionUseCaseResponse> {
-        const transaction = Transaction.create({ accountHolderId, bankId, type, isPaymentInCredit})
+    async execute({ accountHolderId, bankId, type, isPaymentInCredit, ocurredAt }: CreateTransactionUseCaseRequest): Promise<CreateTransactionUseCaseResponse> {
+        const transaction = Transaction.create({ accountHolderId, bankId, type, isPaymentInCredit, ocurredAt })
         
         await this.transactionsRepository.create(transaction)
         

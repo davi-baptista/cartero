@@ -7,6 +7,7 @@ export interface TransactionProps {
     bankId: UniqueEntityId
     type: 'EXPENSE' | 'INCOME'
     isPaymentInCredit: boolean
+    ocurredAt: Date
     createdAt: Date
 }
 
@@ -35,6 +36,7 @@ export class Transaction extends Entity<TransactionProps>{
             },
             id
         )
+        
         return transaction
     }
 }
