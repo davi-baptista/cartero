@@ -1,0 +1,13 @@
+services:
+  postgres:
+    container_name: cartero
+    image: postgres
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: cartero
+      POSTGRES_PASSWORD: cartero
+      POSTGRES_DB: cartero
+      PGDATA: /data/postgres
+    volumes:
+      - ./data/pg:/data/postgres
