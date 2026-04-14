@@ -1,0 +1,80 @@
+RESUMO DA CONVERSA - DECISÕES SOBRE DEBT E RECEIVABLES
+========================================================
+
+## DEBT (Dívidas Externas)
+
+### Estado atual
+- O service (debts.service.ts) existe mas foi copiado de outro módulo e adaptado
+  superficialmente. O controller e o module estão VAZIOS — não está exposto via API.
+- Falta implementar: parcelamento, controller completo, module wiring.
+
+### Decisões tomadas
+
+1. TIPO DE TRANSAÇÃO FIXO
+   - Ao pagar uma dívida, o tipo da transação gerada é sempre PAYMENT_OF_DEBT.
+   - O usuário NÃO escolhe o tipo (PIX, débito, etc.) — deixar escolher seria
+     equivalente a criar uma transação manualmente, esvaziando o propósito do módulo.
+
+2. bankId OPCIONAL AO PAGAR
+   - Se bankId informado → gera transação PAYMENT_OF_DEBT no banco escolhido.
+     (categoryId também obrigatório nesse caso, para a transação gerada)
+   - Se bankId null → apenas marca isPaid = true e paidAt. Não gera transação.
+     (caso de pagamento em dinheiro vivo, sem rastreamento bancário)
+     Mesmo assim, a dívida paga aparece no extrato geral de transações do app,
+     porém sem vínculo a banco — ou seja, não aparece no filtro por banco específico.
+   - ✅ ISSO JÁ ESTÁ IMPLEMENTADO no service (linhas 61-89 de debts.service.ts)
+
+3. PARCELAMENTO
+   - Mesma lógica de transactions: se vier campo `installments`, criar N registros
+     de uma vez, vinculados por parentId.
+   - Diferença: Debt não tem campo `type`, então parcelamento não é restrito a
+     CREDIT_CARD — qualquer dívida pode ser parcelada.
+
+4. BUG PENDENTE no create()
+   - Linha 24: paidAt recebe new Date() sempre, mesmo quando isPaid = false.
+   - Deve ser: paidAt só recebe data se isPaid = true.
+
+---
+
+## RECEIVABLE (A Receber)
+
+### Estado atual
+- Service, controller e module estão completamente VAZIOS. Tudo a implementar.
+
+### Decisões tomadas
+
+1. NÃO GERA TRANSAÇÃO
+   - Ao marcar como recebido → apenas seta isPaid = true e paidAt.
+   - Não gera transação. Não precisa de bankId.
+   - Motivo: o foco do app é gestão de gastos. Recebimentos aparecem num
+     extrato geral no frontend, sem vínculo a banco específico.
+
+2. SEM transaction_id no schema
+   - Diferente de Debt (que tem transaction_id para rastrear a transação gerada),
+     Receivable não precisa desse campo.
+
+3. PARCELAMENTO
+   - Mesma lógica: se vier `installments`, criar N registros vinculados por parentId.
+
+---
+
+## EXTRATO GERAL (Statement)
+
+### Decisão
+- bankId permanece OBRIGATÓRIO em Transaction. Não vai existir transação sem banco.
+- Para mostrar dívidas pagas em dinheiro e receivables no extrato geral, foi criado
+  um endpoint separado GET /statement que combina três fontes no backend:
+    1. Todas as transactions do usuário
+    2. Debts com isPaid = true e transactionId = null (pagas em dinheiro, sem banco)
+    3. Receivables com isPaid = true
+- Isso evita poluir o modelo de Transaction com bankId nullable, que quebraria
+  a lógica de faturas e outras partes do código.
+- Adicionado no TODO.md como item separado (seção 10).
+
+---
+
+## OUTROS PONTOS ANOTADOS
+
+- GET /transactions/:id → marcado como feito no TODO.md
+- Filtros no findAll de transactions → ainda NÃO implementados (pendente)
+- CLAUDE.md foi atualizado com todas essas decisões (era OPENCODE.md, renomeado)

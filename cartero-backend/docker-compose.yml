@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: bitnami/postgresql:latest
+    container_name: cartero-db
+    environment:
+      - POSTGRES_USER=cartero
+      - POSTGRES_PASSWORD=senha123
+      - POSTGRES_DB=cartero
+    ports:
+        - "5432:5432"
+    volumes:
+      - postgres_data:/bitnami/postgresql
+volumes:
+  postgres_data:
