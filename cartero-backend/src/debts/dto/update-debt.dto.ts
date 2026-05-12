@@ -1,5 +1,4 @@
 export class UpdateDebtDto {
-  bankId?: string;
   title?: string;
   creditorName?: string;
   amount?: number;
@@ -7,5 +6,4 @@ export class UpdateDebtDto {
   dueDate?: string;
   isAlertEnabled?: boolean;
   isPaid?: boolean;
-  categoryId?: string;
 }

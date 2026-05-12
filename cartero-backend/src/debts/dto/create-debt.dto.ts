@@ -3,7 +3,7 @@ export class CreateDebtDto {
   creditorName: string;
   amount: number;
   description?: string;
-  dueDate?: string;
+  dueDate: string;
   isAlertEnabled: boolean;
-  isPaid?: boolean;
+  installments: number;
 }

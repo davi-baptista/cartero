@@ -81,13 +81,12 @@ CREATE TABLE "Invoice" (
 CREATE TABLE "Debt" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "transactionId" TEXT,
     "parentId" TEXT,
     "title" TEXT NOT NULL,
     "creditorName" TEXT NOT NULL,
     "amount" DECIMAL(65,30) NOT NULL,
     "description" TEXT,
-    "dueDate" TIMESTAMP(3),
+    "dueDate" TIMESTAMP(3) NOT NULL,
     "isAlertEnabled" BOOLEAN NOT NULL DEFAULT true,
     "isPaid" BOOLEAN NOT NULL DEFAULT false,
     "paidAt" TIMESTAMP(3),
@@ -101,13 +100,12 @@ CREATE TABLE "Debt" (
 CREATE TABLE "Receivable" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "transactionId" TEXT,
     "parentId" TEXT,
     "title" TEXT NOT NULL,
     "debtorName" TEXT NOT NULL,
     "amount" DECIMAL(65,30) NOT NULL,
     "description" TEXT,
-    "dueDate" TIMESTAMP(3),
+    "dueDate" TIMESTAMP(3) NOT NULL,
     "isPaid" BOOLEAN NOT NULL DEFAULT false,
     "paidAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -147,10 +145,4 @@ ALTER TABLE "Invoice" ADD CONSTRAINT "Invoice_bankId_fkey" FOREIGN KEY ("bankId"
 ALTER TABLE "Debt" ADD CONSTRAINT "Debt_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Debt" ADD CONSTRAINT "Debt_transactionId_fkey" FOREIGN KEY ("transactionId") REFERENCES "Transaction"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "Receivable" ADD CONSTRAINT "Receivable_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Receivable" ADD CONSTRAINT "Receivable_transactionId_fkey" FOREIGN KEY ("transactionId") REFERENCES "Transaction"("id") ON DELETE SET NULL ON UPDATE CASCADE;

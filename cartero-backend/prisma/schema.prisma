@@ -66,12 +66,10 @@ model Transaction {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @default(now())
 
-  user        User         @relation(fields: [userId], references: [id])
-  bank        Bank         @relation(fields: [bankId], references: [id])
-  category    Category     @relation(fields: [categoryId], references: [id])
-  invoice     Invoice?     @relation(fields: [invoiceId], references: [id])
-  debts       Debt[]
-  receivables Receivable[]
+  user     User     @relation(fields: [userId], references: [id])
+  bank     Bank     @relation(fields: [bankId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
+  invoice  Invoice? @relation(fields: [invoiceId], references: [id])
 }
 
 model Invoice {
@@ -93,40 +91,36 @@ model Invoice {
 model Debt {
   id             String    @id @default(uuid())
   userId         String
-  transactionId  String?
   parentId       String?
   title          String
   creditorName   String
   amount         Decimal
   description    String?
-  dueDate        DateTime?
+  dueDate        DateTime
   isAlertEnabled Boolean   @default(true)
   isPaid         Boolean   @default(false)
   paidAt         DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @default(now())
 
-  user        User         @relation(fields: [userId], references: [id])
-  transaction Transaction? @relation(fields: [transactionId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 }
 
 model Receivable {
-  id            String    @id @default(uuid())
-  userId        String
-  transactionId String?
-  parentId      String?
-  title         String
-  debtorName    String
-  amount        Decimal
-  description   String?
-  dueDate       DateTime?
-  isPaid        Boolean   @default(false)
-  paidAt        DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @default(now())
+  id          String    @id @default(uuid())
+  userId      String
+  parentId    String?
+  title       String
+  debtorName  String
+  amount      Decimal
+  description String?
+  dueDate     DateTime
+  isPaid      Boolean   @default(false)
+  paidAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now())
 
-  user        User         @relation(fields: [userId], references: [id])
-  transaction Transaction? @relation(fields: [transactionId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 }
 
 enum TransactionType {

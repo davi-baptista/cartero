@@ -1,8 +1,12 @@
-import { ConflictException, Injectable } from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { Injectable } from '@nestjs/common';
+import { Prisma, Debt } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
-import { UpdateDebtDto } from './dto/update-debt.dto';
-import { CreateDebtDto } from './dto/create-debt.dto';
+import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
+import { PrismaService } from 'src/prisma/prisma.service';
+import { CreateDebtDto } from 'src/debts/dto/create-debt.dto';
+import { UpdateDebtDto } from 'src/debts/dto/update-debt.dto';
+
+type DebtScope = 'ONE' | 'NEXT' | 'ALL';
 
 @Injectable()
 export class DebtsService {
@@ -12,18 +16,47 @@ export class DebtsService {
   ) {}
 
   async create(userId: string, dto: CreateDebtDto) {
-    return await this.prisma.debt.create({
-      data: {
-        userId,
-        title: dto.title,
-        creditorName: dto.creditorName,
-        amount: dto.amount,
-        dueDate: dto.dueDate,
-        isAlertEnabled: dto.isAlertEnabled,
-        isPaid: dto.isPaid ? dto.isPaid : false,
-        paidAt: new Date(),
+    return await this.prisma.$transaction(
+      async (tx: Prisma.TransactionClient) => {
+        const installments = dto.installments ? dto.installments : 1;
+        const debts: Debt[] = [];
+
+        let parentId: string | null = null;
+
+        for (let i = 0; i < installments; i++) {
+          const installmentDate = getInstallmentDate(new Date(dto.dueDate), i);
+
+          const debt: Debt = await tx.debt.create({
+            data: {
+              userId,
+              parentId,
+              title:
+                installments > 1
+                  ? `${dto.title} ${i + 1}/${installments}`
+                  : dto.title,
+              creditorName: dto.creditorName,
+              amount: dto.amount,
+              description: dto.description,
+              dueDate: installmentDate,
+              isAlertEnabled: dto.isAlertEnabled,
+            },
+          });
+
+          if (i === 0 && installments > 1) {
+            parentId = debt.id;
+
+            await tx.debt.update({
+              where: { id: debt.id, userId },
+              data: { parentId },
+            });
+
+            debt.parentId = parentId;
+          }
+          debts.push(debt);
+        }
+        return debts;
       },
-    });
+    );
   }
 
   async findOne(id: string, userId: string) {
@@ -36,88 +69,115 @@ export class DebtsService {
     });
   }
 
-  async update(id: string, userId: string, dto: UpdateDebtDto) {
-    const debt = await this.entityValidationService.validateDebt(id, userId);
-    let transactionId: string | undefined;
-    let paidAt: Date | undefined;
+  async update(
+    id: string,
+    userId: string,
+    dto: UpdateDebtDto,
+    scope?: string,
+  ) {
+    const existing = await this.entityValidationService.validateDebt(
+      id,
+      userId,
+    );
+    const normalizedScope = this.normalizeScope(scope);
 
-    if (debt.isPaid === true) {
-      const isTryingToChangeLockedFields =
-        dto.amount !== undefined ||
-        dto.title !== undefined ||
-        dto.bankId !== undefined ||
-        dto.categoryId !== undefined;
-
-      if (isTryingToChangeLockedFields) {
-        throw new ConflictException(
-          'Não é possível alterar valor, título, banco ou categoria de uma dívida já paga',
+    return await this.prisma.$transaction(
+      async (tx: Prisma.TransactionClient) => {
+        const debtsToUpdate = await this.getDebtsByScope(
+          tx,
+          existing,
+          userId,
+          normalizedScope,
         );
-      }
-    }
+        const updatedDebts: Debt[] = [];
 
-    if (dto.isPaid === true && debt.isPaid === false) {
-      paidAt = new Date();
+        for (const debt of debtsToUpdate) {
+          const updatedDebt = await tx.debt.update({
+            where: { id: debt.id, userId },
+            data: {
+              ...dto,
+              dueDate: dto.dueDate ? new Date(dto.dueDate) : debt.dueDate,
+            },
+          });
 
-      if (dto.bankId) {
-        await this.entityValidationService.validateBank(dto.bankId, userId);
-
-        if (!dto.categoryId) {
-          throw new ConflictException(
-            'Categoria é obrigatória para gerar transação ao pagar a dívida',
-          );
+          updatedDebts.push(updatedDebt);
         }
 
-        await this.entityValidationService.validateCategory(
-          dto.categoryId,
-          userId,
-        );
-
-        const transaction = await this.prisma.transaction.create({
-          data: {
-            userId,
-            bankId: dto.bankId,
-            categoryId: dto.categoryId,
-            title: debt.title,
-            amount: debt.amount,
-            description: debt.description,
-            date: paidAt,
-            type: 'PAYMENT_OF_DEBT',
-          },
-        });
-
-        transactionId = transaction.id;
-      }
-    }
-
-    return await this.prisma.debt.update({
-      where: { id, userId },
-      data: {
-        title: dto.title,
-        creditorName: dto.creditorName,
-        amount: dto.amount,
-        description: dto.description,
-        dueDate: dto.dueDate,
-        isAlertEnabled: dto.isAlertEnabled,
-        isPaid: dto.isPaid,
-        paidAt,
-        transactionId,
+        return normalizedScope === 'ONE'
+          ? updatedDebts[0]
+          : updatedDebts;
       },
-    });
+    );
   }
 
-  async remove(id: string, userId: string) {
-    const debt = await this.entityValidationService.validateDebt(id, userId);
+  async remove(id: string, userId: string, scope?: string) {
+    const existing = await this.entityValidationService.validateDebt(
+      id,
+      userId,
+    );
+    const normalizedScope = this.normalizeScope(scope);
 
-    if (debt.transactionId) {
-      await this.prisma.transaction.delete({
-        where: { id: debt.transactionId, userId },
+    return await this.prisma.$transaction(
+      async (tx: Prisma.TransactionClient) => {
+        const debtsToDelete = await this.getDebtsByScope(
+          tx,
+          existing,
+          userId,
+          normalizedScope,
+        );
+
+        for (const debt of debtsToDelete) {
+          await tx.debt.delete({
+            where: { id: debt.id, userId },
+          });
+        }
+
+        return;
+      },
+    );
+  }
+
+  private normalizeScope(scope?: string): DebtScope {
+    if (scope === 'NEXT' || scope === 'ALL') {
+      return scope;
+    }
+
+    return 'ONE';
+  }
+
+  private async getDebtsByScope(
+    tx: Prisma.TransactionClient,
+    debt: Debt,
+    userId: string,
+    scope: DebtScope,
+  ) {
+    if (!debt.parentId || scope === 'ONE') {
+      return [debt];
+    }
+
+    if (scope === 'NEXT') {
+      return await tx.debt.findMany({
+        where: {
+          userId,
+          parentId: debt.parentId,
+          dueDate: {
+            gte: debt.dueDate,
+          },
+        },
+        orderBy: {
+          dueDate: 'asc',
+        },
       });
     }
 
-    await this.prisma.debt.delete({
-      where: { id, userId },
+    return await tx.debt.findMany({
+      where: {
+        userId,
+        parentId: debt.parentId,
+      },
+      orderBy: {
+        dueDate: 'asc',
+      },
     });
-
-    return;
   }
 }
