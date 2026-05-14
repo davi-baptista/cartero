@@ -4,6 +4,7 @@ import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTransactionDto } from 'src/transactions/dto/create-transaction.dto';
+import { FindTransactionsDto } from 'src/transactions/dto/find-transactions.dto';
 import { UpdateTransactionDto } from 'src/transactions/dto/update-transaction.dto';
 
 type TransactionScope = 'ONE' | 'NEXT' | 'ALL';
@@ -92,9 +93,19 @@ export class TransactionsService {
     return await this.entityValidationService.validateTransaction(id, userId);
   }
 
-  async findAll(userId: string) {
+  async findAll(userId: string, filters: FindTransactionsDto = {}) {
     return await this.prisma.transaction.findMany({
-      where: { userId },
+      where: {
+        userId,
+        categoryId: filters.categoryId,
+        bankId: filters.bankId,
+        type: filters.type,
+        date: {
+          gte: filters.startDate ? new Date(filters.startDate) : undefined,
+          lte: filters.endDate ? new Date(filters.endDate) : undefined,
+        },
+      },
+      orderBy: { date: 'desc' },
     });
   }
 

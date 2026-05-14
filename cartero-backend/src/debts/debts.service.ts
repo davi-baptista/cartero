@@ -92,11 +92,16 @@ export class DebtsService {
         const updatedDebts: Debt[] = [];
 
         for (const debt of debtsToUpdate) {
+          const paidAt =
+            dto.isPaid === true && !debt.isPaid ? new Date() : 
+						dto.isPaid === false && debt.isPaid ? null : undefined;
+
           const updatedDebt = await tx.debt.update({
             where: { id: debt.id, userId },
             data: {
               ...dto,
               dueDate: dto.dueDate ? new Date(dto.dueDate) : debt.dueDate,
+              paidAt,
             },
           });
 

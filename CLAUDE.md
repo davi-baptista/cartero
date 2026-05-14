@@ -53,7 +53,7 @@ Web app de gestão financeira pessoal, com potencial para se tornar um serviço 
 - `category_id` (UUID, FK, obrigatório)
 - `invoice_id` (UUID, FK, opcional - marca a qual fatura pertence)
 - `parent_id` (UUID, opcional - vincula parcelas de uma compra parcelada)
-- `type` (enum: INCOME, CREDIT_CARD, DEBIT_CARD, PIX, BOLETO, PAYMENT_OF_DEBT)
+- `type` (enum: INCOME, CREDIT_CARD, DEBIT_CARD, PIX, BOLETO)
 - `title` (string, obrigatório - texto principal exibido na UI, ex: "Celular 3/10")
 - `amount` (decimal, obrigatório)
 - `description` (string, opcional)
@@ -67,7 +67,6 @@ Web app de gestão financeira pessoal, com potencial para se tornar um serviço 
 - `DEBIT_CARD` — compra no débito
 - `PIX` — pagamento via PIX
 - `BOLETO` — pagamento de boleto
-- `PAYMENT_OF_DEBT` — gerado automaticamente ao quitar uma dívida externa (módulo Debts). Nunca criado diretamente pelo usuário.
 
 **Parcelamento:** Em `transactions`, parcelamento só existe para `type = CREDIT_CARD`. Cada parcela = 1 transação separada. O frontend exibe `title` como "Nome x/y" (ex: "Celular 3/10"). Ao criar transação parcelada, o sistema gera N transações de uma vez. As parcelas são vinculadas por `parent_id` (UUID da primeira transação - todas as parcelas apontam para o ID da primeira).
 
@@ -111,7 +110,6 @@ Para faturas CLOSED/PAID, essas datas são "congeladas" para manter consistênci
 - `is_alert_enabled` (boolean, default: true)
 - `is_paid` (boolean, default: false)
 - `paid_at` (timestamp, opcional)
-- `transaction_id` (UUID, FK, opcional - transação PAYMENT_OF_DEBT gerada ao quitar a dívida, null se pago em dinheiro)
 - `parent_id` (UUID, opcional - vincula parcelas de uma dívida parcelada)
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
@@ -119,9 +117,9 @@ Para faturas CLOSED/PAID, essas datas são "congeladas" para manter consistênci
 **Comportamento:**
 
 - Aparece em aba separada (não mistura com transações normais)
-- Só aparece no extrato geral quando `is_paid = true`, perguntando a forma de pagamento
+- Só aparece no extrato geral quando `is_paid = true`
 - Alertas aparecem ao abrir o app enquanto não pago (apenas no dia do vencimento se `is_alert_enabled = true`)
-- **Parcelamento:** Cada parcela = 1 transação separada. O frontend exibe `title` como "Nome x/y" (ex: "Empréstimo notebook 2/6"). Ao criar dívida parcelada, gera N transações de uma vez (igual às transações normais)
+- **Parcelamento:** Cada parcela = 1 registro separado. O frontend exibe `title` como "Nome x/y" (ex: "Empréstimo notebook 2/6"). Ao criar dívida parcelada, gera N registros de uma vez (igual às transações normais)
 - **Deleção de parcelas:** Quando o usuário tenta deletar uma parcela, o sistema pergunta o que fazer (igual às transações)
 
 #### A Receber (Receivables)
@@ -194,9 +192,10 @@ cartero-frontend/
 │   │   │   └── register/
 │   │   ├── (dashboard)/
 │   │   │   ├── banks/
+│   │   │   │   └── [id]/
+│   │   │   │       └── invoices/
 │   │   │   ├── categories/
 │   │   │   ├── transactions/
-│   │   │   ├── invoices/
 │   │   │   ├── debts/
 │   │   │   ├── receivables/
 │   │   │   └── layout.tsx
@@ -212,11 +211,11 @@ cartero-frontend/
 
 ## Decisões Recentes
 
-- `title` é o texto principal exibido na UI para `transactions`, `debts` e `receivables`. `description` continua sendo um campo secundário/opcional.
-- Foi criado um `CommonModule` no backend para concentrar código compartilhado.
-- Foi criado um `EntityValidationService` em `src/common` para reduzir repetição de validações como banco, categoria e transação.
-- A intenção é manter os services de domínio menores, empurrando validações compartilhadas para `common` quando fizer sentido.
-- O `create` de `transactions` está sendo evoluído para suportar parcelamento real no backend.
+- `title` é o texto principal exibido na UI para `transactions`, `debts` e `receivables`. `description` é campo secundário/opcional.
+- `CommonModule` concentra código compartilhado do backend. `EntityValidationService` centraliza validações de ownership (banco, categoria, transação, dívida, recebível).
+- Parcelamento implementado e funcional em Transactions, Debts e Receivables. Parcelas vinculadas por `parentId`.
+- Pagamento de dívidas é simples: apenas seta `isPaid = true` e `paidAt`. Não gera transação.
+- `isPaid` pode ser revertido para `false` — ao fazer isso, `paidAt` é limpo (setado para `null`).
 
 ## Regras de Negócio Importantes
 
@@ -231,20 +230,9 @@ cartero-frontend/
 3. **Status da fatura:** Quatro estados: `OPEN` → `CLOSED` → `OVERDUE` → `PAID`. O cron job diário gerencia as transições automáticas (OPEN→CLOSED no close_date, CLOSED→OVERDUE no due_date). O usuário muda para `PAID` manualmente.
 4. **Não há gestão de saldo dos bancos**, apenas gastos
 5. **Alertas persistem até ação do usuário** (marcar como pago)
-6. **Dívidas externas:**
-   - Se `bank_id = null` ao marcar pago → pago em dinheiro, não gera transação
-   - Se `bank_id` preenchido ao marcar pago → gera transação `PAYMENT_OF_DEBT` no banco (requer `category_id` também)
-   - Dívidas pagas sem `bank_id` ainda aparecem no extrato geral (ver regra 9)
-7. **Dívidas externas só aparecem no extrato quando pagas**
-8. **Receivables:** ao marcar como recebido → apenas seta `isPaid = true` / `paidAt`. Não gera transação. Não precisa de `bank_id`. Recebimentos aparecem num extrato geral separado dos gastos por banco.
-9. **Extrato Geral (`GET /statement`):** endpoint separado que combina duas fontes:
-   - Todas as `transactions` do usuário (sempre têm `bank_id`)
-   - `debts` com `isPaid = true` e `transactionId = null` (pagas em dinheiro, sem banco)
-   - `receivables` com `isPaid = true`
-   - `bankId` em `Transaction` permanece obrigatório — não existe transação sem banco no schema.
-8. **Limitações atuais:**
-   - ~~Alertas só aparecem quando usuário abre o app (sem push/email)~~ - AGORA TEM CRON JOBS
-   - ~~Status de fatura (fechada/vencida) só atualiza quando usuário entra no app~~ - AGORA TEM CRON JOBS
+6. **Dívidas externas:** marcar como paga → seta `isPaid = true` e `paidAt`. Reverter → limpa `paidAt = null`. Não gera transação. Só aparecem no extrato geral quando pagas.
+7. **Receivables:** marcar como recebido → seta `isPaid = true` e `paidAt`. Reverter → limpa `paidAt = null`. Não gera transação. Não precisa de `bank_id`.
+8. **Extrato Geral (`GET /statement`):** endpoint pendente que combinará: todas as `transactions` + `debts` com `isPaid = true` + `receivables` com `isPaid = true`.
 
 ## Sistema de Cron Jobs (Atualização Automática)
 
@@ -283,28 +271,106 @@ cartero-frontend/
 - ✅ Estrutura base criada
 - ✅ Prisma configurado
 - ✅ Schema com models principais criado
-- ✅ Auth, Users, Banks, Categories, Transactions e Invoices já possuem estrutura inicial
-- ✅ `CommonModule` e `EntityValidationService` já criados
-- ⚠️ `Transactions` está em evolução, especialmente o fluxo de parcelamento
+- ✅ Auth, Users, Banks, Categories, Transactions, Invoices, Debts e Receivables completos
+- ✅ `CommonModule` e `EntityValidationService` criados
+- ✅ Parcelamento implementado em Transactions, Debts e Receivables
+- ✅ Filtros implementados em `GET /transactions`
+- ⏳ Alerts e Statement pendentes
 
 ### Frontend (Next.js)
 
 - ❌ Pasta vazia
 - ❌ Precisa ser inicializado
 
-### TODO (atualizado do TODO.md original)
+### Próximos passos
 
-- [ ] Setup: NestJS + Next.js + Docker + PostgreSQL
-- [ ] Backend: Auth (JWT)
-- [ ] Backend: Users + Banks + Categories
-- [ ] Backend: Transactions
-- [ ] Backend: Credit Invoices (geração automática)
-- [ ] Backend: Debts + Receivables
-- [ ] Backend: Alerts (avisos ao acessar)
-- [ ] Frontend: Setup + shadcn/ui + tema dark
+- [ ] Backend: Alerts (`GET /alerts`)
+- [ ] Backend: Statement (`GET /statement`)
+- [ ] Frontend: Setup (Next.js + shadcn/ui + tema dark)
 - [ ] Frontend: Auth (login/registro)
-- [ ] Frontend: Dashboard + páginas
+- [ ] Frontend: Dashboard + todas as páginas
 - [ ] Deploy: Railway + Vercel
+
+## Frontend: Design e Visual
+
+### Princípios
+
+- **Tema:** dark obrigatório, sem toggle light/dark
+- **Biblioteca:** shadcn/ui — usar os componentes nativos sem customizações desnecessárias
+- **Referência visual:** https://shadcnblocks-admin.vercel.app/
+- **Tom:** moderno, elegante, minimalista — mas com densidade de informação adequada (sem telas vazias)
+
+### Diretrizes visuais
+
+- **Tipografia:** hierarquia clara — valor monetário em destaque (tamanho maior), título em peso normal, metadata (data, categoria) em `text-muted-foreground` menor
+- **Valores monetários:** sempre formatados como moeda (`R$ 1.234,56`), negativos em vermelho (`text-destructive`), positivos em verde (`text-green-500` ou similar)
+- **Cores de categoria e banco:** usar o campo `color` do modelo para pintar badges, ícones ou bordas laterais nos cards/linhas
+- **Status de fatura:** badges coloridos — `OPEN` (azul), `CLOSED` (amarelo), `OVERDUE` (vermelho), `PAID` (verde)
+- **Espaçamento:** generoso entre seções, compacto dentro de listas — evitar padding excessivo que deixa a tela vazia
+- **Separadores:** usar `border-b` sutil entre linhas de lista em vez de cards individuais para cada item (mais limpo)
+- **Ações:** botões de ação (editar, deletar) aparecem no hover da linha/card — não poluir a UI com ícones sempre visíveis
+- **Formulários:** usar Sheet (painel lateral) ou Dialog para criar/editar — não navegar para outra página
+- **Feedback:** toasts para confirmação de ações (criado, editado, deletado, erro)
+- **Loading:** skeleton nos lugares certos, não spinner global
+
+### Componentes-chave esperados
+
+- `TransactionRow` — linha de transação com ícone da categoria, título, banco, valor e data
+- `DebtCard` / `ReceivableCard` — card compacto com status de pagamento e vencimento destacado
+- `InvoiceStatusBadge` — badge de status com cor correspondente
+- `AmountDisplay` — componente de valor formatado com cor automática (positivo/negativo)
+- `InstallmentScopeModal` — modal de confirmação ao editar/deletar parcelas com as 3 opções de scope
+- `FilterBar` — barra de filtros da página de transações (data, banco, categoria, tipo)
+
+## Frontend: Páginas e Rotas
+
+### Autenticação
+
+| Página | Rota frontend | Endpoints usados |
+|---|---|---|
+| Login | `/login` | `POST /auth/login` |
+| Registro | `/register` | `POST /auth/register` |
+
+### Dashboard
+
+| Página | Rota frontend | Endpoints usados |
+|---|---|---|
+| Bancos | `/banks` | `GET /banks`, `POST /banks`, `PATCH /banks/:id`, `DELETE /banks/:id` |
+| Categorias | `/categories` | `GET /categories`, `POST /categories`, `PATCH /categories/:id`, `DELETE /categories/:id` |
+| Transações | `/transactions` | `GET /transactions`, `POST /transactions`, `PATCH /transactions/:id`, `DELETE /transactions/:id` |
+| Faturas | `/banks/:id/invoices` | `GET /banks/:id/invoices`, `GET /invoices/:id`, `PATCH /invoices/:id` |
+| Dívidas | `/debts` | `GET /debts`, `POST /debts`, `PATCH /debts/:id`, `DELETE /debts/:id` |
+| A Receber | `/receivables` | `GET /receivables`, `POST /receivables`, `PATCH /receivables/:id`, `DELETE /receivables/:id` |
+
+### Rotas com filtros
+
+**`GET /transactions`** — todos os parâmetros são opcionais via query string:
+- `startDate` — data início (ISO string, ex: `2026-05-01`)
+- `endDate` — data fim (ISO string, ex: `2026-05-31`)
+- `bankId` — UUID do banco
+- `categoryId` — UUID da categoria
+- `type` — tipo da transação (`INCOME`, `CREDIT_CARD`, `DEBIT_CARD`, `PIX`, `BOLETO`)
+
+Exemplo: `GET /transactions?startDate=2026-05-01&endDate=2026-05-31&type=CREDIT_CARD`
+
+### Parâmetro `scope` (parcelas)
+
+`PATCH` e `DELETE` de `transactions`, `debts` e `receivables` aceitam `?scope=` via query string:
+
+- `ONE` (padrão) — afeta apenas o registro atual
+- `NEXT` — afeta o atual e todos os próximos (mesma série, data >=)
+- `ALL` — afeta todos da mesma série (passados + futuros)
+
+Exemplo: `DELETE /transactions/:id?scope=ALL`
+
+O frontend deve exibir um modal de confirmação quando o registro tem `parentId`, perguntando ao usuário qual escopo deseja aplicar.
+
+### Comportamento de faturas no frontend
+
+- A página de faturas fica dentro de cada banco: `/banks/:id/invoices`
+- Ao clicar numa fatura, abre detalhes com lista de transações (`GET /invoices/:id`)
+- Ações disponíveis: mudar status para `PAID` via `PATCH /invoices/:id`
+- Status `OPEN → CLOSED → OVERDUE` são gerenciados automaticamente pelo cron job
 
 ## Notas
 

@@ -1,27 +1,18 @@
-import { TransactionType } from '@prisma/client';
 import {
   IsDateString,
-  IsEnum,
   IsInt,
   IsNumber,
   IsOptional,
   IsString,
-  IsUUID,
   Min,
 } from 'class-validator';
 
-export class CreateTransactionDto {
-  @IsUUID()
-  bankId: string;
-
-  @IsUUID()
-  categoryId: string;
-
+export class CreateReceivableDto {
   @IsString()
   title: string;
 
-  @IsEnum(TransactionType)
-  type: TransactionType;
+  @IsString()
+  debtorName: string;
 
   @IsNumber()
   @Min(0.01)
@@ -32,7 +23,7 @@ export class CreateTransactionDto {
   description?: string;
 
   @IsDateString()
-  date: string;
+  dueDate: string;
 
   @IsOptional()
   @IsInt()

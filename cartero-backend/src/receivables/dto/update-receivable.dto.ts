@@ -7,14 +7,14 @@ import {
   Min,
 } from 'class-validator';
 
-export class UpdateDebtDto {
+export class UpdateReceivableDto {
   @IsOptional()
   @IsString()
   title?: string;
 
   @IsOptional()
   @IsString()
-  creditorName?: string;
+  debtorName?: string;
 
   @IsOptional()
   @IsNumber()
@@ -28,10 +28,6 @@ export class UpdateDebtDto {
   @IsOptional()
   @IsDateString()
   dueDate?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  isAlertEnabled?: boolean;
 
   @IsOptional()
   @IsBoolean()

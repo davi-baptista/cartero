@@ -129,7 +129,6 @@ enum TransactionType {
   DEBIT_CARD
   PIX
   BOLETO
-  PAYMENT_OF_DEBT
 }
 
 enum InvoiceStatus {

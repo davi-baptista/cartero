@@ -1,9 +1,37 @@
+import {
+  IsBoolean,
+  IsDateString,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
+
 export class CreateDebtDto {
+  @IsString()
   title: string;
+
+  @IsString()
   creditorName: string;
+
+  @IsNumber()
+  @Min(0.01)
   amount: number;
+
+  @IsOptional()
+  @IsString()
   description?: string;
+
+  @IsDateString()
   dueDate: string;
-  isAlertEnabled: boolean;
-  installments: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isAlertEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  installments?: number;
 }

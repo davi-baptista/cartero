@@ -11,6 +11,8 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppScheduler } from './app.scheduler';
 import { InvoicesModule } from './invoices/invoices.module';
+import { DebtsModule } from './debts/debts.module';
+import { ReceivablesModule } from './receivables/receivables.module';
 
 @Module({
   imports: [
@@ -26,6 +28,8 @@ import { InvoicesModule } from './invoices/invoices.module';
     CategoriesModule,
     TransactionsModule,
     InvoicesModule,
+    DebtsModule,
+    ReceivablesModule,
     ScheduleModule.forRoot(),
   ],
   providers: [AppScheduler],

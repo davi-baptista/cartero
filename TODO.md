@@ -62,7 +62,7 @@
 
 - [x] TransactionService
   - [x] Criar transação (com lógica de fatura)
-  - [ ] Listar transações (com filtros)
+  - [x] Listar transações (com filtros)
   - [x] Atualizar transação
   - [x] Deletar transação
   - [x] Lógica: CREDIT_CARD vai pra fatura do banco
@@ -90,39 +90,37 @@
 
 ## 8. Backend: Debts (Dívidas)
 
-- [ ] DebtService
-  - [ ] Corrigir bug do create (paidAt sempre setado, deve ser null se isPaid=false)
-  - [ ] Parcelamento (se vier `installments`, criar N registros vinculados por parentId)
-  - [ ] Marcar como pago: se bankId → gera transação PAYMENT_OF_DEBT; se null → só marca pago
-- [ ] DebtController com guard (controller está vazio)
-- [ ] DebtModule wiring (module está vazio)
-- [ ] DTOs
-- [ ] GET /debts
-- [ ] POST /debts
-- [ ] GET /debts/:id
-- [ ] PATCH /debts/:id
-- [ ] DELETE /debts/:id
-- [ ] POST /debts/:id/pay
+- [x] DebtService
+  - [x] Corrigir bug do create (paidAt sempre setado, deve ser null se isPaid=false)
+  - [x] Parcelamento (se vier `installments`, criar N registros vinculados por parentId)
+- [x] DebtController com guard (controller está vazio)
+- [x] DebtModule wiring (module está vazio)
+- [x] DTOs
+- [x] GET /debts
+- [x] POST /debts
+- [x] GET /debts/:id
+- [x] PATCH /debts/:id
+- [x] DELETE /debts/:id
 
 ## 9. Backend: Receivables (A Receber)
 
-- [ ] ReceivableService
-  - [ ] CRUD completo
-  - [ ] Parcelamento (criar N registros vinculados por parentId)
-  - [ ] Marcar como recebido: só seta isPaid=true e paidAt, NÃO gera transação
-- [ ] ReceivableController com guard
-- [ ] ReceivableModule wiring
-- [ ] DTOs
-- [ ] GET /receivables
-- [ ] POST /receivables
-- [ ] GET /receivables/:id
-- [ ] PATCH /receivables/:id
-- [ ] DELETE /receivables/:id
-- [ ] POST /receivables/:id/pay
+- [x] ReceivableService
+  - [x] CRUD completo
+  - [x] Parcelamento (criar N registros vinculados por parentId)
+  - [x] Marcar como recebido: só seta isPaid=true e paidAt, NÃO gera transação
+- [x] ReceivableController com guard
+- [x] ReceivableModule wiring
+- [x] DTOs
+- [x] GET /receivables
+- [x] POST /receivables
+- [x] GET /receivables/:id
+- [x] PATCH /receivables/:id
+- [x] DELETE /receivables/:id
+- [x] POST /receivables/:id/pay
 
 ## 10. Backend: Statement (Extrato Geral)
 
-- [ ] GET /statement — combina: transactions + debts pagas sem bankId + receivables pagos
+- [ ] GET /statement — combina: transactions + debts + receivables pagos
 
 ## 10. Backend: Alerts (Sistema de Alertas)
 

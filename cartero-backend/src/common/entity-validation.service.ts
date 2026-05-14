@@ -76,4 +76,19 @@ export class EntityValidationService {
 
     return debt;
   }
+
+  async validateReceivable(receivableId: string, userId: string) {
+    const receivable = await this.prisma.receivable.findUnique({
+      where: {
+        id: receivableId,
+        userId,
+      },
+    });
+
+    if (!receivable) {
+      throw new NotFoundException('Dívida não encontrada');
+    }
+
+    return receivable;
+  }
 }
