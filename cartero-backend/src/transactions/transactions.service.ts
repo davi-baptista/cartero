@@ -41,6 +41,7 @@ export class TransactionsService {
               userId,
               dto.bankId,
               bank.invoiceCloseDate,
+              bank.invoiceDueDate,
               installmentDate,
             );
 
@@ -104,6 +105,10 @@ export class TransactionsService {
           gte: filters.startDate ? new Date(filters.startDate) : undefined,
           lte: filters.endDate ? new Date(filters.endDate) : undefined,
         },
+      },
+      include: {
+        bank: { select: { id: true, name: true } },
+        category: { select: { id: true, name: true, color: true, icon: true } },
       },
       orderBy: { date: 'desc' },
     });
@@ -173,6 +178,7 @@ export class TransactionsService {
               userId,
               bankId,
               bank!.invoiceCloseDate,
+              bank!.invoiceDueDate,
               date,
             );
 
@@ -292,9 +298,10 @@ export class TransactionsService {
     userId: string,
     bankId: string,
     invoiceCloseDate: number,
+    invoiceDueDate: number,
     transactionDate: Date,
   ) {
-    let month = transactionDate.getUTCMonth();
+    let month = transactionDate.getUTCMonth() + 1;
     let year = transactionDate.getUTCFullYear();
 
     if (transactionDate.getUTCDate() >= invoiceCloseDate) {
@@ -314,13 +321,20 @@ export class TransactionsService {
     });
 
     if (!invoice) {
+      const today = new Date();
+      const closeDate = new Date(year, month, invoiceCloseDate);
+      const dueDate = new Date(year, month, invoiceDueDate);
+
+      const status =
+        today > dueDate ? 'OVERDUE' : today >= closeDate ? 'CLOSED' : 'OPEN';
+        
       invoice = await tx.invoice.create({
         data: {
           userId,
           bankId,
           month,
           year,
-          status: 'OPEN',
+          status,
         },
       });
     }

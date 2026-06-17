@@ -106,7 +106,7 @@ Para faturas CLOSED/PAID, essas datas são "congeladas" para manter consistênci
 - `title` (string, obrigatório - texto principal exibido na UI, ex: "Empréstimo notebook 2/6")
 - `amount` (decimal, obrigatório)
 - `description` (string, opcional)
-- `due_date` (date, opcional)
+- `due_date` (date, obrigatório)
 - `is_alert_enabled` (boolean, default: true)
 - `is_paid` (boolean, default: false)
 - `paid_at` (timestamp, opcional)
@@ -130,7 +130,7 @@ Para faturas CLOSED/PAID, essas datas são "congeladas" para manter consistênci
 - `title` (string, obrigatório - texto principal exibido na UI, ex: "Venda parcelada 1/3")
 - `amount` (decimal, obrigatório)
 - `description` (string, opcional)
-- `due_date` (date, opcional)
+- `due_date` (date, obrigatório)
 - `is_paid` (boolean, default: false)
 - `paid_at` (timestamp, opcional)
 - `parent_id` (UUID, opcional - vincula parcelas de um receivable parcelado)
@@ -209,14 +209,6 @@ cartero-frontend/
 │   └── types/
 ```
 
-## Decisões Recentes
-
-- `title` é o texto principal exibido na UI para `transactions`, `debts` e `receivables`. `description` é campo secundário/opcional.
-- `CommonModule` concentra código compartilhado do backend. `EntityValidationService` centraliza validações de ownership (banco, categoria, transação, dívida, recebível).
-- Parcelamento implementado e funcional em Transactions, Debts e Receivables. Parcelas vinculadas por `parentId`.
-- Pagamento de dívidas é simples: apenas seta `isPaid = true` e `paidAt`. Não gera transação.
-- `isPaid` pode ser revertido para `false` — ao fazer isso, `paidAt` é limpo (setado para `null`).
-
 ## Regras de Negócio Importantes
 
 1. **Faturas são geradas automaticamente** quando há transações de crédito associadas a um banco
@@ -258,6 +250,10 @@ cartero-frontend/
 2. Histórico consistente (datas congeladas em CLOSED/PAID)
 3. Suporte a notificações push/email futuras
 
+## Melhorias Futuras (Produção)
+
+- **Refresh token stateful:** Guardar refresh tokens no banco (`refresh_tokens` table com hash do token + userId + expiresAt). Ao usar o refresh → deletar o antigo e criar novo par (rotação). Logout real apagando do banco. Refresh token em HttpOnly cookie para proteção contra XSS.
+
 ## Deployment (Gratuito)
 
 - **Backend:** Railway (tem plano gratuito com PostgreSQL)
@@ -276,6 +272,7 @@ cartero-frontend/
 - ✅ Parcelamento implementado em Transactions, Debts e Receivables
 - ✅ Filtros implementados em `GET /transactions`
 - ⏳ Alerts e Statement pendentes
+- ✅ `GET /invoices/:id` retorna invoice com transactions incluídas
 
 ### Frontend (Next.js)
 
