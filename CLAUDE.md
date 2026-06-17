@@ -214,9 +214,10 @@ cartero-frontend/
 1. **Faturas são geradas automaticamente** quando há transações de crédito associadas a um banco
 2. **Lógica de fechamento de fatura:**
    - Regra atual adotada no projeto: a fatura é identificada pelo mês de fechamento.
-   - Transação com `date >= invoice_close_date` → vai para a fatura do mês da própria transação
-   - Transação com `date < invoice_close_date` → vai para a fatura do mês anterior
-   - Exemplo: fechamento dia 15. Transação em `2026-02-15` vai para a fatura de fevereiro. Transação em `2026-02-14` vai para a fatura de janeiro.
+   - Transação com `date > invoice_close_date` → vai para a fatura do mês seguinte (próximo ciclo)
+   - Transação com `date <= invoice_close_date` → vai para a fatura do mês da própria transação
+   - Transação com `date < invoice_close_date` e no primeiro dia do mês → pode pertencer ao mês anterior
+   - Exemplo: fechamento dia 15. Transação em `2026-02-15` vai para a fatura de fevereiro. Transação em `2026-02-16` vai para a fatura de março. Transação em `2026-02-14` vai para a fatura de janeiro.
    - Atenção para virada de ano: uma transação em janeiro antes do fechamento pode pertencer à fatura de dezembro do ano anterior.
    - Em parcelamento de cartão, cada parcela precisa recalcular sua própria fatura com base na data daquela parcela.
 3. **Status da fatura:** Quatro estados: `OPEN` → `CLOSED` → `OVERDUE` → `PAID`. O cron job diário gerencia as transições automáticas (OPEN→CLOSED no close_date, CLOSED→OVERDUE no due_date). O usuário muda para `PAID` manualmente.
@@ -271,21 +272,27 @@ cartero-frontend/
 - ✅ `CommonModule` e `EntityValidationService` criados
 - ✅ Parcelamento implementado em Transactions, Debts e Receivables
 - ✅ Filtros implementados em `GET /transactions`
-- ⏳ Alerts e Statement pendentes
 - ✅ `GET /invoices/:id` retorna invoice com transactions incluídas
+- ✅ `findOrCreateInvoice` corrigido: fórmula do mês (`((month + 1) % 12) + 1`) e status dinâmico (OPEN/CLOSED/OVERDUE) baseado na data atual vs close_date e due_date
+- ⏳ Alerts (`GET /alerts`) pendente
+- ⏳ Statement (`GET /statement`) pendente
 
 ### Frontend (Next.js)
 
-- ❌ Pasta vazia
-- ❌ Precisa ser inicializado
+- ✅ Setup (Next.js + shadcn/ui + tema dark)
+- ✅ Auth (login/registro)
+- ✅ Dashboard com sidebar colapsável
+- ✅ Bancos (`/banks`)
+- ✅ Categorias (`/categories`)
+- ✅ Transações (`/transactions`) com filtros
+- ✅ Faturas (`/banks/:id/invoices`) com sheet de detalhes colorido por status
+- ✅ Dívidas (`/debts`)
+- ✅ A Receber (`/receivables`)
 
 ### Próximos passos
 
 - [ ] Backend: Alerts (`GET /alerts`)
 - [ ] Backend: Statement (`GET /statement`)
-- [ ] Frontend: Setup (Next.js + shadcn/ui + tema dark)
-- [ ] Frontend: Auth (login/registro)
-- [ ] Frontend: Dashboard + todas as páginas
 - [ ] Deploy: Railway + Vercel
 
 ## Frontend: Design e Visual
