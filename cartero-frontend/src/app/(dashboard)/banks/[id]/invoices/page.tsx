@@ -192,18 +192,26 @@ function TxRow({ tx }: { tx: Transaction }) {
 
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-[13px] font-medium leading-tight">{tx.title}</span>
-        {tx.category && (() => {
-          const { Icon: CatIcon } = resolveCategoryIcon(tx.category.icon)
-          return (
-            <span className="flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground">
-              <CatIcon
-                className="size-3 shrink-0"
-                style={tx.category.color ? { color: tx.category.color } : undefined}
-              />
-              <span className="truncate">{tx.category.name}</span>
-            </span>
-          )
-        })()}
+        <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+          {tx.category && (() => {
+            const { Icon: CatIcon } = resolveCategoryIcon(tx.category.icon)
+            return (
+              <span className="flex shrink-0 items-center gap-1">
+                <CatIcon
+                  className="size-3"
+                  style={tx.category.color ? { color: tx.category.color } : undefined}
+                />
+                <span>{tx.category.name}</span>
+              </span>
+            )
+          })()}
+          {tx.description && tx.category && (
+            <span aria-hidden className="text-muted-foreground/40">·</span>
+          )}
+          {tx.description && (
+            <span className="truncate italic">{tx.description}</span>
+          )}
+        </div>
       </div>
 
       <div className="shrink-0 text-right">

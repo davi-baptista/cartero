@@ -13,7 +13,14 @@ export class InvoicesService {
   async findOne(id: string, userId: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id, userId },
-      include: { transactions: true },
+      include: {
+        transactions: {
+          include: {
+            category: { select: { id: true, name: true, color: true, icon: true } },
+          },
+          orderBy: { date: 'asc' },
+        },
+      },
     });
     if (!invoice) throw new NotFoundException('Fatura não encontrada');
     return invoice;
