@@ -76,51 +76,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (isLoading) {
     return (
-      <div className="flex h-screen w-full bg-background">
-        {/* Sidebar skeleton */}
-        <div className="flex w-[14rem] shrink-0 flex-col border-r border-border bg-sidebar px-4 py-5">
-          {/* Brand */}
-          <div className="flex items-center gap-2.5">
-            <Skeleton className="size-7 rounded-lg" />
-            <Skeleton className="h-4 w-20" />
-          </div>
-          {/* Nav items */}
-          <div className="mt-6 flex flex-col gap-1">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-9 w-full rounded-md" />
-            ))}
-          </div>
-          {/* Footer */}
-          <div className="mt-auto flex items-center gap-3 pt-4 border-t border-sidebar-border">
-            <Skeleton className="size-8 shrink-0 rounded-full" />
-            <div className="flex flex-col gap-1.5 flex-1">
-              <Skeleton className="h-3 w-24" />
-              <Skeleton className="h-2.5 w-32" />
-            </div>
-          </div>
-        </div>
-        {/* Content skeleton */}
-        <div className="flex flex-1 flex-col">
-          {/* Header */}
-          <div className="flex h-14 items-center gap-3 border-b border-border px-4">
-            <Skeleton className="size-7 rounded-md" />
-            <Skeleton className="h-px w-px" />
-            <Skeleton className="h-4 w-24" />
-          </div>
-          {/* Page content */}
-          <div className="flex flex-col gap-6 p-6">
-            <div className="flex items-center justify-between">
-              <div className="flex flex-col gap-2">
-                <Skeleton className="h-7 w-36" />
-                <Skeleton className="h-4 w-52" />
-              </div>
-              <Skeleton className="h-9 w-28 rounded-md" />
-            </div>
-            <div className="flex flex-col gap-px">
-              {Array.from({ length: 7 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 w-full rounded-none first:rounded-t-md last:rounded-b-md" />
-              ))}
-            </div>
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <div className="relative flex items-center justify-center">
+          {/* Spinning ring */}
+          <svg
+            className="absolute size-16 animate-spin"
+            style={{ animationDuration: '1.1s', animationTimingFunction: 'linear' }}
+            viewBox="0 0 64 64"
+            fill="none"
+          >
+            <circle
+              cx="32" cy="32" r="28"
+              stroke="currentColor"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeDasharray="44 132"
+              className="text-primary"
+            />
+          </svg>
+          {/* Brand monogram */}
+          <div className="flex size-10 items-center justify-center rounded-xl bg-primary text-[15px] font-bold text-primary-foreground select-none">
+            C
           </div>
         </div>
       </div>
