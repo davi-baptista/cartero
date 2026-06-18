@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, memo } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -12,9 +12,18 @@ import {
   Undo2,
   Wallet,
   MoreVertical,
+  X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { DatePicker } from '@/components/ui/date-picker'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -39,6 +48,7 @@ import {
   updateReceivable,
   deleteReceivable,
 } from '@/services/receivables.service'
+import { getPersons } from '@/services/persons.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 import type { Receivable } from '@/types'
@@ -56,18 +66,31 @@ function isOverdue(r: Receivable): boolean {
 
 function StatusDot({ receivable }: { receivable: Receivable }) {
   if (receivable.isPaid)
-    return <span className="size-2.5 rounded-full bg-[oklch(0.600_0.150_145)] shrink-0" />
+    return (
+      <>
+        <span className="size-2.5 rounded-full bg-receivable shrink-0" aria-hidden="true" />
+        <span className="sr-only">Recebido</span>
+      </>
+    )
   if (isOverdue(receivable))
     return (
-      <span className="relative flex size-2.5 shrink-0 items-center justify-center">
-        <span className="absolute inline-flex size-full animate-ping rounded-full bg-[oklch(0.720_0.150_60)]/50 opacity-75" />
-        <span className="size-2.5 rounded-full bg-[oklch(0.720_0.150_60)]" />
-      </span>
+      <>
+        <span className="relative flex size-2.5 shrink-0 items-center justify-center" aria-hidden="true">
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-pending/50 opacity-75" />
+          <span className="size-2.5 rounded-full bg-pending" />
+        </span>
+        <span className="sr-only">Atrasado</span>
+      </>
     )
-  return <span className="size-2.5 rounded-full bg-primary/60 shrink-0" />
+  return (
+    <>
+      <span className="size-2.5 rounded-full bg-receivable/50 shrink-0" aria-hidden="true" />
+      <span className="sr-only">Pendente</span>
+    </>
+  )
 }
 
-function ReceivableRow({
+const ReceivableRow = memo(function ReceivableRow({
   receivable,
   onEdit,
   onDelete,
@@ -82,23 +105,42 @@ function ReceivableRow({
 
   return (
     <div className="group flex items-center gap-3 px-1 py-3">
-      {/* Status dot */}
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/50">
-        <StatusDot receivable={receivable} />
-      </div>
+      {/* Status dot — clickable toggle */}
+      <motion.button
+        type="button"
+        whileTap={{ scale: 0.85 }}
+        transition={{ duration: 0.1 }}
+        onClick={() => onToggleReceived(receivable)}
+        aria-label={receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
+        title={receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
+        className="group/dot flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/50 ring-1 ring-border/50 transition-colors hover:bg-muted hover:ring-border"
+      >
+        {receivable.isPaid ? (
+          <Undo2 className="size-3.5 text-muted-foreground/50 transition-colors group-hover/dot:text-muted-foreground" />
+        ) : (
+          <>
+            <span className="block group-hover/dot:hidden">
+              <StatusDot receivable={receivable} />
+            </span>
+            <span className="hidden group-hover/dot:block text-muted-foreground">
+              <Check className="size-3.5" />
+            </span>
+          </>
+        )}
+      </motion.button>
 
       {/* Title + debtor */}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span
           className={cn(
-            'truncate text-sm font-medium leading-tight',
+            'truncate text-[15px] font-medium leading-tight',
             receivable.isPaid && 'text-muted-foreground line-through',
           )}
         >
           {receivable.title}
         </span>
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="truncate">{receivable.debtorName}</span>
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className="truncate">{receivable.debtorName}{receivable.description ? <> · <i>{receivable.description}</i></> : ''}</span>
           {receivable.parentId && (
             <>
               <span>·</span>
@@ -112,14 +154,14 @@ function ReceivableRow({
       <div className="hidden shrink-0 flex-col items-end gap-1 sm:flex">
         <span
           className={cn(
-            'font-mono text-base font-semibold tabular-nums tracking-tight',
-            receivable.isPaid ? 'text-[oklch(0.600_0.150_145)]' : 'text-foreground',
+            'text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
+            receivable.isPaid ? 'text-receivable' : 'text-receivable/80',
           )}
         >
           {formatCurrency(receivable.amount)}
         </span>
         {overdue ? (
-          <span className="inline-flex items-center rounded-full bg-[oklch(0.720_0.150_60)]/15 px-2 py-0.5 text-[11px] font-medium text-[oklch(0.720_0.150_60)]">
+          <span className="inline-flex items-center rounded-full bg-pending/15 px-2 py-0.5 text-[11px] font-medium text-pending">
             Atrasado {formatDate(receivable.dueDate)}
           </span>
         ) : (
@@ -131,8 +173,8 @@ function ReceivableRow({
       <div className="flex shrink-0 sm:hidden">
         <span
           className={cn(
-            'font-mono text-base font-semibold tabular-nums tracking-tight',
-            receivable.isPaid ? 'text-[oklch(0.600_0.150_145)]' : 'text-foreground',
+            'text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
+            receivable.isPaid ? 'text-receivable' : 'text-receivable/80',
           )}
         >
           {formatCurrency(receivable.amount)}
@@ -140,24 +182,7 @@ function ReceivableRow({
       </div>
 
       {/* Desktop hover actions */}
-      <div className="hidden items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
-        <motion.div whileTap={{ scale: 0.80 }} transition={{ duration: 0.1 }}>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className={cn(
-              'transition-colors',
-              receivable.isPaid
-                ? 'text-muted-foreground hover:text-foreground'
-                : 'text-muted-foreground hover:text-[oklch(0.600_0.150_145)]',
-            )}
-            onClick={() => onToggleReceived(receivable)}
-            aria-label={receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
-            title={receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
-          >
-            {receivable.isPaid ? <Undo2 className="size-3.5" /> : <Check className="size-3.5" />}
-          </Button>
-        </motion.div>
+      <div className="hidden items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
         <Button
           variant="ghost"
           size="icon-sm"
@@ -206,12 +231,12 @@ function ReceivableRow({
       </div>
     </div>
   )
-}
+})
 
 function RowSkeleton() {
   return (
     <div className="flex items-center gap-3 border-b border-border px-1 py-3 last:border-b-0">
-      <Skeleton className="size-8 shrink-0 rounded-lg" />
+      <Skeleton className="size-8 shrink-0 rounded-lg ring-1 ring-border/30" />
       <div className="flex flex-1 flex-col gap-1.5">
         <Skeleton className="h-4 w-44" />
         <Skeleton className="h-3 w-28" />
@@ -232,15 +257,35 @@ export default function ReceivablesPage() {
   const qc = useQueryClient()
 
   const [tab, setTab] = useState<TabFilter>('pending')
+  const [personFilter, setPersonFilter] = useState<string | undefined>(undefined)
+  const [startDate, setStartDate] = useState<string | undefined>(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+  })
+  const [endDate, setEndDate] = useState<string | undefined>(() => {
+    const d = new Date()
+    return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10)
+  })
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editReceivable, setEditReceivable] = useState<Receivable | null>(null)
   const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
   const [scopeDialog, setScopeDialog] = useState<{ receivable: Receivable; mode: 'edit' | 'delete' } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Receivable | null>(null)
+  const [personsEnabled, setPersonsEnabled] = useState(false)
+
+  const { data: persons = [] } = useQuery({
+    queryKey: ['persons'],
+    queryFn: getPersons,
+    enabled: personsEnabled,
+  })
 
   const { data: receivables, isLoading } = useQuery({
-    queryKey: ['receivables'],
-    queryFn: getReceivables,
+    queryKey: ['receivables', personFilter, startDate, endDate],
+    queryFn: () => getReceivables({
+      personId: personFilter,
+      startDate,
+      endDate,
+    }),
   })
 
   const createMut = useMutation({
@@ -250,7 +295,7 @@ export default function ReceivablesPage() {
       setSheetOpen(false)
       toast.success('Cobrança criada')
     },
-    onError: () => toast.error('Erro ao criar cobrança'),
+    onError: () => toast.error('Erro ao criar cobrança — verifique sua conexão e tente novamente'),
   })
 
   const updateMut = useMutation({
@@ -270,7 +315,7 @@ export default function ReceivablesPage() {
       setEditScope(null)
       toast.success('Cobrança atualizada')
     },
-    onError: () => toast.error('Erro ao atualizar cobrança'),
+    onError: () => toast.error('Erro ao salvar — verifique sua conexão e tente novamente'),
   })
 
   const deleteMut = useMutation({
@@ -280,19 +325,22 @@ export default function ReceivablesPage() {
       qc.invalidateQueries({ queryKey: ['receivables'] })
       toast.success('Cobrança excluída')
     },
-    onError: () => toast.error('Erro ao excluir cobrança'),
+    onError: () => toast.error('Erro ao excluir cobrança — tente novamente'),
   })
 
   const summary = useMemo(() => {
     if (!receivables) return { pending: 0, received: 0 }
     const pending = receivables.filter((r) => !r.isPaid).reduce((s, r) => s + Number(r.amount), 0)
-    const received = receivables.filter((r) => r.isPaid).reduce((s, r) => s + Number(r.amount), 0)
-    return { pending, received }
+    return { pending }
   }, [receivables])
 
   const filtered = useMemo(() => {
     if (!receivables) return []
-    return receivables.filter((r) => (tab === 'pending' ? !r.isPaid : r.isPaid))
+    const list = receivables.filter((r) => (tab === 'pending' ? !r.isPaid : r.isPaid))
+    if (tab === 'pending') {
+      list.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+    }
+    return list
   }, [receivables, tab])
 
   function handleEdit(receivable: Receivable) {
@@ -350,67 +398,96 @@ export default function ReceivablesPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Page header */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">A Receber</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-receivable">A Receber</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             Acompanhe cobranças e valores que têm para receber
           </p>
         </div>
-        <Button
-          onClick={() => {
-            setEditReceivable(null)
-            setEditScope(null)
-            setSheetOpen(true)
-          }}
-        >
-          <Plus className="size-4" />
-          Nova cobrança
-        </Button>
+        <div className="flex items-center gap-3">
+          {!isLoading && receivables && receivables.length > 0 && (
+            <div className="text-right text-sm">
+              <span className="text-muted-foreground">A receber </span>
+              <span className="font-medium tabular-nums tracking-[-0.01em] text-receivable">
+                {formatCurrency(summary.pending)}
+              </span>
+            </div>
+          )}
+          <Button
+            onClick={() => {
+              setEditReceivable(null)
+              setEditScope(null)
+              setSheetOpen(true)
+            }}
+          >
+            <Plus className="size-4" />
+            Nova cobrança
+          </Button>
+        </div>
       </div>
 
-      {/* Summary strip */}
-      {!isLoading && receivables && receivables.length > 0 && (
-        <div className="flex flex-wrap gap-x-6 gap-y-1 border-b border-border pb-4 text-sm">
-          <span className="text-muted-foreground">
-            A receber{' '}
-            <span className="font-mono font-medium text-foreground">
-              {formatCurrency(summary.pending)}
-            </span>
-          </span>
-          <span className="text-muted-foreground">
-            Recebido{' '}
-            <span className="font-mono font-medium text-[oklch(0.600_0.150_145)]">
-              {formatCurrency(summary.received)}
-            </span>
-          </span>
+      {/* Filters */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="w-36 sm:w-40">
+            <DatePicker value={startDate} onChange={setStartDate} placeholder="Data início" />
+          </div>
+          <div className="w-36 sm:w-40">
+            <DatePicker value={endDate} onChange={setEndDate} placeholder="Data fim" />
+          </div>
+          {persons.length > 0 && (
+            <Select
+              value={personFilter ?? ''}
+              onValueChange={(v) => setPersonFilter(v || undefined)}
+              onOpenChange={(open) => { if (open) setPersonsEnabled(true) }}
+            >
+              <SelectTrigger className="w-40" aria-label="Filtrar por pessoa">
+                <SelectValue placeholder="Todas as pessoas">
+                  {personFilter ? persons.find((p) => p.id === personFilter)?.name : undefined}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                {persons.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {(startDate || endDate || personFilter) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setStartDate(undefined); setEndDate(undefined); setPersonFilter(undefined) }}
+              className="gap-1 text-muted-foreground"
+            >
+              <X className="size-3.5" />
+              Limpar filtros
+            </Button>
+          )}
         </div>
-      )}
-
-      {/* Tab filter */}
-      <div className="flex gap-1.5">
-        {tabs.map(({ value, label }) => {
-          const active = tab === value
-          return (
+        <div className="flex flex-wrap gap-2">
+          {tabs.map(({ value, label }) => (
             <button
               key={value}
               type="button"
               onClick={() => setTab(value)}
+              aria-pressed={tab === value}
               className={cn(
-                'rounded-full border px-3 py-0.5 text-xs font-medium transition-colors',
-                active
+                'rounded-full border px-4 py-1.5 text-sm font-medium transition-colors',
+                tab === value
                   ? 'border-transparent bg-primary/15 text-primary'
                   : 'border-border bg-transparent text-muted-foreground hover:border-muted-foreground/30 hover:text-foreground',
               )}
             >
               {label}
             </button>
-          )
-        })}
+          ))}
+        </div>
       </div>
 
       {/* Receivable list */}
-      <div>
+      <div className="border-t border-border">
         {isLoading ? (
           <div>
             {Array.from({ length: 6 }).map((_, i) => (
@@ -419,8 +496,8 @@ export default function ReceivablesPage() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="mb-3 flex size-12 items-center justify-center rounded-xl bg-muted/50">
-              <Wallet className="size-5 text-muted-foreground" />
+            <div className="mb-3 flex size-12 items-center justify-center rounded-xl bg-receivable/10">
+              <Wallet className="size-5 text-receivable/70" />
             </div>
             <p className="text-sm font-medium">
               {tab === 'pending' ? 'Nada a receber por enquanto' : 'Nenhum recebimento registrado'}

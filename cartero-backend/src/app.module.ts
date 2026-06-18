@@ -13,6 +13,7 @@ import { AppScheduler } from './app.scheduler';
 import { InvoicesModule } from './invoices/invoices.module';
 import { DebtsModule } from './debts/debts.module';
 import { ReceivablesModule } from './receivables/receivables.module';
+import { PersonsModule } from './persons/persons.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { ReceivablesModule } from './receivables/receivables.module';
     InvoicesModule,
     DebtsModule,
     ReceivablesModule,
+    PersonsModule,
     ScheduleModule.forRoot(),
   ],
   providers: [AppScheduler],

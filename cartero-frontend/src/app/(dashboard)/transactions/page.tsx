@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, memo } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -67,15 +67,22 @@ const TYPE_ICON: Record<TransactionType, LucideIcon> = {
   [TransactionType.BOLETO]: FileText,
 }
 
-const INCOME_BG = 'oklch(0.700 0.170 145 / 15%)'
-const EXPENSE_BG = 'oklch(1 0 0 / 5%)'
-const INCOME_ICON_CLR = 'oklch(0.700 0.170 145)'
-const EXPENSE_ICON_CLR = 'oklch(0.600 0 0)'
-
-
-const INCOME_COLOR = 'oklch(0.700 0.170 145)'
+const INCOME_BG = 'var(--color-income-bg)'
+const EXPENSE_BG = 'var(--color-expense-bg)'
+const EXPENSE_ICON_CLR = 'var(--color-expense-icon)'
+const INCOME_COLOR = 'var(--color-income)'
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
+
+const CategoryBadge = memo(function CategoryBadge({ icon, color, name }: { icon?: string | null; color?: string | null; name: string }) {
+  const { Icon } = resolveCategoryIcon(icon)
+  return (
+    <span className="flex min-w-0 items-center gap-1 truncate">
+      <Icon aria-hidden="true" className="size-3 shrink-0" style={color ? { color } : undefined} />
+      <span className="truncate">{name}</span>
+    </span>
+  )
+})
 
 function AmountDisplay({ amount, type, size = 'md' }: { amount: number; type: TransactionType; size?: 'sm' | 'md' }) {
   const expense = isExpense(type)
@@ -83,7 +90,7 @@ function AmountDisplay({ amount, type, size = 'md' }: { amount: number; type: Tr
   return (
     <span
       className={cn(
-        'font-mono tabular-nums tracking-tight',
+        'tabular-nums tracking-[-0.02em]',
         size === 'md' ? 'text-[17px] font-semibold' : 'text-sm font-medium',
         expense ? 'text-destructive' : '',
       )}
@@ -112,7 +119,7 @@ function TransactionRow({
         className="flex size-11 shrink-0 items-center justify-center rounded-2xl"
         style={{ backgroundColor: isExpense(tx.type) ? EXPENSE_BG : INCOME_BG }}
       >
-        <Icon className="size-5" style={{ color: isExpense(tx.type) ? EXPENSE_ICON_CLR : INCOME_ICON_CLR }} />
+        <Icon aria-hidden="true" className="size-5" style={{ color: isExpense(tx.type) ? EXPENSE_ICON_CLR : INCOME_COLOR }} />
       </div>
 
       {/* Title + badges + description */}
@@ -125,18 +132,9 @@ function TransactionRow({
           {tx.bank && <span aria-hidden>·</span>}
           {tx.bank && <span className="truncate">{tx.bank.name}</span>}
           {tx.bank && tx.category && <span aria-hidden>·</span>}
-          {tx.category && (() => {
-            const { Icon: CatIcon } = resolveCategoryIcon(tx.category.icon)
-            return (
-              <span className="flex min-w-0 items-center gap-1 truncate">
-                <CatIcon
-                  className="size-3 shrink-0"
-                  style={tx.category.color ? { color: tx.category.color } : undefined}
-                />
-                <span className="truncate">{tx.category.name}</span>
-              </span>
-            )
-          })()}
+          {tx.category && (
+            <CategoryBadge icon={tx.category.icon} color={tx.category.color} name={tx.category.name} />
+          )}
           {tx.parentId && (
             <>
               <span aria-hidden>·</span>
@@ -422,7 +420,7 @@ export default function TransactionsPage() {
 
           {/* Bank select */}
           <Select value={bankFilter} onValueChange={setBankFilterValue}>
-            <SelectTrigger className="w-40">
+            <SelectTrigger className="w-40" aria-label="Filtrar por banco">
               <SelectValue placeholder="Todos os bancos">
                 {bankFilter ? (banks.find((b) => b.id === bankFilter)?.name ?? undefined) : undefined}
               </SelectValue>
@@ -436,7 +434,7 @@ export default function TransactionsPage() {
 
           {/* Category select */}
           <Select value={categoryFilter} onValueChange={setCategoryFilterValue}>
-            <SelectTrigger className="w-44">
+            <SelectTrigger className="w-44" aria-label="Filtrar por categoria">
               <SelectValue placeholder="Todas as categorias">
                 {categoryFilter ? (categories.find((c) => c.id === categoryFilter)?.name ?? undefined) : undefined}
               </SelectValue>
@@ -478,6 +476,7 @@ export default function TransactionsPage() {
               <button
                 key={label}
                 type="button"
+                aria-pressed={active}
                 onClick={() => setTypeFilter(value)}
                 className={cn(
                   'rounded-full border px-4 py-1.5 text-sm font-medium transition-colors',
@@ -495,24 +494,24 @@ export default function TransactionsPage() {
 
       {/* Summary tiles */}
       {!txLoading && transactions && transactions.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-2xl bg-muted/30 px-4 py-3">
+        <div className="flex gap-3">
+          <div className="min-w-0 flex-1 rounded-2xl bg-muted/30 px-4 py-3">
             <p className="text-xs font-medium text-muted-foreground">Receitas</p>
-            <p className="mt-1 font-mono text-lg font-semibold tabular-nums tracking-tight" style={{ color: INCOME_COLOR }}>
+            <p className="mt-1 truncate text-base font-semibold tabular-nums tracking-[-0.02em]" style={{ color: INCOME_COLOR }}>
               {formatCurrency(summary.receitas)}
             </p>
           </div>
-          <div className="rounded-2xl bg-muted/30 px-4 py-3">
+          <div className="min-w-0 flex-1 rounded-2xl bg-muted/30 px-4 py-3">
             <p className="text-xs font-medium text-muted-foreground">Gastos</p>
-            <p className="mt-1 font-mono text-lg font-semibold tabular-nums tracking-tight text-destructive">
+            <p className="mt-1 truncate text-base font-semibold tabular-nums tracking-[-0.02em] text-destructive">
               {formatCurrency(summary.gastos)}
             </p>
           </div>
-          <div className="rounded-2xl bg-muted/30 px-4 py-3">
+          <div className="min-w-0 flex-1 rounded-2xl bg-muted/30 px-4 py-3">
             <p className="text-xs font-medium text-muted-foreground">Saldo</p>
             <p
               className={cn(
-                'mt-1 font-mono text-lg font-semibold tabular-nums tracking-tight',
+                'mt-1 truncate text-base font-semibold tabular-nums tracking-[-0.02em]',
                 summary.saldo < 0 ? 'text-destructive' : '',
               )}
               style={summary.saldo >= 0 ? { color: INCOME_COLOR } : undefined}
@@ -524,7 +523,7 @@ export default function TransactionsPage() {
       )}
 
       {/* Transaction list */}
-      <div>
+      <div className="border-t border-border">
         {txLoading ? (
           <div>
             {Array.from({ length: 8 }).map((_, i) => <RowSkeleton key={i} />)}

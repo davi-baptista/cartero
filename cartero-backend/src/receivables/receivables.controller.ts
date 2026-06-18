@@ -5,6 +5,7 @@ import type { User } from '@prisma/client';
 import { ReceivablesService } from './receivables.service';
 import { CreateReceivableDto } from './dto/create-receivable.dto';
 import { UpdateReceivableDto } from './dto/update-receivable.dto';
+import { FindReceivablesDto } from './dto/find-receivables.dto';
 
 @Controller('receivables')
 @UseGuards(JwtAuthGuard)
@@ -17,8 +18,8 @@ export class ReceivablesController {
     }
     
     @Get()
-    findAll(@CurrentUser() user: User) {
-        return this.receivablesService.findAll(user.id);
+    findAll(@CurrentUser() user: User, @Query() filters: FindReceivablesDto) {
+        return this.receivablesService.findAll(user.id, filters);
     }
 
     @Post()

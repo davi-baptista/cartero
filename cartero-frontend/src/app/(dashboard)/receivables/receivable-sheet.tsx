@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect } from 'react'
-import { useForm, Controller, type Resolver } from 'react-hook-form'
+import { useEffect, useState } from 'react'
+import { useForm, useWatch, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Loader2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import {
   Sheet,
   SheetContent,
@@ -17,21 +18,38 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { DatePicker } from '@/components/ui/date-picker'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { getPersons } from '@/services/persons.service'
+import { cn } from '@/lib/utils'
 import type { Receivable, InstallmentScope } from '@/types'
 
-const schema = z.object({
-  debtorName: z.string().min(1, 'Nome do devedor obrigatório'),
-  title: z.string().min(1, 'Título obrigatório'),
-  amount: z.number({ message: 'Valor inválido' }).positive('Valor deve ser positivo'),
-  dueDate: z.string().min(1, 'Data de vencimento obrigatória'),
-  description: z.string().optional(),
-  installments: z.preprocess(
-    (v) => (v === '' || v === undefined || v === null || Number.isNaN(v) ? undefined : Number(v)),
-    z.number().int().min(2).max(36).optional(),
-  ),
-})
+const schema = z
+  .object({
+    debtorName: z.string().optional(),
+    personId: z.string().optional(),
+    title: z.string().min(1, 'Título obrigatório'),
+    amount: z.number({ message: 'Valor inválido' }).positive('Valor deve ser positivo'),
+    dueDate: z.string().min(1, 'Data de vencimento obrigatória'),
+    description: z.string().optional(),
+    installments: z.preprocess(
+      (v) => (v === '' || v === undefined || v === null || Number.isNaN(v) ? undefined : Number(v)),
+      z.number().int().min(2).max(64).optional(),
+    ),
+  })
+  .refine((d) => d.debtorName?.trim() || d.personId, {
+    message: 'Informe o nome do devedor ou selecione uma pessoa',
+    path: ['debtorName'],
+  })
 
 export type ReceivableFormData = z.infer<typeof schema>
+
+type DebtorMode = 'person' | 'manual'
 
 interface ReceivableSheetProps {
   open: boolean
@@ -49,17 +67,25 @@ export function ReceivableSheet({
   onSubmit,
 }: ReceivableSheetProps) {
   const isEditing = editTarget !== null
+  const [debtorMode, setDebtorMode] = useState<DebtorMode>('manual')
+
+  const { data: persons = [], isLoading: personsLoading } = useQuery({
+    queryKey: ['persons'],
+    queryFn: getPersons,
+  })
 
   const {
     register,
     handleSubmit,
     control,
     reset,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<ReceivableFormData>({
     resolver: zodResolver(schema) as unknown as Resolver<ReceivableFormData>,
     defaultValues: {
       debtorName: '',
+      personId: undefined,
       title: '',
       amount: 0,
       dueDate: '',
@@ -71,16 +97,21 @@ export function ReceivableSheet({
   useEffect(() => {
     if (open) {
       if (editTarget) {
+        const hasPerson = !!editTarget.personId
+        setDebtorMode(hasPerson ? 'person' : 'manual')
         reset({
           debtorName: editTarget.debtorName,
+          personId: editTarget.personId ?? undefined,
           title: editTarget.title,
           amount: editTarget.amount,
           dueDate: editTarget.dueDate,
           description: editTarget.description ?? '',
         })
       } else {
+        setDebtorMode('manual')
         reset({
           debtorName: '',
+          personId: undefined,
           title: '',
           amount: 0,
           dueDate: '',
@@ -91,9 +122,21 @@ export function ReceivableSheet({
     }
   }, [open, editTarget, reset])
 
+  function handleModeChange(mode: DebtorMode) {
+    setDebtorMode(mode)
+    if (mode === 'person') {
+      setValue('debtorName', '')
+    } else {
+      setValue('personId', undefined)
+    }
+  }
+
   async function handleFormSubmit(data: ReceivableFormData) {
     await onSubmit(data, editScope)
   }
+
+  const watchedPersonId = useWatch({ control, name: 'personId' })
+  const selectedPerson = persons.find((p) => p.id === watchedPersonId)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -112,15 +155,70 @@ export function ReceivableSheet({
           onSubmit={handleSubmit(handleFormSubmit)}
           className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5"
         >
-          {/* Debtor name */}
+          {/* Debtor field */}
           <div className="space-y-1.5">
-            <Label htmlFor="debtorName">Nome do devedor</Label>
-            <Input
-              id="debtorName"
-              placeholder="Ex: Maria, Empresa Y..."
-              aria-invalid={!!errors.debtorName}
-              {...register('debtorName')}
-            />
+            <Label>Devedor</Label>
+
+            {/* Mode toggle */}
+            <div className="flex gap-1">
+              {(['manual', 'person'] as DebtorMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => handleModeChange(mode)}
+                  className={cn(
+                    'rounded-full border px-3 py-0.5 text-xs font-medium transition-colors',
+                    debtorMode === mode
+                      ? 'border-transparent bg-primary/15 text-primary'
+                      : 'border-border bg-transparent text-muted-foreground hover:border-muted-foreground/30 hover:text-foreground',
+                  )}
+                >
+                  {mode === 'manual' ? 'Digitar nome' : 'Pessoa cadastrada'}
+                </button>
+              ))}
+            </div>
+
+            {/* Input based on mode */}
+            {debtorMode === 'manual' ? (
+              <Input
+                id="debtorName"
+                placeholder="Ex: Maria, Empresa Y..."
+                aria-invalid={!!errors.debtorName}
+                {...register('debtorName')}
+              />
+            ) : (
+              <Controller
+                control={control}
+                name="personId"
+                render={({ field }) => (
+                  <Select
+                    value={field.value ?? ''}
+                    onValueChange={(v) => field.onChange(v || undefined)}
+                    disabled={personsLoading}
+                  >
+                    <SelectTrigger className="w-full" aria-label="Selecionar pessoa">
+                      <SelectValue placeholder={personsLoading ? 'Carregando...' : 'Selecionar pessoa'}>
+                        {selectedPerson?.name ?? (personsLoading ? 'Carregando...' : undefined)}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      {persons.length === 0 ? (
+                        <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+                          Nenhuma pessoa cadastrada
+                        </div>
+                      ) : (
+                        persons.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            )}
+
             {errors.debtorName && (
               <p className="text-xs text-destructive">{errors.debtorName.message}</p>
             )}
@@ -184,7 +282,7 @@ export function ReceivableSheet({
                 id="installments"
                 type="number"
                 min={2}
-                max={36}
+                max={64}
                 placeholder="Deixe em branco para à vista"
                 aria-invalid={!!errors.installments}
                 {...register('installments')}

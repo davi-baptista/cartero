@@ -24,9 +24,71 @@ import {
 import { MotionRow } from '@/components/ui/motion-row'
 import { BankSheet, type BankFormData } from './bank-sheet'
 import { getBanks, createBank, updateBank, deleteBank } from '@/services/banks.service'
+import { getBankInvoices } from '@/services/invoices.service'
+import { formatCurrency } from '@/lib/formatters'
+import { InvoiceStatus } from '@/types'
 import type { Bank } from '@/types'
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+function InvoicePill({ bank }: { bank: Bank }) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const { data: invoices } = useQuery({
+    queryKey: ['bank-invoices-mini', bank.id],
+    queryFn: () => getBankInvoices(bank.id),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  if (!invoices || invoices.length === 0) return null
+
+  const overdue = invoices.find((i) => i.status === InvoiceStatus.OVERDUE)
+  const closed = invoices.find((i) => i.status === InvoiceStatus.CLOSED)
+  const open = invoices.find((i) => i.status === InvoiceStatus.OPEN)
+
+  if (overdue) {
+    const due = new Date(overdue.year, overdue.month - 1, bank.invoiceDueDate)
+    const daysLate = Math.ceil((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24))
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-destructive/12 px-2.5 py-0.5 text-[11px] font-medium text-destructive">
+        <span className="relative flex size-1.5 shrink-0">
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/60" />
+          <span className="size-1.5 rounded-full bg-destructive" />
+        </span>
+        Vencida {daysLate > 0 ? `há ${daysLate}d` : 'hoje'} · {formatCurrency(overdue.totalAmount)}
+      </span>
+    )
+  }
+
+  if (closed) {
+    const due = new Date(closed.year, closed.month - 1, bank.invoiceDueDate)
+    const diff = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    const label = diff <= 0 ? 'Vence hoje' : diff === 1 ? 'Vence amanhã' : `Vence em ${diff}d`
+    return (
+      <span className="inline-flex items-center rounded-full bg-pending/15 px-2.5 py-0.5 text-[11px] font-medium text-pending">
+        {label} · {formatCurrency(closed.totalAmount)}
+      </span>
+    )
+  }
+
+  if (open) {
+    const close = new Date(open.year, open.month - 1, bank.invoiceCloseDate)
+    const diff = Math.ceil((close.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    const label = diff <= 0 ? 'Fecha hoje' : diff === 1 ? 'Fecha amanhã' : `Fecha em ${diff}d`
+    return (
+      <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-[11px] text-muted-foreground">
+        {label}{open.totalAmount > 0 ? ` · ${formatCurrency(open.totalAmount)}` : ''}
+      </span>
+    )
+  }
+
+  return (
+    <span className="inline-flex items-center rounded-full bg-receivable/10 px-2.5 py-0.5 text-[11px] font-medium text-receivable">
+      Em dia
+    </span>
+  )
+}
 
 function DateStat({ label, value }: { label: string; value: number }) {
   return (
@@ -55,18 +117,22 @@ function BankRow({
         {initial}
       </div>
 
-      {/* Name + mobile dates */}
+      {/* Name + pill + mobile dates */}
       <div className="min-w-0 flex-1">
         <span className="text-[15px] font-medium">{bank.name}</span>
-        {/* Mobile: dates inline below name */}
-        <div className="mt-1.5 flex items-center gap-3 sm:hidden">
-          <span className="text-xs text-muted-foreground">
-            Fecha <strong className="font-semibold text-foreground">{bank.invoiceCloseDate}</strong>
-          </span>
-          <span className="text-[10px] text-muted-foreground/40" aria-hidden>|</span>
-          <span className="text-xs text-muted-foreground">
-            Vence <strong className="font-semibold text-foreground">{bank.invoiceDueDate}</strong>
-          </span>
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <InvoicePill bank={bank} />
+          {/* Mobile: dates inline */}
+          <div className="flex items-center gap-2 sm:hidden">
+            <span className="text-[10px] text-muted-foreground/40" aria-hidden>·</span>
+            <span className="text-xs text-muted-foreground">
+              Fecha <strong className="font-semibold text-foreground">{bank.invoiceCloseDate}</strong>
+            </span>
+            <span className="text-[10px] text-muted-foreground/40" aria-hidden>|</span>
+            <span className="text-xs text-muted-foreground">
+              Vence <strong className="font-semibold text-foreground">{bank.invoiceDueDate}</strong>
+            </span>
+          </div>
         </div>
       </div>
 

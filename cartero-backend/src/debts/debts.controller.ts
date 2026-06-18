@@ -5,6 +5,7 @@ import type { User } from '@prisma/client';
 import { DebtsService } from './debts.service';
 import { UpdateDebtDto } from './dto/update-debt.dto';
 import { CreateDebtDto } from './dto/create-debt.dto';
+import { FindDebtsDto } from './dto/find-debts.dto';
 
 @Controller('debts')
 @UseGuards(JwtAuthGuard)
@@ -17,8 +18,8 @@ export class DebtsController {
     }
     
     @Get()
-    findAll(@CurrentUser() user: User) {
-        return this.debtsService.findAll(user.id);
+    findAll(@CurrentUser() user: User, @Query() filters: FindDebtsDto) {
+        return this.debtsService.findAll(user.id, filters);
     }
 
     @Post()

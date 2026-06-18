@@ -1,8 +1,8 @@
 import { api } from '@/lib/api'
 import type { Debt, InstallmentScope } from '@/types'
 
-export async function getDebts(): Promise<Debt[]> {
-  const { data } = await api.get<Debt[]>('/debts')
+export async function getDebts(filters?: { personId?: string; startDate?: string; endDate?: string }): Promise<Debt[]> {
+  const { data } = await api.get<Debt[]>('/debts', { params: filters })
   return data
 }
 
@@ -12,7 +12,8 @@ export async function getDebt(id: string): Promise<Debt> {
 }
 
 export async function createDebt(payload: {
-  creditorName: string
+  creditorName?: string
+  personId?: string
   title: string
   amount: number
   dueDate: string

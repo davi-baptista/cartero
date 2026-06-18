@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma, Debt } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateDebtDto } from 'src/debts/dto/create-debt.dto';
 import { UpdateDebtDto } from 'src/debts/dto/update-debt.dto';
+import { FindDebtsDto } from './dto/find-debts.dto';
 
 type DebtScope = 'ONE' | 'NEXT' | 'ALL';
 
@@ -16,6 +17,17 @@ export class DebtsService {
   ) {}
 
   async create(userId: string, dto: CreateDebtDto) {
+    let creditorName: string;
+
+    if (dto.personId) {
+      const person = await this.entityValidationService.validatePerson(dto.personId, userId);
+      creditorName = person.name;
+    } else if (dto.creditorName) {
+      creditorName = dto.creditorName;
+    } else {
+      throw new BadRequestException('Informe creditorName ou personId');
+    }
+    
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
         const installments = dto.installments ? dto.installments : 1;
@@ -34,7 +46,8 @@ export class DebtsService {
                 installments > 1
                   ? `${dto.title} ${i + 1}/${installments}`
                   : dto.title,
-              creditorName: dto.creditorName,
+              creditorName,
+              personId: dto.personId,
               amount: dto.amount,
               description: dto.description,
               dueDate: installmentDate,
@@ -63,9 +76,17 @@ export class DebtsService {
     return await this.entityValidationService.validateDebt(id, userId);
   }
 
-  async findAll(userId: string) {
+  async findAll(userId: string, filters: FindDebtsDto = {}) {
     return await this.prisma.debt.findMany({
-      where: { userId },
+      where: { 
+        userId,
+        creditorName: filters.creditorName,
+        personId: filters.personId,
+        dueDate: {
+          gte: filters.startDate ? new Date(filters.startDate) : undefined,
+          lte: filters.endDate ? new Date(filters.endDate) : undefined,
+        }, 
+      }, 
     });
   }
 
@@ -81,6 +102,12 @@ export class DebtsService {
     );
     const normalizedScope = this.normalizeScope(scope);
 
+    let creditorName = dto.creditorName
+    if (dto.personId) {
+      const person = await this.entityValidationService.validatePerson(dto.personId, userId)
+      creditorName = person.name
+    }
+
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
         const debtsToUpdate = await this.getDebtsByScope(
@@ -93,13 +120,14 @@ export class DebtsService {
 
         for (const debt of debtsToUpdate) {
           const paidAt =
-            dto.isPaid === true && !debt.isPaid ? new Date() : 
+            dto.isPaid === true && !debt.isPaid ? new Date() :
 						dto.isPaid === false && debt.isPaid ? null : undefined;
 
           const updatedDebt = await tx.debt.update({
             where: { id: debt.id, userId },
             data: {
               ...dto,
+              creditorName,
               dueDate: dto.dueDate ? new Date(dto.dueDate) : debt.dueDate,
               paidAt,
             },

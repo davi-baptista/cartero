@@ -4,6 +4,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
 } from 'class-validator';
 
@@ -11,8 +12,13 @@ export class CreateReceivableDto {
   @IsString()
   title: string;
 
+  @IsOptional()
   @IsString()
-  debtorName: string;
+  debtorName?: string;
+
+  @IsOptional()
+  @IsUUID()
+  personId?: string;
 
   @IsNumber()
   @Min(0.01)

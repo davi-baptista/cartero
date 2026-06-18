@@ -81,9 +81,28 @@ export interface Invoice {
   updatedAt: string
 }
 
+export interface Person {
+  id: string
+  userId: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PersonStatement {
+  person: Person
+  totalDebts: number
+  totalReceivables: number
+  netBalance: number
+  debts: Debt[]
+  receivables: Receivable[]
+}
+
 export interface Debt {
   id: string
   userId: string
+  personId?: string
+  person?: Person
   creditorName: string
   title: string
   amount: number
@@ -100,6 +119,8 @@ export interface Debt {
 export interface Receivable {
   id: string
   userId: string
+  personId?: string
+  person?: Person
   debtorName: string
   title: string
   amount: number

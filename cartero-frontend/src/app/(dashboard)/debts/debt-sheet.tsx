@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect } from 'react'
-import { useForm, Controller, type Resolver } from 'react-hook-form'
+import { useEffect, useState } from 'react'
+import { useForm, useWatch, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Loader2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import {
   Sheet,
   SheetContent,
@@ -17,22 +18,39 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { DatePicker } from '@/components/ui/date-picker'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { getPersons } from '@/services/persons.service'
+import { cn } from '@/lib/utils'
 import type { Debt, InstallmentScope } from '@/types'
 
-const schema = z.object({
-  creditorName: z.string().min(1, 'Nome do credor obrigatório'),
-  title: z.string().min(1, 'Título obrigatório'),
-  amount: z.number({ message: 'Valor inválido' }).positive('Valor deve ser positivo'),
-  dueDate: z.string().min(1, 'Data de vencimento obrigatória'),
-  description: z.string().optional(),
-  isAlertEnabled: z.boolean().optional(),
-  installments: z.preprocess(
-    (v) => (v === '' || v === undefined || v === null || Number.isNaN(v) ? undefined : Number(v)),
-    z.number().int().min(2).max(36).optional(),
-  ),
-})
+const schema = z
+  .object({
+    creditorName: z.string().optional(),
+    personId: z.string().optional(),
+    title: z.string().min(1, 'Título obrigatório'),
+    amount: z.number({ message: 'Valor inválido' }).positive('Valor deve ser positivo'),
+    dueDate: z.string().min(1, 'Data de vencimento obrigatória'),
+    description: z.string().optional(),
+    isAlertEnabled: z.boolean().optional(),
+    installments: z.preprocess(
+      (v) => (v === '' || v === undefined || v === null || Number.isNaN(v) ? undefined : Number(v)),
+      z.number().int().min(2).max(64).optional(),
+    ),
+  })
+  .refine((d) => d.creditorName?.trim() || d.personId, {
+    message: 'Informe o nome do credor ou selecione uma pessoa',
+    path: ['creditorName'],
+  })
 
 export type DebtFormData = z.infer<typeof schema>
+
+type CreditorMode = 'person' | 'manual'
 
 interface DebtSheetProps {
   open: boolean
@@ -44,17 +62,25 @@ interface DebtSheetProps {
 
 export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit }: DebtSheetProps) {
   const isEditing = editTarget !== null
+  const [creditorMode, setCreditorMode] = useState<CreditorMode>('manual')
+
+  const { data: persons = [], isLoading: personsLoading } = useQuery({
+    queryKey: ['persons'],
+    queryFn: getPersons,
+  })
 
   const {
     register,
     handleSubmit,
     control,
     reset,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<DebtFormData>({
     resolver: zodResolver(schema) as unknown as Resolver<DebtFormData>,
     defaultValues: {
       creditorName: '',
+      personId: undefined,
       title: '',
       amount: 0,
       dueDate: '',
@@ -67,8 +93,11 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit 
   useEffect(() => {
     if (open) {
       if (editTarget) {
+        const hasPerson = !!editTarget.personId
+        setCreditorMode(hasPerson ? 'person' : 'manual')
         reset({
           creditorName: editTarget.creditorName,
+          personId: editTarget.personId ?? undefined,
           title: editTarget.title,
           amount: editTarget.amount,
           dueDate: editTarget.dueDate,
@@ -76,8 +105,10 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit 
           isAlertEnabled: editTarget.isAlertEnabled,
         })
       } else {
+        setCreditorMode('manual')
         reset({
           creditorName: '',
+          personId: undefined,
           title: '',
           amount: 0,
           dueDate: '',
@@ -89,9 +120,21 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit 
     }
   }, [open, editTarget, reset])
 
+  function handleModeChange(mode: CreditorMode) {
+    setCreditorMode(mode)
+    if (mode === 'person') {
+      setValue('creditorName', '')
+    } else {
+      setValue('personId', undefined)
+    }
+  }
+
   async function handleFormSubmit(data: DebtFormData) {
     await onSubmit(data, editScope)
   }
+
+  const watchedPersonId = useWatch({ control, name: 'personId' })
+  const selectedPerson = persons.find((p) => p.id === watchedPersonId)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -110,15 +153,70 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit 
           onSubmit={handleSubmit(handleFormSubmit)}
           className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5"
         >
-          {/* Creditor name */}
+          {/* Creditor field */}
           <div className="space-y-1.5">
-            <Label htmlFor="creditorName">Nome do credor</Label>
-            <Input
-              id="creditorName"
-              placeholder="Ex: João, Banco X..."
-              aria-invalid={!!errors.creditorName}
-              {...register('creditorName')}
-            />
+            <Label>Credor</Label>
+
+            {/* Mode toggle */}
+            <div className="flex gap-1">
+              {(['manual', 'person'] as CreditorMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => handleModeChange(mode)}
+                  className={cn(
+                    'rounded-full border px-3 py-0.5 text-xs font-medium transition-colors',
+                    creditorMode === mode
+                      ? 'border-transparent bg-primary/15 text-primary'
+                      : 'border-border bg-transparent text-muted-foreground hover:border-muted-foreground/30 hover:text-foreground',
+                  )}
+                >
+                  {mode === 'manual' ? 'Digitar nome' : 'Pessoa cadastrada'}
+                </button>
+              ))}
+            </div>
+
+            {/* Input based on mode */}
+            {creditorMode === 'manual' ? (
+              <Input
+                id="creditorName"
+                placeholder="Ex: João, Banco X..."
+                aria-invalid={!!errors.creditorName}
+                {...register('creditorName')}
+              />
+            ) : (
+              <Controller
+                control={control}
+                name="personId"
+                render={({ field }) => (
+                  <Select
+                    value={field.value ?? ''}
+                    onValueChange={(v) => field.onChange(v || undefined)}
+                    disabled={personsLoading}
+                  >
+                    <SelectTrigger className="w-full" aria-label="Selecionar pessoa">
+                      <SelectValue placeholder={personsLoading ? 'Carregando...' : 'Selecionar pessoa'}>
+                        {selectedPerson?.name ?? (personsLoading ? 'Carregando...' : undefined)}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      {persons.length === 0 ? (
+                        <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+                          Nenhuma pessoa cadastrada
+                        </div>
+                      ) : (
+                        persons.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            )}
+
             {errors.creditorName && (
               <p className="text-xs text-destructive">{errors.creditorName.message}</p>
             )}
@@ -182,7 +280,7 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit 
                 id="installments"
                 type="number"
                 min={2}
-                max={36}
+                max={64}
                 placeholder="Deixe em branco para à vista"
                 aria-invalid={!!errors.installments}
                 {...register('installments')}

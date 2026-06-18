@@ -235,12 +235,18 @@ export class TransactionsService {
           });
 
           if (transaction.invoiceId) {
-            await tx.invoice.update({
+            const invoice = await tx.invoice.update({
               where: { id: transaction.invoiceId, userId },
               data: {
                 totalAmount: { decrement: transaction.amount },
               },
             });
+            
+            if (Number(invoice.totalAmount) === 0) {
+              await tx.invoice.delete({
+                where: { id: invoice.id, userId },
+              });
+            }
           }
         }
 

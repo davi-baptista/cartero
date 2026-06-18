@@ -5,6 +5,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --color-receivable: var(--receivable);
+  --color-pending: var(--pending);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-inter);
@@ -73,6 +75,13 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
+  --receivable: oklch(0.600 0.150 145);
+  --pending: oklch(0.720 0.150 60);
+  --color-income: oklch(0.700 0.170 145);
+  --color-income-bg: oklch(0.700 0.170 145 / 15%);
+  --color-income-icon: oklch(0.700 0.170 145);
+  --color-expense-bg: oklch(0 0 0 / 5%);
+  --color-expense-icon: oklch(0.400 0 0);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -107,6 +116,13 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
+  --receivable: oklch(0.600 0.150 145);
+  --pending: oklch(0.720 0.150 60);
+  --color-income: oklch(0.700 0.170 145);
+  --color-income-bg: oklch(0.700 0.170 145 / 15%);
+  --color-income-icon: oklch(0.700 0.170 145);
+  --color-expense-bg: oklch(1 0 0 / 5%);
+  --color-expense-icon: oklch(0.600 0 0);
   --sidebar: oklch(0.198 0.008 272);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.640 0.210 272);

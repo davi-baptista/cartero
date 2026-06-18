@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type React from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
@@ -8,6 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   ArrowLeft,
+  ChevronRight,
   CreditCard,
   Wallet,
   Receipt,
@@ -85,11 +86,11 @@ function statusRowBg(status: InvoiceStatus): React.CSSProperties {
   return { backgroundColor: `color-mix(in oklch, ${c} 7%, transparent)` }
 }
 
-const INCOME_COLOR = 'oklch(0.700 0.170 145)'
-const EXPENSE_BG = 'oklch(1 0 0 / 5%)'
-const INCOME_BG = 'oklch(0.700 0.170 145 / 15%)'
-const EXPENSE_ICON_CLR = 'oklch(0.600 0 0)'
-const INCOME_ICON_CLR = 'oklch(0.700 0.170 145)'
+const INCOME_COLOR = 'var(--color-income)'
+const EXPENSE_BG = 'var(--color-expense-bg)'
+const INCOME_BG = 'var(--color-income-bg)'
+const EXPENSE_ICON_CLR = 'var(--color-expense-icon)'
+const INCOME_ICON_CLR = 'var(--color-income-icon)'
 
 const TYPE_ICON: Record<TransactionType, LucideIcon> = {
   [TransactionType.INCOME]: TrendingUp,
@@ -146,6 +147,8 @@ function InvoiceRow({
   return (
     <button
       onClick={onClick}
+      aria-pressed={isSelected}
+      aria-label={`${monthYear} — ${STATUS_CONFIG[invoice.status].label}`}
       className="group flex w-full items-center gap-4 px-2 py-4 text-left transition-colors hover:bg-muted/30"
       style={isSelected ? statusRowBg(invoice.status) : undefined}
     >
@@ -156,10 +159,10 @@ function InvoiceRow({
           <StatusBadge status={invoice.status} />
         </div>
         {bank && (
-          <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-            <span>Fecha {calcCloseDate(bank, invoice.month, invoice.year)}</span>
-            <span aria-hidden className="text-muted-foreground/40">·</span>
-            <span>Vence {calcDueDate(bank, invoice.month, invoice.year)}</span>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+            <span className="shrink-0">Fecha {calcCloseDate(bank, invoice.month, invoice.year)}</span>
+            <span aria-hidden className="shrink-0 text-muted-foreground/40">·</span>
+            <span className="shrink-0">Vence {calcDueDate(bank, invoice.month, invoice.year)}</span>
           </div>
         )}
       </div>
@@ -173,6 +176,11 @@ function InvoiceRow({
       >
         {formatCurrency(total)}
       </p>
+
+      <ChevronRight
+        aria-hidden="true"
+        className="size-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-muted-foreground/70"
+      />
     </button>
   )
 }
@@ -187,7 +195,7 @@ function TxRow({ tx }: { tx: Transaction }) {
         className="flex size-9 shrink-0 items-center justify-center rounded-xl"
         style={{ backgroundColor: expense ? EXPENSE_BG : INCOME_BG }}
       >
-        <Icon className="size-4" style={{ color: expense ? EXPENSE_ICON_CLR : INCOME_ICON_CLR }} />
+        <Icon aria-hidden="true" className="size-4" style={{ color: expense ? EXPENSE_ICON_CLR : INCOME_ICON_CLR }} />
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -198,6 +206,7 @@ function TxRow({ tx }: { tx: Transaction }) {
             return (
               <span className="flex shrink-0 items-center gap-1">
                 <CatIcon
+                  aria-hidden="true"
                   className="size-3"
                   style={tx.category.color ? { color: tx.category.color } : undefined}
                 />
@@ -209,7 +218,7 @@ function TxRow({ tx }: { tx: Transaction }) {
             <span aria-hidden className="text-muted-foreground/40">·</span>
           )}
           {tx.description && (
-            <span className="truncate italic">{tx.description}</span>
+            <span className="truncate italic pr-0.5">{tx.description}</span>
           )}
         </div>
       </div>
@@ -322,7 +331,6 @@ function InvoiceDetailSheet({
               </div>
               {canMarkPaid && (
                 <Button
-                  size="sm"
                   onClick={() => markPaidMut.mutate()}
                   disabled={markPaidMut.isPending}
                 >
@@ -337,7 +345,7 @@ function InvoiceDetailSheet({
             </div>
 
             {/* Transaction list */}
-            <div className="flex-1 overflow-y-auto border-t border-border">
+            <div className="flex-1 overflow-y-auto">
               {txCount === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
                   <p className="text-sm font-medium">Nenhuma transação</p>
@@ -394,11 +402,15 @@ export default function BankInvoicesPage() {
     queryFn: () => getBankInvoices(bankId),
   })
 
-  const sorted = invoices
-    ? [...invoices].sort((a, b) =>
-        b.year !== a.year ? b.year - a.year : b.month - a.month,
-      )
-    : []
+  const sorted = useMemo(
+    () =>
+      invoices
+        ? [...invoices].sort((a, b) =>
+            b.year !== a.year ? b.year - a.year : b.month - a.month,
+          )
+        : [],
+    [invoices],
+  )
 
   function handleClick(id: string) {
     setSelectedInvoiceId(id)
@@ -420,27 +432,18 @@ export default function BankInvoicesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">
             {bank ? bank.name : <Skeleton className="inline-block h-7 w-32" />}
           </h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">Faturas do cartão de crédito</p>
+          {bank ? (
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Fecha dia {bank.invoiceCloseDate} · Vence dia {bank.invoiceDueDate}
+            </p>
+          ) : (
+            <Skeleton className="mt-1.5 h-4 w-40" />
+          )}
         </div>
       </div>
 
-      {/* Status legend */}
-      <div className="flex flex-wrap items-center gap-2">
-        {Object.entries(STATUS_CONFIG).map(([status, { label, className }]) => (
-          <span
-            key={status}
-            className={cn(
-              'inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium',
-              className,
-            )}
-          >
-            {label}
-          </span>
-        ))}
-      </div>
-
       {/* Invoice list */}
-      <div>
+      <div className="border-t border-border">
         {isLoading ? (
           <div>
             {Array.from({ length: 5 }).map((_, i) => (

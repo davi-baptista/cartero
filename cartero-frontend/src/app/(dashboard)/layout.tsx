@@ -10,6 +10,7 @@ import {
   Tags,
   HandCoins,
   Wallet,
+  Users,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -61,6 +62,7 @@ const navItems = [
   { href: '/categories', label: 'Categorias', icon: Tags },
   { href: '/debts', label: 'Dívidas', icon: HandCoins },
   { href: '/receivables', label: 'A Receber', icon: Wallet },
+  { href: '/persons', label: 'Pessoas', icon: Users },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -167,6 +169,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 variant="ghost"
                 size="icon"
                 className="size-7 shrink-0 text-muted-foreground hover:text-destructive group-data-[collapsible=icon]:hidden"
+                onClick={logout}
+                aria-label="Sair"
+                title="Sair"
+              >
+                <LogOut className="size-3.5" />
+              </Button>
+              {/* Collapsed-state logout — visible only when sidebar is icon-only */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="hidden size-7 shrink-0 text-muted-foreground hover:text-destructive group-data-[collapsible=icon]:flex"
                 onClick={logout}
                 aria-label="Sair"
                 title="Sair"

@@ -57,8 +57,8 @@ export class BanksService {
     const bank = await this.prisma.bank.findUnique({
       where: { id, userId },
       include: {
-        transactions: true,
-        invoices: true,
+        transactions: { take: 1 },
+        invoices: { include: { transactions: { take: 1 } } },
       },
     });
 
@@ -66,13 +66,22 @@ export class BanksService {
       throw new NotFoundException('Banco não encontrado');
     }
 
-    if (bank.transactions.length > 0 || bank.invoices.length > 0) {
-      throw new ConflictException('Banco possui transações ou faturas');
+    if (bank.transactions.length > 0) {
+      throw new ConflictException('Banco possui transações');
     }
 
-    await this.prisma.bank.delete({
-      where: { id, userId },
-    });
+    const invoicesWithTransactions = bank.invoices.filter(
+      (inv) => inv.transactions.length > 0,
+    );
+
+    if (invoicesWithTransactions.length > 0) {
+      throw new ConflictException('Banco possui faturas com transações');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.invoice.deleteMany({ where: { bankId: id } }),
+      this.prisma.bank.delete({ where: { id, userId } }),
+    ]);
 
     return;
   }

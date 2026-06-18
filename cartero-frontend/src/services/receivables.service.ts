@@ -1,8 +1,8 @@
 import { api } from '@/lib/api'
 import type { Receivable, InstallmentScope } from '@/types'
 
-export async function getReceivables(): Promise<Receivable[]> {
-  const { data } = await api.get<Receivable[]>('/receivables')
+export async function getReceivables(filters?: { personId?: string; startDate?: string; endDate?: string }): Promise<Receivable[]> {
+  const { data } = await api.get<Receivable[]>('/receivables', { params: filters })
   return data
 }
 
@@ -12,7 +12,8 @@ export async function getReceivable(id: string): Promise<Receivable> {
 }
 
 export async function createReceivable(payload: {
-  debtorName: string
+  debtorName?: string
+  personId?: string
   title: string
   amount: number
   dueDate: string

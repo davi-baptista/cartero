@@ -48,21 +48,19 @@ function CategoryRow({
         style={
           category.color
             ? { backgroundColor: `${category.color}28` }
-            : { backgroundColor: 'oklch(0.269 0 0 / 50%)' }
+            : { backgroundColor: 'var(--muted)' }
         }
       >
         <Icon
+          aria-hidden="true"
           className="size-4"
-          style={category.color ? { color: category.color } : { color: 'oklch(0.708 0 0)' }}
+          style={category.color ? { color: category.color } : { color: 'var(--muted-foreground)' }}
         />
       </div>
 
       {/* Name */}
       <div className="flex min-w-0 flex-1 items-center">
-        <span
-          className="min-w-0 truncate text-sm font-medium"
-          style={category.color ? { color: category.color } : undefined}
-        >
+        <span className="min-w-0 truncate text-sm font-medium">
           {category.name}
         </span>
       </div>
@@ -209,7 +207,7 @@ export default function CategoriesPage() {
       </div>
 
       {/* Category list */}
-      <div>
+      <div className="border-t border-border">
         {isLoading ? (
           <div>
             {Array.from({ length: 6 }).map((_, i) => (

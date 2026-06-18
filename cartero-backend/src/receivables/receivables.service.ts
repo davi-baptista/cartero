@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma, Receivable } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateReceivableDto } from './dto/create-receivable.dto';
 import { UpdateReceivableDto } from './dto/update-receivable.dto';
+import { FindReceivablesDto } from './dto/find-receivables.dto';
 
 type ReceivableScope = 'ONE' | 'NEXT' | 'ALL';
 
@@ -16,6 +17,17 @@ export class ReceivablesService {
   ) {}
 
   async create(userId: string, dto: CreateReceivableDto) {
+    let debtorName : string
+    
+    if(dto.personId) {
+      const person = await this.entityValidationService.validatePerson(dto.personId, userId)
+      debtorName = person.name
+    } else if (dto.debtorName) {
+      debtorName = dto.debtorName
+    } else {
+      throw new BadRequestException('Informe debtorName ou personId')
+    }
+    
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
         const installments = dto.installments ? dto.installments : 1;
@@ -34,7 +46,8 @@ export class ReceivablesService {
                 installments > 1
                   ? `${dto.title} ${i + 1}/${installments}`
                   : dto.title,
-              debtorName: dto.debtorName,
+              debtorName,
+              personId: dto.personId,
               amount: dto.amount,
               description: dto.description,
               dueDate: installmentDate,
@@ -62,9 +75,17 @@ export class ReceivablesService {
     return await this.entityValidationService.validateReceivable(id, userId);
   }
 
-  async findAll(userId: string) {
+  async findAll(userId: string, filters: FindReceivablesDto = {}) {
     return await this.prisma.receivable.findMany({
-      where: { userId },
+      where: { 
+        userId,
+        debtorName: filters.debtorName,
+        personId: filters.personId,
+        dueDate: {
+          gte: filters.startDate ? new Date(filters.startDate) : undefined,
+          lte: filters.endDate ? new Date(filters.endDate) : undefined,
+        }, 
+      },
     });
   }
 
@@ -80,6 +101,12 @@ export class ReceivablesService {
     );
     const normalizedScope = this.normalizeScope(scope);
 
+    let debtorName = dto.debtorName
+    if (dto.personId) {
+      const person = await this.entityValidationService.validatePerson(dto.personId, userId)
+      debtorName = person.name
+    }
+
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
         const receivablesToUpdate = await this.getReceivablesByScope(
@@ -92,13 +119,14 @@ export class ReceivablesService {
 
         for (const receivable of receivablesToUpdate) {
           const paidAt =
-            dto.isPaid === true && !receivable.isPaid ? new Date() : 
+            dto.isPaid === true && !receivable.isPaid ? new Date() :
 						dto.isPaid === false && receivable.isPaid ? null : undefined;
 
           const updatedReceivable = await tx.receivable.update({
             where: { id: receivable.id, userId },
             data: {
               ...dto,
+              debtorName,
               dueDate: dto.dueDate ? new Date(dto.dueDate) : receivable.dueDate,
               paidAt,
             },

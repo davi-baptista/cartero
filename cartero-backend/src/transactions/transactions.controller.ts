@@ -32,7 +32,6 @@ export class TransactionsController {
   findAll(@CurrentUser() user: User, @Query() filters: FindTransactionsDto) {
     return this.transactionsService.findAll(user.id, filters);
   }
-
   
   @Patch(':id')
   update(

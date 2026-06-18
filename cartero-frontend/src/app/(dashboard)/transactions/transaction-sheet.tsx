@@ -47,7 +47,7 @@ const schema = z
     description: z.string().optional(),
     installments: z.preprocess(
       (v) => (v === '' || v === undefined || v === null || Number.isNaN(v) ? undefined : Number(v)),
-      z.number().int().min(2).max(36).optional(),
+      z.number().int().min(2).max(64).optional(),
     ),
   })
   .refine(
@@ -293,7 +293,7 @@ export function TransactionSheet({
                 id="installments"
                 type="number"
                 min={2}
-                max={36}
+                max={64}
                 placeholder="Deixe em branco para à vista"
                 aria-invalid={!!errors.installments}
                 {...register('installments')}

@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
 } from 'class-validator';
 
@@ -12,8 +13,13 @@ export class CreateDebtDto {
   @IsString()
   title: string;
 
+  @IsOptional()
   @IsString()
-  creditorName: string;
+  creditorName?: string;
+
+  @IsOptional()
+  @IsUUID()
+  personId?: string;
 
   @IsNumber()
   @Min(0.01)

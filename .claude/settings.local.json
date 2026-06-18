@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(git *)",
+      "Bash(Remove-Item *)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "Bash(npm view *)",
+      "Bash(npx create-next-app@latest cartero-frontend --typescript --eslint --tailwind --src-dir --app --turbopack --import-alias \"@/*\" --yes)",
+      "Bash(npx shadcn@latest init --yes --defaults)",
+      "Bash(npx shadcn@latest add button input label card dialog sheet badge avatar dropdown-menu separator skeleton table sidebar tabs select popover form toast sonner --yes)",
+      "Bash(npx shadcn@latest add button input label card dialog sheet badge avatar dropdown-menu separator skeleton table sidebar tabs select popover form sonner --yes)",
+      "Bash(npx shadcn@latest add form --yes)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(docker exec *)",
+      "WebFetch(domain:impeccable.style)",
+      "Read(//c/Users/davi.inov/.claude/**)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('plugins', d.get\\('skills', {}\\)\\), indent=2\\)\\)\")",
+      "Bash(npx impeccable *)",
+      "Bash(node *)",
+      "Bash(npx next *)"
+    ]
+  }
+}

@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-17T00:00:00Z",
+  "title": "Design System: Cartero",
+  "extensions": {
+    "colorMeta": {
+      "background": {
+        "role": "neutral",
+        "displayName": "Near-Void",
+        "canonical": "oklch(0.145 0 0)",
+        "tonalRamp": [
+          "oklch(0.08 0 0)",
+          "oklch(0.145 0 0)",
+          "oklch(0.205 0 0)",
+          "oklch(0.269 0 0)",
+          "oklch(0.370 0 0)",
+          "oklch(0.500 0 0)",
+          "oklch(0.640 0 0)",
+          "oklch(0.820 0 0)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Elevated Surface",
+        "canonical": "oklch(0.205 0 0)",
+        "tonalRamp": [
+          "oklch(0.08 0 0)",
+          "oklch(0.145 0 0)",
+          "oklch(0.205 0 0)",
+          "oklch(0.269 0 0)",
+          "oklch(0.370 0 0)",
+          "oklch(0.500 0 0)",
+          "oklch(0.640 0 0)",
+          "oklch(0.820 0 0)"
+        ]
+      },
+      "primary": {
+        "role": "primary",
+        "displayName": "Confident Indigo",
+        "canonical": "oklch(0.640 0.210 272)",
+        "tonalRamp": [
+          "oklch(0.150 0.050 272)",
+          "oklch(0.240 0.090 272)",
+          "oklch(0.330 0.130 272)",
+          "oklch(0.420 0.170 272)",
+          "oklch(0.510 0.190 272)",
+          "oklch(0.580 0.200 272)",
+          "oklch(0.640 0.210 272)",
+          "oklch(0.750 0.150 272)"
+        ]
+      },
+      "destructive": {
+        "role": "semantic",
+        "displayName": "Ledger Red",
+        "canonical": "oklch(0.704 0.191 22.216)",
+        "tonalRamp": [
+          "oklch(0.150 0.060 22)",
+          "oklch(0.250 0.090 22)",
+          "oklch(0.350 0.120 22)",
+          "oklch(0.450 0.150 22)",
+          "oklch(0.550 0.170 22)",
+          "oklch(0.640 0.185 22)",
+          "oklch(0.704 0.191 22)",
+          "oklch(0.820 0.110 22)"
+        ]
+      },
+      "positive": {
+        "role": "semantic",
+        "displayName": "Income Green",
+        "canonical": "oklch(0.600 0.150 145)",
+        "tonalRamp": [
+          "oklch(0.150 0.050 145)",
+          "oklch(0.230 0.080 145)",
+          "oklch(0.320 0.110 145)",
+          "oklch(0.420 0.130 145)",
+          "oklch(0.520 0.140 145)",
+          "oklch(0.600 0.150 145)",
+          "oklch(0.690 0.130 145)",
+          "oklch(0.800 0.090 145)"
+        ]
+      },
+      "status-open": {
+        "role": "semantic",
+        "displayName": "Open Blue",
+        "canonical": "oklch(0.600 0.170 220)",
+        "tonalRamp": [
+          "oklch(0.150 0.060 220)",
+          "oklch(0.240 0.090 220)",
+          "oklch(0.330 0.120 220)",
+          "oklch(0.430 0.145 220)",
+          "oklch(0.520 0.160 220)",
+          "oklch(0.600 0.170 220)",
+          "oklch(0.700 0.140 220)",
+          "oklch(0.820 0.090 220)"
+        ]
+      },
+      "status-closed": {
+        "role": "semantic",
+        "displayName": "Closure Amber",
+        "canonical": "oklch(0.720 0.150 60)",
+        "tonalRamp": [
+          "oklch(0.200 0.060 60)",
+          "oklch(0.300 0.090 60)",
+          "oklch(0.400 0.115 60)",
+          "oklch(0.500 0.130 60)",
+          "oklch(0.600 0.140 60)",
+          "oklch(0.680 0.148 60)",
+          "oklch(0.720 0.150 60)",
+          "oklch(0.840 0.100 60)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Page titles only. One per screen. e.g. 'Transações', 'Bancos'." },
+      "title": { "displayName": "Title", "purpose": "Section headings, card titles, sheet titles." },
+      "body": { "displayName": "Body", "purpose": "List content, description text, form field values. Dominant size." },
+      "label": { "displayName": "Label", "purpose": "Form labels, table column headers, badge text, metadata." },
+      "mono": { "displayName": "Mono", "purpose": "Numeric amounts in data tables, invoice references, date strings needing column alignment." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "ease-state", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Default easing for state transitions (hover, focus, active). 150ms duration." },
+      { "name": "ease-enter", "value": "cubic-bezier(0, 0, 0.2, 1)", "purpose": "Panel/sheet entry. 200ms." },
+      { "name": "ease-exit", "value": "cubic-bezier(0.4, 0, 1, 1)", "purpose": "Panel/sheet exit. 150ms." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The singular primary action on any screen. Confident Indigo fill, white text.",
+      "html": "<div style=\"background: oklch(0.145 0 0); padding: 24px; display:flex; gap:8px; border-radius: 8px;\"><button class=\"ds-btn-primary\">Novo lançamento</button><button class=\"ds-btn-primary\" disabled>Desabilitado</button></div>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 10px; background: oklch(0.640 0.210 272); color: oklch(0.985 0 0); font-size: 0.875rem; font-weight: 500; font-family: Geist, system-ui, sans-serif; border-radius: 10px; border: 1px solid transparent; transition: background 150ms cubic-bezier(0.4,0,0.2,1); cursor: pointer; white-space: nowrap; text-decoration: none; } .ds-btn-primary:hover { background: oklch(0.640 0.210 272 / 80%); } .ds-btn-primary:focus-visible { outline: none; border-color: oklch(0.640 0.210 272); box-shadow: 0 0 0 3px oklch(0.640 0.210 272 / 50%); } .ds-btn-primary:active:not(:disabled) { transform: translateY(1px); } .ds-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Navigation-adjacent actions, icon buttons, cancel actions.",
+      "html": "<div style=\"background: oklch(0.145 0 0); padding: 24px; display:flex; gap:8px; border-radius: 8px;\"><button class=\"ds-btn-ghost\">Cancelar</button><button class=\"ds-btn-ghost ds-btn-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"3\" y1=\"12\" x2=\"21\" y2=\"12\"/><line x1=\"3\" y1=\"6\" x2=\"21\" y2=\"6\"/><line x1=\"3\" y1=\"18\" x2=\"21\" y2=\"18\"/></svg></button></div>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; background: transparent; color: oklch(0.985 0 0); font-size: 0.875rem; font-weight: 500; font-family: Geist, system-ui, sans-serif; border-radius: 10px; border: 1px solid transparent; transition: background 150ms cubic-bezier(0.4,0,0.2,1); cursor: pointer; } .ds-btn-ghost:hover { background: oklch(0.269 0 0 / 50%); } .ds-btn-ghost:focus-visible { outline: none; border-color: oklch(0.640 0.210 272); box-shadow: 0 0 0 3px oklch(0.640 0.210 272 / 50%); } .ds-btn-icon { width: 32px; padding: 0; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Container for auth forms, invoice summaries, bank overview. Not for list items.",
+      "html": "<div style=\"background: oklch(0.145 0 0); padding: 24px; border-radius: 8px;\"><div class=\"ds-card\"><div class=\"ds-card-header\"><div class=\"ds-card-title\">Conta Nubank</div><div class=\"ds-card-desc\">Fechamento dia 15 · Vencimento dia 22</div></div><div class=\"ds-card-content\"><span style=\"font-size:1.5rem; font-weight:600; color: oklch(0.985 0 0);\">R$ 2.847,00</span><span style=\"display:block; font-size:0.75rem; color: oklch(0.708 0 0); margin-top: 2px;\">3 transações este mês</span></div></div></div>",
+      "css": ".ds-card { background: oklch(0.205 0 0); border-radius: 14px; outline: 1px solid oklch(1 0 0 / 10%); color: oklch(0.985 0 0); font-family: Geist, system-ui, sans-serif; font-size: 0.875rem; overflow: hidden; } .ds-card-header { padding: 16px 16px 0; } .ds-card-title { font-size: 1rem; font-weight: 500; line-height: 1.4; margin-bottom: 2px; } .ds-card-desc { font-size: 0.875rem; color: oklch(0.708 0 0); } .ds-card-content { padding: 12px 16px 16px; }"
+    },
+    {
+      "name": "Input Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Text input for forms. Transparent bg, hairline border, indigo focus ring.",
+      "html": "<div style=\"background: oklch(0.145 0 0); padding: 24px; display:flex; flex-direction:column; gap:12px; border-radius: 8px; max-width:280px;\"><div class=\"ds-field\"><label class=\"ds-label\">Valor</label><input class=\"ds-input\" type=\"text\" placeholder=\"R$ 0,00\" /></div><div class=\"ds-field\"><label class=\"ds-label\">Descrição</label><input class=\"ds-input\" type=\"text\" placeholder=\"Ex: Supermercado\" aria-invalid=\"true\" /></div></div>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 6px; } .ds-label { font-size: 0.75rem; font-weight: 500; font-family: Geist, system-ui, sans-serif; color: oklch(0.985 0 0); } .ds-input { height: 32px; width: 100%; border-radius: 10px; border: 1px solid oklch(0.260 0 0); background: oklch(1 0 0 / 5%); color: oklch(0.985 0 0); font-size: 0.875rem; font-family: Geist, system-ui, sans-serif; padding: 0 10px; outline: none; transition: border-color 150ms, box-shadow 150ms; box-sizing: border-box; } .ds-input::placeholder { color: oklch(0.708 0 0); } .ds-input:focus { border-color: oklch(0.640 0.210 272); box-shadow: 0 0 0 3px oklch(0.640 0.210 272 / 50%); } .ds-input[aria-invalid='true'] { border-color: oklch(0.704 0.191 22.216); box-shadow: 0 0 0 3px oklch(0.704 0.191 22.216 / 20%); } .ds-input:disabled { opacity: 0.5; cursor: not-allowed; background: oklch(0.220 0 0); }"
+    },
+    {
+      "name": "Invoice Status Badges",
+      "kind": "chip",
+      "refersTo": "badge-status-open",
+      "description": "Four invoice states. Each visually distinct. Tinted fill + matching text. Pill shape.",
+      "html": "<div style=\"background: oklch(0.145 0 0); padding: 24px; display:flex; gap:8px; flex-wrap:wrap; border-radius: 8px;\"><span class=\"ds-badge ds-badge-open\">OPEN</span><span class=\"ds-badge ds-badge-closed\">CLOSED</span><span class=\"ds-badge ds-badge-overdue\">OVERDUE</span><span class=\"ds-badge ds-badge-paid\">PAID</span></div>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; font-family: Geist, system-ui, sans-serif; white-space: nowrap; } .ds-badge-open { background: oklch(0.600 0.170 220 / 15%); color: oklch(0.600 0.170 220); } .ds-badge-closed { background: oklch(0.720 0.150 60 / 15%); color: oklch(0.720 0.150 60); } .ds-badge-overdue { background: oklch(0.704 0.191 22 / 15%); color: oklch(0.704 0.191 22.216); } .ds-badge-paid { background: oklch(0.600 0.150 145 / 15%); color: oklch(0.600 0.150 145); }"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "button-ghost",
+      "description": "Collapsible sidebar with active state in Confident Indigo. Ghost for inactive, indigo tint for current route.",
+      "html": "<div style=\"background: oklch(0.205 0 0); width:220px; height:300px; border-radius:8px; padding:8px; display:flex; flex-direction:column; gap:2px;\"><a href=\"#\" class=\"ds-nav-item ds-nav-active\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3\"/></svg>Transações</a><a href=\"#\" class=\"ds-nav-item\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 22V8l9-6 9 6v14\"/><path d=\"M9 22V12h6v10\"/></svg>Bancos</a><a href=\"#\" class=\"ds-nav-item\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z\"/><line x1=\"7\" y1=\"7\" x2=\"7.01\" y2=\"7\"/></svg>Categorias</a><a href=\"#\" class=\"ds-nav-item\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5\"/><path d=\"M8.5 8.5v.01\"/><path d=\"M16 15.5v.01\"/><path d=\"M12 12v.01\"/><path d=\"M11 17v.01\"/><path d=\"M7 14v.01\"/></svg>Dívidas</a></div>",
+      "css": ".ds-nav-item { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 10px; font-size: 0.875rem; font-family: Geist, system-ui, sans-serif; color: oklch(0.708 0 0); text-decoration: none; transition: background 150ms, color 150ms; } .ds-nav-item:hover { background: oklch(0.269 0 0); color: oklch(0.985 0 0); } .ds-nav-active { background: oklch(0.640 0.210 272 / 15%); color: oklch(0.640 0.210 272); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Precision Ledger",
+    "overview": "Cartero is a personal financial workspace that disappears into the task. The surface is always dark, always spare. Confidence comes from correctness, not decoration: every amount is formatted, every state is labeled, every action is unambiguous.\n\nThis system rejects the entire visual language of consumer finance apps. No green money gradients. No warm cream backgrounds. No gamified pie charts. No purple neobank branding. Cartero is a private ledger — the kind you keep because you care about accuracy.\n\nWhat remains: Geist Sans in a tight, fixed scale; near-black surfaces separated by barely-there borders; and a single Confident Indigo accent that appears only where something needs to be done or is currently active.",
+    "keyCharacteristics": [
+      "Dark-native: every value calibrated for dark backgrounds, no light-mode adaptations",
+      "Signal over noise: the violet accent is rare enough that its presence means something",
+      "Numbers first: monetary amounts receive visual priority — larger, bolder, formatted",
+      "Row-level density: lists use border-b rows, not individual cards",
+      "Semantic color: income green, ledger red, confident indigo — each carries exactly one meaning"
+    ],
+    "rules": [
+      { "name": "The One Voice Rule", "body": "Confident Indigo appears on ≤10% of any given screen. Its rarity is the point — it marks the singular action or active state.", "section": "colors" },
+      { "name": "The No-Warm-Background Rule", "body": "Background is always pure neutral — oklch(0.145 0 0), no chroma. The indigo accent provides all identity; warming the background is the AI cream-and-beige trap.", "section": "colors" },
+      { "name": "The Amount Rule", "body": "Monetary amounts always render as R$ formatted. Positive in Income Green, negative in Ledger Red, neutral in Ledger White. Never raw decimal strings.", "section": "typography" },
+      { "name": "The Fixed Scale Rule", "body": "No clamp(), no fluid typography. Fixed rem values across breakpoints — this is a product UI at consistent viewport widths.", "section": "typography" },
+      { "name": "The Flat-By-Design Rule", "body": "No box-shadow anywhere. Depth is tonal, not shadow-based. If a surface needs to feel on top, lighten it by one tonal step.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use Confident Indigo exclusively for primary buttons, active navigation, and focus rings. Keep coverage below 10% per screen.",
+      "Do format all monetary amounts as R$ 1.234,56 via Intl.NumberFormat('pt-BR').",
+      "Do use row + border-b patterns for transaction lists, debt lists, and receivables.",
+      "Do use Sheets or Dialogs for create/edit flows — never navigate to a new page for a form.",
+      "Do render skeletons during loading on the exact shape of the incoming content.",
+      "Do write empty states that teach the interface, not 'Nothing here.'",
+      "Do show action buttons only on row hover — hidden by default."
+    ],
+    "donts": [
+      "Don't use a warm-tinted background. background is oklch(0.145 0 0) — pure neutral, zero chroma.",
+      "Don't add a light mode. The dark class is hardcoded; no toggle exists or should.",
+      "Don't use generic SaaS cream/beige aesthetics — warm neutral backgrounds, rounded-everything, soft pastels.",
+      "Don't adopt fintech green as the primary accent. Green is reserved for income/positive semantic meaning only.",
+      "Don't use banking blue (navy + gold) — no corporate trust-signal palette.",
+      "Don't gamify the interface — no bright category-color splashes, no playful illustrations, no animated celebration states.",
+      "Don't use box-shadow or drop-shadow. Depth is tonal.",
+      "Don't apply Confident Indigo to more than one distinct element per screen.",
+      "Don't use gradient text (background-clip: text). Never.",
+      "Don't add border-left colored stripes as card accents."
+    ]
+  }
+}

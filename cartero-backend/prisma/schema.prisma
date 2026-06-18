@@ -22,6 +22,7 @@ model User {
   invoices     Invoice[]
   debts        Debt[]
   receivables  Receivable[]
+  people       Person[]
 }
 
 model Bank {
@@ -91,6 +92,7 @@ model Invoice {
 model Debt {
   id             String    @id @default(uuid())
   userId         String
+  personId       String?
   parentId       String?
   title          String
   creditorName   String
@@ -103,12 +105,14 @@ model Debt {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user   User    @relation(fields: [userId], references: [id])
+  person Person? @relation(fields: [personId], references: [id])
 }
 
 model Receivable {
   id          String    @id @default(uuid())
   userId      String
+  personId    String?
   parentId    String?
   title       String
   debtorName  String
@@ -120,7 +124,20 @@ model Receivable {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user   User    @relation(fields: [userId], references: [id])
+  person Person? @relation(fields: [personId], references: [id])
+}
+
+model Person {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+
+  user        User         @relation(fields: [userId], references: [id])
+  debts       Debt[]
+  receivables Receivable[]
 }
 
 enum TransactionType {

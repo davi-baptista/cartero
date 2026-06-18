@@ -98,10 +98,27 @@ Para faturas CLOSED/PAID, essas datas são "congeladas" para manter consistênci
 
 ### 2. Abas Diferenciais
 
+#### Pessoa (Person)
+
+- `id` (UUID, PK)
+- `user_id` (UUID, FK)
+- `name` (string, obrigatório)
+- `created_at` (timestamp)
+- `updated_at` (timestamp)
+
+**Comportamento:**
+
+- Entidade de referência simples — agrupa dívidas e recebíveis sob um contato nomeado
+- Opcional em `debts` e `receivables` (campo `person_id` — nulo significa entrada avulsa sem vínculo)
+- Não interfere no comportamento individual de dívidas e recebíveis: cada registro continua existindo, sendo pago e exibido normalmente
+- Serve como filtro nas páginas de Dívidas e A Receber
+- A página `/persons` mostra o extrato consolidado por pessoa
+
 #### Dívidas Externas (Debts)
 
 - `id` (UUID, PK)
 - `user_id` (UUID, FK)
+- `person_id` (UUID, FK, opcional — vincula ao cadastro de Pessoa)
 - `creditor_name` (string, obrigatório - nome de quem deve)
 - `title` (string, obrigatório - texto principal exibido na UI, ex: "Empréstimo notebook 2/6")
 - `amount` (decimal, obrigatório)
@@ -126,6 +143,7 @@ Para faturas CLOSED/PAID, essas datas são "congeladas" para manter consistênci
 
 - `id` (UUID, PK)
 - `user_id` (UUID, FK)
+- `person_id` (UUID, FK, opcional — vincula ao cadastro de Pessoa)
 - `debtor_name` (string, obrigatório - nome de quem deve)
 - `title` (string, obrigatório - texto principal exibido na UI, ex: "Venda parcelada 1/3")
 - `amount` (decimal, obrigatório)
@@ -145,14 +163,49 @@ Para faturas CLOSED/PAID, essas datas são "congeladas" para manter consistênci
 - **Parcelamento:** Cada parcela = 1 registro separado. O frontend exibe `title` como "Nome x/y" (ex: "Venda parcelada 1/3"). Ao criar receivable parcelado, gera N registros de uma vez (igual às transações)
 - **Deleção de parcelas:** Quando o usuário tenta deletar uma parcela, o sistema pergunta o que fazer (igual às transações)
 
-### 3. Sistema de Alertas
+### 3. Pessoas (Persons)
+
+Aba dedicada ao extrato consolidado por pessoa. Mostra todas as dívidas e recebíveis vinculados a uma pessoa, com o saldo líquido resultante.
+
+**Endpoint principal:** `GET /persons/:id/statement`
+
+**Query params opcionais:**
+- `startDate` — data início (filtra por `due_date`)
+- `endDate` — data fim (filtra por `due_date`)
+- Sem filtro de data → retorna tudo (padrão)
+
+**Resposta:**
+```json
+{
+  "person": { "id": "...", "name": "Fabricio" },
+  "totalDebts": 200.00,        // soma de debts pendentes vinculadas
+  "totalReceivables": 150.00,  // soma de receivables pendentes vinculadas
+  "netBalance": -50.00,        // totalReceivables - totalDebts (negativo = você deve)
+  "debts": [...],              // lista de debts com isPaid, amount, dueDate, title
+  "receivables": [...]         // lista de receivables com isPaid, amount, dueDate, title
+}
+```
+
+**Regras de saldo:**
+- `netBalance = totalReceivables - totalDebts`
+- Negativo → você deve mais do que te devem
+- Positivo → te devem mais do que você deve
+- Zero → quitado
+
+**Interface (frontend):**
+- Aba `/persons` na sidebar: lista de pessoas cadastradas com nome e `netBalance` exibido (verde se positivo, vermelho se negativo)
+- Ao clicar numa pessoa → sheet ou página de detalhes com filtro de data opcional e listas separadas de dívidas e recebíveis dessa pessoa
+- Filtro por pessoa nas páginas `/debts` e `/receivables` via `?personId=` na query string
+- Ao criar/editar dívida ou recebível, select opcional de pessoa (com opção de criar nova inline)
+
+### 4. Sistema de Alertas
 
 #### Lógica de Alertas (ao abrir o app)
 
 1. **Faturas vencidas:** Buscar faturas com `due_date = hoje` e `status != PAID`
 2. **Dívidas externas:** Buscar dívidas com `due_date = hoje`, `is_alert_enabled = true` e `is_paid = false`
 
-### 4. Autenticação
+### 5. Autenticação
 
 - JWT (access token + refresh token)
 - Registro/Login
@@ -269,6 +322,7 @@ cartero-frontend/
 - ✅ Prisma configurado
 - ✅ Schema com models principais criado
 - ✅ Auth, Users, Banks, Categories, Transactions, Invoices, Debts e Receivables completos
+- ⏳ Persons (`GET/POST/PATCH/DELETE /persons` + `GET /persons/:id/statement`) pendente
 - ✅ `CommonModule` e `EntityValidationService` criados
 - ✅ Parcelamento implementado em Transactions, Debts e Receivables
 - ✅ Filtros implementados em `GET /transactions`
@@ -288,11 +342,17 @@ cartero-frontend/
 - ✅ Faturas (`/banks/:id/invoices`) com sheet de detalhes colorido por status
 - ✅ Dívidas (`/debts`)
 - ✅ A Receber (`/receivables`)
+- ⏳ Pessoas (`/persons`) pendente
 
 ### Próximos passos
 
+- [ ] Backend: Persons (CRUD + `GET /persons/:id/statement`)
+- [ ] Backend: Atualizar Debts e Receivables com `person_id` FK
 - [ ] Backend: Alerts (`GET /alerts`)
 - [ ] Backend: Statement (`GET /statement`)
+- [ ] Frontend: Aba Pessoas (`/persons`)
+- [ ] Frontend: Filtro por pessoa em Dívidas e A Receber
+- [ ] Frontend: Select de pessoa nos forms de dívida e recebível
 - [ ] Deploy: Railway + Vercel
 
 ## Frontend: Design e Visual
@@ -345,8 +405,16 @@ cartero-frontend/
 | Faturas | `/banks/:id/invoices` | `GET /banks/:id/invoices`, `GET /invoices/:id`, `PATCH /invoices/:id` |
 | Dívidas | `/debts` | `GET /debts`, `POST /debts`, `PATCH /debts/:id`, `DELETE /debts/:id` |
 | A Receber | `/receivables` | `GET /receivables`, `POST /receivables`, `PATCH /receivables/:id`, `DELETE /receivables/:id` |
+| Pessoas | `/persons` | `GET /persons`, `POST /persons`, `PATCH /persons/:id`, `DELETE /persons/:id`, `GET /persons/:id/statement` |
 
 ### Rotas com filtros
+
+**`GET /debts`** e **`GET /receivables`** — aceitam filtro opcional:
+- `personId` — UUID da pessoa para filtrar entradas vinculadas
+
+**`GET /persons/:id/statement`** — parâmetros opcionais:
+- `startDate` — data início (filtra `due_date`)
+- `endDate` — data fim (filtra `due_date`)
 
 **`GET /transactions`** — todos os parâmetros são opcionais via query string:
 - `startDate` — data início (ISO string, ex: `2026-05-01`)

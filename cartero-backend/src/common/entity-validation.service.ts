@@ -91,4 +91,19 @@ export class EntityValidationService {
 
     return receivable;
   }
+
+  async validatePerson(personId: string, userId: string) {
+    const person = await this.prisma.person.findUnique({
+      where: {
+        id: personId,
+        userId,
+      },
+    });
+
+    if (!person) {
+      throw new NotFoundException('Pessoa não encontrada');
+    }
+
+    return person;
+  }
 }
