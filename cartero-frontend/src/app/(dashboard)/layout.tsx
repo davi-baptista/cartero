@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useAuth } from '@/providers/auth-provider'
 import { Skeleton } from '@/components/ui/skeleton'
+import { NavigationProgress } from '@/components/ui/navigation-progress'
 
 function SidebarToggle() {
   const { state, toggleSidebar } = useSidebar()
@@ -94,6 +95,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <SidebarProvider>
+      <NavigationProgress />
       <div className="flex min-h-screen w-full">
         <Sidebar collapsible="icon">
           {/* Brand */}
