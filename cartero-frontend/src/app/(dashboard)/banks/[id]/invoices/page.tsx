@@ -35,7 +35,6 @@ import {
   formatCurrency,
   formatMonthYear,
   isExpense,
-  TRANSACTION_TYPE_LABELS,
 } from '@/lib/formatters'
 import { parseDateOnly } from '@/lib/date'
 import { resolveCategoryIcon } from '@/lib/category-icons'
@@ -193,31 +192,23 @@ function TxRow({ tx }: { tx: Transaction }) {
 
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-[13px] font-medium leading-tight">{tx.title}</span>
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className="shrink-0">{TRANSACTION_TYPE_LABELS[tx.type]}</span>
-          {tx.category && (
-            <>
-              <span aria-hidden>·</span>
-              {(() => {
-                const { Icon: CatIcon } = resolveCategoryIcon(tx.category.icon)
-                return (
-                  <span className="flex min-w-0 items-center gap-1 truncate">
-                    <CatIcon
-                      className="size-3 shrink-0"
-                      style={tx.category.color ? { color: tx.category.color } : undefined}
-                    />
-                    <span className="truncate">{tx.category.name}</span>
-                  </span>
-                )
-              })()}
-            </>
-          )}
-        </div>
+        {tx.category && (() => {
+          const { Icon: CatIcon } = resolveCategoryIcon(tx.category.icon)
+          return (
+            <span className="flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground">
+              <CatIcon
+                className="size-3 shrink-0"
+                style={tx.category.color ? { color: tx.category.color } : undefined}
+              />
+              <span className="truncate">{tx.category.name}</span>
+            </span>
+          )
+        })()}
       </div>
 
       <div className="shrink-0 text-right">
         <span
-          className="font-mono text-sm font-semibold tabular-nums"
+          className="text-[14px] font-semibold tabular-nums tracking-[-0.01em]"
           style={{ color: expense ? undefined : INCOME_COLOR }}
         >
           {expense ? `−${formatCurrency(Number(tx.amount))}` : `+${formatCurrency(Number(tx.amount))}`}
