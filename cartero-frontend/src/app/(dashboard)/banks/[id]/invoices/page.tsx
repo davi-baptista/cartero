@@ -168,7 +168,7 @@ function InvoiceRow({
       {/* Total */}
       <p
         className={cn(
-          'shrink-0 font-mono text-[17px] font-semibold tabular-nums tracking-tight',
+          'shrink-0 text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
           invoice.status === InvoiceStatus.OVERDUE ? 'text-destructive' : '',
         )}
       >
@@ -306,7 +306,7 @@ function InvoiceDetailSheet({
                 <StatusBadge status={invoice.status} />
               </div>
               {bank && (
-                <SheetDescription className="text-[12px]">
+                <SheetDescription className="text-[12px] text-foreground/55">
                   Fecha {calcCloseDate(bank, invoice.month, invoice.year)} · Vence{' '}
                   {calcDueDate(bank, invoice.month, invoice.year)}
                 </SheetDescription>
@@ -316,8 +316,8 @@ function InvoiceDetailSheet({
             {/* Total + action */}
             <div className="flex items-center justify-between px-6 py-4">
               <div>
-                <p className="text-[11px] text-muted-foreground">Total da fatura</p>
-                <p className="mt-0.5 font-mono text-2xl font-semibold tabular-nums tracking-tight">
+                <p className="text-xs text-muted-foreground">Total da fatura</p>
+                <p className="mt-1 text-[28px] font-semibold tabular-nums leading-none tracking-[-0.02em]">
                   {formatCurrency(total)}
                 </p>
               </div>
