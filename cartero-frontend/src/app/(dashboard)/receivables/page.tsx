@@ -404,27 +404,25 @@ export default function ReceivablesPage() {
           <p className="mt-0.5 text-sm text-muted-foreground">
             Acompanhe cobranças e valores que têm para receber
           </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {!isLoading && receivables && receivables.length > 0 && (
-            <div className="text-right text-sm">
+          {!isLoading && summary.pending > 0 && (
+            <p className="mt-1.5 text-sm">
               <span className="text-muted-foreground">A receber </span>
               <span className="font-medium tabular-nums tracking-[-0.01em] text-receivable">
                 {formatCurrency(summary.pending)}
               </span>
-            </div>
+            </p>
           )}
-          <Button
-            onClick={() => {
-              setEditReceivable(null)
-              setEditScope(null)
-              setSheetOpen(true)
-            }}
-          >
-            <Plus className="size-4" />
-            Nova cobrança
-          </Button>
         </div>
+        <Button
+          onClick={() => {
+            setEditReceivable(null)
+            setEditScope(null)
+            setSheetOpen(true)
+          }}
+        >
+          <Plus className="size-4" />
+          Nova cobrança
+        </Button>
       </div>
 
       {/* Filters */}

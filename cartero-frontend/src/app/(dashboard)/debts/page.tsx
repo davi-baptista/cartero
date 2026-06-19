@@ -413,32 +413,30 @@ export default function DebtsPage() {
           <p className="mt-0.5 text-sm text-muted-foreground">
             Controle suas dívidas externas e parcelamentos
           </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {!isLoading && debts && debts.length > 0 && (
-            <div className="text-right text-sm">
+          {!isLoading && summary.pending > 0 && (
+            <p className="mt-1.5 text-sm">
               <span className="text-muted-foreground">A pagar </span>
               <span className="font-medium tabular-nums tracking-[-0.01em] text-destructive">
                 {formatCurrency(summary.pending)}
               </span>
               {summary.overdueCount > 0 && (
-                <p className="mt-0.5 text-xs font-medium text-destructive">
-                  {summary.overdueCount} vencida{summary.overdueCount > 1 ? 's' : ''}
-                </p>
+                <span className="ml-2 text-xs font-medium text-destructive">
+                  · {summary.overdueCount} vencida{summary.overdueCount > 1 ? 's' : ''}
+                </span>
               )}
-            </div>
+            </p>
           )}
-          <Button
-            onClick={() => {
-              setEditDebt(null)
-              setEditScope(null)
-              setSheetOpen(true)
-            }}
-          >
-            <Plus className="size-4" />
-            Nova dívida
-          </Button>
         </div>
+        <Button
+          onClick={() => {
+            setEditDebt(null)
+            setEditScope(null)
+            setSheetOpen(true)
+          }}
+        >
+          <Plus className="size-4" />
+          Nova dívida
+        </Button>
       </div>
 
       {/* Filters */}
