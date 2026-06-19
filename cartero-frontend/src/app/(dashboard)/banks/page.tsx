@@ -280,7 +280,7 @@ export default function BanksPage() {
     onError: () => toast.error('Erro ao excluir banco'),
   })
 
-  function handleSheetSubmit(data: BankFormData) {
+  async function handleSheetSubmit(data: BankFormData) {
     if (editBank) {
       updateMut.mutate({ id: editBank.id, data })
     } else {
