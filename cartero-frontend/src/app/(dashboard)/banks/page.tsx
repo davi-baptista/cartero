@@ -77,7 +77,7 @@ function InvoicePill({ bank }: { bank: Bank }) {
     const diff = Math.ceil((close.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     const label = diff <= 0 ? 'Fecha hoje' : diff === 1 ? 'Fecha amanhã' : `Fecha em ${diff}d`
     return (
-      <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-[11px] text-muted-foreground">
+      <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
         {label}{open.totalAmount > 0 ? ` · ${formatCurrency(open.totalAmount)}` : ''}
       </span>
     )
@@ -113,7 +113,7 @@ function BankRow({
   return (
     <div className="group flex items-center gap-4 px-2 py-4">
       {/* Monogram */}
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/40 text-[14px] font-semibold text-muted-foreground select-none">
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-[14px] font-semibold text-primary select-none">
         {initial}
       </div>
 
