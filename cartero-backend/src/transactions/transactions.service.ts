@@ -309,12 +309,12 @@ export class TransactionsService {
   ) {
     let month = transactionDate.getUTCMonth() + 1;
     let year = transactionDate.getUTCFullYear();
-
+    
     if (transactionDate.getUTCDate() >= invoiceCloseDate) {
-      month = (month % 12) + 1;
-    } else if (month === 0) {
-      month = 12;
-      year -= 1;
+      month = (month % 12) + 1; 
+      if (month === 1) {
+        year += 1;
+      }
     }
 
     let invoice = await tx.invoice.findFirst({
