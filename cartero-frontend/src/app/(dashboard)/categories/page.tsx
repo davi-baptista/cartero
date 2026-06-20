@@ -179,9 +179,9 @@ export default function CategoriesPage() {
 
   async function handleSheetSubmit(data: CategoryFormData) {
     if (editCategory) {
-      updateMut.mutate({ id: editCategory.id, data })
+      await updateMut.mutateAsync({ id: editCategory.id, data })
     } else {
-      createMut.mutate(data)
+      await createMut.mutateAsync(data)
     }
   }
 

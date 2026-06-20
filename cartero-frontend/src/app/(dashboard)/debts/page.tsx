@@ -393,9 +393,9 @@ export default function DebtsPage() {
     if (editDebt) {
       const { installments, ...payload } = data
       void installments
-      updateMut.mutate({ id: editDebt.id, payload, scope: scope ?? undefined })
+      await updateMut.mutateAsync({ id: editDebt.id, payload, scope: scope ?? undefined })
     } else {
-      createMut.mutate(data)
+      await createMut.mutateAsync(data)
     }
   }
 

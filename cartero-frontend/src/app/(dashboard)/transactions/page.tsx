@@ -244,7 +244,13 @@ export default function TransactionsPage() {
   const qc = useQueryClient()
 
   // ── State ──
-  const [filters, setFilters] = useState<FilterState>({})
+  const [filters, setFilters] = useState<FilterState>(() => {
+    const d = new Date()
+    return {
+      startDate: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`,
+      endDate: new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10),
+    }
+  })
   const [bankFilter, setBankFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
 
@@ -348,9 +354,9 @@ export default function TransactionsPage() {
     if (editTx) {
       const { installments, ...payload } = data
       void installments
-      updateMut.mutate({ id: editTx.id, payload, scope: scope ?? undefined })
+      await updateMut.mutateAsync({ id: editTx.id, payload, scope: scope ?? undefined })
     } else {
-      createMut.mutate(data)
+      await createMut.mutateAsync(data)
     }
   }
 
@@ -575,8 +581,6 @@ export default function TransactionsPage() {
         }}
         editTarget={editTx}
         editScope={editScope}
-        banks={banks}
-        categories={categories}
         onSubmit={handleSheetSubmit}
       />
 

@@ -1,5 +1,9 @@
 # Cartero - Sistema de Gestão Financeira Pessoal
 
+## Regras para o Assistente
+
+- **Não mexa no backend sem permissão explícita do usuário.** Toda alteração em `cartero-backend/` precisa ser solicitada diretamente. O usuário cuida do backend.
+
 ## Stack
 
 - **Backend:** Nest.js · PostgreSQL (Docker) · Prisma

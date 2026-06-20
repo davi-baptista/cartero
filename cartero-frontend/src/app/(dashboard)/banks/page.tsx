@@ -282,9 +282,9 @@ export default function BanksPage() {
 
   async function handleSheetSubmit(data: BankFormData) {
     if (editBank) {
-      updateMut.mutate({ id: editBank.id, data })
+      await updateMut.mutateAsync({ id: editBank.id, data })
     } else {
-      createMut.mutate(data)
+      await createMut.mutateAsync(data)
     }
   }
 

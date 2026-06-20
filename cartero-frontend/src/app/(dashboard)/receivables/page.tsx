@@ -384,9 +384,9 @@ export default function ReceivablesPage() {
     if (editReceivable) {
       const { installments, ...payload } = data
       void installments
-      updateMut.mutate({ id: editReceivable.id, payload, scope: scope ?? undefined })
+      await updateMut.mutateAsync({ id: editReceivable.id, payload, scope: scope ?? undefined })
     } else {
-      createMut.mutate(data)
+      await createMut.mutateAsync(data)
     }
   }
 

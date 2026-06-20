@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm, useWatch, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Loader2 } from 'lucide-react'
+import { Check, Loader2, Plus, X } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Sheet,
   SheetContent,
@@ -25,7 +26,9 @@ import {
 import { DatePicker } from '@/components/ui/date-picker'
 import { TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
 import { resolveCategoryIcon } from '@/lib/category-icons'
-import type { Transaction, Bank, Category, InstallmentScope } from '@/types'
+import { getBanks, createBank } from '@/services/banks.service'
+import { getCategories, createCategory } from '@/services/categories.service'
+import type { Transaction, InstallmentScope } from '@/types'
 import { TransactionType } from '@/types'
 
 const transactionTypeValues = [
@@ -62,8 +65,6 @@ interface TransactionSheetProps {
   onOpenChange: (open: boolean) => void
   editTarget: Transaction | null
   editScope: InstallmentScope | null
-  banks: Bank[]
-  categories: Category[]
   onSubmit: (data: TransactionFormData, scope: InstallmentScope | null) => Promise<void>
 }
 
@@ -72,27 +73,103 @@ export function TransactionSheet({
   onOpenChange,
   editTarget,
   editScope,
-  banks,
-  categories,
   onSubmit,
 }: TransactionSheetProps) {
   const isEditing = editTarget !== null
+  const submittingRef = useRef(false)
+  const qc = useQueryClient()
 
+  // ── Queries ──
+  const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: getBanks })
+  const { data: categories = [] } = useQuery({ queryKey: ['categories'], queryFn: getCategories })
+
+  // ── Inline bank create ──
+  const [showBankCreate, setShowBankCreate] = useState(false)
+  const [newBank, setNewBank] = useState({ name: '', closeDate: '', dueDate: '' })
+  const bankNameRef = useRef<HTMLInputElement>(null)
+
+  const createBankMut = useMutation({
+    mutationFn: createBank,
+    onSuccess: (bank) => {
+      qc.invalidateQueries({ queryKey: ['banks'] })
+      setValue('bankId', bank.id)
+      setShowBankCreate(false)
+      setNewBank({ name: '', closeDate: '', dueDate: '' })
+    },
+  })
+
+  function handleOpenBankCreate() {
+    setShowBankCreate(true)
+    setTimeout(() => bankNameRef.current?.focus(), 0)
+  }
+
+  function handleConfirmBankCreate() {
+    const name = newBank.name.trim()
+    const close = Number(newBank.closeDate)
+    const due = Number(newBank.dueDate)
+    if (!name || !close || !due) return
+    createBankMut.mutate({ name, invoiceCloseDate: close, invoiceDueDate: due })
+  }
+
+  // ── Inline category create ──
+  const [showCategoryCreate, setShowCategoryCreate] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const categoryNameRef = useRef<HTMLInputElement>(null)
+
+  const createCategoryMut = useMutation({
+    mutationFn: createCategory,
+    onSuccess: (category) => {
+      qc.invalidateQueries({ queryKey: ['categories'] })
+      setValue('categoryId', category.id)
+      setShowCategoryCreate(false)
+      setNewCategoryName('')
+    },
+  })
+
+  function handleOpenCategoryCreate() {
+    setShowCategoryCreate(true)
+    setTimeout(() => categoryNameRef.current?.focus(), 0)
+  }
+
+  function handleConfirmCategoryCreate() {
+    const name = newCategoryName.trim()
+    if (!name) return
+    createCategoryMut.mutate({ name })
+  }
+
+  // ── Form ──
   const {
     register,
     handleSubmit,
     control,
     reset,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<TransactionFormData>({
     resolver: zodResolver(schema) as unknown as Resolver<TransactionFormData>,
-    defaultValues: { bankId: '', categoryId: '', type: TransactionType.PIX, title: '', amount: 0, date: '', description: '', installments: undefined },
+    defaultValues: {
+      bankId: '',
+      categoryId: '',
+      type: TransactionType.PIX,
+      title: '',
+      amount: 0,
+      date: '',
+      description: '',
+      installments: undefined,
+    },
   })
 
   const selectedType = useWatch({ control, name: 'type' })
+  const selectedBankId = useWatch({ control, name: 'bankId' })
+  const selectedCategoryId = useWatch({ control, name: 'categoryId' })
 
   useEffect(() => {
     if (open) {
+      submittingRef.current = false
+      setShowBankCreate(false)
+      setShowCategoryCreate(false)
+      setNewBank({ name: '', closeDate: '', dueDate: '' })
+      setNewCategoryName('')
       if (editTarget) {
         reset({
           bankId: editTarget.bankId,
@@ -119,8 +196,19 @@ export function TransactionSheet({
   }, [open, editTarget, reset])
 
   async function handleFormSubmit(data: TransactionFormData) {
-    await onSubmit(data, editScope)
+    if (submittingRef.current) return
+    submittingRef.current = true
+    try {
+      await onSubmit(data, editScope)
+      // On success: keep ref=true — sheet will close, ref resets on next open
+    } catch (err) {
+      submittingRef.current = false // On error: allow retry
+      throw err
+    }
   }
+
+  const selectedBank = banks.find((b) => b.id === selectedBankId)
+  const selectedCategory = categories.find((c) => c.id === selectedCategoryId)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -212,76 +300,188 @@ export function TransactionSheet({
           {/* Bank */}
           <div className="space-y-1.5">
             <Label>Banco</Label>
-            <Controller
-              control={control}
-              name="bankId"
-              render={({ field }) => (
-                <Select value={field.value ?? ''} onValueChange={field.onChange}>
-                  <SelectTrigger className="w-full" aria-invalid={!!errors.bankId}>
-                    <span data-slot="select-value" className="flex flex-1 items-center text-left text-sm">
-                      {field.value
-                        ? (banks.find((b) => b.id === field.value)?.name ?? field.value)
-                        : <span className="text-muted-foreground">Selecione o banco</span>}
-                    </span>
-                  </SelectTrigger>
-                  <SelectContent side="bottom" alignItemWithTrigger={false}>
-                    {banks.map((b) => (
-                      <SelectItem key={b.id} value={b.id}>
-                        {b.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            <div className="space-y-2">
+              <Controller
+                control={control}
+                name="bankId"
+                render={({ field }) => (
+                  <Select value={field.value ?? ''} onValueChange={field.onChange}>
+                    <SelectTrigger className="w-full" aria-invalid={!!errors.bankId}>
+                      <span data-slot="select-value" className="flex flex-1 items-center text-left text-sm">
+                        {selectedBank
+                          ? selectedBank.name
+                          : <span className="text-muted-foreground">Selecione o banco</span>}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      {banks.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+
+              {showBankCreate ? (
+                <div className="space-y-1.5">
+                  <Input
+                    ref={bankNameRef}
+                    value={newBank.name}
+                    onChange={(e) => setNewBank((b) => ({ ...b, name: e.target.value }))}
+                    placeholder="Nome do banco"
+                    className="h-8 text-sm"
+                  />
+                  <div className="flex gap-1.5">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={newBank.closeDate}
+                      onChange={(e) => setNewBank((b) => ({ ...b, closeDate: e.target.value }))}
+                      placeholder="Dia fechamento"
+                      className="h-8 text-sm"
+                    />
+                    <Input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={newBank.dueDate}
+                      onChange={(e) => setNewBank((b) => ({ ...b, dueDate: e.target.value }))}
+                      placeholder="Dia vencimento"
+                      className="h-8 text-sm"
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0"
+                      disabled={!newBank.name.trim() || !newBank.closeDate || !newBank.dueDate || createBankMut.isPending}
+                      onClick={handleConfirmBankCreate}
+                      aria-label="Confirmar"
+                    >
+                      {createBankMut.isPending
+                        ? <Loader2 className="size-3.5 animate-spin" />
+                        : <Check className="size-3.5" />}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => { setShowBankCreate(false); setNewBank({ name: '', closeDate: '', dueDate: '' }) }}
+                      aria-label="Cancelar"
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleOpenBankCreate}
+                  className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Plus className="size-3" />
+                  Novo banco
+                </button>
               )}
-            />
+            </div>
             {errors.bankId && <p className="text-xs text-destructive">{errors.bankId.message}</p>}
           </div>
 
           {/* Category */}
           <div className="space-y-1.5">
             <Label>Categoria</Label>
-            <Controller
-              control={control}
-              name="categoryId"
-              render={({ field }) => (
-                <Select value={field.value ?? ''} onValueChange={field.onChange}>
-                  <SelectTrigger className="w-full" aria-invalid={!!errors.categoryId}>
-                    <span data-slot="select-value" className="flex flex-1 items-center gap-1.5 text-left text-sm">
-                      {field.value ? (() => {
-                        const cat = categories.find((c) => c.id === field.value)
-                        if (!cat) return <span className="text-muted-foreground">Selecione a categoria</span>
-                        const { Icon: CatIcon } = resolveCategoryIcon(cat.icon)
+            <div className="space-y-2">
+              <Controller
+                control={control}
+                name="categoryId"
+                render={({ field }) => (
+                  <Select value={field.value ?? ''} onValueChange={field.onChange}>
+                    <SelectTrigger className="w-full" aria-invalid={!!errors.categoryId}>
+                      <span data-slot="select-value" className="flex flex-1 items-center gap-1.5 text-left text-sm">
+                        {selectedCategory ? (() => {
+                          const { Icon: CatIcon } = resolveCategoryIcon(selectedCategory.icon)
+                          return (
+                            <>
+                              <CatIcon
+                                className="size-3.5 shrink-0"
+                                style={selectedCategory.color ? { color: selectedCategory.color } : undefined}
+                              />
+                              {selectedCategory.name}
+                            </>
+                          )
+                        })() : <span className="text-muted-foreground">Selecione a categoria</span>}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      {categories.map((c) => {
+                        const { Icon: CatIcon } = resolveCategoryIcon(c.icon)
                         return (
-                          <>
-                            <CatIcon
-                              className="size-3.5 shrink-0"
-                              style={cat.color ? { color: cat.color } : undefined}
-                            />
-                            {cat.name}
-                          </>
+                          <SelectItem key={c.id} value={c.id}>
+                            <span className="flex items-center gap-2">
+                              <CatIcon
+                                className="size-3.5 shrink-0"
+                                style={c.color ? { color: c.color } : undefined}
+                              />
+                              {c.name}
+                            </span>
+                          </SelectItem>
                         )
-                      })() : <span className="text-muted-foreground">Selecione a categoria</span>}
-                    </span>
-                  </SelectTrigger>
-                  <SelectContent side="bottom" alignItemWithTrigger={false}>
-                    {categories.map((c) => {
-                      const { Icon: CatIcon } = resolveCategoryIcon(c.icon)
-                      return (
-                        <SelectItem key={c.id} value={c.id}>
-                          <span className="flex items-center gap-2">
-                            <CatIcon
-                              className="size-3.5 shrink-0"
-                              style={c.color ? { color: c.color } : undefined}
-                            />
-                            {c.name}
-                          </span>
-                        </SelectItem>
-                      )
-                    })}
-                  </SelectContent>
-                </Select>
+                      })}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+
+              {showCategoryCreate ? (
+                <div className="flex gap-1.5">
+                  <Input
+                    ref={categoryNameRef}
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="Nome da categoria"
+                    className="h-8 text-sm"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); handleConfirmCategoryCreate() }
+                      if (e.key === 'Escape') { setShowCategoryCreate(false); setNewCategoryName('') }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 shrink-0"
+                    disabled={!newCategoryName.trim() || createCategoryMut.isPending}
+                    onClick={handleConfirmCategoryCreate}
+                    aria-label="Confirmar"
+                  >
+                    {createCategoryMut.isPending
+                      ? <Loader2 className="size-3.5 animate-spin" />
+                      : <Check className="size-3.5" />}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 shrink-0"
+                    onClick={() => { setShowCategoryCreate(false); setNewCategoryName('') }}
+                    aria-label="Cancelar"
+                  >
+                    <X className="size-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleOpenCategoryCreate}
+                  className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Plus className="size-3" />
+                  Nova categoria
+                </button>
               )}
-            />
+            </div>
             {errors.categoryId && <p className="text-xs text-destructive">{errors.categoryId.message}</p>}
           </div>
 
@@ -319,7 +519,12 @@ export function TransactionSheet({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button type="submit" form="transaction-form" disabled={isSubmitting}>
+          <Button
+            type="submit"
+            form="transaction-form"
+            disabled={isSubmitting}
+            onClick={(e) => { if (submittingRef.current) e.preventDefault() }}
+          >
             {isSubmitting && <Loader2 className="size-4 animate-spin" />}
             {isEditing ? 'Salvar alterações' : 'Criar transação'}
           </Button>

@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm, useWatch, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Loader2 } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { Check, Loader2, Plus, X } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Sheet,
   SheetContent,
@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { getPersons } from '@/services/persons.service'
+import { createPerson, getPersons } from '@/services/persons.service'
 import { cn } from '@/lib/utils'
 import type { Debt, InstallmentScope } from '@/types'
 
@@ -63,10 +63,25 @@ interface DebtSheetProps {
 export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit }: DebtSheetProps) {
   const isEditing = editTarget !== null
   const [creditorMode, setCreditorMode] = useState<CreditorMode>('manual')
+  const [showInlineCreate, setShowInlineCreate] = useState(false)
+  const [newPersonName, setNewPersonName] = useState('')
+  const inlineInputRef = useRef<HTMLInputElement>(null)
+
+  const queryClient = useQueryClient()
 
   const { data: persons = [], isLoading: personsLoading } = useQuery({
     queryKey: ['persons'],
     queryFn: getPersons,
+  })
+
+  const createPersonMutation = useMutation({
+    mutationFn: createPerson,
+    onSuccess: (person) => {
+      queryClient.invalidateQueries({ queryKey: ['persons'] })
+      setValue('personId', person.id)
+      setShowInlineCreate(false)
+      setNewPersonName('')
+    },
   })
 
   const {
@@ -122,11 +137,29 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit 
 
   function handleModeChange(mode: CreditorMode) {
     setCreditorMode(mode)
+    setShowInlineCreate(false)
+    setNewPersonName('')
     if (mode === 'person') {
       setValue('creditorName', '')
     } else {
       setValue('personId', undefined)
     }
+  }
+
+  function handleOpenInlineCreate() {
+    setShowInlineCreate(true)
+    setTimeout(() => inlineInputRef.current?.focus(), 0)
+  }
+
+  function handleCancelInlineCreate() {
+    setShowInlineCreate(false)
+    setNewPersonName('')
+  }
+
+  function handleConfirmInlineCreate() {
+    const name = newPersonName.trim()
+    if (!name) return
+    createPersonMutation.mutate({ name })
   }
 
   async function handleFormSubmit(data: DebtFormData) {
@@ -185,36 +218,86 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit 
                 {...register('creditorName')}
               />
             ) : (
-              <Controller
-                control={control}
-                name="personId"
-                render={({ field }) => (
-                  <Select
-                    value={field.value ?? ''}
-                    onValueChange={(v) => field.onChange(v || undefined)}
-                    disabled={personsLoading}
+              <div className="space-y-2">
+                <Controller
+                  control={control}
+                  name="personId"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value ?? ''}
+                      onValueChange={(v) => field.onChange(v || undefined)}
+                      disabled={personsLoading}
+                    >
+                      <SelectTrigger className="w-full" aria-label="Selecionar pessoa">
+                        <SelectValue placeholder={personsLoading ? 'Carregando...' : 'Selecionar pessoa'}>
+                          {selectedPerson?.name ?? (personsLoading ? 'Carregando...' : undefined)}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent alignItemWithTrigger={false}>
+                        {persons.length === 0 ? (
+                          <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+                            Nenhuma pessoa cadastrada
+                          </div>
+                        ) : (
+                          persons.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+
+                {showInlineCreate ? (
+                  <div className="flex gap-1.5">
+                    <Input
+                      ref={inlineInputRef}
+                      value={newPersonName}
+                      onChange={(e) => setNewPersonName(e.target.value)}
+                      placeholder="Nome da pessoa"
+                      className="h-8 text-sm"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); handleConfirmInlineCreate() }
+                        if (e.key === 'Escape') handleCancelInlineCreate()
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0"
+                      disabled={!newPersonName.trim() || createPersonMutation.isPending}
+                      onClick={handleConfirmInlineCreate}
+                      aria-label="Confirmar"
+                    >
+                      {createPersonMutation.isPending
+                        ? <Loader2 className="size-3.5 animate-spin" />
+                        : <Check className="size-3.5" />}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0"
+                      onClick={handleCancelInlineCreate}
+                      aria-label="Cancelar"
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleOpenInlineCreate}
+                    className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                   >
-                    <SelectTrigger className="w-full" aria-label="Selecionar pessoa">
-                      <SelectValue placeholder={personsLoading ? 'Carregando...' : 'Selecionar pessoa'}>
-                        {selectedPerson?.name ?? (personsLoading ? 'Carregando...' : undefined)}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent alignItemWithTrigger={false}>
-                      {persons.length === 0 ? (
-                        <div className="px-2 py-3 text-center text-xs text-muted-foreground">
-                          Nenhuma pessoa cadastrada
-                        </div>
-                      ) : (
-                        persons.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
+                    <Plus className="size-3" />
+                    Nova pessoa
+                  </button>
                 )}
-              />
+              </div>
             )}
 
             {errors.creditorName && (
