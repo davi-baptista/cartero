@@ -86,7 +86,7 @@ export class EntityValidationService {
     });
 
     if (!receivable) {
-      throw new NotFoundException('Dívida não encontrada');
+      throw new NotFoundException('Recebível não encontrado');
     }
 
     return receivable;

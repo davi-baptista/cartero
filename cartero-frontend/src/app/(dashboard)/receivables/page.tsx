@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useMemo, memo } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
+import { useState, useMemo, useEffect, useRef, memo } from 'react'
+import { AnimatePresence, motion, animate } from 'motion/react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -48,6 +48,7 @@ import {
   updateReceivable,
   deleteReceivable,
 } from '@/services/receivables.service'
+import { useSearchParams } from 'next/navigation'
 import { getPersons } from '@/services/persons.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
@@ -76,8 +77,8 @@ function StatusDot({ receivable }: { receivable: Receivable }) {
     return (
       <>
         <span className="relative flex size-2.5 shrink-0 items-center justify-center" aria-hidden="true">
-          <span className="absolute inline-flex size-full animate-ping rounded-full bg-pending/50 opacity-75" />
-          <span className="size-2.5 rounded-full bg-pending" />
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/50 opacity-75" />
+          <span className="size-2.5 rounded-full bg-destructive" />
         </span>
         <span className="sr-only">Atrasado</span>
       </>
@@ -92,19 +93,37 @@ function StatusDot({ receivable }: { receivable: Receivable }) {
 
 const ReceivableRow = memo(function ReceivableRow({
   receivable,
+  isHighlighted,
   onEdit,
   onDelete,
   onToggleReceived,
 }: {
   receivable: Receivable
+  isHighlighted?: boolean
   onEdit: (r: Receivable) => void
   onDelete: (r: Receivable) => void
   onToggleReceived: (r: Receivable) => void
 }) {
   const overdue = isOverdue(receivable)
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isHighlighted || !rowRef.current) return
+    const el = rowRef.current
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const t = setTimeout(() => {
+      animate(
+        el,
+        { backgroundColor: ['rgba(79,124,255,0)', 'rgba(79,124,255,0.12)', 'rgba(79,124,255,0)'] },
+        { duration: 2.0, times: [0, 0.10, 1] },
+      )
+    }, 150)
+    return () => clearTimeout(t)
+  }, [isHighlighted])
 
   return (
-    <div className="group flex items-center gap-3 px-1 py-3">
+    <div ref={rowRef} className="group flex items-center gap-3 px-1 py-3 rounded-lg">
       {/* Status dot — clickable toggle */}
       <motion.button
         type="button"
@@ -140,7 +159,7 @@ const ReceivableRow = memo(function ReceivableRow({
           {receivable.title}
         </span>
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className="truncate">{receivable.debtorName}{receivable.description ? <> · <i>{receivable.description}</i></> : ''}</span>
+          <span className="truncate">{receivable.person?.name ?? receivable.debtorName}{receivable.description ? <> · <i>{receivable.description}</i></> : ''}</span>
           {receivable.parentId && (
             <>
               <span>·</span>
@@ -161,7 +180,7 @@ const ReceivableRow = memo(function ReceivableRow({
           {formatCurrency(receivable.amount)}
         </span>
         {overdue ? (
-          <span className="inline-flex items-center rounded-full bg-pending/15 px-2 py-0.5 text-[11px] font-medium text-pending">
+          <span className="inline-flex items-center rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-medium text-destructive">
             Atrasado {formatDate(receivable.dueDate)}
           </span>
         ) : (
@@ -255,14 +274,15 @@ type TabFilter = 'pending' | 'received'
 
 export default function ReceivablesPage() {
   const qc = useQueryClient()
+  const searchParams = useSearchParams()
+  const highlightId = searchParams.get('highlight') ?? undefined
+  const endDateParam = searchParams.get('endDate')
 
   const [tab, setTab] = useState<TabFilter>('pending')
   const [personFilter, setPersonFilter] = useState<string | undefined>(undefined)
-  const [startDate, setStartDate] = useState<string | undefined>(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
-  })
+  const [startDate, setStartDate] = useState<string | undefined>(undefined)
   const [endDate, setEndDate] = useState<string | undefined>(() => {
+    if (endDateParam) return endDateParam
     const d = new Date()
     return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10)
   })
@@ -271,12 +291,10 @@ export default function ReceivablesPage() {
   const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
   const [scopeDialog, setScopeDialog] = useState<{ receivable: Receivable; mode: 'edit' | 'delete' } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Receivable | null>(null)
-  const [personsEnabled, setPersonsEnabled] = useState(false)
 
   const { data: persons = [] } = useQuery({
     queryKey: ['persons'],
     queryFn: getPersons,
-    enabled: personsEnabled,
   })
 
   const { data: receivables, isLoading } = useQuery({
@@ -327,6 +345,12 @@ export default function ReceivablesPage() {
     },
     onError: () => toast.error('Erro ao excluir cobrança — tente novamente'),
   })
+
+  useEffect(() => {
+    if (!highlightId || !receivables) return
+    const target = receivables.find((r) => r.id === highlightId)
+    if (target?.isPaid) setTab('received')
+  }, [highlightId, receivables])
 
   const summary = useMemo(() => {
     if (!receivables) return { pending: 0, received: 0 }
@@ -438,7 +462,6 @@ export default function ReceivablesPage() {
             <Select
               value={personFilter ?? ''}
               onValueChange={(v) => setPersonFilter(v || undefined)}
-              onOpenChange={(open) => { if (open) setPersonsEnabled(true) }}
             >
               <SelectTrigger className="w-40" aria-label="Filtrar por pessoa">
                 <SelectValue placeholder="Todas as pessoas">
@@ -519,6 +542,7 @@ export default function ReceivablesPage() {
                 <MotionRow key={receivable.id} index={i}>
                   <ReceivableRow
                     receivable={receivable}
+                    isHighlighted={receivable.id === highlightId}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onToggleReceived={handleToggleReceived}

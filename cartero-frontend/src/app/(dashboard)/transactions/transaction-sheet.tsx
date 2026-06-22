@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Check, Loader2, Plus, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   Sheet,
   SheetContent,
@@ -28,7 +29,7 @@ import { TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { getBanks, createBank } from '@/services/banks.service'
 import { getCategories, createCategory } from '@/services/categories.service'
-import type { Transaction, InstallmentScope } from '@/types'
+import type { Transaction, InstallmentScope, Bank, Category } from '@/types'
 import { TransactionType } from '@/types'
 
 const transactionTypeValues = [
@@ -91,11 +92,13 @@ export function TransactionSheet({
   const createBankMut = useMutation({
     mutationFn: createBank,
     onSuccess: (bank) => {
+      qc.setQueryData<Bank[]>(['banks'], (old) => [...(old ?? []), bank])
       qc.invalidateQueries({ queryKey: ['banks'] })
       setValue('bankId', bank.id)
       setShowBankCreate(false)
       setNewBank({ name: '', closeDate: '', dueDate: '' })
     },
+    onError: () => toast.error('Não foi possível criar o banco.'),
   })
 
   function handleOpenBankCreate() {
@@ -119,11 +122,13 @@ export function TransactionSheet({
   const createCategoryMut = useMutation({
     mutationFn: createCategory,
     onSuccess: (category) => {
+      qc.setQueryData<Category[]>(['categories'], (old) => [...(old ?? []), category])
       qc.invalidateQueries({ queryKey: ['categories'] })
       setValue('categoryId', category.id)
       setShowCategoryCreate(false)
       setNewCategoryName('')
     },
+    onError: () => toast.error('Não foi possível criar a categoria.'),
   })
 
   function handleOpenCategoryCreate() {
@@ -330,6 +335,10 @@ export function TransactionSheet({
                     onChange={(e) => setNewBank((b) => ({ ...b, name: e.target.value }))}
                     placeholder="Nome do banco"
                     className="h-8 text-sm"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); handleConfirmBankCreate() }
+                      if (e.key === 'Escape') { setShowBankCreate(false); setNewBank({ name: '', closeDate: '', dueDate: '' }) }
+                    }}
                   />
                   <div className="flex gap-1.5">
                     <Input

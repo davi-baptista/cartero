@@ -17,17 +17,20 @@ export class ReceivablesService {
   ) {}
 
   async create(userId: string, dto: CreateReceivableDto) {
-    let debtorName : string
-    
-    if(dto.personId) {
-      const person = await this.entityValidationService.validatePerson(dto.personId, userId)
-      debtorName = person.name
+    let debtorName: string;
+
+    if (dto.personId) {
+      const person = await this.entityValidationService.validatePerson(
+        dto.personId,
+        userId,
+      );
+      debtorName = person.name;
     } else if (dto.debtorName) {
-      debtorName = dto.debtorName
+      debtorName = dto.debtorName;
     } else {
-      throw new BadRequestException('Informe debtorName ou personId')
+      throw new BadRequestException('Informe debtorName ou personId');
     }
-    
+
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
         const installments = dto.installments ? dto.installments : 1;
@@ -77,15 +80,16 @@ export class ReceivablesService {
 
   async findAll(userId: string, filters: FindReceivablesDto = {}) {
     return await this.prisma.receivable.findMany({
-      where: { 
+      where: {
         userId,
         debtorName: filters.debtorName,
         personId: filters.personId,
         dueDate: {
           gte: filters.startDate ? new Date(filters.startDate) : undefined,
           lte: filters.endDate ? new Date(filters.endDate) : undefined,
-        }, 
+        },
       },
+      include: { person: true },
     });
   }
 
@@ -101,10 +105,13 @@ export class ReceivablesService {
     );
     const normalizedScope = this.normalizeScope(scope);
 
-    let debtorName = dto.debtorName
+    let debtorName = dto.debtorName;
     if (dto.personId) {
-      const person = await this.entityValidationService.validatePerson(dto.personId, userId)
-      debtorName = person.name
+      const person = await this.entityValidationService.validatePerson(
+        dto.personId,
+        userId,
+      );
+      debtorName = person.name;
     }
 
     return await this.prisma.$transaction(
@@ -119,8 +126,11 @@ export class ReceivablesService {
 
         for (const receivable of receivablesToUpdate) {
           const paidAt =
-            dto.isPaid === true && !receivable.isPaid ? new Date() :
-						dto.isPaid === false && receivable.isPaid ? null : undefined;
+            dto.isPaid === true && !receivable.isPaid
+              ? new Date()
+              : dto.isPaid === false && receivable.isPaid
+                ? null
+                : undefined;
 
           const updatedReceivable = await tx.receivable.update({
             where: { id: receivable.id, userId },

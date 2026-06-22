@@ -9,7 +9,7 @@
 - **Backend:** Nest.js · PostgreSQL (Docker) · Prisma
 - **Frontend:** Next.js · React · shadcn/ui (tema dark obrigatório)
 - **Auth:** JWT (access + refresh token)
-- **Deploy:** Railway (backend + DB) · Vercel (frontend)
+- **Deploy:** Render (backend) · Neon (PostgreSQL) · Vercel (frontend)
 
 ## Schema (campos-chave)
 
@@ -74,12 +74,46 @@ GET /statement             → ⏳ pendente
 - Tema dark obrigatório; referência visual: https://shadcnblocks-admin.vercel.app/
 - Valores monetários: `R$ 1.234,56`; negativos `text-destructive`; positivos `text-green-500`
 - Status de fatura: OPEN (azul) · CLOSED (amarelo) · OVERDUE (vermelho) · PAID (verde)
+- "Atrasado" em A Receber usa `text-destructive` (vermelho) — igual a Dívidas, **não** usar `text-pending`
 - Ações (editar/deletar) aparecem apenas no hover da linha
 - Formulários: Sheet ou Dialog — nunca navegação para outra página
 - Feedback: toasts para todas as ações
 - Tokens CSS customizados em `globals.css` (Tailwind v4 `@theme inline`):
   - `--receivable` / `bg-receivable` / `text-receivable` → verde de recebíveis/recebidos
-  - `--pending` / `bg-pending` / `text-pending` → amarelo de pendente/vencendo
+  - `--pending` / `bg-pending` / `text-pending` → amarelo de pendente/vencendo (não usar para "atrasado")
+
+## Painel "Atenção agora" (overview/page.tsx)
+
+Janela de 7 dias (`ATTENTION_DAYS_WINDOW = 7`), máximo 3 itens por seção (`ATTENTION_LIMIT = 3`).
+
+**Faturas — lógica de exibição por status:**
+- `OVERDUE` → sempre aparece; exibe "Venceu há Xd"
+- `OPEN` → aparece se `invoiceCloseDate ≤ 7 dias`; exibe "Fecha em X dias / Fecha hoje / Fecha amanhã"
+  - Se `invoiceCloseDate` já passou mas status ainda é `OPEN` (cron não rodou) → usa `invoiceDueDate` como fallback
+- `CLOSED` → aparece se `invoiceDueDate ≤ 7 dias`; exibe "Falta X dias / Vence hoje / Vence amanhã"
+- `PAID` → nunca aparece
+
+**Dívidas e A Receber:**
+- Top 3 com `dueDate ≤ hoje+7`, ordenadas por data (inclui vencidas)
+- Clicar navega para `/debts?highlight=<id>` ou `/receivables?highlight=<id>`
+- "Ver X itens a mais" navega para `/debts?endDate=<hoje+7>` (sem startDate)
+
+## URL params — Dívidas e A Receber
+
+| Param | Efeito |
+|---|---|
+| `?highlight=<id>` | Rola até a linha, pulso de destaque índigo, troca aba automaticamente se item estiver em Pagas/Recebidos |
+| `?endDate=<YYYY-MM-DD>` | Inicializa filtro de data fim pela URL; `startDate` fica `undefined` |
+
+`startDate` padrão é sempre `undefined` nas páginas de Dívidas e A Receber — garante que itens vencidos de meses anteriores sempre apareçam.
+
+## Cache / React Query
+
+- `staleTime: 0` global — queries revalidam ao montar, sem necessidade de F5
+- Cross-invalidações críticas implementadas:
+  - Mutations em `transactions` → invalida `['bank-invoices']`
+  - Delete de `person` → invalida `['debts']` e `['receivables']`
+  - `persons` query sem `enabled` lazy — sempre carregada
 
 ## Estado Atual
 
@@ -94,6 +128,8 @@ GET /statement             → ⏳ pendente
 ### Backend ⏳ Pendente
 - `GET /alerts`
 - `GET /statement`
+- `PATCH /banks/:id` → recalcular status das faturas ao alterar `invoiceCloseDate`/`invoiceDueDate` (ver TODO.md)
+- `PATCH /transactions/:id` → re-atribuir invoice ao alterar `date`; bloquear se invoice original for CLOSED/PAID (ver TODO.md)
 
 ### Frontend ✅ Completo
 - Auth (login/registro)
@@ -101,9 +137,12 @@ GET /statement             → ⏳ pendente
 - Bancos, Categorias, Transações, Faturas, Dívidas, A Receber, Pessoas
 - Filtros por pessoa em Dívidas e A Receber (query `personId`)
 - Acessibilidade: `sr-only` em StatusDot, `aria-pressed` em tabs de filtro
+- Painel "Atenção agora" com janela de 7 dias, urgência por cor, lógica close/due por status
+- Highlight de linha via `?highlight=<id>` com animação de pulso e troca de aba automática
+- Filtro pré-aplicado via `?endDate=` ao clicar em "Ver mais" no painel de atenção
+- Select de pessoa com criar inline nos forms de Dívida e Recebível
+- Deploy: Vercel (frontend) · Render (backend) · Neon (banco)
 
 ### Frontend ⏳ Pendente
-- Select de pessoa (com criar inline) nos forms de Dívida e Recebível
 - `GET /alerts` → banner/modal de alertas ao abrir o app
 - `GET /statement` → página de extrato geral
-- Deploy: Railway + Vercel

@@ -35,7 +35,7 @@ export default function LoginPage() {
     try {
       const { accessToken, user } = await loginService(values.email, values.password)
       login(accessToken, user)
-      router.replace('/transactions')
+      router.replace('/overview')
     } catch {
       toast.error('Email ou senha incorretos')
     }

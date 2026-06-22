@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
+  LayoutDashboard,
   ArrowDownUp,
   Landmark,
   Tags,
@@ -57,6 +58,7 @@ function SidebarToggle() {
 }
 
 const navItems = [
+  { href: '/overview', label: 'Visão Geral', icon: LayoutDashboard },
   { href: '/transactions', label: 'Transações', icon: ArrowDownUp },
   { href: '/banks', label: 'Bancos', icon: Landmark },
   { href: '/categories', label: 'Categorias', icon: Tags },

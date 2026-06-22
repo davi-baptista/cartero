@@ -20,14 +20,17 @@ export class DebtsService {
     let creditorName: string;
 
     if (dto.personId) {
-      const person = await this.entityValidationService.validatePerson(dto.personId, userId);
+      const person = await this.entityValidationService.validatePerson(
+        dto.personId,
+        userId,
+      );
       creditorName = person.name;
     } else if (dto.creditorName) {
       creditorName = dto.creditorName;
     } else {
       throw new BadRequestException('Informe creditorName ou personId');
     }
-    
+
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
         const installments = dto.installments ? dto.installments : 1;
@@ -78,34 +81,33 @@ export class DebtsService {
 
   async findAll(userId: string, filters: FindDebtsDto = {}) {
     return await this.prisma.debt.findMany({
-      where: { 
+      where: {
         userId,
         creditorName: filters.creditorName,
         personId: filters.personId,
         dueDate: {
           gte: filters.startDate ? new Date(filters.startDate) : undefined,
           lte: filters.endDate ? new Date(filters.endDate) : undefined,
-        }, 
-      }, 
+        },
+      },
+      include: { person: true },
     });
   }
 
-  async update(
-    id: string,
-    userId: string,
-    dto: UpdateDebtDto,
-    scope?: string,
-  ) {
+  async update(id: string, userId: string, dto: UpdateDebtDto, scope?: string) {
     const existing = await this.entityValidationService.validateDebt(
       id,
       userId,
     );
     const normalizedScope = this.normalizeScope(scope);
 
-    let creditorName = dto.creditorName
+    let creditorName = dto.creditorName;
     if (dto.personId) {
-      const person = await this.entityValidationService.validatePerson(dto.personId, userId)
-      creditorName = person.name
+      const person = await this.entityValidationService.validatePerson(
+        dto.personId,
+        userId,
+      );
+      creditorName = person.name;
     }
 
     return await this.prisma.$transaction(
@@ -120,8 +122,11 @@ export class DebtsService {
 
         for (const debt of debtsToUpdate) {
           const paidAt =
-            dto.isPaid === true && !debt.isPaid ? new Date() :
-						dto.isPaid === false && debt.isPaid ? null : undefined;
+            dto.isPaid === true && !debt.isPaid
+              ? new Date()
+              : dto.isPaid === false && debt.isPaid
+                ? null
+                : undefined;
 
           const updatedDebt = await tx.debt.update({
             where: { id: debt.id, userId },
@@ -136,9 +141,7 @@ export class DebtsService {
           updatedDebts.push(updatedDebt);
         }
 
-        return normalizedScope === 'ONE'
-          ? updatedDebts[0]
-          : updatedDebts;
+        return normalizedScope === 'ONE' ? updatedDebts[0] : updatedDebts;
       },
     );
   }

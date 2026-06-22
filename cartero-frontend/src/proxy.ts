@@ -5,7 +5,7 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   if (pathname === '/') {
-    return NextResponse.redirect(new URL('/transactions', request.url))
+    return NextResponse.redirect(new URL('/overview', request.url))
   }
 
   return NextResponse.next()

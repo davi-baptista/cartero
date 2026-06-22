@@ -36,7 +36,7 @@ export default function RegisterPage() {
     try {
       const { accessToken, user } = await registerService(values.name, values.email, values.password)
       login(accessToken, user)
-      router.replace('/transactions')
+      router.replace('/overview')
     } catch {
       toast.error('Não foi possível criar conta. Tente outro email.')
     }

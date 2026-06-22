@@ -414,6 +414,8 @@ export default function PersonsPage() {
     mutationFn: ({ id, name }: { id: string; name: string }) => updatePerson(id, { name }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['persons'] })
+      qc.invalidateQueries({ queryKey: ['debts'] })
+      qc.invalidateQueries({ queryKey: ['receivables'] })
       setFormOpen(false)
       setEditTarget(null)
       toast.success('Pessoa atualizada')
@@ -425,6 +427,8 @@ export default function PersonsPage() {
     mutationFn: (id: string) => deletePerson(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['persons'] })
+      qc.invalidateQueries({ queryKey: ['debts'] })
+      qc.invalidateQueries({ queryKey: ['receivables'] })
       toast.success('Pessoa removida')
     },
     onError: () => toast.error('Erro ao remover — tente novamente'),

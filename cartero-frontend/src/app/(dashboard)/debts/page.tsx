@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useMemo, useEffect, memo } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
+import { useState, useMemo, useEffect, useRef, memo } from 'react'
+import { AnimatePresence, motion, animate } from 'motion/react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -49,6 +49,7 @@ import {
   updateDebt,
   deleteDebt,
 } from '@/services/debts.service'
+import { useSearchParams } from 'next/navigation'
 import { getPersons } from '@/services/persons.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
@@ -93,19 +94,37 @@ function StatusDot({ debt }: { debt: Debt }) {
 
 const DebtRow = memo(function DebtRow({
   debt,
+  isHighlighted,
   onEdit,
   onDelete,
   onTogglePaid,
 }: {
   debt: Debt
+  isHighlighted?: boolean
   onEdit: (d: Debt) => void
   onDelete: (d: Debt) => void
   onTogglePaid: (d: Debt) => void
 }) {
   const overdue = isOverdue(debt)
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isHighlighted || !rowRef.current) return
+    const el = rowRef.current
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const t = setTimeout(() => {
+      animate(
+        el,
+        { backgroundColor: ['rgba(79,124,255,0)', 'rgba(79,124,255,0.12)', 'rgba(79,124,255,0)'] },
+        { duration: 2.0, times: [0, 0.10, 1] },
+      )
+    }, 150)
+    return () => clearTimeout(t)
+  }, [isHighlighted])
 
   return (
-    <div className="group flex items-center gap-3 px-1 py-3">
+    <div ref={rowRef} className="group flex items-center gap-3 px-1 py-3 rounded-lg">
       {/* Status dot — clickable toggle */}
       <motion.button
         type="button"
@@ -141,7 +160,7 @@ const DebtRow = memo(function DebtRow({
           {debt.title}
         </span>
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className="truncate">{debt.creditorName}{debt.description ? <> · <i>{debt.description}</i></> : ''}</span>
+          <span className="truncate">{debt.person?.name ?? debt.creditorName}{debt.description ? <> · <i>{debt.description}</i></> : ''}</span>
           {debt.parentId && (
             <>
               <span>·</span>
@@ -263,14 +282,15 @@ type TabFilter = 'pending' | 'paid'
 
 export default function DebtsPage() {
   const qc = useQueryClient()
+  const searchParams = useSearchParams()
+  const highlightId = searchParams.get('highlight') ?? undefined
+  const endDateParam = searchParams.get('endDate')
 
   const [tab, setTab] = useState<TabFilter>('pending')
   const [personFilter, setPersonFilter] = useState<string | undefined>(undefined)
-  const [startDate, setStartDate] = useState<string | undefined>(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
-  })
+  const [startDate, setStartDate] = useState<string | undefined>(undefined)
   const [endDate, setEndDate] = useState<string | undefined>(() => {
+    if (endDateParam) return endDateParam
     const d = new Date()
     return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10)
   })
@@ -279,12 +299,10 @@ export default function DebtsPage() {
   const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
   const [scopeDialog, setScopeDialog] = useState<{ debt: Debt; mode: 'edit' | 'delete' } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Debt | null>(null)
-  const [personsEnabled, setPersonsEnabled] = useState(false)
 
   const { data: persons = [] } = useQuery({
     queryKey: ['persons'],
     queryFn: getPersons,
-    enabled: personsEnabled,
   })
 
   const { data: debts, isLoading } = useQuery({
@@ -335,6 +353,12 @@ export default function DebtsPage() {
     },
     onError: () => toast.error('Erro ao excluir dívida — tente novamente'),
   })
+
+  useEffect(() => {
+    if (!highlightId || !debts) return
+    const target = debts.find((d) => d.id === highlightId)
+    if (target?.isPaid) setTab('paid')
+  }, [highlightId, debts])
 
   const summary = useMemo(() => {
     if (!debts) return { pending: 0, paid: 0, overdueCount: 0 }
@@ -452,7 +476,6 @@ export default function DebtsPage() {
             <Select
               value={personFilter ?? ''}
               onValueChange={(v) => setPersonFilter(v || undefined)}
-              onOpenChange={(open) => { if (open) setPersonsEnabled(true) }}
             >
               <SelectTrigger className="w-40" aria-label="Filtrar por pessoa">
                 <SelectValue placeholder="Todas as pessoas">
@@ -533,6 +556,7 @@ export default function DebtsPage() {
                 <MotionRow key={debt.id} index={i}>
                   <DebtRow
                     debt={debt}
+                    isHighlighted={debt.id === highlightId}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onTogglePaid={handleTogglePaid}

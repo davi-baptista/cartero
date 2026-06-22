@@ -282,6 +282,7 @@ export default function TransactionsPage() {
     mutationFn: createTransaction,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['bank-invoices'] })
       setSheetOpen(false)
       toast.success('Transação criada')
     },
@@ -293,6 +294,7 @@ export default function TransactionsPage() {
       updateTransaction(id, payload, scope),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['bank-invoices'] })
       setSheetOpen(false)
       setEditTx(null)
       setEditScope(null)
@@ -306,6 +308,7 @@ export default function TransactionsPage() {
       deleteTransaction(id, scope),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['bank-invoices'] })
       toast.success('Transação excluída')
     },
     onError: () => toast.error('Não foi possível excluir a transação. Tente novamente.'),
