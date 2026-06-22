@@ -64,7 +64,7 @@ function InvoicePill({ bank }: { bank: Bank }) {
   if (closed) {
     const due = new Date(closed.year, closed.month - 1, bank.invoiceDueDate)
     const diff = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-    const label = diff <= 0 ? 'Vence hoje' : diff === 1 ? 'Vence amanhã' : `Vence em ${diff}d`
+    const label = diff === 0 ? 'Vence hoje' : diff === 1 ? 'Vence amanhã' : diff > 0 ? `Vence em ${diff}d` : `Venceu há ${Math.abs(diff)}d`
     return (
       <span className="inline-flex items-center rounded-full bg-pending/15 px-2.5 py-0.5 text-[11px] font-medium text-pending">
         {label} · {formatCurrency(closed.totalAmount)}
@@ -75,7 +75,7 @@ function InvoicePill({ bank }: { bank: Bank }) {
   if (open) {
     const close = new Date(open.year, open.month - 1, bank.invoiceCloseDate)
     const diff = Math.ceil((close.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-    const label = diff <= 0 ? 'Fecha hoje' : diff === 1 ? 'Fecha amanhã' : `Fecha em ${diff}d`
+    const label = diff === 0 ? 'Fecha hoje' : diff === 1 ? 'Fecha amanhã' : diff > 0 ? `Fecha em ${diff}d` : `Fechou há ${Math.abs(diff)}d`
     return (
       <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
         {label}{open.totalAmount > 0 ? ` · ${formatCurrency(open.totalAmount)}` : ''}

@@ -1,12 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from './prisma/prisma.service';
 
 @Injectable()
-export class AppScheduler {
+export class AppScheduler implements OnApplicationBootstrap {
   private readonly logger = new Logger(AppScheduler.name);
 
   constructor(private prisma: PrismaService) {}
+
+  async onApplicationBootstrap() {
+    await this.syncInvoiceStatus();
+  }
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async syncInvoiceStatus() {
