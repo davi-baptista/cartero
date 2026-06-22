@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Bank, Prisma, Transaction } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
@@ -120,17 +120,17 @@ export class TransactionsService {
     dto: UpdateTransactionDto,
     scope?: string,
   ) {
-    const existing = await this.entityValidationService.validateTransaction(
+    const existingTransaction = await this.entityValidationService.validateTransaction(
       id,
       userId,
     );
     const normalizedScope = this.normalizeScope(scope);
 
-    if (dto.bankId && dto.bankId !== existing.bankId) {
+    if (dto.bankId && dto.bankId !== existingTransaction.bankId) {
       await this.entityValidationService.validateBank(dto.bankId, userId);
     }
 
-    if (dto.categoryId && dto.categoryId !== existing.categoryId) {
+    if (dto.categoryId && dto.categoryId !== existingTransaction.categoryId) {
       await this.entityValidationService.validateCategory(
         dto.categoryId,
         userId,
@@ -141,16 +141,16 @@ export class TransactionsService {
       async (tx: Prisma.TransactionClient) => {
         const transactionsToUpdate = await this.getTransactionsByScope(
           tx,
-          existing,
+          existingTransaction,
           userId,
           normalizedScope,
         );
         const updatedTransactions: Transaction[] = [];
         let bank: Bank | null = null;
 
-        if (dto.type === 'CREDIT_CARD' || existing.type === 'CREDIT_CARD') {
+        if (dto.type === 'CREDIT_CARD' || existingTransaction.type === 'CREDIT_CARD') {
           bank = await this.entityValidationService.validateBank(
-            dto.bankId ?? existing.bankId,
+            dto.bankId ?? existingTransaction.bankId,
             userId,
           );
         }
@@ -161,28 +161,56 @@ export class TransactionsService {
           const amount = dto.amount ?? Number(transaction.amount);
           const date = dto.date ? new Date(dto.date) : transaction.date;
 
-          let invoiceId: string | null = null;
+          const invoiceRelevantChanged =                          
+          type !== transaction.type ||
+          bankId !== transaction.bankId ||
+          amount !== Number(transaction.amount) ||
+          date.getTime() !== transaction.date.getTime();
+          
+          let invoiceId = transaction.invoiceId
+          
+          if (invoiceRelevantChanged) {
+            if (transaction.invoiceId) {
+              const { status } = await tx.invoice.findUniqueOrThrow({
+                where: { id: transaction.invoiceId, userId },
+                select: { status: true }
+              })
 
-          if (transaction.invoiceId) {
-            await tx.invoice.update({
-              where: { id: transaction.invoiceId, userId },
-              data: {
-                totalAmount: { decrement: transaction.amount },
-              },
-            });
-          }
+              if (status === 'CLOSED' || status === 'PAID') {
+                throw new ForbiddenException('Não é possível alterar uma transação de fatura fechada ou paga')  
+              }
 
-          if (type === 'CREDIT_CARD') {
-            const invoice = await this.findOrCreateInvoice(
-              tx,
-              userId,
-              bankId,
-              bank!.invoiceCloseDate,
-              bank!.invoiceDueDate,
-              date,
-            );
+              await tx.invoice.update({
+                where: { id: transaction.invoiceId, userId },
+                data: {
+                  totalAmount: { decrement: transaction.amount },
+                },
+              });
+            }
 
-            invoiceId = invoice.id;
+            invoiceId = null
+
+            if (type === 'CREDIT_CARD') {
+              const invoice = await this.findOrCreateInvoice(
+                tx,
+                userId,
+                bankId,
+                bank!.invoiceCloseDate,
+                bank!.invoiceDueDate,
+                date,
+              );
+
+              invoiceId = invoice.id;
+            }
+
+            if (invoiceId) {
+              await tx.invoice.update({
+                where: { id: invoiceId, userId },
+                data: {
+                  totalAmount: { increment: amount },
+                },
+              });
+            }
           }
 
           const updatedTransaction = await tx.transaction.update({
@@ -193,15 +221,6 @@ export class TransactionsService {
               date,
             },
           });
-
-          if (invoiceId) {
-            await tx.invoice.update({
-              where: { id: invoiceId, userId },
-              data: {
-                totalAmount: { increment: amount },
-              },
-            });
-          }
 
           updatedTransactions.push(updatedTransaction);
         }

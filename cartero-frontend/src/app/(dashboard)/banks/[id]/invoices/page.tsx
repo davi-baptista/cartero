@@ -405,9 +405,9 @@ export default function BankInvoicesPage() {
   const sorted = useMemo(
     () =>
       invoices
-        ? [...invoices].sort((a, b) =>
-            b.year !== a.year ? b.year - a.year : b.month - a.month,
-          )
+        ? invoices
+            .filter((i) => Number(i.totalAmount) > 0)
+            .sort((a, b) => (b.year !== a.year ? b.year - a.year : b.month - a.month))
         : [],
     [invoices],
   )
