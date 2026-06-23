@@ -27,9 +27,10 @@ interface DatePickerProps {
   onChange: (value: string) => void
   placeholder?: string
   className?: string
+  disabled?: boolean
 }
 
-export function DatePicker({ value, onChange, placeholder = 'Selecionar data', className }: DatePickerProps) {
+export function DatePicker({ value, onChange, placeholder = 'Selecionar data', className, disabled }: DatePickerProps) {
   const selected = value ? parseDateOnly(value) : undefined
   const [viewDate, setViewDate] = useState<Date>(selected ?? new Date())
   const [open, setOpen] = useState(false)
@@ -45,12 +46,14 @@ export function DatePicker({ value, onChange, placeholder = 'Selecionar data', c
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={disabled ? false : open} onOpenChange={disabled ? undefined : setOpen}>
       <PopoverTrigger
+        disabled={disabled}
         className={cn(
           buttonVariants({ variant: 'outline' }),
           'w-full justify-start gap-2 font-normal',
           !value && 'text-muted-foreground',
+          disabled && 'cursor-not-allowed opacity-50',
           className,
         )}
       >

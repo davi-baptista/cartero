@@ -120,11 +120,14 @@ export class TransactionsService {
     dto: UpdateTransactionDto,
     scope?: string,
   ) {
-    const existingTransaction = await this.entityValidationService.validateTransaction(
-      id,
-      userId,
-    );
+    const existingTransaction =
+      await this.entityValidationService.validateTransaction(id, userId);
     const normalizedScope = this.normalizeScope(scope);
+
+    if (existingTransaction.parentId && dto.date) {
+      dto.date = undefined;
+      dto.title = undefined;
+    }
 
     if (dto.bankId && dto.bankId !== existingTransaction.bankId) {
       await this.entityValidationService.validateBank(dto.bankId, userId);
@@ -148,7 +151,10 @@ export class TransactionsService {
         const updatedTransactions: Transaction[] = [];
         let bank: Bank | null = null;
 
-        if (dto.type === 'CREDIT_CARD' || existingTransaction.type === 'CREDIT_CARD') {
+        if (
+          dto.type === 'CREDIT_CARD' ||
+          existingTransaction.type === 'CREDIT_CARD'
+        ) {
           bank = await this.entityValidationService.validateBank(
             dto.bankId ?? existingTransaction.bankId,
             userId,
@@ -161,23 +167,25 @@ export class TransactionsService {
           const amount = dto.amount ?? Number(transaction.amount);
           const date = dto.date ? new Date(dto.date) : transaction.date;
 
-          const invoiceRelevantChanged =                          
-          type !== transaction.type ||
-          bankId !== transaction.bankId ||
-          amount !== Number(transaction.amount) ||
-          date.getTime() !== transaction.date.getTime();
-          
-          let invoiceId = transaction.invoiceId
-          
+          const invoiceRelevantChanged =
+            type !== transaction.type ||
+            bankId !== transaction.bankId ||
+            amount !== Number(transaction.amount) ||
+            date.getTime() !== transaction.date.getTime();
+
+          let invoiceId = transaction.invoiceId;
+
           if (invoiceRelevantChanged) {
             if (transaction.invoiceId) {
               const { status } = await tx.invoice.findUniqueOrThrow({
                 where: { id: transaction.invoiceId, userId },
-                select: { status: true }
-              })
+                select: { status: true },
+              });
 
               if (status === 'CLOSED' || status === 'PAID') {
-                throw new ForbiddenException('Não é possível alterar uma transação de fatura fechada ou paga')  
+                throw new ForbiddenException(
+                  'Não é possível alterar uma transação de fatura fechada ou paga',
+                );
               }
 
               await tx.invoice.update({
@@ -188,7 +196,7 @@ export class TransactionsService {
               });
             }
 
-            invoiceId = null
+            invoiceId = null;
 
             if (type === 'CREDIT_CARD') {
               const invoice = await this.findOrCreateInvoice(
@@ -260,7 +268,7 @@ export class TransactionsService {
                 totalAmount: { decrement: transaction.amount },
               },
             });
-            
+
             if (Number(invoice.totalAmount) === 0) {
               await tx.invoice.delete({
                 where: { id: invoice.id, userId },
@@ -328,9 +336,9 @@ export class TransactionsService {
   ) {
     let month = transactionDate.getUTCMonth() + 1;
     let year = transactionDate.getUTCFullYear();
-    
+
     if (transactionDate.getUTCDate() >= invoiceCloseDate) {
-      month = (month % 12) + 1; 
+      month = (month % 12) + 1;
       if (month === 1) {
         year += 1;
       }
@@ -352,7 +360,7 @@ export class TransactionsService {
 
       const status =
         today > dueDate ? 'OVERDUE' : today >= closeDate ? 'CLOSED' : 'OPEN';
-        
+
       invoice = await tx.invoice.create({
         data: {
           userId,

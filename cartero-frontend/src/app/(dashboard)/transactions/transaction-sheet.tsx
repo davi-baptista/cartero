@@ -265,6 +265,7 @@ export function TransactionSheet({
               id="title"
               placeholder="Ex: Mercado, Netflix..."
               aria-invalid={!!errors.title}
+              disabled={!!editTarget?.parentId}
               {...register('title')}
             />
             {errors.title && <p className="text-xs text-destructive">{errors.title.message}</p>}
@@ -296,6 +297,7 @@ export function TransactionSheet({
                   value={field.value}
                   onChange={field.onChange}
                   placeholder="Selecionar data"
+                  disabled={!!editTarget?.parentId}
                 />
               )}
             />

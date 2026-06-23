@@ -355,8 +355,9 @@ export default function TransactionsPage() {
 
   async function handleSheetSubmit(data: TransactionFormData, scope: InstallmentScope | null) {
     if (editTx) {
-      const { installments, ...payload } = data
+      const { installments, date, title, ...rest } = data
       void installments
+      const payload = editTx.parentId ? rest : { ...rest, date, title }
       await updateMut.mutateAsync({ id: editTx.id, payload, scope: scope ?? undefined })
     } else {
       await createMut.mutateAsync(data)
