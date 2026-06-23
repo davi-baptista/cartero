@@ -132,6 +132,12 @@ Janela de 7 dias (`ATTENTION_DAYS_WINDOW = 7`), máximo 3 itens por seção (`AT
 - `GET /statement`
 - `PATCH /banks/:id` → recalcular status das faturas ao alterar `invoiceCloseDate`/`invoiceDueDate` (ver TODO.md)
 - `PATCH /transactions/:id` → re-atribuir invoice ao alterar `date` (ver TODO.md)
+- `GET /health` → endpoint de keepalive para o cron-job.org pingar a cada 10 min e manter o Render acordado
+- `POST /invoices/sync` → endpoint protegido por `x-cron-secret` que executa sync de status das faturas + envia e-mail de alerta com faturas/dívidas vencidas ou vencendo hoje; chamado 1x/dia pelo cron-job.org
+- **Notificações — avaliar canais alternativos ao e-mail:**
+  - Push notification via Web Push (VAPID keys + Service Worker no frontend) — aparece mesmo com app fechado
+  - WhatsApp via API de bot (ex: Twilio, Z-API, Evolution API)
+  - Telegram bot — simples de implementar, gratuito
 
 ### Frontend ✅ Completo
 - Auth (login/registro)
