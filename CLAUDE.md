@@ -124,12 +124,14 @@ Janela de 7 dias (`ATTENTION_DAYS_WINDOW = 7`), máximo 3 itens por seção (`AT
 - Filtros em `GET /transactions`, `GET /debts`, `GET /receivables`
 - `GET /persons/:id/statement` implementado
 - `findOrCreateInvoice` com lógica de mês correta
+- `PATCH /transactions/:id` → bloqueia edição se invoice original for PAID ✅
+- Invoice sync executado no bootstrap (app.scheduler.ts) ✅
 
 ### Backend ⏳ Pendente
 - `GET /alerts`
 - `GET /statement`
 - `PATCH /banks/:id` → recalcular status das faturas ao alterar `invoiceCloseDate`/`invoiceDueDate` (ver TODO.md)
-- `PATCH /transactions/:id` → re-atribuir invoice ao alterar `date`; bloquear se invoice original for CLOSED/PAID (ver TODO.md)
+- `PATCH /transactions/:id` → re-atribuir invoice ao alterar `date` (ver TODO.md)
 
 ### Frontend ✅ Completo
 - Auth (login/registro)
@@ -141,6 +143,7 @@ Janela de 7 dias (`ATTENTION_DAYS_WINDOW = 7`), máximo 3 itens por seção (`AT
 - Highlight de linha via `?highlight=<id>` com animação de pulso e troca de aba automática
 - Filtro pré-aplicado via `?endDate=` ao clicar em "Ver mais" no painel de atenção
 - Select de pessoa com criar inline nos forms de Dívida e Recebível
+- Faturas vazias ocultadas na listagem do banco ✅
 - Deploy: Vercel (frontend) · Render (backend) · Neon (banco)
 
 ### Frontend ⏳ Pendente

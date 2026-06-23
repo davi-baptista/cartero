@@ -182,9 +182,9 @@ export class TransactionsService {
                 select: { status: true },
               });
 
-              if (status === 'CLOSED' || status === 'PAID') {
+              if (status === 'PAID') {
                 throw new ForbiddenException(
-                  'Não é possível alterar uma transação de fatura fechada ou paga',
+                  'Não é possível alterar uma transação de fatura paga',
                 );
               }
 
