@@ -1,42 +1,33 @@
 {
   "permissions": {
     "allow": [
-      "Bash(gh repo:*)",
-      "Bash(gh api:*)",
-      "Bash(git fetch *)",
-      "Bash(git pull *)",
-      "PowerShell(git add CLAUDE.md \"cartero-frontend/src/app/\\(dashboard\\)/banks/page.tsx\" \"cartero-frontend/src/app/\\(dashboard\\)/categories/page.tsx\" \"cartero-frontend/src/app/\\(dashboard\\)/debts/debt-sheet.tsx\" \"cartero-frontend/src/app/\\(dashboard\\)/debts/page.tsx\" \"cartero-frontend/src/app/\\(dashboard\\)/receivables/page.tsx\" \"cartero-frontend/src/app/\\(dashboard\\)/receivables/receivable-sheet.tsx\" \"cartero-frontend/src/app/\\(dashboard\\)/transactions/page.tsx\" \"cartero-frontend/src/app/\\(dashboard\\)/transactions/transaction-sheet.tsx\" \"cartero-frontend/src/lib/api.ts\")",
-      "Bash(node .claude/skills/impeccable/scripts/context.mjs --target cartero-frontend)",
+      "PowerShell(git *)",
+      "Bash(Remove-Item *)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "Bash(npm view *)",
+      "Bash(npx create-next-app@latest cartero-frontend --typescript --eslint --tailwind --src-dir --app --turbopack --import-alias \"@/*\" --yes)",
+      "Bash(npx shadcn@latest init --yes --defaults)",
+      "Bash(npx shadcn@latest add button input label card dialog sheet badge avatar dropdown-menu separator skeleton table sidebar tabs select popover form toast sonner --yes)",
+      "Bash(npx shadcn@latest add button input label card dialog sheet badge avatar dropdown-menu separator skeleton table sidebar tabs select popover form sonner --yes)",
+      "Bash(npx shadcn@latest add form --yes)",
+      "Bash(npm install *)",
       "Bash(npx tsc *)",
-      "Bash(npm run *)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/overview)",
-      "Bash(curl -s http://localhost:3001/overview)",
-      "Bash(pkill -f \"next dev\")",
-      "PowerShell(node .claude/skills/impeccable/scripts/context.mjs --target cartero-frontend/src/app/\\(dashboard\\)/overview)",
-      "PowerShell(node \".claude/skills/impeccable/scripts/context.mjs\" --target \"cartero-frontend/src/app/\\(dashboard\\)/overview\")",
-      "Bash(node -e \"const m = require\\('motion/react'\\); console.log\\(typeof m.animate\\)\")",
+      "Bash(docker exec *)",
+      "WebFetch(domain:impeccable.style)",
+      "Read(//c/Users/davi.inov/.claude/**)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('plugins', d.get\\('skills', {}\\)\\), indent=2\\)\\)\")",
+      "Bash(npx impeccable *)",
+      "Bash(node *)",
+      "Bash(npx next *)",
+      "Bash(git fetch *)",
+      "Bash(cp .claude/settings.local.json /tmp/settings.local.json.bak)",
+      "Bash(git reset *)",
+      "Bash(cp /tmp/settings.local.json.bak .claude/settings.local.json)",
+      "Bash(rm -f audit-report.html)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)",
-      "Bash(git push *)",
-      "Skill(impeccable)",
-      "Skill(impeccable:*)",
-      "Bash(node .claude/skills/impeccable/scripts/context.mjs --target \"cartero-frontend/src/app/\\(dashboard\\)/overview\")"
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
-  },
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"C:\\\\Users\\\\Davi\\\\.claude\\\\skills\\\\impeccable\\\\scripts\\\\hook.mjs\"",
-            "timeout": 5,
-            "statusMessage": "Checking UI changes"
-          }
-        ]
-      }
-    ]
-  },
-  "description": "Impeccable design detector: runs after Edit/Write/MultiEdit on UI files and surfaces findings as system reminders."
+  }
 }

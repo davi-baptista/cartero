@@ -268,7 +268,9 @@ export function TransactionSheet({
               disabled={!!editTarget?.parentId}
               {...register('title')}
             />
-            {errors.title && <p className="text-xs text-destructive">{errors.title.message}</p>}
+            {editTarget?.parentId
+              ? <p className="text-xs text-muted-foreground">Título não pode ser alterado em compras parceladas.</p>
+              : errors.title && <p className="text-xs text-destructive">{errors.title.message}</p>}
           </div>
 
           {/* Amount */}
@@ -301,7 +303,9 @@ export function TransactionSheet({
                 />
               )}
             />
-            {errors.date && <p className="text-xs text-destructive">{errors.date.message}</p>}
+            {editTarget?.parentId
+              ? <p className="text-xs text-muted-foreground">Data não pode ser alterada em compras parceladas.</p>
+              : errors.date && <p className="text-xs text-destructive">{errors.date.message}</p>}
           </div>
 
           {/* Bank */}
