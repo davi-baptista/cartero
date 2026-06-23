@@ -43,9 +43,10 @@ function InvoicePill({ bank }: { bank: Bank }) {
 
   if (!invoices || invoices.length === 0) return null
 
-  const overdue = invoices.find((i) => i.status === InvoiceStatus.OVERDUE)
-  const closed = invoices.find((i) => i.status === InvoiceStatus.CLOSED)
-  const open = invoices.find((i) => i.status === InvoiceStatus.OPEN)
+  const nonEmpty = invoices.filter((i) => Number(i.totalAmount) > 0)
+  const overdue = nonEmpty.find((i) => i.status === InvoiceStatus.OVERDUE)
+  const closed = nonEmpty.find((i) => i.status === InvoiceStatus.CLOSED)
+  const open = nonEmpty.find((i) => i.status === InvoiceStatus.OPEN)
 
   if (overdue) {
     const due = new Date(overdue.year, overdue.month - 1, bank.invoiceDueDate)

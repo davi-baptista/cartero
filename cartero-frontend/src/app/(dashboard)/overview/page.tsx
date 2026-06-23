@@ -64,7 +64,7 @@ function formatDueDate(dateString: string): string {
   if (diff < 0) return `Venceu há ${Math.abs(diff)}d`
   if (diff === 0) return 'Vence hoje'
   if (diff === 1) return 'Vence amanhã'
-  return `Falta ${diff} dias`
+  return `Vence em ${diff} dias`
 }
 
 type DueUrgency = 'overdue' | 'urgent' | 'soon' | 'normal'
@@ -72,8 +72,7 @@ type DueUrgency = 'overdue' | 'urgent' | 'soon' | 'normal'
 function getDueUrgency(dateString: string): DueUrgency {
   const diff = diffDaysFromToday(dateString)
   if (diff <= 0) return 'overdue'
-  if (diff <= 2) return 'urgent'
-  return 'soon'
+  return 'urgent'
 }
 
 const DUE_URGENCY_CLASS: Record<DueUrgency, string> = {
@@ -112,7 +111,7 @@ function computeInvoiceDue(
   if (diffDays < 0) return { text: `Venceu há ${-diffDays}d`, urgency: 'overdue', diffDays }
   if (diffDays === 0) return { text: 'Vence hoje', urgency: 'overdue', diffDays }
   if (diffDays === 1) return { text: 'Vence amanhã', urgency: 'urgent', diffDays }
-  return { text: `Falta ${diffDays} dias`, urgency: diffDays <= 2 ? 'urgent' : 'soon', diffDays }
+  return { text: `Vence em ${diffDays} dias`, urgency: 'urgent', diffDays }
 }
 
 // ─── Month navigator ──────────────────────────────────────────────────────────
@@ -274,6 +273,7 @@ function InvoiceBadge({ status }: { status: InvoiceStatus }) {
   )
 }
 
+
 function InvoiceAttentionRow({ invoice, banks }: { invoice: Invoice; banks: Bank[] }) {
   const bank = banks.find((b) => b.id === invoice.bankId)
   const monthYear = capitalize(formatMonthYear(invoice.month, invoice.year))
@@ -334,22 +334,11 @@ function DebtAttentionRow({ debt }: { debt: Debt }) {
 
   return (
     <Link href={`/debts?highlight=${debt.id}`} className="group flex items-center gap-3 py-3">
-      <div
-        className={cn(
-          'flex size-7 shrink-0 items-center justify-center rounded-lg',
-          urgency === 'overdue' ? 'bg-destructive/10' : 'bg-muted/40',
-        )}
-      >
-        <HandCoins
-          className={cn(
-            'size-3.5',
-            urgency === 'overdue' ? 'text-destructive' : 'text-muted-foreground',
-          )}
-          aria-hidden="true"
-        />
+      <div className={cn('flex size-7 shrink-0 items-center justify-center rounded-lg', urgency === 'overdue' ? 'bg-destructive/10' : 'bg-muted/40')}>
+        <HandCoins className={cn('size-3.5', urgency === 'overdue' ? 'text-destructive' : 'text-muted-foreground')} aria-hidden="true" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium transition-colors group-hover:text-foreground">
+        <p className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
           {debt.title}
         </p>
         <p className="text-[11px] text-muted-foreground">
@@ -357,12 +346,7 @@ function DebtAttentionRow({ debt }: { debt: Debt }) {
           <span className={DUE_URGENCY_CLASS[urgency]}>{dueText}</span>
         </p>
       </div>
-      <span
-        className={cn(
-          'shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]',
-          urgency === 'overdue' ? 'text-destructive' : '',
-        )}
-      >
+      <span className={cn('shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]', urgency === 'overdue' ? 'text-destructive' : '')}>
         {formatCurrency(Number(debt.amount))}
       </span>
     </Link>
@@ -376,11 +360,11 @@ function ReceivableAttentionRow({ receivable }: { receivable: Receivable }) {
 
   return (
     <Link href={`/receivables?highlight=${receivable.id}`} className="group flex items-center gap-3 py-3">
-      <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-receivable/10">
-        <Wallet className="size-3.5 text-receivable" aria-hidden="true" />
+      <div className={cn('flex size-7 shrink-0 items-center justify-center rounded-lg', urgency === 'overdue' ? 'bg-destructive/10' : 'bg-muted/40')}>
+        <Wallet className={cn('size-3.5', urgency === 'overdue' ? 'text-destructive' : 'text-muted-foreground')} aria-hidden="true" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium transition-colors group-hover:text-foreground">
+        <p className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
           {receivable.title}
         </p>
         <p className="text-[11px] text-muted-foreground">
@@ -388,7 +372,7 @@ function ReceivableAttentionRow({ receivable }: { receivable: Receivable }) {
           <span className={DUE_URGENCY_CLASS[urgency]}>{dueText}</span>
         </p>
       </div>
-      <span className="shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em] text-receivable">
+      <span className={cn('shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]', urgency === 'overdue' ? 'text-destructive' : '')}>
         {formatCurrency(Number(receivable.amount))}
       </span>
     </Link>
@@ -610,6 +594,7 @@ export default function OverviewPage() {
 
     return invoices
       .filter((inv) => {
+        if (Number(inv.totalAmount) === 0) return false
         if (inv.status === InvoiceStatus.OVERDUE) return true
         if (inv.status !== InvoiceStatus.OPEN && inv.status !== InvoiceStatus.CLOSED) return false
         const bank = banks.find((b) => b.id === inv.bankId)

@@ -22,17 +22,16 @@ import { UpdateTransactionDto } from './dto/update-transaction.dto';
 export class TransactionsController {
   constructor(private transactionsService: TransactionsService) {}
 
-  
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: User) {
     return this.transactionsService.findOne(id, user.id);
   }
-  
+
   @Get()
   findAll(@CurrentUser() user: User, @Query() filters: FindTransactionsDto) {
     return this.transactionsService.findAll(user.id, filters);
   }
-  
+
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -42,12 +41,12 @@ export class TransactionsController {
   ) {
     return this.transactionsService.update(id, user.id, dto, scope);
   }
-  
+
   @Post()
   create(@CurrentUser() user: User, @Body() dto: CreateTransactionDto) {
     return this.transactionsService.create(user.id, dto);
   }
-  
+
   @Delete(':id')
   remove(
     @Param('id') id: string,

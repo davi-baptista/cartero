@@ -51,6 +51,7 @@ import {
 } from '@/services/transactions.service'
 import { getBanks } from '@/services/banks.service'
 import { getCategories } from '@/services/categories.service'
+import { isAxiosError } from 'axios'
 import { formatCurrency, formatDate, isExpense, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { cn } from '@/lib/utils'
@@ -300,7 +301,13 @@ export default function TransactionsPage() {
       setEditScope(null)
       toast.success('Transação atualizada')
     },
-    onError: () => toast.error('Não foi possível salvar as alterações. Tente novamente.'),
+    onError: (err) => {
+      if (isAxiosError(err) && err.response?.status === 403) {
+        toast.error('Não é possível editar transações de faturas já pagas.')
+      } else {
+        toast.error('Não foi possível salvar as alterações. Tente novamente.')
+      }
+    },
   })
 
   const deleteMut = useMutation({
