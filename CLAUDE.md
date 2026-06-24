@@ -18,11 +18,13 @@
 | User | id, email, password (bcrypt), name, salary? |
 | Bank | id, user_id, name, invoice_close_date (1-31), invoice_due_date (1-31) |
 | Category | id, user_id, name, color? (hex), icon? (emoji) |
-| Transaction | id, user_id, bank_id, category_id, invoice_id?, parent_id?, type (INCOME\|CREDIT_CARD\|DEBIT_CARD\|PIX\|BOLETO), title, amount, description?, date |
+| Transaction | id, user_id, bank_id, category_id, invoice_id?, parent_id?, **person_id?**, type (INCOME\|CREDIT_CARD\|DEBIT_CARD\|PIX\|BOLETO), title, amount, description?, date |
 | Invoice | id, user_id, bank_id, month (1-12), year, status (OPEN\|CLOSED\|OVERDUE\|PAID), total_amount |
 | Person | id, user_id, name |
 | Debt | id, user_id, person_id?, creditor_name, title, amount, description?, due_date, is_alert_enabled (default true), is_paid (default false), paid_at?, parent_id? |
-| Receivable | id, user_id, person_id?, debtor_name, title, amount, description?, due_date, is_paid (default false), paid_at?, parent_id? |
+| Receivable | id, user_id, person_id?, debtor_name, title, amount, description?, due_date, is_paid (default false), paid_at?, parent_id?, **transaction_id?** |
+
+> `Transaction.person_id` e `Receivable.transaction_id` são os novos campos para a feature de transações reembolsáveis (ver seção abaixo). Ainda **não implementados** — precisam de migration no backend.
 
 ## Regras de Negócio Críticas
 
@@ -155,3 +157,106 @@ Janela de 7 dias (`ATTENTION_DAYS_WINDOW = 7`), máximo 3 itens por seção (`AT
 ### Frontend ⏳ Pendente
 - `GET /alerts` → banner/modal de alertas ao abrir o app
 - `GET /statement` → página de extrato geral
+
+---
+
+## Feature: Transações Reembolsáveis (⏳ Em design — não implementada)
+
+### Contexto e motivação
+
+Quando o usuário paga algo no cartão em nome de outra pessoa (ex: ingresso de um amigo), ele precisa registrar a transação na fatura **e** criar manualmente um recebível. São dois cadastros para a mesma coisa. Além disso, esse valor não deve sair do salário dele no cálculo mensal — quem vai pagar é a outra pessoa.
+
+A solução é permitir **linkar uma transação a uma Person** (campo `person_id` opcional), e o backend cria o recebível automaticamente.
+
+### Regras de negócio
+
+**Criação:**
+- Só para transações do tipo `CREDIT_CARD` (a lógica é ligada à fatura).
+- Quando `person_id` está presente na criação da transação, o backend cria automaticamente um `Receivable` espelhado:
+  - `person_id` = mesmo da transação
+  - `debtor_name` = nome da Person
+  - `title` = mesmo título da transação
+  - `amount` = mesmo valor
+  - `due_date` = **data de vencimento da fatura** associada à transação (invoice.due_date calculado em runtime)
+  - `transaction_id` = id da transação (para rastrear a origem)
+- Recebível **não tem** `is_alert_enabled` especial — segue o padrão.
+
+**Parcelamento:**
+- Se a transação é parcelada (3x R$ 100), cada parcela gera **1 receivable correspondente** (também 3x R$ 100).
+- Os receivables parcelados seguem o mesmo padrão: `parent_id` na primeira, `title` = "Nome x/y".
+- O `due_date` de cada receivable = `due_date` da fatura da parcela correspondente.
+- Isso garante que o usuário cobra do amigo na mesma cadência que paga as parcelas.
+
+**Sincronização (bidirecional — comportamento ainda em definição):**
+- **Editar transação** (amount, title) → atualiza o receivable linkado (`transaction_id`).
+- **Deletar transação** → deleta o receivable linkado (com aviso no toast: "Recebível de [Pessoa] também foi removido").
+- **Deletar receivable com `transaction_id`** → comportamento a definir: deletar a transação também? Apenas desvincular? Pedir confirmação? **A IA deve ajudar o usuário a pensar nesse caso antes de implementar.**
+- Pagamento do receivable (`isPaid = true`) não afeta a transação — são independentes após a criação.
+- Edição manual do receivable (ex: valor parcial) também não afeta a transação — o usuário pode ajustar livremente depois.
+
+**Visual na UI:**
+- Linha de transação (página `/transactions`) → chip/badge discreto com nome da pessoa linkada.
+- Detalhe da fatura (página `/banks/:id/invoices`) → mesma identificação na linha da transação.
+- Formulário de criação/edição de transação → select de Person (igual ao de Dívidas/A Receber), só visível quando tipo = `CREDIT_CARD`.
+
+### Schema changes necessários (backend — aguarda permissão)
+```prisma
+model Transaction {
+  // ...campos existentes...
+  personId   String?  @map("person_id")
+  person     Person?  @relation(fields: [personId], references: [id])
+}
+
+model Receivable {
+  // ...campos existentes...
+  transactionId  String?      @map("transaction_id") @unique
+  transaction    Transaction? @relation(fields: [transactionId], references: [id])
+}
+```
+
+---
+
+## Feature: Orçamento Mensal — página `/budget` (⏳ Em design — não implementada)
+
+### Contexto e motivação
+
+O usuário tem um `salary` no perfil e quer ver, mês a mês, quanto sobra do salário depois de pagar as faturas. Mas faturas que contêm transações reembolsáveis não devem ser integralmente descontadas do salário — parte delas será ressarcida por outras pessoas.
+
+### Lógica da página
+
+**Estrutura por mês:**
+- O "mês" de cada fatura é determinado pelo `invoice.due_date` (data de vencimento). Lógica: o usuário recebe salário no início do mês e paga as faturas que vencem naquele mês.
+- Para cada mês exibido:
+  - **Base:** `salary` (do perfil do usuário)
+  - **Faturas do mês:** todas as invoices com `due_date` naquele mês (qualquer banco)
+  - **Total reembolsável:** soma de transações com `person_id` dentro dessas faturas
+  - **Total do bolso:** `total_amount_faturas - total_reembolsável`
+  - **Saldo projetado:** `salary - total_do_bolso`
+
+**Estados da fatura no cálculo:**
+- `OPEN` / `CLOSED` / `OVERDUE` → projeção (ainda não paga)
+- `PAID` → realizado (já saiu do bolso)
+- O mês mostra os dois: "Projetado: R$ X" e "Realizado: R$ Y" quando há mix.
+
+**Exibição das transações reembolsáveis:**
+- Na lista de faturas do mês, as transações com `person_id` aparecem destacadas de forma discreta (ex: chip com nome da pessoa).
+- O sistema informa ao usuário de forma clara mas não intrusiva: "R$ 150,00 são valores a receber de [Pessoa] e não saem do seu bolso".
+- Design a definir com a IA no momento da implementação.
+
+**Salário histórico:**
+- O `salary` atual do usuário deve afetar **apenas o mês vigente e os futuros**.
+- Meses anteriores devem usar o salário que estava cadastrado naquele momento.
+- Isso requer uma tabela de histórico de salário: `SalaryHistory { id, user_id, amount, effective_from (date) }`.
+- Quando o usuário altera o salário, o backend insere um novo registro em vez de sobrescrever.
+- **Implementação da tabela é backend — aguarda permissão.** Por enquanto, ao construir o frontend, usar `user.salary` para todos os meses como fallback aceitável.
+
+### API necessária (backend — aguarda permissão)
+```
+GET /budget?year=2026   → retorna meses do ano com breakdown: salary, invoices, reimbursable, net
+```
+Ou alternativamente o frontend monta o cálculo com os dados já disponíveis (invoices + transactions) sem endpoint novo — a IA deve avaliar qual abordagem é melhor.
+
+### Rollout sugerido (discutir com o usuário)
+1. **Fase 1** — Link transaction → person + visual nos cards (não precisa da página `/budget`)
+2. **Fase 2** — Página `/budget` usando dados existentes (sem histórico de salário ainda)
+3. **Fase 3** — Histórico de salário + cálculo retroativo preciso
