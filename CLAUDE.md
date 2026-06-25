@@ -74,8 +74,8 @@ GET /statement             → ⏳ pendente
 ## Design System
 
 - Tema dark obrigatório; referência visual: https://shadcnblocks-admin.vercel.app/
-- Valores monetários: `R$ 1.234,56`; negativos `text-destructive`; positivos `text-green-500`
-- Status de fatura: OPEN (azul) · CLOSED (amarelo) · OVERDUE (vermelho) · PAID (verde)
+- Valores monetários: `R$ 1.234,56`; negativos `text-destructive`; positivos `text-paid` (faturas/income) ou `text-receivable` (recebíveis)
+- Status de fatura: OPEN (azul/primary) · CLOSED (amarelo/amber) · OVERDUE (vermelho/destructive) · PAID (verde/paid)
 - "Atrasado" em A Receber usa `text-destructive` (vermelho) — igual a Dívidas, **não** usar `text-pending`
 - Ações (editar/deletar) aparecem apenas no hover da linha
 - Formulários: Sheet ou Dialog — nunca navegação para outra página
@@ -83,6 +83,21 @@ GET /statement             → ⏳ pendente
 - Tokens CSS customizados em `globals.css` (Tailwind v4 `@theme inline`):
   - `--receivable` / `bg-receivable` / `text-receivable` → verde de recebíveis/recebidos
   - `--pending` / `bg-pending` / `text-pending` → amarelo de pendente/vencendo (não usar para "atrasado")
+  - `--color-paid` / `text-paid` / `bg-paid` → verde de faturas pagas (alias de `--color-income`)
+
+## Página de Faturas do Banco (`/banks/:id/invoices`)
+
+**Lista:**
+- Seções separadas por status: **Vencidas** (`text-destructive/90`) · **Ativas** (`text-muted-foreground/70`) · **Histórico** (`text-paid/90`)
+- Ativas: mostra 3 por padrão, expand/collapse (`ACTIVE_VISIBLE = 3`); Histórico: mostra 1 (`PAID_VISIBLE = 1`)
+- Fatura do mês vigente (OPEN calculado por `invoiceCloseDate`) recebe badge "Atual" (bg-primary)
+- Faturas com `totalAmount = 0` são ocultadas
+
+**Detalhe (Sheet lateral):**
+- Header com tint 10% da cor do status via `statusHeaderStyle` (usa `color-mix(in oklch, var(--status) 10%, transparent)`)
+- Total: `text-destructive` se OVERDUE · `text-paid` se PAID · neutro demais; tamanho `text-[22px]`
+- Transações separadas em: **Transações** (normais) e **Parcelamentos** — ambas ordenadas por data decrescente
+- Detecção de parcelamento: regex `/\s\d+\/\d+$/` no título — **não usar `parentId`** (primeira parcela tem `parentId = null`)
 
 ## Painel "Atenção agora" (overview/page.tsx)
 
