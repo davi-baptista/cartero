@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import {
   ArrowLeft,
   ChevronRight,
+  ChevronDown,
   CreditCard,
   Wallet,
   Receipt,
@@ -27,7 +28,6 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
-  SheetDescription,
 } from '@/components/ui/sheet'
 import { MotionRow } from '@/components/ui/motion-row'
 import { getBankInvoices, getInvoice, updateInvoiceStatus } from '@/services/invoices.service'
@@ -61,30 +61,29 @@ const STATUS_CONFIG: Record<InvoiceStatus, { label: string; className: string }>
   },
   [InvoiceStatus.PAID]: {
     label: 'Paga',
-    className: 'bg-green-500/15 text-green-500',
+    className: 'bg-paid/15 text-paid',
   },
 }
 
 // Status color primitives used for row highlight and sheet header tint
 const STATUS_COLOR: Record<InvoiceStatus, string> = {
-  [InvoiceStatus.OPEN]: 'oklch(0.640 0.210 272)',
-  [InvoiceStatus.CLOSED]: 'oklch(0.750 0.150 80)',
-  [InvoiceStatus.OVERDUE]: 'oklch(0.704 0.191 22)',
-  [InvoiceStatus.PAID]: 'oklch(0.700 0.170 145)',
+  [InvoiceStatus.OPEN]: 'var(--primary)',
+  [InvoiceStatus.CLOSED]: 'oklch(0.750 0.150 80)', // no token for amber
+  [InvoiceStatus.OVERDUE]: 'var(--destructive)',
+  [InvoiceStatus.PAID]: 'var(--color-income)',
 }
 
-function statusHeaderStyle(status: InvoiceStatus): React.CSSProperties {
-  const c = STATUS_COLOR[status]
-  return {
-    backgroundColor: `color-mix(in oklch, ${c} 10%, transparent)`,
-    borderBottomColor: `color-mix(in oklch, ${c} 22%, transparent)`,
-  }
-}
 
 function statusRowBg(status: InvoiceStatus): React.CSSProperties {
   const c = STATUS_COLOR[status]
   return { backgroundColor: `color-mix(in oklch, ${c} 7%, transparent)` }
 }
+
+function statusHeaderStyle(status: InvoiceStatus): React.CSSProperties {
+  const c = STATUS_COLOR[status]
+  return { backgroundColor: `color-mix(in oklch, ${c} 10%, transparent)` }
+}
+
 
 const INCOME_COLOR = 'var(--color-income)'
 const EXPENSE_BG = 'var(--color-expense-bg)'
@@ -99,6 +98,16 @@ const TYPE_ICON: Record<TransactionType, LucideIcon> = {
   [TransactionType.PIX]: Receipt,
   [TransactionType.BOLETO]: FileText,
 }
+
+const STATUS_SORT_ORDER: Record<InvoiceStatus, number> = {
+  [InvoiceStatus.OVERDUE]: 0,
+  [InvoiceStatus.CLOSED]: 1,
+  [InvoiceStatus.OPEN]: 2,
+  [InvoiceStatus.PAID]: 3,
+}
+
+const ACTIVE_VISIBLE = 3
+const PAID_VISIBLE = 1
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -115,6 +124,30 @@ function calcDueDate(bank: Bank, month: number, year: number): string {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+function ExpandButton({
+  expanded,
+  hiddenCount,
+  onToggle,
+}: {
+  expanded: boolean
+  hiddenCount: number
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="flex min-h-[44px] w-full items-center gap-1.5 px-2 py-2 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <ChevronDown
+        className={cn('size-3.5 shrink-0 transition-transform duration-200', expanded && 'rotate-180')}
+        aria-hidden="true"
+      />
+      {expanded ? 'Ver menos' : `Ver ${hiddenCount} ${hiddenCount === 1 ? 'fatura' : 'faturas'} a mais`}
+    </button>
+  )
+}
 
 function StatusBadge({ status }: { status: InvoiceStatus }) {
   const { label, className } = STATUS_CONFIG[status]
@@ -134,11 +167,13 @@ function InvoiceRow({
   invoice,
   bank,
   isSelected,
+  isAtual,
   onClick,
 }: {
   invoice: Invoice
   bank: Bank | undefined
   isSelected: boolean
+  isAtual?: boolean
   onClick: () => void
 }) {
   const monthYear = capitalize(formatMonthYear(invoice.month, invoice.year))
@@ -148,15 +183,20 @@ function InvoiceRow({
     <button
       onClick={onClick}
       aria-pressed={isSelected}
-      aria-label={`${monthYear} — ${STATUS_CONFIG[invoice.status].label}`}
+      aria-label={`${monthYear} — ${STATUS_CONFIG[invoice.status].label}${isAtual ? ' — Atual' : ''}`}
       className="group flex w-full items-center gap-4 px-2 py-4 text-left transition-colors hover:bg-muted/30"
       style={isSelected ? statusRowBg(invoice.status) : undefined}
     >
       {/* Month + status + dates */}
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           <span className="text-[15px] font-medium">{monthYear}</span>
           <StatusBadge status={invoice.status} />
+          {isAtual && (
+            <span className="inline-flex items-center rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+              Atual
+            </span>
+          )}
         </div>
         {bank && (
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
@@ -279,22 +319,23 @@ function InvoiceDetailSheet({
   const monthYear = invoice ? capitalize(formatMonthYear(invoice.month, invoice.year)) : ''
   const total = invoice ? Number(invoice.totalAmount) : 0
   const txCount = invoice?.transactions?.length ?? 0
+  const isInstallment = (tx: Transaction) => /\s\d+\/\d+$/.test(tx.title)
+  const regularTxs = invoice?.transactions?.filter((tx) => !isInstallment(tx)) ?? []
+  const installmentTxs = invoice?.transactions?.filter((tx) => isInstallment(tx)) ?? []
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="flex w-full flex-col p-0 sm:max-w-lg" showCloseButton>
         {isLoading || !invoice ? (
-          <div className="flex flex-1 flex-col gap-5 p-6">
-            <div className="flex items-center gap-2.5">
+          <div className="flex flex-1 flex-col">
+            <div className="border-b px-6 pb-4 pt-6">
               <Skeleton className="h-7 w-40" />
-              <Skeleton className="h-5 w-16 rounded-full" />
             </div>
-            <Skeleton className="h-3 w-52" />
-            <div className="mt-2 rounded-xl border border-border p-4">
+            <div className="border-b px-6 py-4">
               <Skeleton className="h-3 w-24" />
               <Skeleton className="mt-2 h-8 w-36" />
             </div>
-            <div className="mt-2 space-y-px">
+            <div className="space-y-px pt-1">
               {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-14 w-full" />
               ))}
@@ -303,29 +344,21 @@ function InvoiceDetailSheet({
         ) : (
           <>
             {/* Header */}
-            <SheetHeader
-              className="border-b px-6 pb-4 pt-6"
-              style={statusHeaderStyle(invoice.status)}
-            >
-              <div className="flex items-center gap-2.5">
-                <SheetTitle className="text-xl font-semibold tracking-tight">
-                  {monthYear}
-                </SheetTitle>
-                <StatusBadge status={invoice.status} />
-              </div>
-              {bank && (
-                <SheetDescription className="text-[12px] text-foreground/55">
-                  Fecha {calcCloseDate(bank, invoice.month, invoice.year)} · Vence{' '}
-                  {calcDueDate(bank, invoice.month, invoice.year)}
-                </SheetDescription>
-              )}
+            <SheetHeader className="border-b px-6 pb-4 pt-6" style={statusHeaderStyle(invoice.status)}>
+              <SheetTitle className="text-lg font-semibold tracking-tight">
+                {monthYear}
+              </SheetTitle>
             </SheetHeader>
 
             {/* Total + action */}
             <div className="flex items-center justify-between px-6 py-4">
               <div>
                 <p className="text-xs text-muted-foreground">Total da fatura</p>
-                <p className="mt-1 text-[28px] font-semibold tabular-nums leading-none tracking-[-0.02em]">
+                <p className={cn(
+                  'mt-1 text-[22px] font-semibold tabular-nums leading-none tracking-[-0.02em]',
+                  invoice.status === InvoiceStatus.OVERDUE && 'text-destructive',
+                  invoice.status === InvoiceStatus.PAID && 'text-paid',
+                )}>
                   {formatCurrency(total)}
                 </p>
               </div>
@@ -348,6 +381,9 @@ function InvoiceDetailSheet({
             <div className="flex-1 overflow-y-auto">
               {txCount === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <div className="mb-3 flex size-11 items-center justify-center rounded-xl bg-muted/40">
+                    <Receipt className="size-5 text-muted-foreground/50" />
+                  </div>
                   <p className="text-sm font-medium">Nenhuma transação</p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Esta fatura não tem transações registradas.
@@ -355,24 +391,42 @@ function InvoiceDetailSheet({
                 </div>
               ) : (
                 <>
-                  <p className="px-4 py-3 text-[11px] text-muted-foreground">
-                    {txCount} transaç{txCount === 1 ? 'ão' : 'ões'}
-                  </p>
-                  {invoice.transactions!.map((tx, i) => (
-                    <motion.div
-                      key={tx.id}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{
-                        duration: 0.2,
-                        delay: Math.min(i, 12) * 0.03,
-                        ease: EASE_OUT_EXPO,
-                      }}
-                      className="border-b border-border last:border-b-0"
-                    >
-                      <TxRow tx={tx} />
-                    </motion.div>
-                  ))}
+                  {regularTxs.length > 0 && (
+                    <div>
+                      <p className="border-y border-border px-4 py-3 text-[11px] font-medium text-muted-foreground">
+                        Transações · {regularTxs.length}
+                      </p>
+                      {regularTxs.map((tx, i) => (
+                        <motion.div
+                          key={tx.id}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.2, delay: Math.min(i, 12) * 0.03, ease: EASE_OUT_EXPO }}
+                          className="border-b border-border last:border-b-0"
+                        >
+                          <TxRow tx={tx} />
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+                  {installmentTxs.length > 0 && (
+                    <div>
+                      <p className="border-y border-border px-4 py-3 text-[11px] font-medium text-muted-foreground">
+                        Parcelamentos · {installmentTxs.length}
+                      </p>
+                      {installmentTxs.map((tx, i) => (
+                        <motion.div
+                          key={tx.id}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.2, delay: Math.min(i, 12) * 0.03, ease: EASE_OUT_EXPO }}
+                          className="border-b border-border last:border-b-0"
+                        >
+                          <TxRow tx={tx} />
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -391,6 +445,8 @@ export default function BankInvoicesPage() {
 
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [activeExpanded, setActiveExpanded] = useState(false)
+  const [historyExpanded, setHistoryExpanded] = useState(false)
 
   const { data: bank } = useQuery({
     queryKey: ['bank', bankId],
@@ -402,15 +458,52 @@ export default function BankInvoicesPage() {
     queryFn: () => getBankInvoices(bankId),
   })
 
-  const sorted = useMemo(
-    () =>
-      invoices
-        ? invoices
-            .filter((i) => Number(i.totalAmount) > 0)
-            .sort((a, b) => (b.year !== a.year ? b.year - a.year : b.month - a.month))
-        : [],
-    [invoices],
-  )
+  const { overdueInvoices, activeInvoices, paidInvoices } = useMemo(() => {
+    if (!invoices) return { overdueInvoices: [] as Invoice[], activeInvoices: [] as Invoice[], paidInvoices: [] as Invoice[] }
+
+    const filtered = invoices.filter((i) => Number(i.totalAmount) > 0)
+
+    const overdueInvoices = filtered
+      .filter((i) => i.status === InvoiceStatus.OVERDUE)
+      .sort((a, b) => (a.year !== b.year ? a.year - b.year : a.month - b.month))
+
+    const activeInvoices = filtered
+      .filter((i) => i.status === InvoiceStatus.CLOSED || i.status === InvoiceStatus.OPEN)
+      .sort((a, b) => {
+        const sd = STATUS_SORT_ORDER[a.status] - STATUS_SORT_ORDER[b.status]
+        if (sd !== 0) return sd
+        return a.year !== b.year ? a.year - b.year : a.month - b.month
+      })
+
+    const paidInvoices = filtered
+      .filter((i) => i.status === InvoiceStatus.PAID)
+      .sort((a, b) => (b.year !== a.year ? b.year - a.year : b.month - a.month))
+
+    return { overdueInvoices, activeInvoices, paidInvoices }
+  }, [invoices])
+
+  const isEmpty = overdueInvoices.length === 0 && activeInvoices.length === 0 && paidInvoices.length === 0
+
+  const activeHidden = Math.max(0, activeInvoices.length - ACTIVE_VISIBLE)
+  const paidHidden = Math.max(0, paidInvoices.length - PAID_VISIBLE)
+
+  function isAtual(inv: Invoice): boolean {
+    if (inv.status !== InvoiceStatus.OPEN || !bank) return false
+    const now = new Date()
+    const day = now.getDate()
+    const month = now.getMonth() + 1
+    const year = now.getFullYear()
+    let targetMonth: number
+    let targetYear: number
+    if (day > bank.invoiceCloseDate) {
+      targetMonth = month === 12 ? 1 : month + 1
+      targetYear = month === 12 ? year + 1 : year
+    } else {
+      targetMonth = month
+      targetYear = year
+    }
+    return inv.month === targetMonth && inv.year === targetYear
+  }
 
   function handleClick(id: string) {
     setSelectedInvoiceId(id)
@@ -442,51 +535,133 @@ export default function BankInvoicesPage() {
         </div>
       </div>
 
-      {/* Invoice list */}
-      <div className="border-t border-border">
-        {isLoading ? (
-          <div>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-4 border-b border-border px-2 py-4 last:border-b-0"
-              >
-                <div className="flex flex-1 flex-col gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <Skeleton className="h-5 w-28" />
-                    <Skeleton className="h-5 w-14 rounded-full" />
-                  </div>
-                  <Skeleton className="h-3 w-52" />
+      {/* Invoice sections */}
+      {isLoading ? (
+        <div className="border-t border-border">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-4 border-b border-border px-2 py-4 last:border-b-0"
+            >
+              <div className="flex flex-1 flex-col gap-2">
+                <div className="flex items-center gap-2.5">
+                  <Skeleton className="h-5 w-28" />
+                  <Skeleton className="h-5 w-14 rounded-full" />
                 </div>
-                <Skeleton className="h-5 w-24" />
+                <Skeleton className="h-3 w-52" />
               </div>
-            ))}
-          </div>
-        ) : sorted.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-muted/40">
-              <CreditCard className="size-6 text-muted-foreground/60" />
+              <Skeleton className="h-5 w-24" />
             </div>
-            <p className="text-sm font-medium">Nenhuma fatura encontrada</p>
-            <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-              As faturas são criadas automaticamente ao registrar transações de crédito neste banco.
-            </p>
+          ))}
+        </div>
+      ) : isEmpty ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-muted/40">
+            <CreditCard className="size-6 text-muted-foreground/60" />
           </div>
-        ) : (
-          <div>
-            {sorted.map((invoice, i) => (
-              <MotionRow key={invoice.id} index={i}>
-                <InvoiceRow
-                  invoice={invoice}
-                  bank={bank}
-                  isSelected={selectedInvoiceId === invoice.id && detailOpen}
-                  onClick={() => handleClick(invoice.id)}
-                />
-              </MotionRow>
-            ))}
-          </div>
-        )}
-      </div>
+          <p className="text-sm font-medium">Nenhuma fatura encontrada</p>
+          <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+            As faturas são criadas automaticamente ao registrar transações de crédito neste banco.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-6">
+          {/* ── Vencidas ───────────────────────────────────────────────── */}
+          {overdueInvoices.length > 0 && (
+            <div>
+              <p className="mb-2 text-[11px] font-medium text-destructive/90">Vencidas</p>
+              <div className="border-t border-border">
+                {overdueInvoices.map((invoice, i) => (
+                  <MotionRow key={invoice.id} index={i}>
+                    <InvoiceRow
+                      invoice={invoice}
+                      bank={bank}
+                      isSelected={selectedInvoiceId === invoice.id && detailOpen}
+                      onClick={() => handleClick(invoice.id)}
+                    />
+                  </MotionRow>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Ativas ─────────────────────────────────────────────────── */}
+          {activeInvoices.length > 0 && (
+            <div>
+              <p className="mb-2 text-[11px] font-medium text-muted-foreground/70">Ativas</p>
+              <div className="border-t border-border">
+                {activeInvoices.slice(0, ACTIVE_VISIBLE).map((invoice, i) => (
+                  <MotionRow key={invoice.id} index={i}>
+                    <InvoiceRow
+                      invoice={invoice}
+                      bank={bank}
+                      isSelected={selectedInvoiceId === invoice.id && detailOpen}
+                      isAtual={isAtual(invoice)}
+                      onClick={() => handleClick(invoice.id)}
+                    />
+                  </MotionRow>
+                ))}
+                {activeExpanded &&
+                  activeInvoices.slice(ACTIVE_VISIBLE).map((invoice, i) => (
+                    <MotionRow key={invoice.id} index={i}>
+                      <InvoiceRow
+                        invoice={invoice}
+                        bank={bank}
+                        isSelected={selectedInvoiceId === invoice.id && detailOpen}
+                        isAtual={isAtual(invoice)}
+                        onClick={() => handleClick(invoice.id)}
+                      />
+                    </MotionRow>
+                  ))}
+                {activeHidden > 0 && (
+                  <ExpandButton
+                    expanded={activeExpanded}
+                    hiddenCount={activeHidden}
+                    onToggle={() => setActiveExpanded((e) => !e)}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Histórico ──────────────────────────────────────────────── */}
+          {paidInvoices.length > 0 && (
+            <div>
+              <p className="mb-2 text-[11px] font-medium text-paid/90">Histórico</p>
+              <div className="border-t border-border">
+                {paidInvoices.slice(0, PAID_VISIBLE).map((invoice, i) => (
+                  <MotionRow key={invoice.id} index={i}>
+                    <InvoiceRow
+                      invoice={invoice}
+                      bank={bank}
+                      isSelected={selectedInvoiceId === invoice.id && detailOpen}
+                      onClick={() => handleClick(invoice.id)}
+                    />
+                  </MotionRow>
+                ))}
+                {historyExpanded &&
+                  paidInvoices.slice(PAID_VISIBLE).map((invoice, i) => (
+                    <MotionRow key={invoice.id} index={i}>
+                      <InvoiceRow
+                        invoice={invoice}
+                        bank={bank}
+                        isSelected={selectedInvoiceId === invoice.id && detailOpen}
+                        onClick={() => handleClick(invoice.id)}
+                      />
+                    </MotionRow>
+                  ))}
+                {paidHidden > 0 && (
+                  <ExpandButton
+                    expanded={historyExpanded}
+                    hiddenCount={paidHidden}
+                    onToggle={() => setHistoryExpanded((e) => !e)}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Detail sheet */}
       <InvoiceDetailSheet
