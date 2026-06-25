@@ -285,7 +285,6 @@ const EASE_OUT_EXPO = [0.16, 1, 0.3, 1] as const
 function InvoiceDetailSheet({
   invoiceId,
   bankId,
-  bank,
   open,
   onOpenChange,
 }: {
@@ -320,8 +319,10 @@ function InvoiceDetailSheet({
   const total = invoice ? Number(invoice.totalAmount) : 0
   const txCount = invoice?.transactions?.length ?? 0
   const isInstallment = (tx: Transaction) => /\s\d+\/\d+$/.test(tx.title)
-  const regularTxs = invoice?.transactions?.filter((tx) => !isInstallment(tx)) ?? []
-  const installmentTxs = invoice?.transactions?.filter((tx) => isInstallment(tx)) ?? []
+  const byDateDesc = (a: Transaction, b: Transaction) =>
+    parseDateOnly(b.date).getTime() - parseDateOnly(a.date).getTime()
+  const regularTxs = invoice?.transactions?.filter((tx) => !isInstallment(tx)).sort(byDateDesc) ?? []
+  const installmentTxs = invoice?.transactions?.filter((tx) => isInstallment(tx)).sort(byDateDesc) ?? []
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
