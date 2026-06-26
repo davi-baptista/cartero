@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { EntityValidationService } from 'src/common/entity-validation.service';
+import { FindInvoicesDto } from './dto/find-invoices.dto';
 
 @Injectable()
 export class InvoicesService {
@@ -16,7 +17,9 @@ export class InvoicesService {
       include: {
         transactions: {
           include: {
-            category: { select: { id: true, name: true, color: true, icon: true } },
+            category: {
+              select: { id: true, name: true, color: true, icon: true },
+            },
           },
           orderBy: { date: 'asc' },
         },
@@ -26,9 +29,15 @@ export class InvoicesService {
     return invoice;
   }
 
-  async findAll(userId: string, bankId?: string) {
+  async findAll(userId: string, filters: FindInvoicesDto = {}) {
     return await this.prisma.invoice.findMany({
-      where: { userId, bankId },
+      where: {
+        userId,
+        bankId: filters.bankId,
+        month: filters.month,
+        year: filters.year,
+      },
+      include: { bank: true },
     });
   }
 

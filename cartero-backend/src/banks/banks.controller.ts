@@ -55,6 +55,6 @@ export class BanksController {
 
   @Get(':id/invoices')
   findInvoices(@Param('id') id: string, @CurrentUser() user: User) {
-    return this.invoicesService.findAll(user.id, id);
+    return this.invoicesService.findAll(user.id, { bankId: id });
   }
 }

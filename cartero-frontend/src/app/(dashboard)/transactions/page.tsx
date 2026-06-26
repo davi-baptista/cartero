@@ -13,12 +13,14 @@ import {
   Receipt,
   FileText,
   TrendingUp,
+  Search,
   X,
   MoreVertical,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePicker } from '@/components/ui/date-picker'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -254,6 +256,7 @@ export default function TransactionsPage() {
   })
   const [bankFilter, setBankFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [search, setSearch] = useState('')
 
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editTx, setEditTx] = useState<Transaction | null>(null)
@@ -321,13 +324,25 @@ export default function TransactionsPage() {
     onError: () => toast.error('Não foi possível excluir a transação. Tente novamente.'),
   })
 
+  // ── Client-side search filter ──
+  const displayTransactions = useMemo(() => {
+    if (!transactions) return undefined
+    if (!search) return transactions
+    const q = search.toLowerCase()
+    return transactions.filter(
+      (tx) =>
+        tx.title.toLowerCase().includes(q) ||
+        (tx.description?.toLowerCase().includes(q) ?? false),
+    )
+  }, [transactions, search])
+
   // ── Summary ──
   const summary = useMemo(() => {
-    if (!transactions) return { receitas: 0, gastos: 0, saldo: 0 }
-    const receitas = transactions.filter((t) => !isExpense(t.type)).reduce((s, t) => s + t.amount, 0)
-    const gastos = transactions.filter((t) => isExpense(t.type)).reduce((s, t) => s + t.amount, 0)
+    if (!displayTransactions) return { receitas: 0, gastos: 0, saldo: 0 }
+    const receitas = displayTransactions.filter((t) => !isExpense(t.type)).reduce((s, t) => s + t.amount, 0)
+    const gastos = displayTransactions.filter((t) => isExpense(t.type)).reduce((s, t) => s + t.amount, 0)
     return { receitas, gastos, saldo: receitas - gastos }
-  }, [transactions])
+  }, [displayTransactions])
 
   // ── Handlers ──
   function handleEdit(tx: Transaction) {
@@ -391,6 +406,7 @@ export default function TransactionsPage() {
     setFilters({})
     setBankFilter('')
     setCategoryFilter('')
+    setSearch('')
   }
 
   const typeFilterValues: Array<{ label: string; value: TransactionType | undefined }> = [
@@ -476,8 +492,30 @@ export default function TransactionsPage() {
             </SelectContent>
           </Select>
 
+          {/* Search */}
+          <div className="relative min-w-48 flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por título ou descrição"
+              className="h-8 pl-8 pr-8 text-sm"
+              aria-label="Buscar por título ou descrição"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                aria-label="Limpar busca"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
+
           {/* Clear filters */}
-          {hasActiveFilters(filters) && (
+          {(hasActiveFilters(filters) || !!search) && (
             <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1 text-muted-foreground">
               <X className="size-3.5" />
               Limpar filtros
@@ -510,7 +548,7 @@ export default function TransactionsPage() {
       </div>
 
       {/* Summary tiles */}
-      {!txLoading && transactions && transactions.length > 0 && (
+      {!txLoading && displayTransactions && displayTransactions.length > 0 && (
         <div className="flex gap-3">
           <div className="min-w-0 flex-1 rounded-2xl bg-muted/30 px-4 py-3">
             <p className="text-xs font-medium text-muted-foreground">Receitas</p>
@@ -545,20 +583,20 @@ export default function TransactionsPage() {
           <div>
             {Array.from({ length: 8 }).map((_, i) => <RowSkeleton key={i} />)}
           </div>
-        ) : !transactions || transactions.length === 0 ? (
+        ) : !displayTransactions || displayTransactions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="mb-4 flex size-16 items-center justify-center rounded-3xl bg-muted/40">
               <TrendingUp className="size-7 text-muted-foreground" />
             </div>
             <p className="text-base font-semibold">
-              {hasActiveFilters(filters) ? 'Nenhuma transação encontrada' : 'Ainda sem transações'}
+              {(hasActiveFilters(filters) || search) ? 'Nenhuma transação encontrada' : 'Ainda sem transações'}
             </p>
             <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
-              {hasActiveFilters(filters)
+              {(hasActiveFilters(filters) || search)
                 ? 'Nenhuma transação corresponde aos filtros aplicados. Tente ajustá-los ou limpar a busca.'
                 : 'Crie sua primeira transação para começar a acompanhar seus gastos e receitas.'}
             </p>
-            {!hasActiveFilters(filters) && (
+            {!hasActiveFilters(filters) && !search && (
               <Button
                 className="mt-5"
                 onClick={() => { setEditTx(null); setEditScope(null); setSheetOpen(true) }}
@@ -570,7 +608,7 @@ export default function TransactionsPage() {
           </div>
         ) : (
           <div>
-            {transactions.map((tx, i) => (
+            {displayTransactions.map((tx, i) => (
               <MotionRow key={tx.id} index={i}>
                 <TransactionRow
                   tx={tx}

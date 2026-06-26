@@ -15,6 +15,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  PiggyBank,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -59,6 +60,7 @@ function SidebarToggle() {
 
 const navItems = [
   { href: '/overview', label: 'Visão Geral', icon: LayoutDashboard },
+  { href: '/budget', label: 'Orçamento', icon: PiggyBank },
   { href: '/transactions', label: 'Transações', icon: ArrowDownUp },
   { href: '/banks', label: 'Bancos', icon: Landmark },
   { href: '/categories', label: 'Categorias', icon: Tags },
@@ -117,6 +119,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     .toUpperCase()
 
   const currentPage = navItems.find((item) => pathname.startsWith(item.href))
+  const currentPageLabel = currentPage?.label ?? (pathname === '/profile' ? 'Meu perfil' : undefined)
 
   return (
     <SidebarProvider>
@@ -157,31 +160,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* User */}
           <SidebarFooter className="border-t border-sidebar-border px-3 py-3 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-3">
-            <div className="flex items-center gap-3 rounded-lg px-1.5 py-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-              <Avatar className="size-8 shrink-0">
-                <AvatarFallback className="bg-primary/20 text-[11px] font-semibold text-primary">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-                <p className="truncate text-[13px] font-medium leading-tight">{user.name}</p>
-                <p className="mt-0.5 truncate text-[11px] leading-tight text-muted-foreground">{user.email}</p>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-7 shrink-0 text-muted-foreground hover:text-destructive group-data-[collapsible=icon]:hidden"
-                onClick={logout}
-                aria-label="Sair"
-                title="Sair"
+            <div className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:gap-1">
+              <Link
+                href="/profile"
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-1.5 py-2 transition-colors hover:bg-muted/50 group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:rounded-lg group-data-[collapsible=icon]:p-2"
               >
-                <LogOut className="size-3.5" />
-              </Button>
-              {/* Collapsed-state logout — visible only when sidebar is icon-only */}
+                <Avatar className="size-8 shrink-0">
+                  <AvatarFallback className="bg-primary/20 text-[11px] font-semibold text-primary">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+                  <p className="truncate text-[13px] font-medium leading-tight">{user.name}</p>
+                  <p className="mt-0.5 truncate text-[11px] leading-tight text-muted-foreground">{user.email}</p>
+                </div>
+              </Link>
               <Button
                 variant="ghost"
                 size="icon"
-                className="hidden size-7 shrink-0 text-muted-foreground hover:text-destructive group-data-[collapsible=icon]:flex"
+                className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
                 onClick={logout}
                 aria-label="Sair"
                 title="Sair"
@@ -198,10 +195,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
             <SidebarToggle />
-            {currentPage && (
+            {currentPageLabel && (
               <>
                 <div className="h-4 w-px bg-border" aria-hidden />
-                <span className="text-sm font-medium">{currentPage.label}</span>
+                <span className="text-sm font-medium">{currentPageLabel}</span>
               </>
             )}
           </header>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, memo, type ReactNode } from 'react'
+import { useState, useMemo, useEffect, memo, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'motion/react'
@@ -38,7 +38,7 @@ const INVOICE_STATUS_CONFIG: Record<InvoiceStatus, { label: string; className: s
   [InvoiceStatus.OPEN]: { label: 'Aberta', className: 'bg-primary/15 text-primary' },
   [InvoiceStatus.CLOSED]: { label: 'Fechada', className: 'bg-amber-500/15 text-amber-400' },
   [InvoiceStatus.OVERDUE]: { label: 'Vencida', className: 'bg-destructive/15 text-destructive' },
-  [InvoiceStatus.PAID]: { label: 'Paga', className: 'bg-green-500/15 text-green-500' },
+  [InvoiceStatus.PAID]: { label: 'Paga', className: 'bg-paid/15 text-paid' },
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ function MonthNav({
         type="button"
         onClick={onPrev}
         aria-label="Mês anterior"
-        className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        className="flex size-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
       >
         <ChevronLeft className="size-4" />
       </button>
@@ -143,7 +143,7 @@ function MonthNav({
         type="button"
         onClick={onNext}
         aria-label="Próximo mês"
-        className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        className="flex size-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
       >
         <ChevronRight className="size-4" />
       </button>
@@ -283,7 +283,7 @@ function InvoiceAttentionRow({ invoice, banks }: { invoice: Invoice; banks: Bank
 
   return (
     <Link
-      href={`/banks/${invoice.bankId}/invoices`}
+      href={`/banks/${invoice.bankId}/invoices?invoiceId=${invoice.id}`}
       className="group flex items-center gap-3 py-3"
     >
       <div
@@ -506,6 +506,218 @@ function AttentionPanel({
   )
 }
 
+// ─── Calendar section ────────────────────────────────────────────────────────
+
+type CalEventKind = 'debt' | 'receivable' | 'invoice-due'
+
+interface CalEvent {
+  kind: CalEventKind
+  title: string
+  amount: number
+  urgent: boolean
+}
+
+const CAL_DOT: Record<CalEventKind, string> = {
+  'debt': 'bg-destructive',
+  'receivable': 'bg-receivable',
+  'invoice-due': 'bg-amber-400',
+}
+
+const CAL_LABEL: Record<CalEventKind, string> = {
+  'debt': 'Dívida',
+  'receivable': 'A receber',
+  'invoice-due': 'Fatura vence',
+}
+
+const CAL_AMOUNT_CLASS: Record<CalEventKind, string> = {
+  'debt': 'text-destructive',
+  'receivable': 'text-receivable',
+  'invoice-due': 'text-amber-400',
+}
+
+const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+
+function buildCalEvents(
+  year: number,
+  month: number,
+  debts: Debt[],
+  receivables: Receivable[],
+  invoices: Invoice[],
+  banks: Bank[],
+): Map<number, CalEvent[]> {
+  const map = new Map<number, CalEvent[]>()
+
+  function push(day: number, ev: CalEvent) {
+    if (day < 1) return
+    const list = map.get(day) ?? []
+    list.push(ev)
+    map.set(day, list)
+  }
+
+  const todayStr = new Date().toISOString().slice(0, 10)
+
+  for (const d of debts) {
+    if (d.isPaid) continue
+    const parts = d.dueDate.slice(0, 10).split('-').map(Number)
+    if (parts[0] !== year || parts[1] !== month) continue
+    push(parts[2], { kind: 'debt', title: d.title, amount: Number(d.amount), urgent: d.dueDate.slice(0, 10) <= todayStr })
+  }
+
+  for (const r of receivables) {
+    if (r.isPaid) continue
+    const parts = r.dueDate.slice(0, 10).split('-').map(Number)
+    if (parts[0] !== year || parts[1] !== month) continue
+    push(parts[2], { kind: 'receivable', title: r.title, amount: Number(r.amount), urgent: r.dueDate.slice(0, 10) <= todayStr })
+  }
+
+  for (const inv of invoices) {
+    if (inv.status === InvoiceStatus.PAID) continue
+    if (Number(inv.totalAmount) === 0) continue
+    if (inv.month !== month || inv.year !== year) continue
+    const bank = banks.find((b) => b.id === inv.bankId)
+    if (!bank) continue
+    push(bank.invoiceDueDate, {
+      kind: 'invoice-due',
+      title: bank.name,
+      amount: Number(inv.totalAmount),
+      urgent: inv.status === InvoiceStatus.OVERDUE,
+    })
+  }
+
+  return map
+}
+
+function CalendarSection({
+  year,
+  month,
+  debts,
+  receivables,
+  invoices,
+  banks,
+}: {
+  year: number
+  month: number
+  debts: Debt[]
+  receivables: Receivable[]
+  invoices: Invoice[]
+  banks: Bank[]
+}) {
+  const [selectedDay, setSelectedDay] = useState<number | null>(null)
+
+  useEffect(() => { setSelectedDay(null) }, [year, month])
+
+  const today = new Date()
+  const isCurrentMonth = today.getFullYear() === year && today.getMonth() + 1 === month
+  const todayDay = isCurrentMonth ? today.getDate() : -1
+
+  const eventsByDay = useMemo(
+    () => buildCalEvents(year, month, debts, receivables, invoices, banks),
+    [year, month, debts, receivables, invoices, banks],
+  )
+
+  const firstDOW = new Date(year, month - 1, 1).getDay()
+  const daysInMonth = new Date(year, month, 0).getDate()
+  const cells: Array<number | null> = [
+    ...Array(firstDOW).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ]
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  const selectedEvents = selectedDay !== null ? (eventsByDay.get(selectedDay) ?? []) : []
+
+  return (
+    <section aria-label="Calendário financeiro do mês">
+      <h2 className="mb-3 text-[15px] font-semibold tracking-tight">Calendário</h2>
+
+      {/* Weekday headers */}
+      <div className="grid grid-cols-7 border-b border-border pb-1">
+        {WEEKDAYS.map((d) => (
+          <div key={d} className="py-1 text-center text-[11px] font-medium text-muted-foreground">
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* Day grid */}
+      <div className="grid grid-cols-7 gap-y-0.5 pt-0.5">
+        {cells.map((day, idx) => {
+          if (day === null) return <div key={`e-${idx}`} />
+
+          const events = eventsByDay.get(day) ?? []
+          const isToday = day === todayDay
+          const isSelected = day === selectedDay
+          const isPast = isCurrentMonth && day < todayDay
+          const kinds = [...new Set(events.map((e) => e.kind))]
+          const hasEvents = events.length > 0
+
+          return (
+            <button
+              key={day}
+              type="button"
+              onClick={() => hasEvents && setSelectedDay(isSelected ? null : day)}
+              aria-pressed={isSelected || undefined}
+              aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}` : ''}`}
+              className={cn(
+                'flex flex-col items-center gap-1 rounded-lg py-2 transition-colors',
+                hasEvents ? (isSelected ? 'cursor-pointer bg-muted/60' : 'cursor-pointer hover:bg-muted/30') : 'cursor-default',
+                isPast && 'opacity-40',
+              )}
+            >
+              <span
+                className={cn(
+                  'flex size-7 items-center justify-center rounded-full text-[13px] font-medium leading-none',
+                  isToday ? 'bg-primary text-primary-foreground' : 'text-foreground',
+                )}
+              >
+                {day}
+              </span>
+              <div className="flex min-h-[6px] items-center gap-0.5">
+                {kinds.slice(0, 3).map((kind) => (
+                  <span key={kind} className={cn('size-1.5 rounded-full', CAL_DOT[kind])} aria-hidden />
+                ))}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Selected day events */}
+      {selectedDay !== null && selectedEvents.length > 0 && (
+        <div className="mt-4 overflow-hidden rounded-xl border border-border">
+          <p className="border-b border-border px-4 py-2 text-[11px] font-medium text-muted-foreground">
+            Dia {selectedDay}
+          </p>
+          {selectedEvents.map((ev, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
+            >
+              <span className={cn('size-2 shrink-0 rounded-full', CAL_DOT[ev.kind])} aria-hidden />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-medium leading-snug">{ev.title}</p>
+                <p className="text-[11px] text-muted-foreground">{CAL_LABEL[ev.kind]}</p>
+              </div>
+              <span className={cn('shrink-0 text-[13px] font-semibold tabular-nums', CAL_AMOUNT_CLASS[ev.kind])}>
+                {formatCurrency(ev.amount)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Legend */}
+      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5">
+        {(Object.entries(CAL_LABEL) as [CalEventKind, string][]).map(([kind, label]) => (
+          <div key={kind} className="flex items-center gap-1.5">
+            <span className={cn('size-2 shrink-0 rounded-full', CAL_DOT[kind])} aria-hidden />
+            <span className="text-[11px] text-muted-foreground">{label}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function OverviewPage() {
@@ -614,7 +826,7 @@ export default function OverviewPage() {
       .sort((a, b) => {
         if (a.status === InvoiceStatus.OVERDUE && b.status !== InvoiceStatus.OVERDUE) return -1
         if (b.status === InvoiceStatus.OVERDUE && a.status !== InvoiceStatus.OVERDUE) return 1
-        return b.year !== a.year ? b.year - a.year : b.month - a.month
+        return a.year !== b.year ? a.year - b.year : a.month - b.month
       })
   }, [invoices, banks])
 
@@ -672,6 +884,18 @@ export default function OverviewPage() {
           receivablesTotal={pendingReceivablesAll.length}
           isLoading={attentionLoading}
           windowStr={windowStr}
+        />
+      </div>
+
+      {/* Calendar */}
+      <div className="border-t border-border pt-6">
+        <CalendarSection
+          year={year}
+          month={month}
+          debts={debts}
+          receivables={receivables}
+          invoices={invoices}
+          banks={banks}
         />
       </div>
     </div>

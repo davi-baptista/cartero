@@ -10,6 +10,7 @@ interface AuthContextType {
   token: string | null
   login: (token: string, user: User) => void
   logout: () => Promise<void>
+  updateUser: (user: User) => void
   isLoading: boolean
 }
 
@@ -49,6 +50,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(newUser)
   }
 
+  function updateUser(updated: User) {
+    localStorage.setItem('cartero-user', JSON.stringify(updated))
+    setUser(updated)
+  }
+
   async function logout() {
     try {
       await api.post('/auth/logout')
@@ -63,7 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, token, login, logout, updateUser, isLoading }}>
       {children}
     </AuthContext.Provider>
   )

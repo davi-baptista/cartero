@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import type React from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -443,6 +443,8 @@ function InvoiceDetailSheet({
 export default function BankInvoicesPage() {
   const params = useParams()
   const bankId = params.id as string
+  const searchParams = useSearchParams()
+  const invoiceIdParam = searchParams.get('invoiceId')
 
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
@@ -484,6 +486,23 @@ export default function BankInvoicesPage() {
   }, [invoices])
 
   const isEmpty = overdueInvoices.length === 0 && activeInvoices.length === 0 && paidInvoices.length === 0
+
+  // Open sheet when arriving via ?invoiceId=
+  useEffect(() => {
+    if (!invoiceIdParam || !invoices) return
+    const inv = invoices.find((i) => i.id === invoiceIdParam)
+    if (!inv) return
+    if (inv.status === InvoiceStatus.PAID) {
+      const idx = paidInvoices.findIndex((i) => i.id === invoiceIdParam)
+      if (idx >= PAID_VISIBLE) setHistoryExpanded(true)
+    } else if (inv.status === InvoiceStatus.OPEN || inv.status === InvoiceStatus.CLOSED) {
+      const idx = activeInvoices.findIndex((i) => i.id === invoiceIdParam)
+      if (idx >= ACTIVE_VISIBLE) setActiveExpanded(true)
+    }
+    setSelectedInvoiceId(invoiceIdParam)
+    setDetailOpen(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceIdParam, invoices])
 
   const activeHidden = Math.max(0, activeInvoices.length - ACTIVE_VISIBLE)
   const paidHidden = Math.max(0, paidInvoices.length - PAID_VISIBLE)

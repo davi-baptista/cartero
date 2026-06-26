@@ -1,10 +1,12 @@
 import { api } from '@/lib/api'
 import type { Invoice, InvoiceStatus } from '@/types'
 
-export async function getInvoices(bankId?: string): Promise<Invoice[]> {
-  const { data } = await api.get<Invoice[]>('/invoices', {
-    params: bankId ? { bankId } : undefined,
-  })
+export async function getInvoices(params?: {
+  bankId?: string
+  month?: number
+  year?: number
+}): Promise<Invoice[]> {
+  const { data } = await api.get<Invoice[]>('/invoices', { params })
   return data
 }
 

@@ -15,7 +15,7 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
-    private env: EnvService
+    private env: EnvService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -60,20 +60,23 @@ export class AuthService {
     try {
       const payload = this.jwt.verify(refreshToken, {
         secret: this.env.get('REFRESH_TOKEN_SECRET'),
-      })
+      });
       return this.generateToken(payload.sub);
     } catch {
       throw new UnauthorizedException('Credenciais ínvalidas');
     }
-
   }
 
   private generateToken(userId: string) {
     return {
       access_token: this.jwt.sign({ sub: userId }),
-      refresh_token: this.jwt.sign({ sub: userId }, { 
-        secret: this.env.get('REFRESH_TOKEN_SECRET'),
-        expiresIn: '30d'})
+      refresh_token: this.jwt.sign(
+        { sub: userId },
+        {
+          secret: this.env.get('REFRESH_TOKEN_SECRET'),
+          expiresIn: '30d',
+        },
+      ),
     };
   }
 }

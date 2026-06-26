@@ -11,12 +11,14 @@ import {
   Check,
   Undo2,
   Wallet,
+  Search,
   MoreVertical,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePicker } from '@/components/ui/date-picker'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -174,14 +176,14 @@ const ReceivableRow = memo(function ReceivableRow({
         <span
           className={cn(
             'text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
-            receivable.isPaid ? 'text-receivable' : 'text-receivable/80',
+            receivable.isPaid ? 'text-receivable' : overdue ? 'text-destructive' : '',
           )}
         >
           {formatCurrency(receivable.amount)}
         </span>
         {overdue ? (
           <span className="inline-flex items-center rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-medium text-destructive">
-            Atrasado {formatDate(receivable.dueDate)}
+            Atrasada {formatDate(receivable.dueDate)}
           </span>
         ) : (
           <span className="text-xs text-muted-foreground">{formatDate(receivable.dueDate)}</span>
@@ -193,7 +195,7 @@ const ReceivableRow = memo(function ReceivableRow({
         <span
           className={cn(
             'text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
-            receivable.isPaid ? 'text-receivable' : 'text-receivable/80',
+            receivable.isPaid ? 'text-receivable' : overdue ? 'text-destructive' : '',
           )}
         >
           {formatCurrency(receivable.amount)}
@@ -286,6 +288,7 @@ export default function ReceivablesPage() {
     const d = new Date()
     return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10)
   })
+  const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editReceivable, setEditReceivable] = useState<Receivable | null>(null)
   const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
@@ -353,19 +356,28 @@ export default function ReceivablesPage() {
   }, [highlightId, receivables])
 
   const summary = useMemo(() => {
-    if (!receivables) return { pending: 0, received: 0 }
+    if (!receivables) return { pending: 0, overdueCount: 0 }
     const pending = receivables.filter((r) => !r.isPaid).reduce((s, r) => s + Number(r.amount), 0)
-    return { pending }
+    const overdueCount = receivables.filter(isOverdue).length
+    return { pending, overdueCount }
   }, [receivables])
 
   const filtered = useMemo(() => {
     if (!receivables) return []
-    const list = receivables.filter((r) => (tab === 'pending' ? !r.isPaid : r.isPaid))
+    let list = receivables.filter((r) => (tab === 'pending' ? !r.isPaid : r.isPaid))
+    if (search) {
+      const q = search.toLowerCase()
+      list = list.filter(
+        (r) =>
+          r.title.toLowerCase().includes(q) ||
+          (r.description?.toLowerCase().includes(q) ?? false),
+      )
+    }
     if (tab === 'pending') {
       list.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
     }
     return list
-  }, [receivables, tab])
+  }, [receivables, tab, search])
 
   function handleEdit(receivable: Receivable) {
     if (receivable.parentId) {
@@ -434,6 +446,11 @@ export default function ReceivablesPage() {
               <span className="font-medium tabular-nums tracking-[-0.01em] text-receivable">
                 {formatCurrency(summary.pending)}
               </span>
+              {summary.overdueCount > 0 && (
+                <span className="ml-2 text-xs font-medium text-destructive">
+                  · {summary.overdueCount} atrasada{summary.overdueCount > 1 ? 's' : ''}
+                </span>
+              )}
             </p>
           )}
         </div>
@@ -475,11 +492,33 @@ export default function ReceivablesPage() {
               </SelectContent>
             </Select>
           )}
-          {(startDate || endDate || personFilter) && (
+          {/* Search */}
+          <div className="relative min-w-48 flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por título ou descrição"
+              className="h-8 pl-8 pr-8 text-sm"
+              aria-label="Buscar por título ou descrição"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                aria-label="Limpar busca"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
+
+          {(startDate || endDate || personFilter || search) && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => { setStartDate(undefined); setEndDate(undefined); setPersonFilter(undefined) }}
+              onClick={() => { setStartDate(undefined); setEndDate(undefined); setPersonFilter(undefined); setSearch('') }}
               className="gap-1 text-muted-foreground"
             >
               <X className="size-3.5" />
@@ -521,12 +560,16 @@ export default function ReceivablesPage() {
               <Wallet className="size-5 text-receivable/70" />
             </div>
             <p className="text-sm font-medium">
-              {tab === 'pending' ? 'Nada a receber por enquanto' : 'Nenhum recebimento registrado'}
+              {search
+                ? 'Nenhuma cobrança encontrada'
+                : (tab === 'pending' ? 'Nada a receber por enquanto' : 'Nenhum recebimento registrado')}
             </p>
             <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-              {tab === 'pending'
-                ? 'Crie uma nova cobrança usando o botão acima.'
-                : 'Cobranças marcadas como recebidas aparecerão aqui.'}
+              {search
+                ? 'Nenhum resultado para a busca. Tente um termo diferente.'
+                : (tab === 'pending'
+                    ? 'Crie uma nova cobrança usando o botão acima.'
+                    : 'Cobranças marcadas como recebidas aparecerão aqui.')}
             </p>
           </div>
         ) : (

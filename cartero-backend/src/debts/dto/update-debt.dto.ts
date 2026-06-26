@@ -12,7 +12,7 @@ export class UpdateDebtDto {
   @IsOptional()
   @IsUUID()
   personId?: string;
-  
+
   @IsOptional()
   @IsString()
   title?: string;

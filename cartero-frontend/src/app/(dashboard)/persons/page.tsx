@@ -14,6 +14,7 @@ import {
   X,
   Check,
   Undo2,
+  MoreVertical,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -37,6 +38,13 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { MotionRow } from '@/components/ui/motion-row'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   getPersons,
   createPerson,
@@ -515,7 +523,7 @@ export default function PersonsPage() {
                     <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-muted-foreground" />
                   </button>
 
-                  {/* Actions */}
+                  {/* Actions — desktop hover */}
                   <div className="hidden items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
                     <Button
                       variant="ghost"
@@ -535,6 +543,33 @@ export default function PersonsPage() {
                     >
                       <Trash2 className="size-3.5" />
                     </Button>
+                  </div>
+
+                  {/* Mobile dropdown */}
+                  <div className="sm:hidden">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        aria-label="Mais opções"
+                      >
+                        <MoreVertical className="size-3.5" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setStatementPerson(person)}>
+                          <ChevronRight className="size-3.5" />
+                          Ver extrato
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => handleEdit(person)}>
+                          <Pencil className="size-3.5" />
+                          Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setDeleteTarget(person)} className="text-destructive focus:text-destructive">
+                          <Trash2 className="size-3.5" />
+                          Remover
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               </MotionRow>

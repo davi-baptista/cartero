@@ -12,12 +12,14 @@ import {
   Undo2,
   HandCoins,
   BellOff,
+  Search,
   MoreVertical,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePicker } from '@/components/ui/date-picker'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -182,7 +184,7 @@ const DebtRow = memo(function DebtRow({
         <span
           className={cn(
             'text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
-            debt.isPaid ? 'text-muted-foreground line-through' : 'text-destructive',
+            debt.isPaid ? 'text-muted-foreground line-through' : overdue ? 'text-destructive' : '',
           )}
         >
           {formatCurrency(debt.amount)}
@@ -201,7 +203,7 @@ const DebtRow = memo(function DebtRow({
         <span
           className={cn(
             'text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
-            debt.isPaid ? 'text-muted-foreground line-through' : 'text-destructive',
+            debt.isPaid ? 'text-muted-foreground line-through' : overdue ? 'text-destructive' : '',
           )}
         >
           {formatCurrency(debt.amount)}
@@ -294,6 +296,7 @@ export default function DebtsPage() {
     const d = new Date()
     return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10)
   })
+  const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editDebt, setEditDebt] = useState<Debt | null>(null)
   const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
@@ -369,12 +372,20 @@ export default function DebtsPage() {
 
   const filtered = useMemo(() => {
     if (!debts) return []
-    const list = debts.filter((d) => (tab === 'pending' ? !d.isPaid : d.isPaid))
+    let list = debts.filter((d) => (tab === 'pending' ? !d.isPaid : d.isPaid))
+    if (search) {
+      const q = search.toLowerCase()
+      list = list.filter(
+        (d) =>
+          d.title.toLowerCase().includes(q) ||
+          (d.description?.toLowerCase().includes(q) ?? false),
+      )
+    }
     if (tab === 'pending') {
       list.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
     }
     return list
-  }, [debts, tab])
+  }, [debts, tab, search])
 
   function handleEdit(debt: Debt) {
     if (debt.parentId) {
@@ -489,11 +500,33 @@ export default function DebtsPage() {
               </SelectContent>
             </Select>
           )}
-          {(startDate || endDate || personFilter) && (
+          {/* Search */}
+          <div className="relative min-w-48 flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por título ou descrição"
+              className="h-8 pl-8 pr-8 text-sm"
+              aria-label="Buscar por título ou descrição"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                aria-label="Limpar busca"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
+
+          {(startDate || endDate || personFilter || search) && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => { setStartDate(undefined); setEndDate(undefined); setPersonFilter(undefined) }}
+              onClick={() => { setStartDate(undefined); setEndDate(undefined); setPersonFilter(undefined); setSearch('') }}
               className="gap-1 text-muted-foreground"
             >
               <X className="size-3.5" />
@@ -535,12 +568,16 @@ export default function DebtsPage() {
               <HandCoins className="size-5 text-muted-foreground" />
             </div>
             <p className="text-sm font-medium">
-              {tab === 'pending' ? 'Nenhuma dívida pendente' : 'Nenhuma dívida paga'}
+              {search
+                ? 'Nenhuma dívida encontrada'
+                : (tab === 'pending' ? 'Nenhuma dívida pendente' : 'Nenhuma dívida paga')}
             </p>
             <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-              {tab === 'pending'
-                ? 'Cadastre uma nova dívida usando o botão acima.'
-                : 'Dívidas marcadas como pagas aparecerão aqui.'}
+              {search
+                ? 'Nenhum resultado para a busca. Tente um termo diferente.'
+                : (tab === 'pending'
+                    ? 'Cadastre uma nova dívida usando o botão acima.'
+                    : 'Dívidas marcadas como pagas aparecerão aqui.')}
             </p>
           </div>
         ) : (
