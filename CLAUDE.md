@@ -8,7 +8,7 @@
 
 - **Backend:** Nest.js · PostgreSQL (Docker) · Prisma
 - **Frontend:** Next.js · React · shadcn/ui (tema dark obrigatório)
-- **Auth:** JWT (access + refresh token)
+- **Auth:** JWT (access + refresh token via cookie `HttpOnly`)
 - **Deploy:** Render (backend) · Neon (PostgreSQL) · Vercel (frontend)
 
 ## Schema (campos-chave)
@@ -77,7 +77,7 @@ GET /statement             → ⏳ pendente
 - Valores monetários: `R$ 1.234,56`; negativos `text-destructive`; positivos `text-paid` (faturas/income) ou `text-receivable` (recebíveis)
 - Status de fatura: OPEN (azul/primary) · CLOSED (amarelo/amber) · OVERDUE (vermelho/destructive) · PAID (verde/paid)
 - "Atrasado" em A Receber usa `text-destructive` (vermelho) — igual a Dívidas, **não** usar `text-pending`
-- Ações (editar/deletar) aparecem apenas no hover da linha
+- Ações (editar/deletar) aparecem apenas no hover da linha; em mobile usam `DropdownMenu` com `MoreVertical`
 - Formulários: Sheet ou Dialog — nunca navegação para outra página
 - Feedback: toasts para todas as ações
 - Tokens CSS customizados em `globals.css` (Tailwind v4 `@theme inline`):
@@ -99,7 +99,9 @@ GET /statement             → ⏳ pendente
 - Transações separadas em: **Transações** (normais) e **Parcelamentos** — ambas ordenadas por data decrescente
 - Detecção de parcelamento: regex `/\s\d+\/\d+$/` no título — **não usar `parentId`** (primeira parcela tem `parentId = null`)
 
-## Painel "Atenção agora" (overview/page.tsx)
+## Visão Geral (`/overview`)
+
+### Painel "Atenção agora"
 
 Janela de 7 dias (`ATTENTION_DAYS_WINDOW = 7`), máximo 3 itens por seção (`ATTENTION_LIMIT = 3`).
 
@@ -115,6 +117,24 @@ Janela de 7 dias (`ATTENTION_DAYS_WINDOW = 7`), máximo 3 itens por seção (`AT
 - Clicar navega para `/debts?highlight=<id>` ou `/receivables?highlight=<id>`
 - "Ver X itens a mais" navega para `/debts?endDate=<hoje+7>` (sem startDate)
 
+### Gastos por categoria
+
+- Cada linha é clicável e navega para `/transactions?startDate=...&endDate=...&categoryId=...`
+- O intervalo de datas segue o seletor de mês da visão geral
+- Ícone `ExternalLink` aparece no hover para indicar navegação
+
+### Calendário financeiro
+
+- Exibido abaixo do grid principal, compartilha o seletor de mês
+- **Não faz queries novas** — reutiliza os dados de debts, receivables, invoices e banks já carregados
+- 3 tipos de evento (dots coloridos):
+  - `debt` → `bg-destructive` — dívidas não pagas
+  - `receivable` → `bg-receivable` — recebíveis não recebidos
+  - `invoice-due` → `bg-amber-400` — faturas não pagas (usa `bank.invoiceDueDate` como dia)
+- Clicar em um dia com eventos abre painel de detalhe abaixo do calendário
+- **Parsing de data:** sempre usar `.slice(0, 10)` antes de `.split('-')` — `dueDate` pode vir como ISO timestamp (`"2026-06-26T00:00:00.000Z"`), que quebraria a extração do dia
+- Faturas: exibe todas com `status !== PAID` e `totalAmount > 0` dentro do mês/ano — **sem filtro de status adicional**, para mostrar parcelas futuras de meses seguintes corretamente
+
 ## URL params — Dívidas e A Receber
 
 | Param | Efeito |
@@ -124,6 +144,16 @@ Janela de 7 dias (`ATTENTION_DAYS_WINDOW = 7`), máximo 3 itens por seção (`AT
 
 `startDate` padrão é sempre `undefined` nas páginas de Dívidas e A Receber — garante que itens vencidos de meses anteriores sempre apareçam.
 
+## URL params — Transações
+
+| Param | Efeito |
+|---|---|
+| `?startDate=<YYYY-MM-DD>` | Inicializa filtro de data início |
+| `?endDate=<YYYY-MM-DD>` | Inicializa filtro de data fim |
+| `?categoryId=<id>` | Inicializa filtro de categoria (pre-seleciona o Select) |
+
+Se qualquer um desses três parâmetros estiver presente na URL, o filtro padrão de "mês atual" é ignorado. Usado pela navegação da visão geral (Gastos por categoria → drill-through).
+
 ## Cache / React Query
 
 - `staleTime: 0` global — queries revalidam ao montar, sem necessidade de F5
@@ -131,6 +161,12 @@ Janela de 7 dias (`ATTENTION_DAYS_WINDOW = 7`), máximo 3 itens por seção (`AT
   - Mutations em `transactions` → invalida `['bank-invoices']`
   - Delete de `person` → invalida `['debts']` e `['receivables']`
   - `persons` query sem `enabled` lazy — sempre carregada
+
+## Auth — detalhes importantes
+
+- **Register retorna `accessToken`** → frontend faz login automático após cadastro (sem redirecionar para login)
+- **Cookie de refresh token:** `HttpOnly`, `secure: true` em produção, `sameSite: 'none'` (necessário porque Render e Vercel são origens distintas — `sameSite: 'strict'` bloquearia o cookie em requisições cross-origin, derrubando o usuário)
+- Interceptor Axios: 401 → chama `POST /auth/refresh` com `withCredentials: true` → atualiza `localStorage` e header → retenta a requisição original; requisições concorrentes são enfileiradas
 
 ## Estado Atual
 
@@ -143,6 +179,7 @@ Janela de 7 dias (`ATTENTION_DAYS_WINDOW = 7`), máximo 3 itens por seção (`AT
 - `findOrCreateInvoice` com lógica de mês correta
 - `PATCH /transactions/:id` → bloqueia edição se invoice original for PAID ✅
 - Invoice sync executado no bootstrap (app.scheduler.ts) ✅
+- Cookie de refresh com `sameSite: 'none'` para funcionar cross-origin (Render + Vercel) ✅
 
 ### Backend ⏳ Pendente
 - `GET /alerts`
@@ -157,16 +194,20 @@ Janela de 7 dias (`ATTENTION_DAYS_WINDOW = 7`), máximo 3 itens por seção (`AT
   - Telegram bot — simples de implementar, gratuito
 
 ### Frontend ✅ Completo
-- Auth (login/registro)
+- Auth (login/registro com auto-login após cadastro)
 - Sidebar colapsável com logout no modo ícone
 - Bancos, Categorias, Transações, Faturas, Dívidas, A Receber, Pessoas
 - Filtros por pessoa em Dívidas e A Receber (query `personId`)
-- Acessibilidade: `sr-only` em StatusDot, `aria-pressed` em tabs de filtro
+- Acessibilidade: `sr-only` em StatusDot, `aria-pressed` em tabs de filtro; mobile usa `DropdownMenu` nas páginas de Pessoas
 - Painel "Atenção agora" com janela de 7 dias, urgência por cor, lógica close/due por status
 - Highlight de linha via `?highlight=<id>` com animação de pulso e troca de aba automática
 - Filtro pré-aplicado via `?endDate=` ao clicar em "Ver mais" no painel de atenção
 - Select de pessoa com criar inline nos forms de Dívida e Recebível
 - Faturas vazias ocultadas na listagem do banco ✅
+- Calendário financeiro na visão geral (mês completo, dots por tipo, painel de detalhe) ✅
+- Drill-through de categoria: clicar em gastos por categoria navega para transações filtradas ✅
+- Página de Perfil (`/profile`) — editar nome, e-mail, senha e salário ✅ (não comitado ainda)
+- Página de Orçamento (`/budget`) — visão mensal do salário vs faturas ✅ (não comitado ainda)
 - Deploy: Vercel (frontend) · Render (backend) · Neon (banco)
 
 ### Frontend ⏳ Pendente
@@ -231,7 +272,7 @@ model Receivable {
 
 ---
 
-## Feature: Orçamento Mensal — página `/budget` (⏳ Em design — não implementada)
+## Feature: Orçamento Mensal — página `/budget` (⚠️ Frontend implementado, backend pendente)
 
 ### Contexto e motivação
 
@@ -253,25 +294,20 @@ O usuário tem um `salary` no perfil e quer ver, mês a mês, quanto sobra do sa
 - `PAID` → realizado (já saiu do bolso)
 - O mês mostra os dois: "Projetado: R$ X" e "Realizado: R$ Y" quando há mix.
 
-**Exibição das transações reembolsáveis:**
-- Na lista de faturas do mês, as transações com `person_id` aparecem destacadas de forma discreta (ex: chip com nome da pessoa).
-- O sistema informa ao usuário de forma clara mas não intrusiva: "R$ 150,00 são valores a receber de [Pessoa] e não saem do seu bolso".
-- Design a definir com a IA no momento da implementação.
-
 **Salário histórico:**
 - O `salary` atual do usuário deve afetar **apenas o mês vigente e os futuros**.
 - Meses anteriores devem usar o salário que estava cadastrado naquele momento.
 - Isso requer uma tabela de histórico de salário: `SalaryHistory { id, user_id, amount, effective_from (date) }`.
 - Quando o usuário altera o salário, o backend insere um novo registro em vez de sobrescrever.
-- **Implementação da tabela é backend — aguarda permissão.** Por enquanto, ao construir o frontend, usar `user.salary` para todos os meses como fallback aceitável.
+- **Implementação da tabela é backend — aguarda permissão.** Por enquanto, a página usa `user.salary` para todos os meses como fallback.
 
 ### API necessária (backend — aguarda permissão)
 ```
 GET /budget?year=2026   → retorna meses do ano com breakdown: salary, invoices, reimbursable, net
 ```
-Ou alternativamente o frontend monta o cálculo com os dados já disponíveis (invoices + transactions) sem endpoint novo — a IA deve avaliar qual abordagem é melhor.
+Ou alternativamente o frontend monta o cálculo com os dados já disponíveis (invoices + transactions) sem endpoint novo.
 
-### Rollout sugerido (discutir com o usuário)
+### Rollout sugerido
 1. **Fase 1** — Link transaction → person + visual nos cards (não precisa da página `/budget`)
-2. **Fase 2** — Página `/budget` usando dados existentes (sem histórico de salário ainda)
+2. **Fase 2** — Página `/budget` usando dados existentes (sem histórico de salário ainda) — **frontend pronto**
 3. **Fase 3** — Histórico de salário + cálculo retroativo preciso
