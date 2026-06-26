@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, memo } from 'react'
+import { useSearchParams } from 'next/navigation'
 import type { LucideIcon } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -245,9 +246,20 @@ interface FilterState {
 
 export default function TransactionsPage() {
   const qc = useQueryClient()
+  const searchParams = useSearchParams()
 
   // ── State ──
   const [filters, setFilters] = useState<FilterState>(() => {
+    const spStart = searchParams.get('startDate')
+    const spEnd = searchParams.get('endDate')
+    const spCategory = searchParams.get('categoryId')
+    if (spStart || spEnd || spCategory) {
+      return {
+        startDate: spStart ?? undefined,
+        endDate: spEnd ?? undefined,
+        categoryId: spCategory ?? undefined,
+      }
+    }
     const d = new Date()
     return {
       startDate: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`,
@@ -255,7 +267,7 @@ export default function TransactionsPage() {
     }
   })
   const [bankFilter, setBankFilter] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState(() => searchParams.get('categoryId') ?? '')
   const [search, setSearch] = useState('')
 
   const [sheetOpen, setSheetOpen] = useState(false)

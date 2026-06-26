@@ -14,6 +14,7 @@ import {
   Wallet,
   ArrowRight,
   CheckCircle2,
+  ExternalLink,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getTransactions } from '@/services/transactions.service'
@@ -169,12 +170,16 @@ const CategoryBar = memo(function CategoryBar({
   amount,
   pct,
   index,
-}: CategoryRowData & { index: number }) {
+  href,
+}: CategoryRowData & { index: number; href: string }) {
   const { Icon } = resolveCategoryIcon(icon)
   const barColor = color ?? 'oklch(0.640 0.210 272)'
 
   return (
-    <div className="flex items-center gap-3 py-2.5">
+    <Link
+      href={href}
+      className="group flex items-center gap-3 rounded-lg py-2.5 transition-colors hover:bg-muted/30 -mx-2 px-2"
+    >
       <div
         className="flex size-7 shrink-0 items-center justify-center rounded-lg"
         style={{ backgroundColor: `color-mix(in oklch, ${barColor} 15%, transparent)` }}
@@ -209,16 +214,22 @@ const CategoryBar = memo(function CategoryBar({
       <span className="w-9 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
         {pct.toFixed(0)}%
       </span>
-    </div>
+
+      <ExternalLink className="size-3 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground/50" aria-hidden />
+    </Link>
   )
 })
 
 function CategoryBreakdown({
   rows,
   isLoading,
+  startDate,
+  endDate,
 }: {
   rows: CategoryRowData[]
   isLoading: boolean
+  startDate: string
+  endDate: string
 }) {
   return (
     <section aria-label="Gastos por categoria">
@@ -249,7 +260,12 @@ function CategoryBreakdown({
       ) : (
         <div className="divide-y divide-border/50">
           {rows.map((row, i) => (
-            <CategoryBar key={row.categoryId} {...row} index={i} />
+            <CategoryBar
+              key={row.categoryId}
+              {...row}
+              index={i}
+              href={`/transactions?startDate=${startDate}&endDate=${endDate}&categoryId=${row.categoryId}`}
+            />
           ))}
         </div>
       )}
@@ -870,7 +886,7 @@ export default function OverviewPage() {
 
       {/* Main grid */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[3fr_2fr]">
-        <CategoryBreakdown rows={categoryRows} isLoading={txLoading} />
+        <CategoryBreakdown rows={categoryRows} isLoading={txLoading} startDate={startDate} endDate={endDate} />
 
         {/* Mobile separator */}
         <div className="border-t border-border lg:hidden" aria-hidden />
