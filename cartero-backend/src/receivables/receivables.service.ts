@@ -1,7 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Prisma, Receivable } from '@prisma/client';
+import { Prisma, Receivable, TransactionType } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
+import { findOrCreateInvoice } from 'src/common/helpers/invoice.helper';
+import {
+  RECEIVABLE_RECEIVED_CATEGORY_NAME,
+  RECEIVABLE_RECEIVED_CATEGORY_COLOR,
+  SYSTEM_CATEGORY_ICON,
+} from 'src/common/constants/system-categories';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateReceivableDto } from './dto/create-receivable.dto';
 import { UpdateReceivableDto } from './dto/update-receivable.dto';
@@ -114,6 +120,23 @@ export class ReceivablesService {
       debtorName = person.name;
     }
 
+    const markingAsReceived = dto.isPaid === true;
+
+    if (markingAsReceived && (!dto.paymentBankId || !dto.paymentType)) {
+      throw new BadRequestException(
+        'Informe paymentBankId e paymentType para marcar a cobrança como recebida',
+      );
+    }
+
+    const paymentBank = markingAsReceived
+      ? await this.entityValidationService.validateBank(
+          dto.paymentBankId as string,
+          userId,
+        )
+      : null;
+
+    const { paymentBankId, paymentType, ...receivableDto } = dto;
+
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
         const receivablesToUpdate = await this.getReceivablesByScope(
@@ -132,13 +155,98 @@ export class ReceivablesService {
                 ? null
                 : undefined;
 
+          let paymentTransactionId = receivable.paymentTransactionId;
+
+          if (
+            paidAt !== undefined &&
+            paidAt !== null &&
+            !receivable.paymentTransactionId
+          ) {
+            const category =
+              await this.entityValidationService.findOrCreateSystemCategory(
+                tx,
+                userId,
+                RECEIVABLE_RECEIVED_CATEGORY_NAME,
+                SYSTEM_CATEGORY_ICON,
+                RECEIVABLE_RECEIVED_CATEGORY_COLOR,
+              );
+
+            let invoiceId: string | null = null;
+            if (paymentType === TransactionType.CREDIT_CARD) {
+              const invoice = await findOrCreateInvoice(
+                tx,
+                userId,
+                paymentBankId as string,
+                paymentBank!.invoiceCloseDate,
+                paymentBank!.invoiceDueDate,
+                paidAt,
+              );
+              invoiceId = invoice.id;
+            }
+
+            const paymentTransaction = await tx.transaction.create({
+              data: {
+                userId,
+                bankId: paymentBankId as string,
+                categoryId: category.id,
+                invoiceId,
+                title: receivable.title,
+                type: TransactionType.INCOME, // forced regardless of paymentType
+                amount: receivable.amount,
+                date: paidAt,
+              },
+            });
+
+            if (invoiceId) {
+              await tx.invoice.update({
+                where: { id: invoiceId, userId },
+                data: { totalAmount: { increment: receivable.amount } },
+              });
+            }
+
+            paymentTransactionId = paymentTransaction.id;
+          } else if (paidAt === null && receivable.paymentTransactionId) {
+            const paymentTransaction = await tx.transaction.findUnique({
+              where: { id: receivable.paymentTransactionId, userId },
+            });
+
+            await tx.receivable.update({
+              where: { id: receivable.id, userId },
+              data: { paymentTransactionId: null },
+            });
+
+            if (paymentTransaction) {
+              await tx.transaction.delete({
+                where: { id: paymentTransaction.id, userId },
+              });
+
+              if (paymentTransaction.invoiceId) {
+                const invoice = await tx.invoice.update({
+                  where: { id: paymentTransaction.invoiceId, userId },
+                  data: {
+                    totalAmount: { decrement: paymentTransaction.amount },
+                  },
+                });
+
+                if (Number(invoice.totalAmount) === 0) {
+                  await tx.invoice.delete({
+                    where: { id: invoice.id, userId },
+                  });
+                }
+              }
+            }
+
+            paymentTransactionId = null;
+          }
+
           const updatedReceivable = await tx.receivable.update({
             where: { id: receivable.id, userId },
             data: {
-              ...dto,
+              ...receivableDto,
               debtorName,
               dueDate: dto.dueDate ? new Date(dto.dueDate) : receivable.dueDate,
               paidAt,
+              paymentTransactionId,
             },
           });
 
@@ -172,6 +280,60 @@ export class ReceivablesService {
           await tx.receivable.delete({
             where: { id: receivable.id, userId },
           });
+
+          if (receivable.transactionId) {
+            const transaction = await tx.transaction.findUnique({
+              where: { id: receivable.transactionId, userId },
+            });
+
+            if (transaction) {
+              await tx.transaction.delete({
+                where: { id: transaction.id, userId },
+              });
+
+              if (transaction.invoiceId) {
+                const invoice = await tx.invoice.update({
+                  where: { id: transaction.invoiceId, userId },
+                  data: {
+                    totalAmount: { decrement: transaction.amount },
+                  },
+                });
+
+                if (Number(invoice.totalAmount) === 0) {
+                  await tx.invoice.delete({
+                    where: { id: invoice.id, userId },
+                  });
+                }
+              }
+            }
+          }
+
+          if (receivable.paymentTransactionId) {
+            const paymentTransaction = await tx.transaction.findUnique({
+              where: { id: receivable.paymentTransactionId, userId },
+            });
+
+            if (paymentTransaction) {
+              await tx.transaction.delete({
+                where: { id: paymentTransaction.id, userId },
+              });
+
+              if (paymentTransaction.invoiceId) {
+                const invoice = await tx.invoice.update({
+                  where: { id: paymentTransaction.invoiceId, userId },
+                  data: {
+                    totalAmount: { decrement: paymentTransaction.amount },
+                  },
+                });
+
+                if (Number(invoice.totalAmount) === 0) {
+                  await tx.invoice.delete({
+                    where: { id: invoice.id, userId },
+                  });
+                }
+              }
+            }
+          }
         }
 
         return;

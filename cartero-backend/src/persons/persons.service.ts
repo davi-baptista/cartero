@@ -36,10 +36,12 @@ export class PersonsService {
 
   async findAll(userId: string, filters: FindPersonsDto = {}) {
     return await this.prisma.person.findMany({
-      where: { 
+      where: {
         userId,
-        name: filters.name ? { contains: filters.name, mode: 'insensitive' } : undefined,
-     },
+        name: filters.name
+          ? { contains: filters.name, mode: 'insensitive' }
+          : undefined,
+      },
     });
   }
 
@@ -62,8 +64,15 @@ export class PersonsService {
     return;
   }
 
-  async getStatement(id: string, userId: string, filters: GetStatementDto = {}) {
-    const person = await this.entityValidationService.validatePerson(id, userId);
+  async getStatement(
+    id: string,
+    userId: string,
+    filters: GetStatementDto = {},
+  ) {
+    const person = await this.entityValidationService.validatePerson(
+      id,
+      userId,
+    );
 
     const dateFilter = {
       gte: filters.startDate ? new Date(filters.startDate) : undefined,
@@ -79,11 +88,11 @@ export class PersonsService {
     });
 
     const totalDebts = debts
-      .filter(d => !d.isPaid)
+      .filter((d) => !d.isPaid)
       .reduce((acc, d) => acc + Number(d.amount), 0);
 
     const totalReceivables = receivables
-      .filter(r => !r.isPaid)
+      .filter((r) => !r.isPaid)
       .reduce((acc, r) => acc + Number(r.amount), 0);
 
     return {

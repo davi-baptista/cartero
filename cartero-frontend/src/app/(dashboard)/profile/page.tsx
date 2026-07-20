@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { CurrencyInput } from '@/components/ui/currency-input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/providers/auth-provider'
 import { updateMe } from '@/services/users.service'
@@ -56,7 +57,7 @@ export default function ProfilePage() {
 
   const [name, setName] = useState(user?.name ?? '')
   const [salary, setSalary] = useState(
-    user?.salary != null ? String(Number(user.salary)) : '',
+    user?.salary != null ? Number(user.salary) : 0,
   )
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -67,7 +68,7 @@ export default function ProfilePage() {
   useEffect(() => {
     if (user) {
       setName(user.name)
-      setSalary(user.salary != null ? String(Number(user.salary)) : '')
+      setSalary(user.salary != null ? Number(user.salary) : 0)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
@@ -82,7 +83,7 @@ export default function ProfilePage() {
   })
 
   const salaryMut = useMutation({
-    mutationFn: () => updateMe({ salary: parseFloat(salary) }),
+    mutationFn: () => updateMe({ salary }),
     onSuccess: (updated) => {
       updateUser(updated)
       toast.success('Salário atualizado')
@@ -114,10 +115,8 @@ export default function ProfilePage() {
 
   if (!user) return null
 
-  const parsedSalary = salary !== '' ? parseFloat(salary) : null
   const currentSalary = user.salary != null ? Number(user.salary) : null
-  const salaryUnchanged = parsedSalary === currentSalary
-  const salaryInvalid = salary !== '' && (isNaN(parsedSalary!) || parsedSalary! < 0)
+  const salaryUnchanged = salary === (currentSalary ?? 0)
 
   return (
     <div className="flex flex-col gap-6">
@@ -182,12 +181,7 @@ export default function ProfilePage() {
             <Button
               size="sm"
               onClick={() => salaryMut.mutate()}
-              disabled={
-                salaryMut.isPending ||
-                salary === '' ||
-                salaryInvalid ||
-                salaryUnchanged
-              }
+              disabled={salaryMut.isPending || salaryUnchanged}
             >
               {salaryMut.isPending ? 'Salvando…' : 'Salvar'}
             </Button>
@@ -198,13 +192,9 @@ export default function ProfilePage() {
               <span className="flex h-8 items-center rounded-l-lg border border-r-0 border-input bg-muted/40 px-3 text-sm text-muted-foreground select-none">
                 R$
               </span>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
+              <CurrencyInput
                 value={salary}
-                onChange={(e) => setSalary(e.target.value)}
-                placeholder="0,00"
+                onChange={setSalary}
                 className="h-8 rounded-l-none text-sm"
               />
             </div>

@@ -1,0 +1,12 @@
+export const DEBT_PAID_CATEGORY_NAME = 'Dívida paga';
+export const RECEIVABLE_RECEIVED_CATEGORY_NAME = 'Receita recebida';
+
+export const SYSTEM_CATEGORY_NAMES = [
+  DEBT_PAID_CATEGORY_NAME,
+  RECEIVABLE_RECEIVED_CATEGORY_NAME,
+];
+
+export const SYSTEM_CATEGORY_ICON = 'Lock';
+
+export const DEBT_PAID_CATEGORY_COLOR = '#65a30d';
+export const RECEIVABLE_RECEIVED_CATEGORY_COLOR = '#22c55e';

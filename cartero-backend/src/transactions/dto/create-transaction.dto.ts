@@ -38,4 +38,8 @@ export class CreateTransactionDto {
   @IsInt()
   @Min(1)
   installments?: number;
+
+  @IsOptional()
+  @IsUUID()
+  personId?: string;
 }

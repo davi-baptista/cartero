@@ -41,12 +41,16 @@ export class PersonsController {
   remove(@Param('id') id: string, @CurrentUser() user: User) {
     return this.PersonsService.remove(id, user.id);
   }
-  
-  @Get(':id/statement') 
-  getStatement(@Param('id') id: string, @CurrentUser() user: User, @Query() filters: GetStatementDto) {
+
+  @Get(':id/statement')
+  getStatement(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Query() filters: GetStatementDto,
+  ) {
     return this.PersonsService.getStatement(id, user.id, filters);
   }
-  
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: User) {
     return this.PersonsService.findOne(id, user.id);

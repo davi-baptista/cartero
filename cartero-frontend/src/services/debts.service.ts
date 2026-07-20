@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { Debt, InstallmentScope } from '@/types'
+import type { Debt, InstallmentScope, TransactionType } from '@/types'
 
 export async function getDebts(filters?: { personId?: string; startDate?: string; endDate?: string }): Promise<Debt[]> {
   const { data } = await api.get<Debt[]>('/debts', { params: filters })
@@ -35,6 +35,8 @@ export async function updateDebt(
     description: string
     isAlertEnabled: boolean
     isPaid: boolean
+    paymentBankId: string
+    paymentType: TransactionType
   }>,
   scope?: InstallmentScope,
 ): Promise<Debt | Debt[]> {

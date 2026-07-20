@@ -33,6 +33,7 @@ export async function createTransaction(payload: {
   date: string
   description?: string
   installments?: number
+  personId?: string
 }): Promise<Transaction | Transaction[]> {
   const { data } = await api.post<Transaction | Transaction[]>('/transactions', payload)
   return normalizeTransactionResponse(data)
@@ -48,6 +49,7 @@ export async function updateTransaction(
     amount: number
     date: string
     description: string
+    personId: string | null
   }>,
   scope?: InstallmentScope,
 ): Promise<Transaction | Transaction[]> {

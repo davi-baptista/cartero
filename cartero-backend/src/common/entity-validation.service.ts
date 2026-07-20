@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
@@ -105,5 +106,25 @@ export class EntityValidationService {
     }
 
     return person;
+  }
+
+  async findOrCreateSystemCategory(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    name: string,
+    icon: string,
+    color: string,
+  ) {
+    let category = await tx.category.findFirst({
+      where: { userId, name, isSystem: true },
+    });
+
+    if (!category) {
+      category = await tx.category.create({
+        data: { userId, name, icon, color, isSystem: true },
+      });
+    }
+
+    return category;
   }
 }

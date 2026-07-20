@@ -7,6 +7,7 @@ import {
   IsString,
   IsUUID,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 export class UpdateTransactionDto {
@@ -38,4 +39,9 @@ export class UpdateTransactionDto {
   @IsOptional()
   @IsDateString()
   date?: string;
+
+  @IsOptional()
+  @ValidateIf((o: UpdateTransactionDto) => o.personId !== null)
+  @IsUUID()
+  personId?: string | null;
 }

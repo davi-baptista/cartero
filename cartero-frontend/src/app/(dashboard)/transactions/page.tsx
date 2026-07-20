@@ -145,6 +145,12 @@ function TransactionRow({
               <span className="text-primary/60">parcelado</span>
             </>
           )}
+          {tx.person && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="truncate">{tx.person.name}</span>
+            </>
+          )}
         </div>
 
         {tx.description && (
@@ -299,6 +305,9 @@ export default function TransactionsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['bank-invoices'] })
+      qc.invalidateQueries({ queryKey: ['receivables'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['budget'] })
       setSheetOpen(false)
       toast.success('Transação criada')
     },
@@ -311,6 +320,9 @@ export default function TransactionsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['bank-invoices'] })
+      qc.invalidateQueries({ queryKey: ['receivables'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['budget'] })
       setSheetOpen(false)
       setEditTx(null)
       setEditScope(null)
@@ -326,12 +338,19 @@ export default function TransactionsPage() {
   })
 
   const deleteMut = useMutation({
-    mutationFn: ({ id, scope }: { id: string; scope?: InstallmentScope }) =>
+    mutationFn: ({ id, scope }: { id: string; scope?: InstallmentScope; hasPerson?: boolean }) =>
       deleteTransaction(id, scope),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['bank-invoices'] })
-      toast.success('Transação excluída')
+      qc.invalidateQueries({ queryKey: ['receivables'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['budget'] })
+      toast.success(
+        variables.hasPerson
+          ? 'Transação excluída — o recebível vinculado também foi removido'
+          : 'Transação excluída',
+      )
     },
     onError: () => toast.error('Não foi possível excluir a transação. Tente novamente.'),
   })
@@ -378,7 +397,7 @@ export default function TransactionsPage() {
   function handleScopeConfirm(scope: InstallmentScope) {
     if (!scopeDialog) return
     if (scopeDialog.mode === 'delete') {
-      deleteMut.mutate({ id: scopeDialog.tx.id, scope })
+      deleteMut.mutate({ id: scopeDialog.tx.id, scope, hasPerson: Boolean(scopeDialog.tx.personId) })
     } else {
       setEditScope(scope)
       setEditTx(scopeDialog.tx)
@@ -389,10 +408,14 @@ export default function TransactionsPage() {
 
   async function handleSheetSubmit(data: TransactionFormData, scope: InstallmentScope | null) {
     if (editTx) {
-      const { installments, date, title, ...rest } = data
+      const { installments, date, title, personId, ...rest } = data
       void installments
       const payload = editTx.parentId ? rest : { ...rest, date, title }
-      await updateMut.mutateAsync({ id: editTx.id, payload, scope: scope ?? undefined })
+      const finalPayload = {
+        ...payload,
+        personId: data.type === TransactionType.CREDIT_CARD ? (personId ?? null) : null,
+      }
+      await updateMut.mutateAsync({ id: editTx.id, payload: finalPayload, scope: scope ?? undefined })
     } else {
       await createMut.mutateAsync(data)
     }
@@ -650,6 +673,7 @@ export default function TransactionsPage() {
         mode={scopeDialog?.mode ?? 'delete'}
         onConfirm={handleScopeConfirm}
         onCancel={() => setScopeDialog(null)}
+        linkedWarning={Boolean(scopeDialog?.tx.personId)}
       />
 
       {/* Simple delete confirm for non-parcelado */}
@@ -670,7 +694,7 @@ export default function TransactionsPage() {
               variant="destructive"
               onClick={() => {
                 if (deleteTarget) {
-                  deleteMut.mutate({ id: deleteTarget.id })
+                  deleteMut.mutate({ id: deleteTarget.id, hasPerson: Boolean(deleteTarget.personId) })
                   setDeleteTarget(null)
                 }
               }}

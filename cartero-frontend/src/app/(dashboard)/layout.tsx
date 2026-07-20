@@ -37,6 +37,56 @@ import { useAuth } from '@/providers/auth-provider'
 import { Skeleton } from '@/components/ui/skeleton'
 import { NavigationProgress } from '@/components/ui/navigation-progress'
 
+function SidebarNav({ pathname }: { pathname: string }) {
+  const { isMobile, setOpenMobile } = useSidebar()
+
+  return (
+    <SidebarContent>
+      <SidebarGroup>
+        <SidebarGroupContent>
+          <SidebarMenu className="gap-0.5">
+            {navItems.map(({ href, label, icon: Icon }) => (
+              <SidebarMenuItem key={href}>
+                <SidebarMenuButton
+                  render={<Link href={href} />}
+                  isActive={pathname.startsWith(href)}
+                  tooltip={label}
+                  onClick={() => { if (isMobile) setOpenMobile(false) }}
+                >
+                  <Icon className="size-4" />
+                  <span>{label}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+    </SidebarContent>
+  )
+}
+
+function ProfileLink({ initials, name, email }: { initials: string; name: string; email: string }) {
+  const { isMobile, setOpenMobile } = useSidebar()
+
+  return (
+    <Link
+      href="/profile"
+      onClick={() => { if (isMobile) setOpenMobile(false) }}
+      className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-1.5 py-2 transition-colors hover:bg-muted/50 group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:rounded-lg group-data-[collapsible=icon]:p-2"
+    >
+      <Avatar className="size-8 shrink-0">
+        <AvatarFallback className="bg-primary/20 text-[11px] font-semibold text-primary">
+          {initials}
+        </AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+        <p className="truncate text-[13px] font-medium leading-tight">{name}</p>
+        <p className="mt-0.5 truncate text-[11px] leading-tight text-muted-foreground">{email}</p>
+      </div>
+    </Link>
+  )
+}
+
 function SidebarToggle() {
   const { state, toggleSidebar } = useSidebar()
   const isExpanded = state === 'expanded'
@@ -137,44 +187,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </SidebarHeader>
 
           {/* Navigation */}
-          <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupContent>
-                <SidebarMenu className="gap-0.5">
-                  {navItems.map(({ href, label, icon: Icon }) => (
-                    <SidebarMenuItem key={href}>
-                      <SidebarMenuButton
-                        render={<Link href={href} />}
-                        isActive={pathname.startsWith(href)}
-                        tooltip={label}
-                      >
-                        <Icon className="size-4" />
-                        <span>{label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          </SidebarContent>
+          <SidebarNav pathname={pathname} />
 
           {/* User */}
           <SidebarFooter className="border-t border-sidebar-border px-3 py-3 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-3">
             <div className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:gap-1">
-              <Link
-                href="/profile"
-                className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-1.5 py-2 transition-colors hover:bg-muted/50 group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:rounded-lg group-data-[collapsible=icon]:p-2"
-              >
-                <Avatar className="size-8 shrink-0">
-                  <AvatarFallback className="bg-primary/20 text-[11px] font-semibold text-primary">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-                  <p className="truncate text-[13px] font-medium leading-tight">{user.name}</p>
-                  <p className="mt-0.5 truncate text-[11px] leading-tight text-muted-foreground">{user.email}</p>
-                </div>
-              </Link>
+              <ProfileLink initials={initials} name={user.name} email={user.email} />
               <Button
                 variant="ghost"
                 size="icon"

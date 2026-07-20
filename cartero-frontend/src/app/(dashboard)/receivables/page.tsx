@@ -43,7 +43,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ReceivableSheet, type ReceivableFormData } from './receivable-sheet'
+import { DeleteLinkedWarningDialog } from '../transactions/delete-linked-warning-dialog'
 import { InstallmentScopeDialog } from '../transactions/installment-scope-dialog'
+import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
+import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dialog'
 import {
   getReceivables,
   createReceivable,
@@ -54,7 +57,7 @@ import { useSearchParams } from 'next/navigation'
 import { getPersons } from '@/services/persons.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
-import type { Receivable } from '@/types'
+import type { Receivable, TransactionType } from '@/types'
 import { InstallmentScope } from '@/types'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -294,6 +297,9 @@ export default function ReceivablesPage() {
   const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
   const [scopeDialog, setScopeDialog] = useState<{ receivable: Receivable; mode: 'edit' | 'delete' } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Receivable | null>(null)
+  const [linkedWarningTarget, setLinkedWarningTarget] = useState<Receivable | null>(null)
+  const [markPaidTarget, setMarkPaidTarget] = useState<Receivable | null>(null)
+  const [unmarkPaidTarget, setUnmarkPaidTarget] = useState<Receivable | null>(null)
 
   const { data: persons = [] } = useQuery({
     queryKey: ['persons'],
@@ -331,6 +337,10 @@ export default function ReceivablesPage() {
     }) => updateReceivable(id, payload, scope),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['receivables'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['bank-invoices'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['budget'] })
       setSheetOpen(false)
       setEditReceivable(null)
       setEditScope(null)
@@ -344,6 +354,10 @@ export default function ReceivablesPage() {
       deleteReceivable(id, scope),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['receivables'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['bank-invoices'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['budget'] })
       toast.success('Cobrança excluída')
     },
     onError: () => toast.error('Erro ao excluir cobrança — tente novamente'),
@@ -390,6 +404,10 @@ export default function ReceivablesPage() {
   }
 
   function handleDelete(receivable: Receivable) {
+    if ((receivable.transactionId || receivable.paymentTransactionId) && !receivable.parentId) {
+      setLinkedWarningTarget(receivable)
+      return
+    }
     if (receivable.parentId) {
       setScopeDialog({ receivable, mode: 'delete' })
     } else {
@@ -397,11 +415,37 @@ export default function ReceivablesPage() {
     }
   }
 
+  function handleLinkedWarningConfirm() {
+    if (linkedWarningTarget) {
+      deleteMut.mutate({ id: linkedWarningTarget.id })
+      setLinkedWarningTarget(null)
+    }
+  }
+
   function handleToggleReceived(receivable: Receivable) {
+    if (!receivable.isPaid) {
+      setMarkPaidTarget(receivable)
+    } else {
+      setUnmarkPaidTarget(receivable)
+    }
+  }
+
+  function handleMarkPaidConfirm(payload: { paymentBankId: string; paymentType: TransactionType }) {
+    if (!markPaidTarget) return
     updateMut.mutate({
-      id: receivable.id,
-      payload: { isPaid: !receivable.isPaid },
+      id: markPaidTarget.id,
+      payload: { isPaid: true, ...payload },
     })
+    setMarkPaidTarget(null)
+  }
+
+  function handleUnmarkPaidConfirm() {
+    if (!unmarkPaidTarget) return
+    updateMut.mutate({
+      id: unmarkPaidTarget.id,
+      payload: { isPaid: false },
+    })
+    setUnmarkPaidTarget(null)
   }
 
   function handleScopeConfirm(scope: InstallmentScope) {
@@ -618,6 +662,33 @@ export default function ReceivablesPage() {
         mode={scopeDialog?.mode ?? 'delete'}
         onConfirm={handleScopeConfirm}
         onCancel={() => setScopeDialog(null)}
+        linkedWarning={Boolean(
+          scopeDialog?.receivable.transactionId || scopeDialog?.receivable.paymentTransactionId,
+        )}
+      />
+
+      {/* Cascade-delete warning — receivable linked to a transaction */}
+      <DeleteLinkedWarningDialog
+        open={linkedWarningTarget !== null}
+        kind="receivable"
+        onConfirm={handleLinkedWarningConfirm}
+        onCancel={() => setLinkedWarningTarget(null)}
+      />
+
+      {/* Mark as received — asks for bank + payment type */}
+      <MarkAsPaidDialog
+        open={markPaidTarget !== null}
+        kind="receivable"
+        onConfirm={handleMarkPaidConfirm}
+        onCancel={() => setMarkPaidTarget(null)}
+      />
+
+      {/* Unmark as received — warns that the linked transaction will be deleted */}
+      <UnmarkPaidWarningDialog
+        open={unmarkPaidTarget !== null}
+        kind="receivable"
+        onConfirm={handleUnmarkPaidConfirm}
+        onCancel={() => setUnmarkPaidTarget(null)}
       />
 
       {/* Delete confirm — non-parcelado */}

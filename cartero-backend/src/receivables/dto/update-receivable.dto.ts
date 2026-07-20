@@ -1,6 +1,8 @@
+import { TransactionType } from '@prisma/client';
 import {
   IsBoolean,
   IsDateString,
+  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
@@ -37,4 +39,12 @@ export class UpdateReceivableDto {
   @IsOptional()
   @IsBoolean()
   isPaid?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  paymentBankId?: string;
+
+  @IsOptional()
+  @IsEnum(TransactionType)
+  paymentType?: TransactionType;
 }

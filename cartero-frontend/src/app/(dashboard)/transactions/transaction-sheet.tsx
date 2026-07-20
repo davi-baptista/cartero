@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { CurrencyInput } from '@/components/ui/currency-input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -29,7 +30,8 @@ import { TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { getBanks, createBank } from '@/services/banks.service'
 import { getCategories, createCategory } from '@/services/categories.service'
-import type { Transaction, InstallmentScope, Bank, Category } from '@/types'
+import { getPersons, createPerson } from '@/services/persons.service'
+import type { Transaction, InstallmentScope, Bank, Category, Person } from '@/types'
 import { TransactionType } from '@/types'
 
 const transactionTypeValues = [
@@ -53,6 +55,7 @@ const schema = z
       (v) => (v === '' || v === undefined || v === null || Number.isNaN(v) ? undefined : Number(v)),
       z.number().int().min(2).max(64).optional(),
     ),
+    personId: z.string().optional(),
   })
   .refine(
     (d) => d.type !== TransactionType.CREDIT_CARD || !d.installments || d.installments >= 2,
@@ -83,6 +86,7 @@ export function TransactionSheet({
   // ── Queries ──
   const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: getBanks })
   const { data: categories = [] } = useQuery({ queryKey: ['categories'], queryFn: getCategories })
+  const { data: persons = [] } = useQuery({ queryKey: ['persons'], queryFn: getPersons })
 
   // ── Inline bank create ──
   const [showBankCreate, setShowBankCreate] = useState(false)
@@ -142,6 +146,34 @@ export function TransactionSheet({
     createCategoryMut.mutate({ name })
   }
 
+  // ── Inline person create ──
+  const [showPersonCreate, setShowPersonCreate] = useState(false)
+  const [newPersonName, setNewPersonName] = useState('')
+  const personNameRef = useRef<HTMLInputElement>(null)
+
+  const createPersonMut = useMutation({
+    mutationFn: createPerson,
+    onSuccess: (person) => {
+      qc.setQueryData<Person[]>(['persons'], (old) => [...(old ?? []), person])
+      qc.invalidateQueries({ queryKey: ['persons'] })
+      setValue('personId', person.id)
+      setShowPersonCreate(false)
+      setNewPersonName('')
+    },
+    onError: () => toast.error('Não foi possível criar a pessoa.'),
+  })
+
+  function handleOpenPersonCreate() {
+    setShowPersonCreate(true)
+    setTimeout(() => personNameRef.current?.focus(), 0)
+  }
+
+  function handleConfirmPersonCreate() {
+    const name = newPersonName.trim()
+    if (!name) return
+    createPersonMut.mutate({ name })
+  }
+
   // ── Form ──
   const {
     register,
@@ -161,20 +193,24 @@ export function TransactionSheet({
       date: '',
       description: '',
       installments: undefined,
+      personId: undefined,
     },
   })
 
   const selectedType = useWatch({ control, name: 'type' })
   const selectedBankId = useWatch({ control, name: 'bankId' })
   const selectedCategoryId = useWatch({ control, name: 'categoryId' })
+  const selectedPersonId = useWatch({ control, name: 'personId' })
 
   useEffect(() => {
     if (open) {
       submittingRef.current = false
       setShowBankCreate(false)
       setShowCategoryCreate(false)
+      setShowPersonCreate(false)
       setNewBank({ name: '', closeDate: '', dueDate: '' })
       setNewCategoryName('')
+      setNewPersonName('')
       if (editTarget) {
         reset({
           bankId: editTarget.bankId,
@@ -184,6 +220,7 @@ export function TransactionSheet({
           amount: editTarget.amount,
           date: editTarget.date,
           description: editTarget.description ?? '',
+          personId: editTarget.personId ?? undefined,
         })
       } else {
         reset({
@@ -195,6 +232,7 @@ export function TransactionSheet({
           date: new Date().toISOString().slice(0, 10),
           description: '',
           installments: undefined,
+          personId: undefined,
         })
       }
     }
@@ -214,6 +252,8 @@ export function TransactionSheet({
 
   const selectedBank = banks.find((b) => b.id === selectedBankId)
   const selectedCategory = categories.find((c) => c.id === selectedCategoryId)
+  const selectedPerson = persons.find((p) => p.id === selectedPersonId)
+  const selectableCategories = categories.filter((c) => !c.isSystem)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -276,14 +316,17 @@ export function TransactionSheet({
           {/* Amount */}
           <div className="space-y-1.5">
             <Label htmlFor="amount">Valor (R$)</Label>
-            <Input
-              id="amount"
-              type="number"
-              step="0.01"
-              min="0.01"
-              placeholder="0,00"
-              aria-invalid={!!errors.amount}
-              {...register('amount', { valueAsNumber: true })}
+            <Controller
+              control={control}
+              name="amount"
+              render={({ field }) => (
+                <CurrencyInput
+                  id="amount"
+                  value={field.value}
+                  onChange={field.onChange}
+                  aria-invalid={!!errors.amount}
+                />
+              )}
             />
             {errors.amount && <p className="text-xs text-destructive">{errors.amount.message}</p>}
           </div>
@@ -430,7 +473,7 @@ export function TransactionSheet({
                       </span>
                     </SelectTrigger>
                     <SelectContent side="bottom" alignItemWithTrigger={false}>
-                      {categories.map((c) => {
+                      {selectableCategories.map((c) => {
                         const { Icon: CatIcon } = resolveCategoryIcon(c.icon)
                         return (
                           <SelectItem key={c.id} value={c.id}>
@@ -516,6 +559,89 @@ export function TransactionSheet({
               {errors.installments && (
                 <p className="text-xs text-destructive">{errors.installments.message}</p>
               )}
+            </div>
+          )}
+
+          {/* Person — only for CREDIT_CARD */}
+          {selectedType === TransactionType.CREDIT_CARD && (
+            <div className="space-y-1.5">
+              <Label>Pessoa (opcional)</Label>
+              <div className="space-y-2">
+                <Controller
+                  control={control}
+                  name="personId"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value ?? ''}
+                      onValueChange={(v) => field.onChange(v || undefined)}
+                    >
+                      <SelectTrigger className="w-full" aria-label="Selecionar pessoa">
+                        <span data-slot="select-value" className="flex flex-1 items-center text-left text-sm">
+                          {selectedPerson
+                            ? selectedPerson.name
+                            : <span className="text-muted-foreground">Nenhuma pessoa vinculada</span>}
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent side="bottom" alignItemWithTrigger={false}>
+                        {persons.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+
+                {showPersonCreate ? (
+                  <div className="flex gap-1.5">
+                    <Input
+                      ref={personNameRef}
+                      value={newPersonName}
+                      onChange={(e) => setNewPersonName(e.target.value)}
+                      placeholder="Nome da pessoa"
+                      className="h-8 text-sm"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); handleConfirmPersonCreate() }
+                        if (e.key === 'Escape') { setShowPersonCreate(false); setNewPersonName('') }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0"
+                      disabled={!newPersonName.trim() || createPersonMut.isPending}
+                      onClick={handleConfirmPersonCreate}
+                      aria-label="Confirmar"
+                    >
+                      {createPersonMut.isPending
+                        ? <Loader2 className="size-3.5 animate-spin" />
+                        : <Check className="size-3.5" />}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => { setShowPersonCreate(false); setNewPersonName('') }}
+                      aria-label="Cancelar"
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleOpenPersonCreate}
+                    className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <Plus className="size-3" />
+                    Nova pessoa
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Vincule esta transação a uma pessoa para gerar automaticamente uma cobrança de &quot;A Receber&quot;.
+              </p>
             </div>
           )}
 

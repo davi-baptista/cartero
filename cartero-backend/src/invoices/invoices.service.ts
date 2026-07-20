@@ -20,6 +20,7 @@ export class InvoicesService {
             category: {
               select: { id: true, name: true, color: true, icon: true },
             },
+            person: { select: { id: true, name: true } },
           },
           orderBy: { date: 'asc' },
         },

@@ -12,8 +12,7 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getInvoices } from '@/services/invoices.service'
-import { useAuth } from '@/providers/auth-provider'
+import { getBudget } from '@/services/budget.service'
 import { formatCurrency, formatMonthYear } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 import { InvoiceStatus } from '@/types'
@@ -74,7 +73,6 @@ function MonthNav({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function BudgetPage() {
-  const { user } = useAuth()
   const today = new Date()
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth() + 1)
@@ -88,30 +86,34 @@ export default function BudgetPage() {
     else setMonth((m) => m + 1)
   }
 
-  const { data: allInvoices = [], isLoading } = useQuery({
-    queryKey: ['invoices', { month, year }],
-    queryFn: () => getInvoices({ month, year }),
+  const { data: budget, isLoading } = useQuery({
+    queryKey: ['budget', { month, year }],
+    queryFn: () => getBudget({ month, year }),
   })
+
+  const allInvoices = budget?.invoices ?? []
 
   const invoices = useMemo(
     () => allInvoices.filter((inv) => Number(inv.totalAmount) > 0),
     [allInvoices],
   )
 
-  const salary = user?.salary != null ? Number(user.salary) : null
+  const salary = budget?.salary ?? null
 
   const summary = useMemo(() => {
-    const totalAll = invoices.reduce((s, inv) => s + Number(inv.totalAmount), 0)
     const totalPaid = invoices
       .filter((inv) => inv.status === InvoiceStatus.PAID)
       .reduce((s, inv) => s + Number(inv.totalAmount), 0)
+    const totalAll = budget?.totalInvoices ?? 0
+    const totalReimbursable = budget?.totalReimbursable ?? 0
+    const netAmount = budget?.netAmount ?? 0
     const totalPending = totalAll - totalPaid
-    return { totalAll, totalPaid, totalPending }
-  }, [invoices])
+    return { totalAll, totalPaid, totalPending, totalReimbursable, netAmount }
+  }, [invoices, budget])
 
-  const balance = salary != null ? salary - summary.totalAll : null
+  const balance = salary != null ? salary - summary.netAmount : null
   const hasMix = summary.totalPaid > 0 && summary.totalPending > 0
-  const pct = salary != null && salary > 0 ? (summary.totalAll / salary) * 100 : null
+  const pct = salary != null && salary > 0 ? (summary.netAmount / salary) * 100 : null
 
   return (
     <div className="flex flex-col gap-6">
@@ -219,13 +221,24 @@ export default function BudgetPage() {
                 <span className="font-medium">{formatCurrency(summary.totalPending)} a pagar</span>
               </p>
             )}
+
+            {/* Reimbursable breakdown — only when relevant */}
+            {summary.totalReimbursable > 0 && (
+              <p className="text-[12px] text-muted-foreground">
+                <span>{formatCurrency(summary.totalAll)} em faturas</span>
+                <span className="mx-1.5 text-muted-foreground/40" aria-hidden>·</span>
+                <span>{formatCurrency(summary.totalReimbursable)} a receber de terceiros</span>
+                <span className="mx-1.5 text-muted-foreground/40" aria-hidden>·</span>
+                <span className="font-medium">{formatCurrency(summary.netAmount)} líquido</span>
+              </p>
+            )}
           </>
         ) : (
-          /* No salary — show invoice total only */
-          summary.totalAll > 0 && (
+          /* No salary — show net invoice total only */
+          summary.netAmount > 0 && (
             <div>
               <p className="text-[38px] font-semibold tabular-nums tracking-[-0.025em] leading-none text-destructive">
-                {formatCurrency(summary.totalAll)}
+                {formatCurrency(summary.netAmount)}
               </p>
               <p className="mt-2 text-sm text-muted-foreground">em faturas neste mês</p>
             </div>

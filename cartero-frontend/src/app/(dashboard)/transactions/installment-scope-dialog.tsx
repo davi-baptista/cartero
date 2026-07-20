@@ -16,6 +16,7 @@ interface InstallmentScopeDialogProps {
   mode: 'edit' | 'delete'
   onConfirm: (scope: InstallmentScope) => void
   onCancel: () => void
+  linkedWarning?: boolean
 }
 
 const OPTIONS: { scope: InstallmentScope; label: string; description: string }[] = [
@@ -24,7 +25,7 @@ const OPTIONS: { scope: InstallmentScope; label: string; description: string }[]
   { scope: InstallmentScope.ALL, label: 'Todas as parcelas', description: 'Afeta todas as parcelas da série' },
 ]
 
-export function InstallmentScopeDialog({ open, mode, onConfirm, onCancel }: InstallmentScopeDialogProps) {
+export function InstallmentScopeDialog({ open, mode, onConfirm, onCancel, linkedWarning }: InstallmentScopeDialogProps) {
   const verb = mode === 'delete' ? 'excluir' : 'editar'
 
   return (
@@ -34,6 +35,11 @@ export function InstallmentScopeDialog({ open, mode, onConfirm, onCancel }: Inst
           <DialogTitle>Transação parcelada</DialogTitle>
           <DialogDescription>
             Você deseja {verb} apenas esta parcela ou outras da série?
+            {linkedWarning && mode === 'delete' && (
+              <span className="mt-1.5 block text-destructive/90">
+                As cobranças vinculadas às parcelas selecionadas também serão excluídas.
+              </span>
+            )}
           </DialogDescription>
         </DialogHeader>
 

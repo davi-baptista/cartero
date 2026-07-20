@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { CurrencyInput } from '@/components/ui/currency-input'
 import { Label } from '@/components/ui/label'
 import { DatePicker } from '@/components/ui/date-picker'
 import {
@@ -322,14 +323,17 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit 
           {/* Amount */}
           <div className="space-y-1.5">
             <Label htmlFor="amount">Valor (R$)</Label>
-            <Input
-              id="amount"
-              type="number"
-              step="0.01"
-              min="0.01"
-              placeholder="0,00"
-              aria-invalid={!!errors.amount}
-              {...register('amount', { valueAsNumber: true })}
+            <Controller
+              control={control}
+              name="amount"
+              render={({ field }) => (
+                <CurrencyInput
+                  id="amount"
+                  value={field.value}
+                  onChange={field.onChange}
+                  aria-invalid={!!errors.amount}
+                />
+              )}
             />
             {errors.amount && (
               <p className="text-xs text-destructive">{errors.amount.message}</p>

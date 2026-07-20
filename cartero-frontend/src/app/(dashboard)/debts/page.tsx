@@ -45,6 +45,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { DebtSheet, type DebtFormData } from './debt-sheet'
 import { InstallmentScopeDialog } from '../transactions/installment-scope-dialog'
+import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
+import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dialog'
+import { DeleteLinkedWarningDialog } from '../transactions/delete-linked-warning-dialog'
 import {
   getDebts,
   createDebt,
@@ -55,7 +58,7 @@ import { useSearchParams } from 'next/navigation'
 import { getPersons } from '@/services/persons.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
-import type { Debt } from '@/types'
+import type { Debt, TransactionType } from '@/types'
 import { InstallmentScope } from '@/types'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -302,6 +305,9 @@ export default function DebtsPage() {
   const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
   const [scopeDialog, setScopeDialog] = useState<{ debt: Debt; mode: 'edit' | 'delete' } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Debt | null>(null)
+  const [markPaidTarget, setMarkPaidTarget] = useState<Debt | null>(null)
+  const [unmarkPaidTarget, setUnmarkPaidTarget] = useState<Debt | null>(null)
+  const [linkedWarningTarget, setLinkedWarningTarget] = useState<Debt | null>(null)
 
   const { data: persons = [] } = useQuery({
     queryKey: ['persons'],
@@ -339,6 +345,10 @@ export default function DebtsPage() {
     }) => updateDebt(id, payload, scope),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['debts'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['bank-invoices'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['budget'] })
       setSheetOpen(false)
       setEditDebt(null)
       setEditScope(null)
@@ -352,6 +362,10 @@ export default function DebtsPage() {
       deleteDebt(id, scope),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['debts'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['bank-invoices'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['budget'] })
       toast.success('Dívida excluída')
     },
     onError: () => toast.error('Erro ao excluir dívida — tente novamente'),
@@ -398,6 +412,10 @@ export default function DebtsPage() {
   }
 
   function handleDelete(debt: Debt) {
+    if (debt.paymentTransactionId && !debt.parentId) {
+      setLinkedWarningTarget(debt)
+      return
+    }
     if (debt.parentId) {
       setScopeDialog({ debt, mode: 'delete' })
     } else {
@@ -405,11 +423,37 @@ export default function DebtsPage() {
     }
   }
 
+  function handleLinkedWarningConfirm() {
+    if (linkedWarningTarget) {
+      deleteMut.mutate({ id: linkedWarningTarget.id })
+      setLinkedWarningTarget(null)
+    }
+  }
+
   function handleTogglePaid(debt: Debt) {
+    if (!debt.isPaid) {
+      setMarkPaidTarget(debt)
+    } else {
+      setUnmarkPaidTarget(debt)
+    }
+  }
+
+  function handleMarkPaidConfirm(payload: { paymentBankId: string; paymentType: TransactionType }) {
+    if (!markPaidTarget) return
     updateMut.mutate({
-      id: debt.id,
-      payload: { isPaid: !debt.isPaid },
+      id: markPaidTarget.id,
+      payload: { isPaid: true, ...payload },
     })
+    setMarkPaidTarget(null)
+  }
+
+  function handleUnmarkPaidConfirm() {
+    if (!unmarkPaidTarget) return
+    updateMut.mutate({
+      id: unmarkPaidTarget.id,
+      payload: { isPaid: false },
+    })
+    setUnmarkPaidTarget(null)
   }
 
   function handleScopeConfirm(scope: InstallmentScope) {
@@ -626,6 +670,31 @@ export default function DebtsPage() {
         mode={scopeDialog?.mode ?? 'delete'}
         onConfirm={handleScopeConfirm}
         onCancel={() => setScopeDialog(null)}
+        linkedWarning={Boolean(scopeDialog?.debt.paymentTransactionId)}
+      />
+
+      {/* Mark as paid — asks for bank + payment type */}
+      <MarkAsPaidDialog
+        open={markPaidTarget !== null}
+        kind="debt"
+        onConfirm={handleMarkPaidConfirm}
+        onCancel={() => setMarkPaidTarget(null)}
+      />
+
+      {/* Unmark as paid — warns that the linked transaction will be deleted */}
+      <UnmarkPaidWarningDialog
+        open={unmarkPaidTarget !== null}
+        kind="debt"
+        onConfirm={handleUnmarkPaidConfirm}
+        onCancel={() => setUnmarkPaidTarget(null)}
+      />
+
+      {/* Cascade-delete warning — debt linked to a payment transaction */}
+      <DeleteLinkedWarningDialog
+        open={linkedWarningTarget !== null}
+        kind="debt"
+        onConfirm={handleLinkedWarningConfirm}
+        onCancel={() => setLinkedWarningTarget(null)}
       />
 
       {/* Delete confirm — non-parcelado */}

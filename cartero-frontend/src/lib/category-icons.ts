@@ -11,6 +11,7 @@ import {
   Globe, Map, Compass, MapPin, Camera,
   Zap, Droplets, Wifi, Flame, Lightbulb, Phone,
   PawPrint, Shirt, Scissors, Sparkles, Briefcase, Laptop, Monitor, Building,
+  Lock,
 } from 'lucide-react'
 
 export interface CategoryIconDef {
@@ -151,7 +152,15 @@ export const CATEGORY_ICON_MAP: Record<string, LucideIcon> = Object.fromEntries(
   CATEGORY_ICON_GROUPS.flatMap((g) => g.icons.map(({ name, Icon }) => [name, Icon])),
 )
 
+// Icons reserved for system-managed categories — never selectable in the icon picker.
+const SYSTEM_ICON_MAP: Record<string, LucideIcon> = {
+  Lock,
+}
+
 export function resolveCategoryIcon(icon?: string | null) {
+  if (icon && SYSTEM_ICON_MAP[icon]) {
+    return { iconName: icon, Icon: SYSTEM_ICON_MAP[icon] }
+  }
   const iconName = icon && CATEGORY_ICON_MAP[icon] ? icon : DEFAULT_CATEGORY_ICON
   return {
     iconName,

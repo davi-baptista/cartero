@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useForm, useWatch, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Check, Loader2, Plus, X } from 'lucide-react'
+import { AlertCircle, Check, Loader2, Plus, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Sheet,
@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { CurrencyInput } from '@/components/ui/currency-input'
 import { Label } from '@/components/ui/label'
 import { DatePicker } from '@/components/ui/date-picker'
 import {
@@ -183,6 +184,16 @@ export function ReceivableSheet({
           </SheetDescription>
         </SheetHeader>
 
+        {editTarget?.transactionId && (
+          <div className="mx-6 mt-4 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
+            <AlertCircle className="size-3.5 shrink-0 mt-0.5 text-amber-500" aria-hidden />
+            <p className="text-xs text-muted-foreground">
+              Esta cobrança foi criada automaticamente a partir de uma transação. Alterações
+              feitas aqui (valor, título, etc) não afetam a transação original.
+            </p>
+          </div>
+        )}
+
         <form
           id="receivable-form"
           onSubmit={handleSubmit(handleFormSubmit)}
@@ -324,14 +335,17 @@ export function ReceivableSheet({
           {/* Amount */}
           <div className="space-y-1.5">
             <Label htmlFor="amount">Valor (R$)</Label>
-            <Input
-              id="amount"
-              type="number"
-              step="0.01"
-              min="0.01"
-              placeholder="0,00"
-              aria-invalid={!!errors.amount}
-              {...register('amount', { valueAsNumber: true })}
+            <Controller
+              control={control}
+              name="amount"
+              render={({ field }) => (
+                <CurrencyInput
+                  id="amount"
+                  value={field.value}
+                  onChange={field.onChange}
+                  aria-invalid={!!errors.amount}
+                />
+              )}
             />
             {errors.amount && (
               <p className="text-xs text-destructive">{errors.amount.message}</p>

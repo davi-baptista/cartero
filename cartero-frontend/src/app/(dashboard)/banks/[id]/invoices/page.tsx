@@ -260,6 +260,12 @@ function TxRow({ tx }: { tx: Transaction }) {
           {tx.description && (
             <span className="truncate italic pr-0.5">{tx.description}</span>
           )}
+          {tx.person && (tx.category ?? tx.description) && (
+            <span aria-hidden className="text-muted-foreground/40">·</span>
+          )}
+          {tx.person && (
+            <span className="truncate shrink-0">{tx.person.name}</span>
+          )}
         </div>
       </div>
 

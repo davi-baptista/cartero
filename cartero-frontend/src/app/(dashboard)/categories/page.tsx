@@ -24,7 +24,6 @@ import { MotionRow } from '@/components/ui/motion-row'
 import { CategorySheet, type CategoryFormData } from './category-sheet'
 import { getCategories, createCategory, updateCategory, deleteCategory } from '@/services/categories.service'
 import { resolveCategoryIcon } from '@/lib/category-icons'
-import { cn } from '@/lib/utils'
 import type { Category } from '@/types'
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -59,55 +58,64 @@ function CategoryRow({
       </div>
 
       {/* Name */}
-      <div className="flex min-w-0 flex-1 items-center">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <span className="min-w-0 truncate text-sm font-medium">
           {category.name}
         </span>
+        {category.isSystem && (
+          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            Sistema
+          </span>
+        )}
       </div>
 
-      {/* Desktop hover actions */}
-      <div className="hidden items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground hover:text-foreground"
-          onClick={() => onEdit(category)}
-          aria-label="Editar categoria"
-        >
-          <Pencil className="size-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground hover:text-destructive"
-          onClick={() => onDelete(category)}
-          aria-label="Excluir categoria"
-        >
-          <Trash2 className="size-3.5" />
-        </Button>
-      </div>
-
-      {/* Mobile dropdown */}
-      <div className="sm:hidden">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            aria-label="Mais opções"
-          >
-            <MoreVertical className="size-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onEdit(category)}>
+      {category.isSystem ? null : (
+        <>
+          {/* Desktop hover actions */}
+          <div className="hidden items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => onEdit(category)}
+              aria-label="Editar categoria"
+            >
               <Pencil className="size-3.5" />
-              Editar
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onDelete(category)} className="text-destructive focus:text-destructive">
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => onDelete(category)}
+              aria-label="Excluir categoria"
+            >
               <Trash2 className="size-3.5" />
-              Excluir
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+            </Button>
+          </div>
+
+          {/* Mobile dropdown */}
+          <div className="sm:hidden">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                aria-label="Mais opções"
+              >
+                <MoreVertical className="size-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onEdit(category)}>
+                  <Pencil className="size-3.5" />
+                  Editar
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onDelete(category)} className="text-destructive focus:text-destructive">
+                  <Trash2 className="size-3.5" />
+                  Excluir
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </>
+      )}
     </div>
   )
 }

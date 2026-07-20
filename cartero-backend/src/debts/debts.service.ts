@@ -1,7 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Prisma, Debt } from '@prisma/client';
+import { Prisma, Debt, TransactionType } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
+import { findOrCreateInvoice } from 'src/common/helpers/invoice.helper';
+import {
+  DEBT_PAID_CATEGORY_NAME,
+  DEBT_PAID_CATEGORY_COLOR,
+  SYSTEM_CATEGORY_ICON,
+} from 'src/common/constants/system-categories';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateDebtDto } from 'src/debts/dto/create-debt.dto';
 import { UpdateDebtDto } from 'src/debts/dto/update-debt.dto';
@@ -110,6 +116,30 @@ export class DebtsService {
       creditorName = person.name;
     }
 
+    const markingAsPaid = dto.isPaid === true;
+
+    if (markingAsPaid) {
+      if (!dto.paymentBankId || !dto.paymentType) {
+        throw new BadRequestException(
+          'Informe paymentBankId e paymentType para marcar a dívida como paga',
+        );
+      }
+      if (dto.paymentType === TransactionType.INCOME) {
+        throw new BadRequestException(
+          'paymentType inválido para pagamento de dívida',
+        );
+      }
+    }
+
+    const paymentBank = markingAsPaid
+      ? await this.entityValidationService.validateBank(
+          dto.paymentBankId as string,
+          userId,
+        )
+      : null;
+
+    const { paymentBankId, paymentType, ...debtDto } = dto;
+
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
         const debtsToUpdate = await this.getDebtsByScope(
@@ -128,13 +158,98 @@ export class DebtsService {
                 ? null
                 : undefined;
 
+          let paymentTransactionId = debt.paymentTransactionId;
+
+          if (
+            paidAt !== undefined &&
+            paidAt !== null &&
+            !debt.paymentTransactionId
+          ) {
+            const category =
+              await this.entityValidationService.findOrCreateSystemCategory(
+                tx,
+                userId,
+                DEBT_PAID_CATEGORY_NAME,
+                SYSTEM_CATEGORY_ICON,
+                DEBT_PAID_CATEGORY_COLOR,
+              );
+
+            let invoiceId: string | null = null;
+            if (paymentType === TransactionType.CREDIT_CARD) {
+              const invoice = await findOrCreateInvoice(
+                tx,
+                userId,
+                paymentBankId as string,
+                paymentBank!.invoiceCloseDate,
+                paymentBank!.invoiceDueDate,
+                paidAt,
+              );
+              invoiceId = invoice.id;
+            }
+
+            const paymentTransaction = await tx.transaction.create({
+              data: {
+                userId,
+                bankId: paymentBankId as string,
+                categoryId: category.id,
+                invoiceId,
+                title: debt.title,
+                type: paymentType as TransactionType,
+                amount: debt.amount,
+                date: paidAt,
+              },
+            });
+
+            if (invoiceId) {
+              await tx.invoice.update({
+                where: { id: invoiceId, userId },
+                data: { totalAmount: { increment: debt.amount } },
+              });
+            }
+
+            paymentTransactionId = paymentTransaction.id;
+          } else if (paidAt === null && debt.paymentTransactionId) {
+            const paymentTransaction = await tx.transaction.findUnique({
+              where: { id: debt.paymentTransactionId, userId },
+            });
+
+            await tx.debt.update({
+              where: { id: debt.id, userId },
+              data: { paymentTransactionId: null },
+            });
+
+            if (paymentTransaction) {
+              await tx.transaction.delete({
+                where: { id: paymentTransaction.id, userId },
+              });
+
+              if (paymentTransaction.invoiceId) {
+                const invoice = await tx.invoice.update({
+                  where: { id: paymentTransaction.invoiceId, userId },
+                  data: {
+                    totalAmount: { decrement: paymentTransaction.amount },
+                  },
+                });
+
+                if (Number(invoice.totalAmount) === 0) {
+                  await tx.invoice.delete({
+                    where: { id: invoice.id, userId },
+                  });
+                }
+              }
+            }
+
+            paymentTransactionId = null;
+          }
+
           const updatedDebt = await tx.debt.update({
             where: { id: debt.id, userId },
             data: {
-              ...dto,
+              ...debtDto,
               creditorName,
               dueDate: dto.dueDate ? new Date(dto.dueDate) : debt.dueDate,
               paidAt,
+              paymentTransactionId,
             },
           });
 
@@ -166,6 +281,31 @@ export class DebtsService {
           await tx.debt.delete({
             where: { id: debt.id, userId },
           });
+
+          if (debt.paymentTransactionId) {
+            const transaction = await tx.transaction.findUnique({
+              where: { id: debt.paymentTransactionId, userId },
+            });
+
+            if (transaction) {
+              await tx.transaction.delete({
+                where: { id: transaction.id, userId },
+              });
+
+              if (transaction.invoiceId) {
+                const invoice = await tx.invoice.update({
+                  where: { id: transaction.invoiceId, userId },
+                  data: { totalAmount: { decrement: transaction.amount } },
+                });
+
+                if (Number(invoice.totalAmount) === 0) {
+                  await tx.invoice.delete({
+                    where: { id: invoice.id, userId },
+                  });
+                }
+              }
+            }
+          }
         }
 
         return;

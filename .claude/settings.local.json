@@ -27,7 +27,18 @@
       "Bash(rm -f audit-report.html)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(cat > *)",
+      "Bash(cat >> *)",
+      "Bash(printf '')",
+      "Read(//c/Users/davi.inov/.claude/plans/**)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\davi.inov\\\\.claude\\\\plans\" 2>/dev/null; echo ok)",
+      "Bash(cp \"C:/Users/davi.inov/.claude/plans/tidy-wiggling-feather-agent-a28387378f218461f.md\" \"C:/Users/davi.inov/.claude/plans/tidy-wiggling-feather.md\")",
+      "Bash(node_modules/.bin/prisma migrate *)",
+      "Bash(node_modules/.bin/prisma generate *)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\davi.inov\\.claude\\plans"
     ]
   }
 }

@@ -44,6 +44,7 @@ export interface Category {
   name: string
   color?: string
   icon?: string
+  isSystem: boolean
   createdAt: string
   updatedAt: string
 }
@@ -55,6 +56,8 @@ export interface Transaction {
   categoryId: string
   invoiceId?: string
   parentId?: string
+  personId?: string
+  person?: Person
   type: TransactionType
   title: string
   amount: number
@@ -111,6 +114,7 @@ export interface Debt {
   isAlertEnabled: boolean
   isPaid: boolean
   paidAt?: string
+  paymentTransactionId?: string
   parentId?: string
   createdAt: string
   updatedAt: string
@@ -121,6 +125,8 @@ export interface Receivable {
   userId: string
   personId?: string
   person?: Person
+  transactionId?: string
+  paymentTransactionId?: string
   debtorName: string
   title: string
   amount: number

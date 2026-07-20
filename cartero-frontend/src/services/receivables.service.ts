@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { Receivable, InstallmentScope } from '@/types'
+import type { Receivable, InstallmentScope, TransactionType } from '@/types'
 
 export async function getReceivables(filters?: { personId?: string; startDate?: string; endDate?: string }): Promise<Receivable[]> {
   const { data } = await api.get<Receivable[]>('/receivables', { params: filters })
@@ -33,6 +33,8 @@ export async function updateReceivable(
     dueDate: string
     description: string
     isPaid: boolean
+    paymentBankId: string
+    paymentType: TransactionType
   }>,
   scope?: InstallmentScope,
 ): Promise<Receivable | Receivable[]> {

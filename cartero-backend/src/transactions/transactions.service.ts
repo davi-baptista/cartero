@@ -1,7 +1,22 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
-import { Bank, Prisma, Transaction } from '@prisma/client';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
+import {
+  Bank,
+  Invoice,
+  Person,
+  Prisma,
+  Receivable,
+  Transaction,
+} from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
+import {
+  findOrCreateInvoice,
+  getInvoiceDueDate,
+} from 'src/common/helpers/invoice.helper';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTransactionDto } from 'src/transactions/dto/create-transaction.dto';
 import { FindTransactionsDto } from 'src/transactions/dto/find-transactions.dto';
@@ -23,6 +38,20 @@ export class TransactionsService {
     );
     await this.entityValidationService.validateCategory(dto.categoryId, userId);
 
+    if (dto.personId && dto.type !== 'CREDIT_CARD') {
+      throw new BadRequestException(
+        'Só é possível vincular uma pessoa a transações de cartão de crédito',
+      );
+    }
+
+    let person: Person | null = null;
+    if (dto.personId) {
+      person = await this.entityValidationService.validatePerson(
+        dto.personId,
+        userId,
+      );
+    }
+
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
         const installments =
@@ -30,13 +59,15 @@ export class TransactionsService {
         const transactions: Transaction[] = [];
 
         let parentId: string | null = null;
+        let receivableParentId: string | null = null;
 
         for (let i = 0; i < installments; i++) {
           let invoiceId: string | null = null;
+          let invoice: Invoice | null = null;
           const installmentDate = getInstallmentDate(new Date(dto.date), i);
 
           if (dto.type == 'CREDIT_CARD') {
-            const invoice = await this.findOrCreateInvoice(
+            invoice = await findOrCreateInvoice(
               tx,
               userId,
               dto.bankId,
@@ -48,17 +79,20 @@ export class TransactionsService {
             invoiceId = invoice.id;
           }
 
+          const title =
+            installments > 1
+              ? `${dto.title} ${i + 1}/${installments}`
+              : dto.title;
+
           const transaction: Transaction = await tx.transaction.create({
             data: {
               userId,
               invoiceId,
               parentId,
+              personId: dto.personId,
               bankId: dto.bankId,
               categoryId: dto.categoryId,
-              title:
-                installments > 1
-                  ? `${dto.title} ${i + 1}/${installments}`
-                  : dto.title,
+              title,
               type: dto.type,
               amount: dto.amount,
               description: dto.description,
@@ -83,6 +117,33 @@ export class TransactionsService {
               data: { totalAmount: { increment: dto.amount } },
             });
           }
+
+          if (dto.personId && person && invoice) {
+            const dueDate = getInvoiceDueDate(bank, invoice);
+
+            const receivable: Receivable = await tx.receivable.create({
+              data: {
+                userId,
+                personId: dto.personId,
+                parentId: receivableParentId,
+                transactionId: transaction.id,
+                title,
+                debtorName: person.name,
+                amount: dto.amount,
+                dueDate,
+              },
+            });
+
+            if (i === 0 && installments > 1) {
+              receivableParentId = receivable.id;
+
+              await tx.receivable.update({
+                where: { id: receivable.id, userId },
+                data: { parentId: receivableParentId },
+              });
+            }
+          }
+
           transactions.push(transaction);
         }
         return transactions;
@@ -136,6 +197,27 @@ export class TransactionsService {
     if (dto.categoryId && dto.categoryId !== existingTransaction.categoryId) {
       await this.entityValidationService.validateCategory(
         dto.categoryId,
+        userId,
+      );
+    }
+
+    const effectiveType = dto.type ?? existingTransaction.type;
+    const personIdProvided = dto.personId !== undefined;
+
+    if (
+      personIdProvided &&
+      dto.personId !== null &&
+      effectiveType !== 'CREDIT_CARD'
+    ) {
+      throw new BadRequestException(
+        'Só é possível vincular uma pessoa a transações de cartão de crédito',
+      );
+    }
+
+    let newPerson: Person | null = null;
+    if (dto.personId) {
+      newPerson = await this.entityValidationService.validatePerson(
+        dto.personId,
         userId,
       );
     }
@@ -199,7 +281,7 @@ export class TransactionsService {
             invoiceId = null;
 
             if (type === 'CREDIT_CARD') {
-              const invoice = await this.findOrCreateInvoice(
+              const invoice = await findOrCreateInvoice(
                 tx,
                 userId,
                 bankId,
@@ -230,6 +312,17 @@ export class TransactionsService {
             },
           });
 
+          await this.syncLinkedReceivable(
+            tx,
+            userId,
+            transaction,
+            updatedTransaction,
+            bank,
+            personIdProvided,
+            dto.personId,
+            newPerson,
+          );
+
           updatedTransactions.push(updatedTransaction);
         }
 
@@ -257,6 +350,10 @@ export class TransactionsService {
         );
 
         for (const transaction of transactionsToDelete) {
+          await tx.receivable.deleteMany({
+            where: { transactionId: transaction.id, userId },
+          });
+
           await tx.transaction.delete({
             where: { id: transaction.id, userId },
           });
@@ -326,52 +423,81 @@ export class TransactionsService {
     });
   }
 
-  private async findOrCreateInvoice(
+  private async syncLinkedReceivable(
     tx: Prisma.TransactionClient,
     userId: string,
-    bankId: string,
-    invoiceCloseDate: number,
-    invoiceDueDate: number,
-    transactionDate: Date,
+    transaction: Transaction,
+    updatedTransaction: Transaction,
+    bank: Bank | null,
+    personIdProvided: boolean,
+    dtoPersonId: string | null | undefined,
+    newPerson: Person | null,
   ) {
-    let month = transactionDate.getUTCMonth() + 1;
-    let year = transactionDate.getUTCFullYear();
-
-    if (transactionDate.getUTCDate() >= invoiceCloseDate) {
-      month = (month % 12) + 1;
-      if (month === 1) {
-        year += 1;
-      }
-    }
-
-    let invoice = await tx.invoice.findFirst({
-      where: {
-        userId,
-        bankId,
-        month,
-        year,
-      },
+    const existingReceivable = await tx.receivable.findUnique({
+      where: { transactionId: transaction.id },
     });
 
-    if (!invoice) {
-      const today = new Date();
-      const closeDate = new Date(year, month, invoiceCloseDate);
-      const dueDate = new Date(year, month, invoiceDueDate);
+    const personIdAfter = personIdProvided ? dtoPersonId : transaction.personId;
+    const shouldHaveReceivable =
+      Boolean(personIdAfter) && updatedTransaction.type === 'CREDIT_CARD';
 
-      const status =
-        today > dueDate ? 'OVERDUE' : today >= closeDate ? 'CLOSED' : 'OPEN';
+    if (existingReceivable && !shouldHaveReceivable) {
+      await tx.receivable.delete({
+        where: { id: existingReceivable.id, userId },
+      });
+      return;
+    }
 
-      invoice = await tx.invoice.create({
+    if (!existingReceivable && shouldHaveReceivable) {
+      const personForNew =
+        newPerson ??
+        (await this.entityValidationService.validatePerson(
+          personIdAfter as string,
+          userId,
+        ));
+
+      const invoiceForNew = await tx.invoice.findUniqueOrThrow({
+        where: { id: updatedTransaction.invoiceId as string, userId },
+      });
+
+      const dueDate = getInvoiceDueDate(bank as Bank, invoiceForNew);
+
+      await tx.receivable.create({
         data: {
           userId,
-          bankId,
-          month,
-          year,
-          status,
+          personId: personIdAfter as string,
+          parentId: null,
+          transactionId: updatedTransaction.id,
+          title: updatedTransaction.title,
+          debtorName: personForNew.name,
+          amount: updatedTransaction.amount,
+          dueDate,
+        },
+      });
+      return;
+    }
+
+    if (existingReceivable && shouldHaveReceivable) {
+      const personChanged =
+        personIdProvided && dtoPersonId !== transaction.personId;
+
+      const personForSync = personChanged
+        ? (newPerson ??
+          (await this.entityValidationService.validatePerson(
+            dtoPersonId as string,
+            userId,
+          )))
+        : null;
+
+      await tx.receivable.update({
+        where: { id: existingReceivable.id, userId },
+        data: {
+          amount: updatedTransaction.amount,
+          title: updatedTransaction.title,
+          personId: personForSync ? personForSync.id : undefined,
+          debtorName: personForSync ? personForSync.name : undefined,
         },
       });
     }
-
-    return invoice;
   }
 }
