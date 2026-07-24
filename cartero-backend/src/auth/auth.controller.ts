@@ -7,7 +7,7 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { Request, Response } from 'express';
+import type { CookieOptions, Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -63,16 +63,26 @@ export class AuthController {
 
   @Post('logout')
   async logout(@Res({ passthrough: true }) res: Response) {
-    res.clearCookie('refresh_token');
+    res.clearCookie('refresh_token', this.refreshCookieOptions());
     return { message: 'Logout realizado com sucesso' };
   }
 
   private setRefreshCookie(res: Response, token: string) {
     res.cookie('refresh_token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'none',
+      ...this.refreshCookieOptions(),
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 dias
     });
+  }
+
+  private refreshCookieOptions(): CookieOptions {
+    const isProduction =
+      process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
+
+    return {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'lax',
+      path: '/',
+    };
   }
 }

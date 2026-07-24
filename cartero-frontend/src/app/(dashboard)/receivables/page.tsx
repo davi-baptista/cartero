@@ -18,6 +18,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePicker } from '@/components/ui/date-picker'
+import { MonthQuickFilter } from '@/components/month-quick-filter'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -478,36 +479,38 @@ export default function ReceivablesPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Page header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-receivable">A Receber</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Acompanhe cobranças e valores que têm para receber
-          </p>
-          {!isLoading && summary.pending > 0 && (
-            <p className="mt-1.5 text-sm">
-              <span className="text-muted-foreground">A receber </span>
-              <span className="font-medium tabular-nums tracking-[-0.01em] text-receivable">
-                {formatCurrency(summary.pending)}
-              </span>
-              {summary.overdueCount > 0 && (
-                <span className="ml-2 text-xs font-medium text-destructive">
-                  · {summary.overdueCount} atrasada{summary.overdueCount > 1 ? 's' : ''}
-                </span>
-              )}
+      <div>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-receivable">A Receber</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Acompanhe cobranças e valores que têm para receber
             </p>
-          )}
+          </div>
+          <Button
+            onClick={() => {
+              setEditReceivable(null)
+              setEditScope(null)
+              setSheetOpen(true)
+            }}
+          >
+            <Plus className="size-4" />
+            Nova cobrança
+          </Button>
         </div>
-        <Button
-          onClick={() => {
-            setEditReceivable(null)
-            setEditScope(null)
-            setSheetOpen(true)
-          }}
-        >
-          <Plus className="size-4" />
-          Nova cobrança
-        </Button>
+        {!isLoading && summary.pending > 0 && (
+          <p className="mt-1.5 text-sm">
+            <span className="text-muted-foreground">A receber </span>
+            <span className="font-medium tabular-nums tracking-[-0.01em] text-receivable">
+              {formatCurrency(summary.pending)}
+            </span>
+            {summary.overdueCount > 0 && (
+              <span className="ml-2 text-xs font-medium text-destructive">
+                · {summary.overdueCount} atrasada{summary.overdueCount > 1 ? 's' : ''}
+              </span>
+            )}
+          </p>
+        )}
       </div>
 
       {/* Filters */}
@@ -569,7 +572,15 @@ export default function ReceivablesPage() {
               Limpar filtros
             </Button>
           )}
-        </div>
+          </div>
+          <MonthQuickFilter
+            startDate={startDate}
+            endDate={endDate}
+            onChange={({ startDate: nextStart, endDate: nextEnd }) => {
+              setStartDate(nextStart)
+              setEndDate(nextEnd)
+            }}
+          />
         <div className="flex flex-wrap gap-2">
           {tabs.map(({ value, label }) => (
             <button

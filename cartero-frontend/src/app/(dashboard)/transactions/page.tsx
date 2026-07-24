@@ -107,69 +107,78 @@ function AmountDisplay({ amount, type, size = 'md' }: { amount: number; type: Tr
 
 function TransactionRow({
   tx,
+  onView,
   onEdit,
   onDelete,
 }: {
   tx: Transaction
+  onView: (tx: Transaction) => void
   onEdit: (tx: Transaction) => void
   onDelete: (tx: Transaction) => void
 }) {
   const Icon = TYPE_ICON[tx.type]
 
   return (
-    <div className="group flex items-center gap-4 px-2 py-4">
-      {/* Type icon — green for income, neutral for all expenses */}
-      <div
-        className="flex size-11 shrink-0 items-center justify-center rounded-2xl"
-        style={{ backgroundColor: isExpense(tx.type) ? EXPENSE_BG : INCOME_BG }}
+    <div className="group flex items-center gap-2 px-0 py-3.5 sm:gap-4 sm:px-2 sm:py-4">
+      <button
+        type="button"
+        onClick={() => onView(tx)}
+        className="-my-1 flex min-w-0 flex-1 items-center gap-3 rounded-lg py-1 text-left outline-none transition-colors active:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4"
+        aria-label={`Ver detalhes de ${tx.title}`}
       >
-        <Icon aria-hidden="true" className="size-5" style={{ color: isExpense(tx.type) ? EXPENSE_ICON_CLR : INCOME_COLOR }} />
-      </div>
+        {/* Type icon — green for income, neutral for all expenses */}
+        <div
+          className="flex size-10 shrink-0 items-center justify-center rounded-xl sm:size-11 sm:rounded-2xl"
+          style={{ backgroundColor: isExpense(tx.type) ? EXPENSE_BG : INCOME_BG }}
+        >
+          <Icon aria-hidden="true" className="size-4.5 sm:size-5" style={{ color: isExpense(tx.type) ? EXPENSE_ICON_CLR : INCOME_COLOR }} />
+        </div>
 
-      {/* Title + badges + description */}
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <span className="truncate text-[15px] font-medium leading-tight">{tx.title}</span>
+        {/* Title + badges + description */}
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <span className="truncate text-sm font-medium leading-tight sm:text-[15px]">{tx.title}</span>
 
-        {/* Type · bank · category — inline, quiet */}
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className="shrink-0">{TRANSACTION_TYPE_LABELS[tx.type]}</span>
-          {tx.bank && <span aria-hidden>·</span>}
-          {tx.bank && <span className="truncate">{tx.bank.name}</span>}
-          {tx.bank && tx.category && <span aria-hidden>·</span>}
-          {tx.category && (
-            <CategoryBadge icon={tx.category.icon} color={tx.category.color} name={tx.category.name} />
-          )}
-          {tx.parentId && (
-            <>
-              <span aria-hidden>·</span>
-              <span className="text-primary/60">parcelado</span>
-            </>
-          )}
-          {tx.person && (
-            <>
-              <span aria-hidden>·</span>
-              <span className="truncate">{tx.person.name}</span>
-            </>
+          {/* Type · bank · category — inline, quiet */}
+          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] text-muted-foreground">
+            <span className="shrink-0">{TRANSACTION_TYPE_LABELS[tx.type]}</span>
+            {tx.bank && <span aria-hidden>·</span>}
+            {tx.bank && <span className="truncate">{tx.bank.name}</span>}
+            {tx.bank && tx.category && <span aria-hidden>·</span>}
+            {tx.category && (
+              <CategoryBadge icon={tx.category.icon} color={tx.category.color} name={tx.category.name} />
+            )}
+            {(tx.parentId || /\s\d+\/\d+$/.test(tx.title)) && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="shrink-0 text-primary/60">parcelado</span>
+              </>
+            )}
+            {tx.person && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="truncate">{tx.person.name}</span>
+              </>
+            )}
+          </div>
+
+          {tx.description && (
+            <p className="hidden truncate text-xs text-muted-foreground/60 sm:block">
+              {tx.description}
+            </p>
           )}
         </div>
 
-        {tx.description && (
-          <p className="truncate text-xs text-muted-foreground/60">
-            {tx.description}
-          </p>
-        )}
-      </div>
+        {/* Amount + date — desktop */}
+        <div className="hidden shrink-0 flex-col items-end gap-1 sm:flex">
+          <AmountDisplay amount={tx.amount} type={tx.type} />
+          <span className="text-xs text-muted-foreground">{formatDate(tx.date)}</span>
+        </div>
 
-      {/* Amount + date — desktop */}
-      <div className="hidden shrink-0 flex-col items-end gap-1 sm:flex">
-        <AmountDisplay amount={tx.amount} type={tx.type} />
-        <span className="text-xs text-muted-foreground">{formatDate(tx.date)}</span>
-      </div>
-
-      {/* Amount — mobile */}
-      <div className="flex shrink-0 sm:hidden">
-        <AmountDisplay amount={tx.amount} type={tx.type} size="sm" />
-      </div>
+        {/* Amount — mobile */}
+        <div className="flex shrink-0 sm:hidden">
+          <AmountDisplay amount={tx.amount} type={tx.type} size="sm" />
+        </div>
+      </button>
 
       {/* Desktop hover actions */}
       <div className="hidden items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
@@ -214,6 +223,112 @@ function TransactionRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+    </div>
+  )
+}
+
+function TransactionDetailsDialog({
+  transaction,
+  onOpenChange,
+  onEdit,
+  onDelete,
+}: {
+  transaction: Transaction | null
+  onOpenChange: (open: boolean) => void
+  onEdit: (tx: Transaction) => void
+  onDelete: (tx: Transaction) => void
+}) {
+  if (!transaction) return null
+
+  const expense = isExpense(transaction.type)
+  const categoryIcon = transaction.category
+    ? resolveCategoryIcon(transaction.category.icon).Icon
+    : null
+  const CategoryIcon = categoryIcon
+  const installment = Boolean(transaction.parentId) || /\s\d+\/\d+$/.test(transaction.title)
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent className="top-auto bottom-0 left-0 max-h-[88dvh] max-w-none translate-x-0 translate-y-0 gap-0 overflow-y-auto rounded-b-none rounded-t-2xl p-0 sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl">
+        <DialogHeader className="border-b border-border px-5 py-5 pr-12">
+          <DialogTitle className="text-lg leading-snug">{transaction.title}</DialogTitle>
+          <DialogDescription>
+            {TRANSACTION_TYPE_LABELS[transaction.type]} · {formatDate(transaction.date)}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="border-b border-border bg-muted/20 px-5 py-4">
+          <p className="text-xs font-medium text-muted-foreground">
+            {expense ? 'Valor pago' : 'Valor recebido'}
+          </p>
+          <div className="mt-1">
+            <AmountDisplay amount={transaction.amount} type={transaction.type} />
+          </div>
+        </div>
+
+        <dl className="divide-y divide-border px-5">
+          <DetailRow label="Banco">
+            {transaction.bank?.name ?? 'Não informado'}
+          </DetailRow>
+          <DetailRow label="Categoria">
+            <span className="flex min-w-0 items-center justify-end gap-1.5">
+              {CategoryIcon && (
+                <CategoryIcon
+                  aria-hidden="true"
+                  className="size-3.5 shrink-0"
+                  style={transaction.category?.color ? { color: transaction.category.color } : undefined}
+                />
+              )}
+              <span className="truncate">{transaction.category?.name ?? 'Não informada'}</span>
+            </span>
+          </DetailRow>
+          {transaction.person && (
+            <DetailRow label="Pessoa">{transaction.person.name}</DetailRow>
+          )}
+          {installment && (
+            <DetailRow label="Lançamento">Parcelado</DetailRow>
+          )}
+          {transaction.description && (
+            <DetailRow label="Descrição">
+              <span className="whitespace-pre-wrap">{transaction.description}</span>
+            </DetailRow>
+          )}
+        </dl>
+
+        <div className="flex gap-2 border-t border-border px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <Button
+            variant="outline"
+            className="h-11 flex-1 sm:h-9"
+            onClick={() => onEdit(transaction)}
+          >
+            <Pencil className="size-4" />
+            Editar
+          </Button>
+          <Button
+            variant="destructive"
+            className="h-11 flex-1 sm:h-9"
+            onClick={() => onDelete(transaction)}
+          >
+            <Trash2 className="size-4" />
+            Excluir
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DetailRow({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-4 py-3">
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-right text-sm text-foreground">{children}</dd>
     </div>
   )
 }
@@ -279,6 +394,7 @@ export default function TransactionsPage() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editTx, setEditTx] = useState<Transaction | null>(null)
   const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
+  const [detailsTx, setDetailsTx] = useState<Transaction | null>(null)
 
   const [scopeDialog, setScopeDialog] = useState<{ tx: Transaction; mode: 'edit' | 'delete' } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null)
@@ -377,6 +493,7 @@ export default function TransactionsPage() {
 
   // ── Handlers ──
   function handleEdit(tx: Transaction) {
+    setDetailsTx(null)
     if (tx.parentId) {
       setScopeDialog({ tx, mode: 'edit' })
     } else {
@@ -387,6 +504,7 @@ export default function TransactionsPage() {
   }
 
   function handleDelete(tx: Transaction) {
+    setDetailsTx(null)
     if (tx.parentId) {
       setScopeDialog({ tx, mode: 'delete' })
     } else {
@@ -584,24 +702,24 @@ export default function TransactionsPage() {
 
       {/* Summary tiles */}
       {!txLoading && displayTransactions && displayTransactions.length > 0 && (
-        <div className="flex gap-3">
-          <div className="min-w-0 flex-1 rounded-2xl bg-muted/30 px-4 py-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
+          <div className="min-w-0 rounded-xl bg-muted/30 px-3 py-3 sm:rounded-2xl sm:px-4">
             <p className="text-xs font-medium text-muted-foreground">Receitas</p>
-            <p className="mt-1 truncate text-base font-semibold tabular-nums tracking-[-0.02em]" style={{ color: INCOME_COLOR }}>
+            <p className="mt-1 whitespace-nowrap text-[15px] font-semibold tabular-nums tracking-[-0.02em] sm:text-base" style={{ color: INCOME_COLOR }}>
               {formatCurrency(summary.receitas)}
             </p>
           </div>
-          <div className="min-w-0 flex-1 rounded-2xl bg-muted/30 px-4 py-3">
+          <div className="min-w-0 rounded-xl bg-muted/30 px-3 py-3 sm:rounded-2xl sm:px-4">
             <p className="text-xs font-medium text-muted-foreground">Gastos</p>
-            <p className="mt-1 truncate text-base font-semibold tabular-nums tracking-[-0.02em] text-destructive">
+            <p className="mt-1 whitespace-nowrap text-[15px] font-semibold tabular-nums tracking-[-0.02em] text-destructive sm:text-base">
               {formatCurrency(summary.gastos)}
             </p>
           </div>
-          <div className="min-w-0 flex-1 rounded-2xl bg-muted/30 px-4 py-3">
+          <div className="col-span-2 min-w-0 rounded-xl bg-muted/30 px-3 py-3 sm:col-span-1 sm:rounded-2xl sm:px-4">
             <p className="text-xs font-medium text-muted-foreground">Saldo</p>
             <p
               className={cn(
-                'mt-1 truncate text-base font-semibold tabular-nums tracking-[-0.02em]',
+                'mt-1 whitespace-nowrap text-[15px] font-semibold tabular-nums tracking-[-0.02em] sm:text-base',
                 summary.saldo < 0 ? 'text-destructive' : '',
               )}
               style={summary.saldo >= 0 ? { color: INCOME_COLOR } : undefined}
@@ -647,6 +765,7 @@ export default function TransactionsPage() {
               <MotionRow key={tx.id} index={i}>
                 <TransactionRow
                   tx={tx}
+                  onView={setDetailsTx}
                   onEdit={handleEdit}
                   onDelete={handleDelete}
                 />
@@ -657,6 +776,15 @@ export default function TransactionsPage() {
       </div>
 
       {/* Sheets & Dialogs */}
+      <TransactionDetailsDialog
+        transaction={detailsTx}
+        onOpenChange={(open) => {
+          if (!open) setDetailsTx(null)
+        }}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+      />
+
       <TransactionSheet
         open={sheetOpen}
         onOpenChange={(open) => {

@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePicker } from '@/components/ui/date-picker'
+import { MonthQuickFilter } from '@/components/month-quick-filter'
 import {
   Sheet,
   SheetContent,
@@ -179,6 +180,14 @@ function StatementSheet({
               </Button>
             )}
           </div>
+          <MonthQuickFilter
+            startDate={startDate}
+            endDate={endDate}
+            onChange={({ startDate: nextStart, endDate: nextEnd }) => {
+              setStartDate(nextStart)
+              setEndDate(nextEnd)
+            }}
+          />
 
           {isLoading ? (
             <div className="flex flex-col gap-3">

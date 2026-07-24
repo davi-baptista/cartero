@@ -1,6 +1,7 @@
 import axios from 'axios'
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000'
+const BASE_URL = '/api'
+export const TOKEN_REFRESHED_EVENT = 'cartero:token-refreshed'
 
 export const api = axios.create({
   baseURL: BASE_URL,
@@ -17,18 +18,42 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-let isRefreshing = false
-let failedQueue: Array<{
-  resolve: (token: string) => void
-  reject: (err: unknown) => void
-}> = []
+let refreshPromise: Promise<string> | null = null
 
-function processQueue(error: unknown, token: string | null) {
-  failedQueue.forEach(({ resolve, reject }) => {
-    if (error) reject(error)
-    else resolve(token!)
-  })
-  failedQueue = []
+export function refreshAccessToken() {
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post<{ accessToken: string }>(
+        `${BASE_URL}/auth/refresh`,
+        {},
+        { withCredentials: true },
+      )
+      .then(({ data }) => {
+        if (!data.accessToken) {
+          throw new Error('A API não retornou um access token')
+        }
+
+        localStorage.setItem('cartero-token', data.accessToken)
+        api.defaults.headers.common.Authorization = `Bearer ${data.accessToken}`
+        window.dispatchEvent(
+          new CustomEvent<string>(TOKEN_REFRESHED_EVENT, {
+            detail: data.accessToken,
+          }),
+        )
+
+        return data.accessToken
+      })
+      .finally(() => {
+        refreshPromise = null
+      })
+  }
+
+  return refreshPromise
+}
+
+function clearStoredSession() {
+  localStorage.removeItem('cartero-token')
+  localStorage.removeItem('cartero-user')
 }
 
 api.interceptors.response.use(
@@ -36,38 +61,24 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config
 
-    if (error.response?.status === 401 && !originalRequest._retry && !originalRequest.url?.includes('/auth/')) {
-      if (isRefreshing) {
-        return new Promise<string>((resolve, reject) => {
-          failedQueue.push({ resolve, reject })
-        }).then((token) => {
-          originalRequest.headers.Authorization = `Bearer ${token}`
-          return api(originalRequest)
-        })
-      }
-
+    if (
+      error.response?.status === 401 &&
+      originalRequest &&
+      !originalRequest._retry &&
+      !originalRequest.url?.includes('/auth/')
+    ) {
       originalRequest._retry = true
-      isRefreshing = true
 
       try {
-        const { data } = await axios.post(
-          `${BASE_URL}/auth/refresh`,
-          {},
-          { withCredentials: true },
-        )
-        const newToken: string = data.accessToken
-        localStorage.setItem('cartero-token', newToken)
-        api.defaults.headers.common.Authorization = `Bearer ${newToken}`
-        processQueue(null, newToken)
+        const newToken = await refreshAccessToken()
+        originalRequest.headers.Authorization = `Bearer ${newToken}`
         return api(originalRequest)
       } catch (refreshError) {
-        processQueue(refreshError, null)
-        localStorage.removeItem('cartero-token')
-        localStorage.removeItem('cartero-user')
-        window.location.href = '/login'
+        clearStoredSession()
+        if (window.location.pathname !== '/login') {
+          window.location.replace('/login')
+        }
         return Promise.reject(refreshError)
-      } finally {
-        isRefreshing = false
       }
     }
 

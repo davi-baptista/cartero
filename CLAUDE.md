@@ -184,8 +184,8 @@ Se qualquer um desses três parâmetros estiver presente na URL, o filtro padrã
 ## Auth — detalhes importantes
 
 - **Register retorna `accessToken`** → frontend faz login automático após cadastro (sem redirecionar para login)
-- **Cookie de refresh token:** `HttpOnly`, `secure: true` em produção, `sameSite: 'none'` (necessário porque Render e Vercel são origens distintas — `sameSite: 'strict'` bloquearia o cookie em requisições cross-origin, derrubando o usuário)
-- Interceptor Axios: 401 → chama `POST /auth/refresh` com `withCredentials: true` → atualiza `localStorage` e header → retenta a requisição original; requisições concorrentes são enfileiradas
+- **Cookie de refresh token:** `HttpOnly`, `secure: true` em produção, `sameSite: 'lax'`. O frontend acessa o backend pelo rewrite same-origin `/api/:path*` do Next.js, que aponta para o Render; isso evita depender de cookies de terceiros entre Vercel e Render.
+- Interceptor Axios: 401 → chama `POST /auth/refresh` com `withCredentials: true` → atualiza `localStorage` e header → retenta a requisição original; requisições concorrentes compartilham uma única Promise de refresh. O `AuthProvider` valida a sessão ao iniciar e renova o access token 1 minuto antes do vencimento.
 
 ## Estado Atual
 
@@ -198,7 +198,7 @@ Se qualquer um desses três parâmetros estiver presente na URL, o filtro padrã
 - `findOrCreateInvoice`/`getInvoiceDueDate` extraídos para `common/helpers/invoice.helper.ts` (usados por Transactions, Debts e Receivables)
 - `PATCH /transactions/:id` → bloqueia edição se invoice original for PAID ✅
 - Invoice sync executado no bootstrap (app.scheduler.ts) ✅
-- Cookie de refresh com `sameSite: 'none'` para funcionar cross-origin (Render + Vercel) ✅
+- Cookie de refresh first-party via proxy `/api`, com `sameSite: 'lax'` e `secure` em produção ✅
 - **Transações reembolsáveis** ✅ (ver seção própria abaixo)
 - **Transações de pagamento (Dívida paga / Receita recebida)** ✅ (ver seção própria abaixo)
 - **Categorias de sistema** ✅ (`isSystem`, protegidas contra edição/exclusão/colisão de nome)

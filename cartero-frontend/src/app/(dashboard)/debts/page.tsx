@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePicker } from '@/components/ui/date-picker'
+import { MonthQuickFilter } from '@/components/month-quick-filter'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -486,41 +487,43 @@ export default function DebtsPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Page header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-destructive">Dívidas</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Controle suas dívidas externas e parcelamentos
-          </p>
-          {!isLoading && summary.pending > 0 && (
-            <p className="mt-1.5 text-sm">
-              <span className="text-muted-foreground">A pagar </span>
-              <span className="font-medium tabular-nums tracking-[-0.01em] text-destructive">
-                {formatCurrency(summary.pending)}
-              </span>
-              {summary.overdueCount > 0 && (
-                <span className="ml-2 text-xs font-medium text-destructive">
-                  · {summary.overdueCount} vencida{summary.overdueCount > 1 ? 's' : ''}
-                </span>
-              )}
+      <div>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-destructive">Dívidas</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Controle suas dívidas externas e parcelamentos
             </p>
-          )}
+          </div>
+          <Button
+            onClick={() => {
+              setEditDebt(null)
+              setEditScope(null)
+              setSheetOpen(true)
+            }}
+          >
+            <Plus className="size-4" />
+            Nova dívida
+          </Button>
         </div>
-        <Button
-          onClick={() => {
-            setEditDebt(null)
-            setEditScope(null)
-            setSheetOpen(true)
-          }}
-        >
-          <Plus className="size-4" />
-          Nova dívida
-        </Button>
+        {!isLoading && summary.pending > 0 && (
+          <p className="mt-1.5 text-sm">
+            <span className="text-muted-foreground">A pagar </span>
+            <span className="font-medium tabular-nums tracking-[-0.01em] text-destructive">
+              {formatCurrency(summary.pending)}
+            </span>
+            {summary.overdueCount > 0 && (
+              <span className="ml-2 text-xs font-medium text-destructive">
+                · {summary.overdueCount} vencida{summary.overdueCount > 1 ? 's' : ''}
+              </span>
+            )}
+          </p>
+        )}
       </div>
 
       {/* Filters */}
       <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
           <div className="w-36 sm:w-40">
             <DatePicker value={startDate} onChange={setStartDate} placeholder="Data início" />
           </div>
@@ -577,7 +580,15 @@ export default function DebtsPage() {
               Limpar filtros
             </Button>
           )}
-        </div>
+          </div>
+          <MonthQuickFilter
+            startDate={startDate}
+            endDate={endDate}
+            onChange={({ startDate: nextStart, endDate: nextEnd }) => {
+              setStartDate(nextStart)
+              setEndDate(nextEnd)
+            }}
+          />
         <div className="flex flex-wrap gap-2">
           {tabs.map(({ value, label }) => (
             <button

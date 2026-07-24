@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -73,9 +73,13 @@ function MonthNav({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function BudgetPage() {
-  const today = new Date()
-  const [year, setYear] = useState(today.getFullYear())
-  const [month, setMonth] = useState(today.getMonth() + 1)
+  const [initialPeriod] = useState(() => {
+    const today = new Date()
+    return { year: today.getFullYear(), month: today.getMonth() + 1 }
+  })
+  const [year, setYear] = useState(initialPeriod.year)
+  const [month, setMonth] = useState(initialPeriod.month)
+  const autoAdvanced = useRef(false)
 
   function prevMonth() {
     if (month === 1) { setMonth(12); setYear((y) => y - 1) }
@@ -90,6 +94,37 @@ export default function BudgetPage() {
     queryKey: ['budget', { month, year }],
     queryFn: () => getBudget({ month, year }),
   })
+
+  useEffect(() => {
+    if (
+      isLoading ||
+      !budget ||
+      autoAdvanced.current ||
+      year !== initialPeriod.year ||
+      month !== initialPeriod.month
+    ) {
+      return
+    }
+
+    const invoicesWithAmount = budget.invoices.filter(
+      (invoice) => Number(invoice.totalAmount) > 0,
+    )
+
+    if (
+      invoicesWithAmount.length > 0 &&
+      invoicesWithAmount.every((invoice) => invoice.status === InvoiceStatus.PAID)
+    ) {
+      autoAdvanced.current = true
+      window.setTimeout(() => {
+        if (month === 12) {
+          setMonth(1)
+          setYear((currentYear) => currentYear + 1)
+        } else {
+          setMonth((currentMonth) => currentMonth + 1)
+        }
+      }, 0)
+    }
+  }, [budget, initialPeriod.month, initialPeriod.year, isLoading, month, year])
 
   const allInvoices = budget?.invoices ?? []
 
