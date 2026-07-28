@@ -227,7 +227,7 @@ function InvoiceRow({
 
 function TxRow({ tx }: { tx: Transaction }) {
   const Icon = TYPE_ICON[tx.type]
-  const expense = isExpense(tx.type)
+  const expense = isExpense(tx.type, tx.isRefund)
 
   return (
     <div className="flex items-center gap-3 px-4 py-3.5">

@@ -44,6 +44,10 @@ export class TransactionsService {
       );
     }
 
+    if (dto.isRefund && dto.type !== 'CREDIT_CARD') {
+      throw new BadRequestException('Reembolsos devem ser transações de cartão de crédito');
+    }
+
     let person: Person | null = null;
     if (dto.personId) {
       person = await this.entityValidationService.validatePerson(
@@ -55,7 +59,7 @@ export class TransactionsService {
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
         const installments =
-          dto.type == 'CREDIT_CARD' ? (dto.installments ?? 1) : 1;
+          dto.type == 'CREDIT_CARD' && !dto.isRefund ? (dto.installments ?? 1) : 1;
         const transactions: Transaction[] = [];
 
         let parentId: string | null = null;
@@ -95,6 +99,7 @@ export class TransactionsService {
               title,
               type: dto.type,
               amount: dto.amount,
+              isRefund: dto.isRefund ?? false,
               description: dto.description,
               date: installmentDate,
             },
@@ -114,7 +119,11 @@ export class TransactionsService {
           if (invoiceId) {
             await tx.invoice.update({
               where: { id: invoiceId, userId },
-              data: { totalAmount: { increment: dto.amount } },
+              data: {
+                totalAmount: dto.isRefund
+                  ? { decrement: dto.amount }
+                  : { increment: dto.amount },
+              },
             });
           }
 
@@ -247,17 +256,23 @@ export class TransactionsService {
           const bankId = dto.bankId ?? transaction.bankId;
           const type = dto.type ?? transaction.type;
           const amount = dto.amount ?? Number(transaction.amount);
+          const isRefund = dto.isRefund ?? transaction.isRefund;
           const date = dto.date ? new Date(dto.date) : transaction.date;
+
+          if (isRefund && type !== 'CREDIT_CARD') {
+            throw new BadRequestException('Reembolsos devem ser transações de cartão de crédito');
+          }
 
           const invoiceRelevantChanged =
             type !== transaction.type ||
             bankId !== transaction.bankId ||
             amount !== Number(transaction.amount) ||
+            isRefund !== transaction.isRefund ||
             date.getTime() !== transaction.date.getTime();
 
           let invoiceId = transaction.invoiceId;
 
-          if (invoiceRelevantChanged) {
+            if (invoiceRelevantChanged) {
             if (transaction.invoiceId) {
               const { status } = await tx.invoice.findUniqueOrThrow({
                 where: { id: transaction.invoiceId, userId },
@@ -273,7 +288,9 @@ export class TransactionsService {
               await tx.invoice.update({
                 where: { id: transaction.invoiceId, userId },
                 data: {
-                  totalAmount: { decrement: transaction.amount },
+                  totalAmount: transaction.isRefund
+                    ? { increment: transaction.amount }
+                    : { decrement: transaction.amount },
                 },
               });
             }
@@ -297,7 +314,9 @@ export class TransactionsService {
               await tx.invoice.update({
                 where: { id: invoiceId, userId },
                 data: {
-                  totalAmount: { increment: amount },
+                  totalAmount: isRefund
+                    ? { decrement: amount }
+                    : { increment: amount },
                 },
               });
             }
@@ -305,7 +324,7 @@ export class TransactionsService {
 
           const updatedTransaction = await tx.transaction.update({
             where: { id: transaction.id, userId },
-            data: {
+                 data: {
               ...dto,
               invoiceId,
               date,
@@ -362,7 +381,9 @@ export class TransactionsService {
             const invoice = await tx.invoice.update({
               where: { id: transaction.invoiceId, userId },
               data: {
-                totalAmount: { decrement: transaction.amount },
+                totalAmount: transaction.isRefund
+                  ? { increment: transaction.amount }
+                  : { decrement: transaction.amount },
               },
             });
 
@@ -439,7 +460,9 @@ export class TransactionsService {
 
     const personIdAfter = personIdProvided ? dtoPersonId : transaction.personId;
     const shouldHaveReceivable =
-      Boolean(personIdAfter) && updatedTransaction.type === 'CREDIT_CARD';
+      Boolean(personIdAfter) &&
+      updatedTransaction.type === 'CREDIT_CARD' &&
+      !updatedTransaction.isRefund;
 
     if (existingReceivable && !shouldHaveReceivable) {
       await tx.receivable.delete({

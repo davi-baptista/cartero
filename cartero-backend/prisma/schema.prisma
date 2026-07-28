@@ -66,6 +66,7 @@ model Transaction {
   title       String
   type        TransactionType
   amount      Decimal
+  isRefund    Boolean         @default(false)
   description String?
   date        DateTime
   createdAt   DateTime        @default(now())

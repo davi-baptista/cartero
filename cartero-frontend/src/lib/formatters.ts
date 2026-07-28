@@ -23,8 +23,8 @@ export function formatRelativeDate(dateString: string): string {
   return format(parseDateOnly(dateString), "dd 'de' MMMM", { locale: ptBR })
 }
 
-export function isExpense(type: TransactionType): boolean {
-  return type !== TransactionType.INCOME
+export function isExpense(type: TransactionType, isRefund = false): boolean {
+  return type !== TransactionType.INCOME && !isRefund
 }
 
 export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {

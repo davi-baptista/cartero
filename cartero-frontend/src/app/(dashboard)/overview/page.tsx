@@ -784,7 +784,7 @@ export default function OverviewPage() {
   // ── Derived data ──
   const categoryRows = useMemo((): CategoryRowData[] => {
     if (!transactions) return []
-    const expenseTxs = transactions.filter((t) => isExpense(t.type))
+    const expenseTxs = transactions.filter((t) => isExpense(t.type, t.isRefund))
     const grouped = new Map<string, { amount: number; name: string; color?: string; icon?: string }>()
 
     for (const tx of expenseTxs) {

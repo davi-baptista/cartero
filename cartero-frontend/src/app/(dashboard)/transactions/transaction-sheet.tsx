@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/select'
 import { DatePicker } from '@/components/ui/date-picker'
 import { TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
+import { cn } from '@/lib/utils'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { getBanks, createBank } from '@/services/banks.service'
 import { getCategories, createCategory } from '@/services/categories.service'
@@ -49,6 +50,7 @@ const schema = z
     type: z.enum(transactionTypeValues),
     title: z.string().min(1, 'Título obrigatório'),
     amount: z.number({ message: 'Valor inválido' }).positive('Valor deve ser positivo'),
+    isRefund: z.boolean().optional(),
     date: z.string().min(1, 'Data obrigatória'),
     description: z.string().optional(),
     installments: z.preprocess(
@@ -190,6 +192,7 @@ export function TransactionSheet({
       type: TransactionType.PIX,
       title: '',
       amount: 0,
+      isRefund: false,
       date: '',
       description: '',
       installments: undefined,
@@ -201,6 +204,13 @@ export function TransactionSheet({
   const selectedBankId = useWatch({ control, name: 'bankId' })
   const selectedCategoryId = useWatch({ control, name: 'categoryId' })
   const selectedPersonId = useWatch({ control, name: 'personId' })
+  const selectedIsRefund = useWatch({ control, name: 'isRefund' })
+
+  useEffect(() => {
+    if (selectedType !== TransactionType.CREDIT_CARD && selectedIsRefund) {
+      setValue('isRefund', false)
+    }
+  }, [selectedIsRefund, selectedType, setValue])
 
   useEffect(() => {
     if (open) {
@@ -218,6 +228,7 @@ export function TransactionSheet({
           type: editTarget.type,
           title: editTarget.title,
           amount: editTarget.amount,
+          isRefund: editTarget.isRefund ?? false,
           date: editTarget.date,
           description: editTarget.description ?? '',
           personId: editTarget.personId ?? undefined,
@@ -229,6 +240,7 @@ export function TransactionSheet({
           type: TransactionType.PIX,
           title: '',
           amount: 0,
+          isRefund: false,
           date: new Date().toISOString().slice(0, 10),
           description: '',
           installments: undefined,
@@ -296,7 +308,53 @@ export function TransactionSheet({
               )}
             />
             {errors.type && <p className="text-xs text-destructive">{errors.type.message}</p>}
+            {selectedType === TransactionType.CREDIT_CARD && (
+              <Controller
+                control={control}
+                name="isRefund"
+                render={({ field }) => (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={Boolean(field.value)}
+                    onClick={() => field.onChange(!field.value)}
+                    className="flex w-fit items-center gap-2 rounded-md py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <span className={cn('flex size-4 items-center justify-center rounded border transition-colors', field.value ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/50 bg-transparent')}>
+                      {field.value && <Check className="size-3" />}
+                    </span>
+                    <span className="text-xs font-medium">Transformar em reembolso</span>
+                  </button>
+                )}
+              />
+            )}
           </div>
+
+          {false && selectedType === TransactionType.CREDIT_CARD && (
+            <Controller
+              control={control}
+              name="isRefund"
+              render={({ field }) => (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={Boolean(field.value)}
+                  onClick={() => field.onChange(!field.value)}
+                  className="flex w-fit items-center gap-2 rounded-md py-1 text-left text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <span>
+                    <span className="block text-xs font-medium">Reembolso na fatura</span>
+                    <span className="sr-only">
+                      Abate este valor do total do cartão de crédito
+                    </span>
+                  </span>
+                  <span className={cn('flex size-4 items-center justify-center rounded border transition-colors', field.value ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/50 bg-transparent')}>
+                    {field.value && <Check className="size-3" />}
+                  </span>
+                </button>
+              )}
+            />
+          )}
 
           {/* Title */}
           <div className="space-y-1.5">

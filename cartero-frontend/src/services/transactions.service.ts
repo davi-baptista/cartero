@@ -30,6 +30,7 @@ export async function createTransaction(payload: {
   type: TransactionType
   title: string
   amount: number
+  isRefund?: boolean
   date: string
   description?: string
   installments?: number
@@ -47,6 +48,7 @@ export async function updateTransaction(
     type: TransactionType
     title: string
     amount: number
+    isRefund?: boolean
     date: string
     description: string
     personId: string | null

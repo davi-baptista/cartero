@@ -286,11 +286,14 @@ export default function ReceivablesPage() {
 
   const [tab, setTab] = useState<TabFilter>('pending')
   const [personFilter, setPersonFilter] = useState<string | undefined>(undefined)
-  const [startDate, setStartDate] = useState<string | undefined>(undefined)
+  const [startDate, setStartDate] = useState<string | undefined>(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+  })
   const [endDate, setEndDate] = useState<string | undefined>(() => {
     if (endDateParam) return endDateParam
     const d = new Date()
-    return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()).padStart(2, '0')}`
   })
   const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)

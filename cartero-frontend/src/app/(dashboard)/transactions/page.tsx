@@ -88,8 +88,8 @@ const CategoryBadge = memo(function CategoryBadge({ icon, color, name }: { icon?
   )
 })
 
-function AmountDisplay({ amount, type, size = 'md' }: { amount: number; type: TransactionType; size?: 'sm' | 'md' }) {
-  const expense = isExpense(type)
+function AmountDisplay({ amount, type, isRefund = false, size = 'md' }: { amount: number; type: TransactionType; isRefund?: boolean; size?: 'sm' | 'md' }) {
+  const expense = isExpense(type, isRefund)
   const formatted = formatCurrency(amount)
   return (
     <span
@@ -129,9 +129,9 @@ function TransactionRow({
         {/* Type icon — green for income, neutral for all expenses */}
         <div
           className="flex size-10 shrink-0 items-center justify-center rounded-xl sm:size-11 sm:rounded-2xl"
-          style={{ backgroundColor: isExpense(tx.type) ? EXPENSE_BG : INCOME_BG }}
+          style={{ backgroundColor: isExpense(tx.type, tx.isRefund) ? EXPENSE_BG : INCOME_BG }}
         >
-          <Icon aria-hidden="true" className="size-4.5 sm:size-5" style={{ color: isExpense(tx.type) ? EXPENSE_ICON_CLR : INCOME_COLOR }} />
+          <Icon aria-hidden="true" className="size-4.5 sm:size-5" style={{ color: isExpense(tx.type, tx.isRefund) ? EXPENSE_ICON_CLR : INCOME_COLOR }} />
         </div>
 
         {/* Title + badges + description */}
@@ -141,6 +141,7 @@ function TransactionRow({
           {/* Type · bank · category — inline, quiet */}
           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] text-muted-foreground">
             <span className="shrink-0">{TRANSACTION_TYPE_LABELS[tx.type]}</span>
+            {tx.isRefund && <span className="shrink-0 text-primary">· reembolso</span>}
             {tx.bank && <span aria-hidden>·</span>}
             {tx.bank && <span className="truncate">{tx.bank.name}</span>}
             {tx.bank && tx.category && <span aria-hidden>·</span>}
@@ -170,13 +171,13 @@ function TransactionRow({
 
         {/* Amount + date — desktop */}
         <div className="hidden shrink-0 flex-col items-end gap-1 sm:flex">
-          <AmountDisplay amount={tx.amount} type={tx.type} />
+          <AmountDisplay amount={tx.amount} type={tx.type} isRefund={tx.isRefund} />
           <span className="text-xs text-muted-foreground">{formatDate(tx.date)}</span>
         </div>
 
         {/* Amount — mobile */}
         <div className="flex shrink-0 sm:hidden">
-          <AmountDisplay amount={tx.amount} type={tx.type} size="sm" />
+          <AmountDisplay amount={tx.amount} type={tx.type} isRefund={tx.isRefund} size="sm" />
         </div>
       </button>
 
@@ -240,7 +241,7 @@ function TransactionDetailsDialog({
 }) {
   if (!transaction) return null
 
-  const expense = isExpense(transaction.type)
+  const expense = isExpense(transaction.type, transaction.isRefund)
   const categoryIcon = transaction.category
     ? resolveCategoryIcon(transaction.category.icon).Icon
     : null
@@ -262,7 +263,7 @@ function TransactionDetailsDialog({
             {expense ? 'Valor pago' : 'Valor recebido'}
           </p>
           <div className="mt-1">
-            <AmountDisplay amount={transaction.amount} type={transaction.type} />
+            <AmountDisplay amount={transaction.amount} type={transaction.type} isRefund={transaction.isRefund} />
           </div>
         </div>
 
@@ -486,8 +487,8 @@ export default function TransactionsPage() {
   // ── Summary ──
   const summary = useMemo(() => {
     if (!displayTransactions) return { receitas: 0, gastos: 0, saldo: 0 }
-    const receitas = displayTransactions.filter((t) => !isExpense(t.type)).reduce((s, t) => s + t.amount, 0)
-    const gastos = displayTransactions.filter((t) => isExpense(t.type)).reduce((s, t) => s + t.amount, 0)
+    const receitas = displayTransactions.filter((t) => !isExpense(t.type, t.isRefund)).reduce((s, t) => s + t.amount, 0)
+    const gastos = displayTransactions.filter((t) => isExpense(t.type, t.isRefund)).reduce((s, t) => s + t.amount, 0)
     return { receitas, gastos, saldo: receitas - gastos }
   }, [displayTransactions])
 

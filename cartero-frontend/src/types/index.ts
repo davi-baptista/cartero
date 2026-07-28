@@ -61,6 +61,7 @@ export interface Transaction {
   type: TransactionType
   title: string
   amount: number
+  isRefund?: boolean
   description?: string
   date: string
   bank?: Bank

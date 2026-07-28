@@ -1,6 +1,7 @@
 import { TransactionType } from '@prisma/client';
 import {
   IsDateString,
+  IsBoolean,
   IsEnum,
   IsNumber,
   IsOptional,
@@ -31,6 +32,10 @@ export class UpdateTransactionDto {
   @IsNumber()
   @Min(0.01)
   amount?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isRefund?: boolean;
 
   @IsOptional()
   @IsString()
