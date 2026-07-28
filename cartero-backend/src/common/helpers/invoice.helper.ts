@@ -1,7 +1,9 @@
 import { Bank, Invoice, Prisma } from '@prisma/client';
 
 export function getInvoiceDueDate(bank: Bank, invoice: Invoice): Date {
-  return new Date(invoice.year, invoice.month - 1, bank.invoiceDueDate);
+  return new Date(
+    Date.UTC(invoice.year, invoice.month - 1, bank.invoiceDueDate, 3),
+  );
 }
 
 export async function findOrCreateInvoice(
@@ -33,8 +35,8 @@ export async function findOrCreateInvoice(
 
   if (!invoice) {
     const today = new Date();
-    const closeDate = new Date(year, month, invoiceCloseDate);
-    const dueDate = new Date(year, month, invoiceDueDate);
+    const closeDate = new Date(Date.UTC(year, month, invoiceCloseDate, 3));
+    const dueDate = new Date(Date.UTC(year, month, invoiceDueDate, 3));
 
     const status =
       today > dueDate ? 'OVERDUE' : today >= closeDate ? 'CLOSED' : 'OPEN';

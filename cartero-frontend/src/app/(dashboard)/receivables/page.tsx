@@ -57,6 +57,7 @@ import {
 import { useSearchParams } from 'next/navigation'
 import { getPersons } from '@/services/persons.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
+import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type { Receivable, TransactionType } from '@/types'
 import { InstallmentScope } from '@/types'
@@ -65,7 +66,7 @@ import { InstallmentScope } from '@/types'
 
 function isOverdue(r: Receivable): boolean {
   if (r.isPaid) return false
-  const today = new Date().toISOString().slice(0, 10)
+  const today = formatDateValue()
   return r.dueDate < today
 }
 

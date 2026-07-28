@@ -3,6 +3,7 @@ import { Prisma, Receivable, TransactionType } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
 import { findOrCreateInvoice } from 'src/common/helpers/invoice.helper';
+import { parseDateFilterEnd, parseDateFilterStart, parseDateOnly } from 'src/common/helpers/date-only.helper';
 import {
   RECEIVABLE_RECEIVED_CATEGORY_NAME,
   RECEIVABLE_RECEIVED_CATEGORY_COLOR,
@@ -45,7 +46,7 @@ export class ReceivablesService {
         let parentId: string | null = null;
 
         for (let i = 0; i < installments; i++) {
-          const installmentDate = getInstallmentDate(new Date(dto.dueDate), i);
+            const installmentDate = getInstallmentDate(parseDateOnly(dto.dueDate), i);
 
           const receivable: Receivable = await tx.receivable.create({
             data: {
@@ -91,8 +92,8 @@ export class ReceivablesService {
         debtorName: filters.debtorName,
         personId: filters.personId,
         dueDate: {
-          gte: filters.startDate ? new Date(filters.startDate) : undefined,
-          lte: filters.endDate ? new Date(filters.endDate) : undefined,
+          gte: filters.startDate ? parseDateFilterStart(filters.startDate) : undefined,
+          lte: filters.endDate ? parseDateFilterEnd(filters.endDate) : undefined,
         },
       },
       include: { person: true },
@@ -244,7 +245,7 @@ export class ReceivablesService {
             data: {
               ...receivableDto,
               debtorName,
-              dueDate: dto.dueDate ? new Date(dto.dueDate) : receivable.dueDate,
+              dueDate: dto.dueDate ? parseDateOnly(dto.dueDate) : receivable.dueDate,
               paidAt,
               paymentTransactionId,
             },

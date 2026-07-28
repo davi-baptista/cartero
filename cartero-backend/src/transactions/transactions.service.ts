@@ -21,6 +21,11 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTransactionDto } from 'src/transactions/dto/create-transaction.dto';
 import { FindTransactionsDto } from 'src/transactions/dto/find-transactions.dto';
 import { UpdateTransactionDto } from 'src/transactions/dto/update-transaction.dto';
+import {
+  parseDateFilterEnd,
+  parseDateFilterStart,
+  parseDateOnly,
+} from 'src/common/helpers/date-only.helper';
 
 type TransactionScope = 'ONE' | 'NEXT' | 'ALL';
 
@@ -68,7 +73,7 @@ export class TransactionsService {
         for (let i = 0; i < installments; i++) {
           let invoiceId: string | null = null;
           let invoice: Invoice | null = null;
-          const installmentDate = getInstallmentDate(new Date(dto.date), i);
+          const installmentDate = getInstallmentDate(parseDateOnly(dto.date), i);
 
           if (dto.type == 'CREDIT_CARD') {
             invoice = await findOrCreateInvoice(
@@ -172,8 +177,8 @@ export class TransactionsService {
         bankId: filters.bankId,
         type: filters.type,
         date: {
-          gte: filters.startDate ? new Date(filters.startDate) : undefined,
-          lte: filters.endDate ? new Date(filters.endDate) : undefined,
+          gte: filters.startDate ? parseDateFilterStart(filters.startDate) : undefined,
+          lte: filters.endDate ? parseDateFilterEnd(filters.endDate) : undefined,
         },
       },
       include: {
@@ -257,7 +262,7 @@ export class TransactionsService {
           const type = dto.type ?? transaction.type;
           const amount = dto.amount ?? Number(transaction.amount);
           const isRefund = dto.isRefund ?? transaction.isRefund;
-          const date = dto.date ? new Date(dto.date) : transaction.date;
+          const date = dto.date ? parseDateOnly(dto.date) : transaction.date;
 
           if (isRefund && type !== 'CREDIT_CARD') {
             throw new BadRequestException('Reembolsos devem ser transações de cartão de crédito');

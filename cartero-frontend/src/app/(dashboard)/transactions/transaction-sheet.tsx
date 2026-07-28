@@ -28,6 +28,7 @@ import {
 import { DatePicker } from '@/components/ui/date-picker'
 import { TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
+import { formatDateValue } from '@/lib/date'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { getBanks, createBank } from '@/services/banks.service'
 import { getCategories, createCategory } from '@/services/categories.service'
@@ -241,7 +242,7 @@ export function TransactionSheet({
           title: '',
           amount: 0,
           isRefund: false,
-          date: new Date().toISOString().slice(0, 10),
+          date: formatDateValue(),
           description: '',
           installments: undefined,
           personId: undefined,
@@ -602,7 +603,7 @@ export function TransactionSheet({
           </div>
 
           {/* Installments — only for CREDIT_CARD + create */}
-          {selectedType === TransactionType.CREDIT_CARD && !isEditing && (
+          {selectedType === TransactionType.CREDIT_CARD && !isEditing && !selectedIsRefund && (
             <div className="space-y-1.5">
               <Label htmlFor="installments">Parcelas (opcional)</Label>
               <Input

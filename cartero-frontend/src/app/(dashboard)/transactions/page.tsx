@@ -56,6 +56,7 @@ import { getBanks } from '@/services/banks.service'
 import { getCategories } from '@/services/categories.service'
 import { isAxiosError } from 'axios'
 import { formatCurrency, formatDate, isExpense, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
+import { formatDateValue } from '@/lib/date'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { cn } from '@/lib/utils'
 import type { Transaction } from '@/types'
@@ -385,7 +386,7 @@ export default function TransactionsPage() {
     const d = new Date()
     return {
       startDate: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`,
-      endDate: new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10),
+      endDate: formatDateValue(new Date(d.getFullYear(), d.getMonth() + 1, 0)),
     }
   })
   const [bankFilter, setBankFilter] = useState('')

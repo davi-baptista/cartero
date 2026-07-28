@@ -1,5 +1,6 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { parseDateFilterEnd, parseDateFilterStart } from 'src/common/helpers/date-only.helper';
 import { CreatePersonDto } from './dto/create-person.dto';
 import { UpdatePersonDto } from './dto/update-person.dto';
 import { EntityValidationService } from 'src/common/entity-validation.service';
@@ -75,8 +76,8 @@ export class PersonsService {
     );
 
     const dateFilter = {
-      gte: filters.startDate ? new Date(filters.startDate) : undefined,
-      lte: filters.endDate ? new Date(filters.endDate) : undefined,
+          gte: filters.startDate ? parseDateFilterStart(filters.startDate) : undefined,
+          lte: filters.endDate ? parseDateFilterEnd(filters.endDate) : undefined,
     };
 
     const debts = await this.prisma.debt.findMany({

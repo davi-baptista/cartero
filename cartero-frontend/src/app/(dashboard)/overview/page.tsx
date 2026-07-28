@@ -23,7 +23,7 @@ import { getBanks } from '@/services/banks.service'
 import { getDebts } from '@/services/debts.service'
 import { getReceivables } from '@/services/receivables.service'
 import { formatCurrency, formatMonthYear, isExpense } from '@/lib/formatters'
-import { parseDateOnly } from '@/lib/date'
+import { formatDateValue, parseDateOnly } from '@/lib/date'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { cn } from '@/lib/utils'
 import type { Invoice, Debt, Receivable, Bank } from '@/types'
@@ -50,12 +50,12 @@ function capitalize(s: string): string {
 
 function monthRange(year: number, month: number) {
   const start = `${year}-${String(month).padStart(2, '0')}-01`
-  const end = new Date(year, month, 0).toISOString().slice(0, 10)
+  const end = formatDateValue(new Date(year, month, 0))
   return { startDate: start, endDate: end }
 }
 
 function diffDaysFromToday(dateString: string): number {
-  const today = parseDateOnly(new Date().toISOString().slice(0, 10))
+  const today = parseDateOnly(formatDateValue())
   const d = parseDateOnly(dateString)
   return Math.round((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
@@ -570,7 +570,7 @@ function buildCalEvents(
     map.set(day, list)
   }
 
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayStr = formatDateValue()
 
   for (const d of debts) {
     if (d.isPaid) continue
@@ -850,7 +850,7 @@ export default function OverviewPage() {
   const windowStr = useMemo(() => {
     const d = new Date()
     d.setDate(d.getDate() + ATTENTION_DAYS_WINDOW)
-    return d.toISOString().slice(0, 10)
+    return formatDateValue(d)
   }, [])
 
   const pendingDebtsAll = useMemo(

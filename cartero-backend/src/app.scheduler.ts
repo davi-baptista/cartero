@@ -12,7 +12,9 @@ export class AppScheduler implements OnApplicationBootstrap {
     await this.syncInvoiceStatus();
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, {
+    timeZone: 'America/Fortaleza',
+  })
   async syncInvoiceStatus() {
     this.logger.log('Verificando status de faturas...');
 
@@ -24,15 +26,23 @@ export class AppScheduler implements OnApplicationBootstrap {
     const now = new Date();
 
     for (const invoice of invoices) {
+      // Fortaleza is UTC-3. Build these boundaries as instants at local midnight
+      // instead of relying on the Render container's (usually UTC) timezone.
       const closeDate = new Date(
-        invoice.year,
-        invoice.month - 1,
-        invoice.bank.invoiceCloseDate,
+        Date.UTC(
+          invoice.year,
+          invoice.month - 1,
+          invoice.bank.invoiceCloseDate,
+          3,
+        ),
       );
       const dueDate = new Date(
-        invoice.year,
-        invoice.month - 1,
-        invoice.bank.invoiceDueDate,
+        Date.UTC(
+          invoice.year,
+          invoice.month - 1,
+          invoice.bank.invoiceDueDate,
+          3,
+        ),
       );
 
       if (invoice.status === 'OPEN' && now >= closeDate) {

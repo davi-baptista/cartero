@@ -56,6 +56,7 @@ import {
 import { updateDebt } from '@/services/debts.service'
 import { updateReceivable } from '@/services/receivables.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
+import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type { Person, Debt, Receivable } from '@/types'
 
@@ -108,7 +109,7 @@ function StatementSheet({
   }
   function defaultEnd() {
     const d = new Date()
-    return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10)
+    return formatDateValue(new Date(d.getFullYear(), d.getMonth() + 1, 0))
   }
 
   const [startDate, setStartDate] = useState<string | undefined>(defaultStart)

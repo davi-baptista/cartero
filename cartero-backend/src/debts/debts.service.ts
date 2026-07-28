@@ -3,6 +3,7 @@ import { Prisma, Debt, TransactionType } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
 import { findOrCreateInvoice } from 'src/common/helpers/invoice.helper';
+import { parseDateFilterEnd, parseDateFilterStart, parseDateOnly } from 'src/common/helpers/date-only.helper';
 import {
   DEBT_PAID_CATEGORY_NAME,
   DEBT_PAID_CATEGORY_COLOR,
@@ -45,7 +46,7 @@ export class DebtsService {
         let parentId: string | null = null;
 
         for (let i = 0; i < installments; i++) {
-          const installmentDate = getInstallmentDate(new Date(dto.dueDate), i);
+            const installmentDate = getInstallmentDate(parseDateOnly(dto.dueDate), i);
 
           const debt: Debt = await tx.debt.create({
             data: {
@@ -92,8 +93,8 @@ export class DebtsService {
         creditorName: filters.creditorName,
         personId: filters.personId,
         dueDate: {
-          gte: filters.startDate ? new Date(filters.startDate) : undefined,
-          lte: filters.endDate ? new Date(filters.endDate) : undefined,
+          gte: filters.startDate ? parseDateFilterStart(filters.startDate) : undefined,
+          lte: filters.endDate ? parseDateFilterEnd(filters.endDate) : undefined,
         },
       },
       include: { person: true },
@@ -247,7 +248,7 @@ export class DebtsService {
             data: {
               ...debtDto,
               creditorName,
-              dueDate: dto.dueDate ? new Date(dto.dueDate) : debt.dueDate,
+              dueDate: dto.dueDate ? parseDateOnly(dto.dueDate) : debt.dueDate,
               paidAt,
               paymentTransactionId,
             },
