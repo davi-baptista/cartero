@@ -313,9 +313,12 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit 
               id="title"
               placeholder="Ex: Empréstimo notebook..."
               aria-invalid={!!errors.title}
+              disabled={!!editTarget?.parentId}
               {...register('title')}
             />
-            {errors.title && (
+            {editTarget?.parentId
+              ? <p className="text-xs text-muted-foreground">O título não pode ser alterado em parcelas.</p>
+              : errors.title && (
               <p className="text-xs text-destructive">{errors.title.message}</p>
             )}
           </div>
@@ -351,10 +354,13 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit 
                   value={field.value}
                   onChange={field.onChange}
                   placeholder="Selecionar data"
+                  disabled={!!editTarget?.parentId}
                 />
               )}
             />
-            {errors.dueDate && (
+            {editTarget?.parentId
+              ? <p className="text-xs text-muted-foreground">A data não pode ser alterada em parcelas.</p>
+              : errors.dueDate && (
               <p className="text-xs text-destructive">{errors.dueDate.message}</p>
             )}
           </div>

@@ -137,6 +137,7 @@ export class ReceivablesService {
       : null;
 
     const { paymentBankId, paymentType, ...receivableDto } = dto;
+    const { title: _title, dueDate: _dueDate, ...installmentSafeDto } = receivableDto;
 
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
@@ -240,12 +241,16 @@ export class ReceivablesService {
             paymentTransactionId = null;
           }
 
-          const updatedReceivable = await tx.receivable.update({
+            const updatedReceivable = await tx.receivable.update({
             where: { id: receivable.id, userId },
             data: {
-              ...receivableDto,
+              ...(existing.parentId ? installmentSafeDto : receivableDto),
               debtorName,
-              dueDate: dto.dueDate ? parseDateOnly(dto.dueDate) : receivable.dueDate,
+              dueDate: existing.parentId
+                ? receivable.dueDate
+                : dto.dueDate
+                  ? parseDateOnly(dto.dueDate)
+                  : receivable.dueDate,
               paidAt,
               paymentTransactionId,
             },

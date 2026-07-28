@@ -140,6 +140,7 @@ export class DebtsService {
       : null;
 
     const { paymentBankId, paymentType, ...debtDto } = dto;
+    const { title: _title, dueDate: _dueDate, ...installmentSafeDto } = debtDto;
 
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
@@ -243,12 +244,16 @@ export class DebtsService {
             paymentTransactionId = null;
           }
 
-          const updatedDebt = await tx.debt.update({
+            const updatedDebt = await tx.debt.update({
             where: { id: debt.id, userId },
             data: {
-              ...debtDto,
+              ...(existing.parentId ? installmentSafeDto : debtDto),
               creditorName,
-              dueDate: dto.dueDate ? parseDateOnly(dto.dueDate) : debt.dueDate,
+              dueDate: existing.parentId
+                ? debt.dueDate
+                : dto.dueDate
+                  ? parseDateOnly(dto.dueDate)
+                  : debt.dueDate,
               paidAt,
               paymentTransactionId,
             },
