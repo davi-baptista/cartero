@@ -118,6 +118,7 @@ function TransactionRow({
   onDelete: (tx: Transaction) => void
 }) {
   const Icon = TYPE_ICON[tx.type]
+  const visibleBank = tx.bank?.isSystem ? undefined : tx.bank
 
   return (
     <div className="group flex items-center gap-2 px-0 py-3.5 sm:gap-4 sm:px-2 sm:py-4">
@@ -143,9 +144,9 @@ function TransactionRow({
           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] text-muted-foreground">
             <span className="shrink-0">{TRANSACTION_TYPE_LABELS[tx.type]}</span>
             {tx.isRefund && <span className="shrink-0 text-primary">· reembolso</span>}
-            {tx.bank && <span aria-hidden>·</span>}
-            {tx.bank && <span className="truncate">{tx.bank.name}</span>}
-            {tx.bank && tx.category && <span aria-hidden>·</span>}
+            {visibleBank && <span aria-hidden>·</span>}
+            {visibleBank && <span className="truncate">{visibleBank.name}</span>}
+            {visibleBank && tx.category && <span aria-hidden>·</span>}
             {tx.category && (
               <CategoryBadge icon={tx.category.icon} color={tx.category.color} name={tx.category.name} />
             )}
@@ -270,7 +271,7 @@ function TransactionDetailsDialog({
 
         <dl className="divide-y divide-border px-5">
           <DetailRow label="Banco">
-            {transaction.bank?.name ?? 'Não informado'}
+            {transaction.bank?.isSystem ? 'Não informado' : transaction.bank?.name ?? 'Não informado'}
           </DetailRow>
           <DetailRow label="Categoria">
             <span className="flex min-w-0 items-center justify-end gap-1.5">

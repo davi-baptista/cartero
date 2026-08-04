@@ -24,6 +24,7 @@ import { getDebts } from '@/services/debts.service'
 import { getReceivables } from '@/services/receivables.service'
 import { formatCurrency, formatMonthYear, isExpense } from '@/lib/formatters'
 import { formatDateValue, parseDateOnly } from '@/lib/date'
+import { getInvoiceCloseDate, getInvoiceDueDate } from '@/lib/invoice-dates'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { cn } from '@/lib/utils'
 import type { Invoice, Debt, Receivable, Bank } from '@/types'
@@ -95,7 +96,7 @@ function computeInvoiceDue(
   const isOpen = invoice.status === InvoiceStatus.OPEN
 
   if (isOpen) {
-    const close = new Date(invoice.year, invoice.month - 1, bank.invoiceCloseDate)
+    const close = getInvoiceCloseDate(invoice.year, invoice.month, bank.invoiceCloseDate)
     close.setHours(0, 0, 0, 0)
     const closeDiff = Math.round((close.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     if (closeDiff >= 0) {
@@ -106,7 +107,7 @@ function computeInvoiceDue(
     // Close date already passed but status still OPEN (cron lag) — fall through to due date
   }
 
-  const due = new Date(invoice.year, invoice.month - 1, bank.invoiceDueDate)
+  const due = getInvoiceDueDate(invoice.year, invoice.month, bank.invoiceCloseDate, bank.invoiceDueDate)
   due.setHours(0, 0, 0, 0)
   const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
   if (diffDays < 0) return { text: `Venceu há ${-diffDays}d`, urgency: 'overdue', diffDays }
@@ -589,10 +590,11 @@ function buildCalEvents(
   for (const inv of invoices) {
     if (inv.status === InvoiceStatus.PAID) continue
     if (Number(inv.totalAmount) === 0) continue
-    if (inv.month !== month || inv.year !== year) continue
     const bank = banks.find((b) => b.id === inv.bankId)
     if (!bank) continue
-    push(bank.invoiceDueDate, {
+    const due = getInvoiceDueDate(inv.year, inv.month, bank.invoiceCloseDate, bank.invoiceDueDate)
+    if (due.getFullYear() !== year || due.getMonth() + 1 !== month) continue
+    push(due.getDate(), {
       kind: 'invoice-due',
       title: bank.name,
       amount: Number(inv.totalAmount),
@@ -828,13 +830,13 @@ export default function OverviewPage() {
         const bank = banks.find((b) => b.id === inv.bankId)
         if (!bank) return false
         if (inv.status === InvoiceStatus.OPEN) {
-          const close = new Date(inv.year, inv.month - 1, bank.invoiceCloseDate)
+          const close = getInvoiceCloseDate(inv.year, inv.month, bank.invoiceCloseDate)
           close.setHours(0, 0, 0, 0)
           const closeDiff = Math.round((close.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
           if (closeDiff >= 0) return closeDiff <= ATTENTION_DAYS_WINDOW
           // Close date passed but still OPEN (cron lag) — check due date
         }
-        const due = new Date(inv.year, inv.month - 1, bank.invoiceDueDate)
+        const due = getInvoiceDueDate(inv.year, inv.month, bank.invoiceCloseDate, bank.invoiceDueDate)
         due.setHours(0, 0, 0, 0)
         const diffDays = Math.round((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
         return diffDays <= ATTENTION_DAYS_WINDOW

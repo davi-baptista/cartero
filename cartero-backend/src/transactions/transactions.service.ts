@@ -182,8 +182,9 @@ export class TransactionsService {
         },
       },
       include: {
-        bank: { select: { id: true, name: true } },
+        bank: { select: { id: true, name: true, isSystem: true } },
         category: { select: { id: true, name: true, color: true, icon: true } },
+        person: { select: { id: true, name: true } },
       },
       orderBy: { date: 'desc' },
     });

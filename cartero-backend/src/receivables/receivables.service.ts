@@ -2,7 +2,10 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma, Receivable, TransactionType } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
-import { findOrCreateInvoice } from 'src/common/helpers/invoice.helper';
+import {
+  findOrCreateInvoice,
+  findOrCreateSystemReceivableBank,
+} from 'src/common/helpers/invoice.helper';
 import { parseDateFilterEnd, parseDateFilterStart, parseDateOnly } from 'src/common/helpers/date-only.helper';
 import {
   RECEIVABLE_RECEIVED_CATEGORY_NAME,
@@ -123,15 +126,15 @@ export class ReceivablesService {
 
     const markingAsReceived = dto.isPaid === true;
 
-    if (markingAsReceived && (!dto.paymentBankId || !dto.paymentType)) {
+    if (markingAsReceived && !dto.paymentType) {
       throw new BadRequestException(
         'Informe paymentBankId e paymentType para marcar a cobrança como recebida',
       );
     }
 
-    const paymentBank = markingAsReceived
+    const paymentBank = markingAsReceived && dto.paymentBankId
       ? await this.entityValidationService.validateBank(
-          dto.paymentBankId as string,
+          dto.paymentBankId,
           userId,
         )
       : null;
@@ -148,6 +151,9 @@ export class ReceivablesService {
           normalizedScope,
         );
         const updatedReceivables: Receivable[] = [];
+        const receivableBank = markingAsReceived
+          ? paymentBank ?? (await findOrCreateSystemReceivableBank(tx, userId))
+          : null;
 
         for (const receivable of receivablesToUpdate) {
           const paidAt =
@@ -174,13 +180,13 @@ export class ReceivablesService {
               );
 
             let invoiceId: string | null = null;
-            if (paymentType === TransactionType.CREDIT_CARD) {
+            if (paymentType === TransactionType.CREDIT_CARD && paymentBank) {
               const invoice = await findOrCreateInvoice(
                 tx,
                 userId,
-                paymentBankId as string,
-                paymentBank!.invoiceCloseDate,
-                paymentBank!.invoiceDueDate,
+                paymentBank.id,
+                paymentBank.invoiceCloseDate,
+                paymentBank.invoiceDueDate,
                 paidAt,
               );
               invoiceId = invoice.id;
@@ -189,7 +195,7 @@ export class ReceivablesService {
             const paymentTransaction = await tx.transaction.create({
               data: {
                 userId,
-                bankId: paymentBankId as string,
+                bankId: receivableBank!.id,
                 categoryId: category.id,
                 invoiceId,
                 title: receivable.title,

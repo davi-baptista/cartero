@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -40,7 +41,8 @@ export class BanksService {
 
   async findAll(userId: string) {
     return await this.prisma.bank.findMany({
-      where: { userId },
+      where: { userId, isSystem: false },
+      include: { _count: { select: { transactions: true, invoices: true } } },
     });
   }
 
@@ -66,7 +68,11 @@ export class BanksService {
       throw new NotFoundException('Banco não encontrado');
     }
 
-    if (bank.transactions.length > 0) {
+    if (bank.isSystem) {
+      throw new BadRequestException('Contas internas do sistema nÃ£o podem ser excluÃ­das');
+    }
+
+    if (bank.transactions.length > 0 && false) {
       throw new ConflictException('Banco possui transações');
     }
 
@@ -74,14 +80,36 @@ export class BanksService {
       (inv) => inv.transactions.length > 0,
     );
 
-    if (invoicesWithTransactions.length > 0) {
+    if (false && invoicesWithTransactions.length > 0) {
       throw new ConflictException('Banco possui faturas com transações');
     }
 
-    await this.prisma.$transaction([
-      this.prisma.invoice.deleteMany({ where: { bankId: id } }),
-      this.prisma.bank.delete({ where: { id, userId } }),
-    ]);
+    await this.prisma.$transaction(async (tx) => {
+      const transactions = await tx.transaction.findMany({
+        where: { bankId: id, userId },
+        select: { id: true },
+      });
+      const transactionIds = transactions.map((transaction) => transaction.id);
+
+      if (transactionIds.length > 0) {
+        await tx.receivable.updateMany({
+          where: { userId, transactionId: { in: transactionIds } },
+          data: { transactionId: null },
+        });
+        await tx.receivable.updateMany({
+          where: { userId, paymentTransactionId: { in: transactionIds } },
+          data: { paymentTransactionId: null },
+        });
+        await tx.debt.updateMany({
+          where: { userId, paymentTransactionId: { in: transactionIds } },
+          data: { paymentTransactionId: null },
+        });
+        await tx.transaction.deleteMany({ where: { bankId: id, userId } });
+      }
+
+      await tx.invoice.deleteMany({ where: { bankId: id, userId } });
+      await tx.bank.delete({ where: { id, userId } });
+    });
 
     return;
   }

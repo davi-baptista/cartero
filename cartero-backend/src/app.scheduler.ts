@@ -1,6 +1,10 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from './prisma/prisma.service';
+import {
+  getInvoiceCloseDateForPeriod,
+  getInvoiceDueDateForPeriod,
+} from './common/helpers/invoice.helper';
 
 @Injectable()
 export class AppScheduler implements OnApplicationBootstrap {
@@ -26,23 +30,17 @@ export class AppScheduler implements OnApplicationBootstrap {
     const now = new Date();
 
     for (const invoice of invoices) {
-      // Fortaleza is UTC-3. Build these boundaries as instants at local midnight
-      // instead of relying on the Render container's (usually UTC) timezone.
-      const closeDate = new Date(
-        Date.UTC(
-          invoice.year,
-          invoice.month - 1,
-          invoice.bank.invoiceCloseDate,
-          3,
-        ),
+      // Fortaleza is UTC-3. The helper also handles cycles that cross the
+      // calendar boundary (close 30, due 6 => due in the following month).
+      const closeDate = getInvoiceCloseDateForPeriod(
+        invoice.bank,
+        invoice.year,
+        invoice.month,
       );
-      const dueDate = new Date(
-        Date.UTC(
-          invoice.year,
-          invoice.month - 1,
-          invoice.bank.invoiceDueDate,
-          3,
-        ),
+      const dueDate = getInvoiceDueDateForPeriod(
+        invoice.bank,
+        invoice.year,
+        invoice.month,
       );
 
       if (invoice.status === 'OPEN' && now >= closeDate) {

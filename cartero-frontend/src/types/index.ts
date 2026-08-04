@@ -34,6 +34,8 @@ export interface Bank {
   name: string
   invoiceCloseDate: number
   invoiceDueDate: number
+  isSystem?: boolean
+  _count?: { transactions: number; invoices: number }
   createdAt: string
   updatedAt: string
 }

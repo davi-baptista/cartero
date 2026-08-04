@@ -35,7 +35,7 @@ type PaymentType = typeof PAYMENT_TYPE_OPTIONS[number]
 interface MarkAsPaidDialogProps {
   open: boolean
   kind: 'debt' | 'receivable'
-  onConfirm: (payload: { paymentBankId: string; paymentType: TransactionType }) => void
+  onConfirm: (payload: { paymentBankId?: string; paymentType: TransactionType }) => void
   onCancel: () => void
 }
 
@@ -52,7 +52,7 @@ export function MarkAsPaidDialog({ open, kind, onConfirm, onCancel }: MarkAsPaid
     }
   }, [open])
 
-  const canConfirm = Boolean(bankId) && Boolean(type)
+  const canConfirm = Boolean(type) && (kind === 'receivable' || Boolean(bankId))
   const selectedBank = banks.find((b) => b.id === bankId)
 
   return (
@@ -63,14 +63,16 @@ export function MarkAsPaidDialog({ open, kind, onConfirm, onCancel }: MarkAsPaid
             {kind === 'debt' ? 'Marcar dívida como paga' : 'Marcar cobrança como recebida'}
           </DialogTitle>
           <DialogDescription>
-            {kind === 'debt'
+            {kind === 'receivable'
+              ? 'Informe apenas a forma de recebimento.'
+              : kind === 'debt'
               ? 'Escolha o banco e a forma de pagamento. Isso vai criar uma transação vinculada.'
               : 'Escolha o banco e a forma de recebimento. Isso vai criar uma transação de receita vinculada — independente da forma escolhida, ela será registrada como receita.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-3 py-1">
-          <div className="flex flex-col gap-1.5">
+          {kind === 'debt' && <div className="flex flex-col gap-1.5">
             <Label>Banco</Label>
             <Select value={bankId} onValueChange={(v) => setBankId(v ?? '')}>
               <SelectTrigger aria-label="Banco">
@@ -84,7 +86,7 @@ export function MarkAsPaidDialog({ open, kind, onConfirm, onCancel }: MarkAsPaid
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </div>}
 
           <div className="flex flex-col gap-1.5">
             <Label>{kind === 'debt' ? 'Forma de pagamento' : 'Forma de recebimento'}</Label>
@@ -107,7 +109,7 @@ export function MarkAsPaidDialog({ open, kind, onConfirm, onCancel }: MarkAsPaid
           <Button variant="outline" onClick={onCancel}>Cancelar</Button>
           <Button
             disabled={!canConfirm}
-            onClick={() => canConfirm && onConfirm({ paymentBankId: bankId, paymentType: type as TransactionType })}
+            onClick={() => canConfirm && onConfirm({ ...(bankId ? { paymentBankId: bankId } : {}), paymentType: type as TransactionType })}
           >
             Confirmar
           </Button>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -24,8 +24,9 @@ import {
 import { MotionRow } from '@/components/ui/motion-row'
 import { BankSheet, type BankFormData } from './bank-sheet'
 import { getBanks, createBank, updateBank, deleteBank } from '@/services/banks.service'
-import { getBankInvoices } from '@/services/invoices.service'
+import { getBankInvoices, getInvoices } from '@/services/invoices.service'
 import { formatCurrency } from '@/lib/formatters'
+import { getInvoiceCloseDate, getInvoiceDueDate } from '@/lib/invoice-dates'
 import { InvoiceStatus } from '@/types'
 import type { Bank } from '@/types'
 
@@ -49,7 +50,7 @@ function InvoicePill({ bank }: { bank: Bank }) {
   const open = nonEmpty.find((i) => i.status === InvoiceStatus.OPEN)
 
   if (overdue) {
-    const due = new Date(overdue.year, overdue.month - 1, bank.invoiceDueDate)
+    const due = getInvoiceDueDate(overdue.year, overdue.month, bank.invoiceCloseDate, bank.invoiceDueDate)
     const daysLate = Math.ceil((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24))
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full bg-destructive/12 px-2.5 py-0.5 text-[11px] font-medium text-destructive">
@@ -63,7 +64,7 @@ function InvoicePill({ bank }: { bank: Bank }) {
   }
 
   if (closed) {
-    const due = new Date(closed.year, closed.month - 1, bank.invoiceDueDate)
+    const due = getInvoiceDueDate(closed.year, closed.month, bank.invoiceCloseDate, bank.invoiceDueDate)
     const diff = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     const label = diff === 0 ? 'Vence hoje' : diff === 1 ? 'Vence amanhã' : diff > 0 ? `Vence em ${diff}d` : `Venceu há ${Math.abs(diff)}d`
     return (
@@ -241,6 +242,55 @@ export default function BanksPage() {
     queryFn: getBanks,
   })
 
+  const { data: invoices = [] } = useQuery({
+    queryKey: ['invoices'],
+    queryFn: () => getInvoices(),
+  })
+
+  const sortedBanks = useMemo(() => {
+    if (!banks) return []
+
+    function priority(bank: Bank) {
+      const active = invoices.filter(
+        (invoice) =>
+          invoice.bankId === bank.id &&
+          Number(invoice.totalAmount) > 0 &&
+          invoice.status !== InvoiceStatus.PAID,
+      )
+
+      const overdueOrClosed = active.filter(
+        (invoice) => invoice.status === InvoiceStatus.OVERDUE || invoice.status === InvoiceStatus.CLOSED,
+      )
+
+      if (overdueOrClosed.length > 0) {
+        const dueDate = Math.min(
+          ...overdueOrClosed.map((invoice) =>
+            getInvoiceDueDate(invoice.year, invoice.month, bank.invoiceCloseDate, bank.invoiceDueDate).getTime(),
+          ),
+        )
+        return { group: 0, date: dueDate }
+      }
+
+      const open = active.filter((invoice) => invoice.status === InvoiceStatus.OPEN)
+      if (open.length > 0) {
+        const closeDate = Math.min(
+          ...open.map((invoice) =>
+            getInvoiceCloseDate(invoice.year, invoice.month, bank.invoiceCloseDate).getTime(),
+          ),
+        )
+        return { group: 1, date: closeDate }
+      }
+
+      return { group: 2, date: Number.POSITIVE_INFINITY }
+    }
+
+    return [...banks].sort((a, b) => {
+      const aPriority = priority(a)
+      const bPriority = priority(b)
+      return aPriority.group - bPriority.group || aPriority.date - bPriority.date || a.name.localeCompare(b.name)
+    })
+  }, [banks, invoices])
+
   const createMut = useMutation({
     mutationFn: (data: BankFormData) =>
       createBank({
@@ -342,7 +392,7 @@ export default function BanksPage() {
           </div>
         ) : (
           <div>
-            {banks.map((bank, i) => (
+            {sortedBanks.map((bank, i) => (
               <MotionRow key={bank.id} index={i}>
                 <BankRow
                   bank={bank}
@@ -381,6 +431,10 @@ export default function BanksPage() {
               Tem certeza que deseja excluir{' '}
               <strong className="text-foreground">{deleteTarget?.name}</strong>? Esta ação
               não pode ser desfeita.
+              <span className="mt-2 block text-xs text-destructive">
+                Todas as transações e faturas vinculadas serão removidas permanentemente.
+                {deleteTarget?._count && ` ${deleteTarget._count.transactions} transação(ões) e ${deleteTarget._count.invoices} fatura(s).`}
+              </span>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

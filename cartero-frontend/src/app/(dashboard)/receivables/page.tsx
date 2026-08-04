@@ -435,7 +435,7 @@ export default function ReceivablesPage() {
     }
   }
 
-  function handleMarkPaidConfirm(payload: { paymentBankId: string; paymentType: TransactionType }) {
+  function handleMarkPaidConfirm(payload: { paymentBankId?: string; paymentType: TransactionType }) {
     if (!markPaidTarget) return
     updateMut.mutate({
       id: markPaidTarget.id,

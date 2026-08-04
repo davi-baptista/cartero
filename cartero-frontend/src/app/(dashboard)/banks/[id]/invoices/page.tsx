@@ -38,6 +38,7 @@ import {
   isExpense,
 } from '@/lib/formatters'
 import { parseDateOnly } from '@/lib/date'
+import { getInvoiceCloseDate, getInvoiceDueDate } from '@/lib/invoice-dates'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import type { Invoice, Bank, Transaction } from '@/types'
 import { InvoiceStatus, TransactionType } from '@/types'
@@ -116,11 +117,11 @@ function capitalize(s: string) {
 }
 
 function calcCloseDate(bank: Bank, month: number, year: number): string {
-  return format(new Date(year, month - 1, bank.invoiceCloseDate), "dd 'de' MMMM", { locale: ptBR })
+  return format(getInvoiceCloseDate(year, month, bank.invoiceCloseDate), "dd 'de' MMMM", { locale: ptBR })
 }
 
 function calcDueDate(bank: Bank, month: number, year: number): string {
-  return format(new Date(year, month - 1, bank.invoiceDueDate), "dd 'de' MMMM", { locale: ptBR })
+  return format(getInvoiceDueDate(year, month, bank.invoiceCloseDate, bank.invoiceDueDate), "dd 'de' MMMM", { locale: ptBR })
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────

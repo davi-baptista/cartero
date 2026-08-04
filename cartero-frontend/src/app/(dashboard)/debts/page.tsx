@@ -443,8 +443,9 @@ export default function DebtsPage() {
     }
   }
 
-  function handleMarkPaidConfirm(payload: { paymentBankId: string; paymentType: TransactionType }) {
+  function handleMarkPaidConfirm(payload: { paymentBankId?: string; paymentType: TransactionType }) {
     if (!markPaidTarget) return
+    if (!payload.paymentBankId) return
     updateMut.mutate({
       id: markPaidTarget.id,
       payload: { isPaid: true, ...payload },

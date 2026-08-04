@@ -29,6 +29,7 @@ model Bank {
   id               String   @id @default(uuid())
   userId           String
   name             String
+  isSystem         Boolean  @default(false)
   invoiceCloseDate Int
   invoiceDueDate   Int
   createdAt        DateTime @default(now())

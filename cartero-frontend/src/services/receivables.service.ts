@@ -33,7 +33,7 @@ export async function updateReceivable(
     dueDate: string
     description: string
     isPaid: boolean
-    paymentBankId: string
+    paymentBankId?: string
     paymentType: TransactionType
   }>,
   scope?: InstallmentScope,
