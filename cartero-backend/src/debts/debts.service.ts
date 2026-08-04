@@ -182,8 +182,8 @@ export class DebtsService {
                 tx,
                 userId,
                 paymentBankId as string,
-                paymentBank!.invoiceCloseDate,
                 paymentBank!.invoiceDueDate,
+                paymentBank!.invoiceDueDaysAfterClose,
                 paidAt,
               );
               invoiceId = invoice.id;

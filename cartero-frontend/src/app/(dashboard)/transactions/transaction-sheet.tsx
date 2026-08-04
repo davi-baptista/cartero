@@ -93,7 +93,7 @@ export function TransactionSheet({
 
   // ── Inline bank create ──
   const [showBankCreate, setShowBankCreate] = useState(false)
-  const [newBank, setNewBank] = useState({ name: '', closeDate: '', dueDate: '' })
+  const [newBank, setNewBank] = useState({ name: '', dueDate: '', daysAfterClose: '7' })
   const bankNameRef = useRef<HTMLInputElement>(null)
 
   const createBankMut = useMutation({
@@ -103,7 +103,7 @@ export function TransactionSheet({
       qc.invalidateQueries({ queryKey: ['banks'] })
       setValue('bankId', bank.id)
       setShowBankCreate(false)
-      setNewBank({ name: '', closeDate: '', dueDate: '' })
+      setNewBank({ name: '', dueDate: '', daysAfterClose: '7' })
     },
     onError: () => toast.error('Não foi possível criar o banco.'),
   })
@@ -115,10 +115,10 @@ export function TransactionSheet({
 
   function handleConfirmBankCreate() {
     const name = newBank.name.trim()
-    const close = Number(newBank.closeDate)
     const due = Number(newBank.dueDate)
-    if (!name || !close || !due) return
-    createBankMut.mutate({ name, invoiceCloseDate: close, invoiceDueDate: due })
+    const daysAfterClose = Number(newBank.daysAfterClose)
+    if (!name || !due || !daysAfterClose) return
+    createBankMut.mutate({ name, invoiceDueDate: due, invoiceDueDaysAfterClose: daysAfterClose })
   }
 
   // ── Inline category create ──
@@ -219,7 +219,7 @@ export function TransactionSheet({
       setShowBankCreate(false)
       setShowCategoryCreate(false)
       setShowPersonCreate(false)
-      setNewBank({ name: '', closeDate: '', dueDate: '' })
+      setNewBank({ name: '', dueDate: '', daysAfterClose: '7' })
       setNewCategoryName('')
       setNewPersonName('')
       if (editTarget) {
@@ -445,7 +445,7 @@ export function TransactionSheet({
                     className="h-8 text-sm"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') { e.preventDefault(); handleConfirmBankCreate() }
-                      if (e.key === 'Escape') { setShowBankCreate(false); setNewBank({ name: '', closeDate: '', dueDate: '' }) }
+                      if (e.key === 'Escape') { setShowBankCreate(false); setNewBank({ name: '', dueDate: '', daysAfterClose: '7' }) }
                     }}
                   />
                   <div className="flex gap-1.5">
@@ -453,9 +453,9 @@ export function TransactionSheet({
                       type="number"
                       min={1}
                       max={31}
-                      value={newBank.closeDate}
-                      onChange={(e) => setNewBank((b) => ({ ...b, closeDate: e.target.value }))}
-                      placeholder="Dia fechamento"
+                      value={newBank.daysAfterClose}
+                      onChange={(e) => setNewBank((b) => ({ ...b, daysAfterClose: e.target.value }))}
+                      placeholder="Dias entre datas"
                       className="h-8 text-sm"
                     />
                     <Input
@@ -472,7 +472,7 @@ export function TransactionSheet({
                       size="icon"
                       variant="ghost"
                       className="h-8 w-8 shrink-0"
-                      disabled={!newBank.name.trim() || !newBank.closeDate || !newBank.dueDate || createBankMut.isPending}
+                      disabled={!newBank.name.trim() || !newBank.dueDate || !newBank.daysAfterClose || createBankMut.isPending}
                       onClick={handleConfirmBankCreate}
                       aria-label="Confirmar"
                     >
@@ -485,7 +485,7 @@ export function TransactionSheet({
                       size="icon"
                       variant="ghost"
                       className="h-8 w-8 shrink-0"
-                      onClick={() => { setShowBankCreate(false); setNewBank({ name: '', closeDate: '', dueDate: '' }) }}
+                      onClick={() => { setShowBankCreate(false); setNewBank({ name: '', dueDate: '', daysAfterClose: '7' }) }}
                       aria-label="Cancelar"
                     >
                       <X className="size-3.5" />

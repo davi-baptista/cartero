@@ -185,8 +185,8 @@ export class ReceivablesService {
                 tx,
                 userId,
                 paymentBank.id,
-                paymentBank.invoiceCloseDate,
                 paymentBank.invoiceDueDate,
+                paymentBank.invoiceDueDaysAfterClose,
                 paidAt,
               );
               invoiceId = invoice.id;

@@ -96,7 +96,7 @@ function computeInvoiceDue(
   const isOpen = invoice.status === InvoiceStatus.OPEN
 
   if (isOpen) {
-    const close = getInvoiceCloseDate(invoice.year, invoice.month, bank.invoiceCloseDate)
+    const close = getInvoiceCloseDate(invoice.year, invoice.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
     close.setHours(0, 0, 0, 0)
     const closeDiff = Math.round((close.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     if (closeDiff >= 0) {
@@ -107,7 +107,7 @@ function computeInvoiceDue(
     // Close date already passed but status still OPEN (cron lag) — fall through to due date
   }
 
-  const due = getInvoiceDueDate(invoice.year, invoice.month, bank.invoiceCloseDate, bank.invoiceDueDate)
+  const due = getInvoiceDueDate(invoice.year, invoice.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
   due.setHours(0, 0, 0, 0)
   const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
   if (diffDays < 0) return { text: `Venceu há ${-diffDays}d`, urgency: 'overdue', diffDays }
@@ -321,11 +321,11 @@ function InvoiceAttentionRow({ invoice, banks }: { invoice: Invoice; banks: Bank
           </span>
           <InvoiceBadge status={invoice.status} />
         </div>
-        <div className="flex items-center gap-1.5 text-[11px]">
+        <div className="flex flex-col text-[11px] sm:flex-row sm:items-center sm:gap-1.5">
           <span className="text-muted-foreground">Fatura de {monthYear}</span>
           {dueText && (
             <>
-              <span className="text-muted-foreground/40" aria-hidden="true">·</span>
+              <span className="hidden text-muted-foreground/40 sm:inline" aria-hidden="true">·</span>
               <span className={DUE_URGENCY_CLASS[urgency]}>{dueText}</span>
             </>
           )}
@@ -592,7 +592,7 @@ function buildCalEvents(
     if (Number(inv.totalAmount) === 0) continue
     const bank = banks.find((b) => b.id === inv.bankId)
     if (!bank) continue
-    const due = getInvoiceDueDate(inv.year, inv.month, bank.invoiceCloseDate, bank.invoiceDueDate)
+    const due = getInvoiceDueDate(inv.year, inv.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
     if (due.getFullYear() !== year || due.getMonth() + 1 !== month) continue
     push(due.getDate(), {
       kind: 'invoice-due',
@@ -830,13 +830,13 @@ export default function OverviewPage() {
         const bank = banks.find((b) => b.id === inv.bankId)
         if (!bank) return false
         if (inv.status === InvoiceStatus.OPEN) {
-          const close = getInvoiceCloseDate(inv.year, inv.month, bank.invoiceCloseDate)
+          const close = getInvoiceCloseDate(inv.year, inv.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
           close.setHours(0, 0, 0, 0)
           const closeDiff = Math.round((close.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
           if (closeDiff >= 0) return closeDiff <= ATTENTION_DAYS_WINDOW
           // Close date passed but still OPEN (cron lag) — check due date
         }
-        const due = getInvoiceDueDate(inv.year, inv.month, bank.invoiceCloseDate, bank.invoiceDueDate)
+        const due = getInvoiceDueDate(inv.year, inv.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
         due.setHours(0, 0, 0, 0)
         const diffDays = Math.round((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
         return diffDays <= ATTENTION_DAYS_WINDOW
@@ -878,7 +878,7 @@ export default function OverviewPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Visão Geral</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">Resumo do seu mês financeiro</p>

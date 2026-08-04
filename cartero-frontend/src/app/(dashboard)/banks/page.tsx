@@ -50,7 +50,7 @@ function InvoicePill({ bank }: { bank: Bank }) {
   const open = nonEmpty.find((i) => i.status === InvoiceStatus.OPEN)
 
   if (overdue) {
-    const due = getInvoiceDueDate(overdue.year, overdue.month, bank.invoiceCloseDate, bank.invoiceDueDate)
+    const due = getInvoiceDueDate(overdue.year, overdue.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
     const daysLate = Math.ceil((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24))
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full bg-destructive/12 px-2.5 py-0.5 text-[11px] font-medium text-destructive">
@@ -64,7 +64,7 @@ function InvoicePill({ bank }: { bank: Bank }) {
   }
 
   if (closed) {
-    const due = getInvoiceDueDate(closed.year, closed.month, bank.invoiceCloseDate, bank.invoiceDueDate)
+    const due = getInvoiceDueDate(closed.year, closed.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
     const diff = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     const label = diff === 0 ? 'Vence hoje' : diff === 1 ? 'Vence amanhã' : diff > 0 ? `Vence em ${diff}d` : `Venceu há ${Math.abs(diff)}d`
     return (
@@ -75,7 +75,7 @@ function InvoicePill({ bank }: { bank: Bank }) {
   }
 
   if (open) {
-    const close = new Date(open.year, open.month - 1, bank.invoiceCloseDate)
+    const close = getInvoiceCloseDate(open.year, open.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
     const diff = Math.ceil((close.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     const label = diff === 0 ? 'Fecha hoje' : diff === 1 ? 'Fecha amanhã' : diff > 0 ? `Fecha em ${diff}d` : `Fechou há ${Math.abs(diff)}d`
     return (
@@ -128,11 +128,11 @@ function BankRow({
           <div className="flex items-center gap-2 sm:hidden">
             <span className="text-[10px] text-muted-foreground/40" aria-hidden>·</span>
             <span className="text-xs text-muted-foreground">
-              Fecha <strong className="font-semibold text-foreground">{bank.invoiceCloseDate}</strong>
+              Vence <strong className="font-semibold text-foreground">{bank.invoiceDueDate}</strong>
             </span>
             <span className="text-[10px] text-muted-foreground/40" aria-hidden>|</span>
             <span className="text-xs text-muted-foreground">
-              Vence <strong className="font-semibold text-foreground">{bank.invoiceDueDate}</strong>
+              <strong className="font-semibold text-foreground">{bank.invoiceDueDaysAfterClose ?? 7}</strong> dias
             </span>
           </div>
         </div>
@@ -140,9 +140,9 @@ function BankRow({
 
       {/* Desktop: date stats */}
       <div className="hidden shrink-0 items-center gap-2 sm:flex">
-        <DateStat label="Fecha" value={bank.invoiceCloseDate} />
-        <div className="h-8 w-px bg-border/60 mx-1" aria-hidden />
         <DateStat label="Vence" value={bank.invoiceDueDate} />
+        <div className="h-8 w-px bg-border/60 mx-1" aria-hidden />
+        <DateStat label="Dias" value={bank.invoiceDueDaysAfterClose ?? 7} />
       </div>
 
       {/* Actions */}
@@ -265,7 +265,7 @@ export default function BanksPage() {
       if (overdueOrClosed.length > 0) {
         const dueDate = Math.min(
           ...overdueOrClosed.map((invoice) =>
-            getInvoiceDueDate(invoice.year, invoice.month, bank.invoiceCloseDate, bank.invoiceDueDate).getTime(),
+            getInvoiceDueDate(invoice.year, invoice.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose).getTime(),
           ),
         )
         return { group: 0, date: dueDate }
@@ -275,7 +275,7 @@ export default function BanksPage() {
       if (open.length > 0) {
         const closeDate = Math.min(
           ...open.map((invoice) =>
-            getInvoiceCloseDate(invoice.year, invoice.month, bank.invoiceCloseDate).getTime(),
+            getInvoiceCloseDate(invoice.year, invoice.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose).getTime(),
           ),
         )
         return { group: 1, date: closeDate }
@@ -295,8 +295,8 @@ export default function BanksPage() {
     mutationFn: (data: BankFormData) =>
       createBank({
         name: data.name,
-        invoiceCloseDate: data.invoiceCloseDate,
         invoiceDueDate: data.invoiceDueDate,
+        invoiceDueDaysAfterClose: data.invoiceDueDaysAfterClose,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['banks'] })
@@ -310,8 +310,8 @@ export default function BanksPage() {
     mutationFn: ({ id, data }: { id: string; data: BankFormData }) =>
       updateBank(id, {
         name: data.name,
-        invoiceCloseDate: data.invoiceCloseDate,
         invoiceDueDate: data.invoiceDueDate,
+        invoiceDueDaysAfterClose: data.invoiceDueDaysAfterClose,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['banks'] })

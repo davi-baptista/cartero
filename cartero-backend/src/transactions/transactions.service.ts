@@ -80,8 +80,8 @@ export class TransactionsService {
               tx,
               userId,
               dto.bankId,
-              bank.invoiceCloseDate,
               bank.invoiceDueDate,
+              bank.invoiceDueDaysAfterClose,
               installmentDate,
             );
 
@@ -308,8 +308,8 @@ export class TransactionsService {
                 tx,
                 userId,
                 bankId,
-                bank!.invoiceCloseDate,
                 bank!.invoiceDueDate,
+                bank!.invoiceDueDaysAfterClose,
                 date,
               );
 

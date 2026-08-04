@@ -8,6 +8,10 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateBankDto } from './dto/create-bank.dto';
 import { UpdateBankDto } from './dto/update-bank.dto';
 import { EntityValidationService } from 'src/common/entity-validation.service';
+import {
+  DEFAULT_INVOICE_DAYS_AFTER_CLOSE,
+  getLegacyCloseDay,
+} from 'src/common/helpers/invoice.helper';
 
 @Injectable()
 export class BanksService {
@@ -25,12 +29,18 @@ export class BanksService {
       throw new ConflictException('Banco já existe');
     }
 
+    const daysAfterClose =
+      dto.invoiceDueDaysAfterClose ?? DEFAULT_INVOICE_DAYS_AFTER_CLOSE;
+
     return await this.prisma.bank.create({
       data: {
         userId,
         name: dto.name,
-        invoiceCloseDate: dto.invoiceCloseDate,
+        invoiceCloseDate:
+          dto.invoiceCloseDate ??
+          getLegacyCloseDay(dto.invoiceDueDate, daysAfterClose),
         invoiceDueDate: dto.invoiceDueDate,
+        invoiceDueDaysAfterClose: daysAfterClose,
       },
     });
   }
@@ -47,11 +57,24 @@ export class BanksService {
   }
 
   async update(id: string, userId: string, dto: UpdateBankDto) {
-    await this.entityValidationService.validateBank(id, userId);
+    const bank = await this.entityValidationService.validateBank(id, userId);
+
+    const data = { ...dto };
+    if (
+      dto.invoiceDueDate !== undefined ||
+      dto.invoiceDueDaysAfterClose !== undefined
+    ) {
+      const dueDay = dto.invoiceDueDate ?? bank.invoiceDueDate;
+      const daysAfterClose =
+        dto.invoiceDueDaysAfterClose ??
+        bank.invoiceDueDaysAfterClose ??
+        DEFAULT_INVOICE_DAYS_AFTER_CLOSE;
+      data.invoiceCloseDate = getLegacyCloseDay(dueDay, daysAfterClose);
+    }
 
     return await this.prisma.bank.update({
       where: { id, userId },
-      data: dto,
+      data,
     });
   }
 

@@ -117,11 +117,11 @@ function capitalize(s: string) {
 }
 
 function calcCloseDate(bank: Bank, month: number, year: number): string {
-  return format(getInvoiceCloseDate(year, month, bank.invoiceCloseDate), "dd 'de' MMMM", { locale: ptBR })
+  return format(getInvoiceCloseDate(year, month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose), "dd 'de' MMMM", { locale: ptBR })
 }
 
 function calcDueDate(bank: Bank, month: number, year: number): string {
-  return format(getInvoiceDueDate(year, month, bank.invoiceCloseDate, bank.invoiceDueDate), "dd 'de' MMMM", { locale: ptBR })
+  return format(getInvoiceDueDate(year, month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose), "dd 'de' MMMM", { locale: ptBR })
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -190,8 +190,8 @@ function InvoiceRow({
     >
       {/* Month + status + dates */}
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-[15px] font-medium">{monthYear}</span>
+        <div className="flex flex-wrap items-center gap-y-1 gap-x-2">
+          <span className="shrink-0 text-[15px] font-medium">{monthYear}</span>
           <StatusBadge status={invoice.status} />
           {isAtual && (
             <span className="inline-flex items-center rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
@@ -517,18 +517,12 @@ export default function BankInvoicesPage() {
   function isAtual(inv: Invoice): boolean {
     if (inv.status !== InvoiceStatus.OPEN || !bank) return false
     const now = new Date()
-    const day = now.getDate()
     const month = now.getMonth() + 1
     const year = now.getFullYear()
-    let targetMonth: number
-    let targetYear: number
-    if (day > bank.invoiceCloseDate) {
-      targetMonth = month === 12 ? 1 : month + 1
-      targetYear = month === 12 ? year + 1 : year
-    } else {
-      targetMonth = month
-      targetYear = year
-    }
+    const close = getInvoiceCloseDate(year, month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
+    const afterClose = now >= close
+    const targetMonth = afterClose ? (month === 12 ? 1 : month + 1) : month
+    const targetYear = afterClose && month === 12 ? year + 1 : year
     return inv.month === targetMonth && inv.year === targetYear
   }
 
@@ -554,7 +548,7 @@ export default function BankInvoicesPage() {
           </h1>
           {bank ? (
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Fecha dia {bank.invoiceCloseDate} · Vence dia {bank.invoiceDueDate}
+              Vence dia {bank.invoiceDueDate} · {bank.invoiceDueDaysAfterClose ?? 7} dias entre fechamento e vencimento
             </p>
           ) : (
             <Skeleton className="mt-1.5 h-4 w-40" />

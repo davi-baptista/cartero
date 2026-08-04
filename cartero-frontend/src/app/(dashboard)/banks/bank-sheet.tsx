@@ -18,16 +18,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { Bank } from '@/types'
 
+const numberField = (message: string) => z.preprocess(
+  (v) => (v === '' || v === undefined || v === null || Number.isNaN(v) ? undefined : Number(v)),
+  z.number({ message }).int().min(1, 'Mínimo 1').max(31, 'Máximo 31'),
+)
+
 const schema = z.object({
   name: z.string().min(1, 'Nome obrigatório'),
-  invoiceCloseDate: z.preprocess(
-    (v) => (v === '' || v === undefined || v === null || Number.isNaN(v) ? undefined : Number(v)),
-    z.number({ message: 'Dia obrigatório' }).int().min(1, 'Mínimo 1').max(31, 'Máximo 31'),
-  ),
-  invoiceDueDate: z.preprocess(
-    (v) => (v === '' || v === undefined || v === null || Number.isNaN(v) ? undefined : Number(v)),
-    z.number({ message: 'Dia obrigatório' }).int().min(1, 'Mínimo 1').max(31, 'Máximo 31'),
-  ),
+  invoiceDueDate: numberField('Dia obrigatório'),
+  invoiceDueDaysAfterClose: numberField('Intervalo obrigatório'),
 })
 
 export type BankFormData = z.infer<typeof schema>
@@ -56,11 +55,11 @@ export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankShee
       if (editTarget) {
         reset({
           name: editTarget.name,
-          invoiceCloseDate: editTarget.invoiceCloseDate,
           invoiceDueDate: editTarget.invoiceDueDate,
+          invoiceDueDaysAfterClose: editTarget.invoiceDueDaysAfterClose ?? 7,
         })
       } else {
-        reset({ name: '', invoiceCloseDate: undefined, invoiceDueDate: undefined })
+        reset({ name: '', invoiceDueDate: undefined, invoiceDueDaysAfterClose: 7 })
       }
     }
   }, [open, editTarget, reset])
@@ -80,7 +79,6 @@ export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankShee
           onSubmit={handleSubmit(onSubmit)}
           className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5"
         >
-          {/* Name */}
           <div className="space-y-1.5">
             <Label htmlFor="bank-name">Nome</Label>
             <Input
@@ -92,24 +90,6 @@ export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankShee
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
 
-          {/* Invoice close date */}
-          <div className="space-y-1.5">
-            <Label htmlFor="invoice-close-date">Dia de fechamento da fatura</Label>
-            <Input
-              id="invoice-close-date"
-              type="number"
-              min={1}
-              max={31}
-              placeholder="Ex: 15"
-              aria-invalid={!!errors.invoiceCloseDate}
-              {...register('invoiceCloseDate', { valueAsNumber: true })}
-            />
-            {errors.invoiceCloseDate && (
-              <p className="text-xs text-destructive">{errors.invoiceCloseDate.message}</p>
-            )}
-          </div>
-
-          {/* Invoice due date */}
           <div className="space-y-1.5">
             <Label htmlFor="invoice-due-date">Dia de vencimento da fatura</Label>
             <Input
@@ -117,12 +97,31 @@ export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankShee
               type="number"
               min={1}
               max={31}
-              placeholder="Ex: 20"
+              placeholder="Ex: 6"
               aria-invalid={!!errors.invoiceDueDate}
               {...register('invoiceDueDate', { valueAsNumber: true })}
             />
             {errors.invoiceDueDate && (
               <p className="text-xs text-destructive">{errors.invoiceDueDate.message}</p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="invoice-due-days-after-close">Dias entre fechamento e vencimento</Label>
+            <Input
+              id="invoice-due-days-after-close"
+              type="number"
+              min={1}
+              max={31}
+              placeholder="Ex: 7"
+              aria-invalid={!!errors.invoiceDueDaysAfterClose}
+              {...register('invoiceDueDaysAfterClose', { valueAsNumber: true })}
+            />
+            <p className="text-xs text-muted-foreground">
+              Normalmente são 7 dias corridos. O fechamento é calculado automaticamente.
+            </p>
+            {errors.invoiceDueDaysAfterClose && (
+              <p className="text-xs text-destructive">{errors.invoiceDueDaysAfterClose.message}</p>
             )}
           </div>
         </form>

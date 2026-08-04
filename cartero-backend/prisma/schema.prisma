@@ -32,6 +32,7 @@ model Bank {
   isSystem         Boolean  @default(false)
   invoiceCloseDate Int
   invoiceDueDate   Int
+  invoiceDueDaysAfterClose Int @default(7)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @default(now())
 
