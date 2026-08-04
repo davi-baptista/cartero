@@ -326,8 +326,14 @@ function InvoiceDetailSheet({
   const total = invoice ? Number(invoice.totalAmount) : 0
   const txCount = invoice?.transactions?.length ?? 0
   const isInstallment = (tx: Transaction) => /\s\d+\/\d+$/.test(tx.title)
+  const installmentNumber = (tx: Transaction) => {
+    const match = tx.title.match(/\s(\d+)\/\d+$/)
+    return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER
+  }
   const byDateDesc = (a: Transaction, b: Transaction) =>
-    parseDateOnly(b.date).getTime() - parseDateOnly(a.date).getTime()
+    parseDateOnly(b.date).getTime() - parseDateOnly(a.date).getTime() ||
+    installmentNumber(a) - installmentNumber(b) ||
+    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   const regularTxs = invoice?.transactions?.filter((tx) => !isInstallment(tx)).sort(byDateDesc) ?? []
   const installmentTxs = invoice?.transactions?.filter((tx) => isInstallment(tx)).sort(byDateDesc) ?? []
 

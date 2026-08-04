@@ -12,10 +12,12 @@ import {
   Transaction,
 } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
-import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
 import {
   findOrCreateInvoice,
+  findOrCreateInvoiceForPeriod,
   getInvoiceDueDate,
+  getInvoicePeriodForDate,
+  offsetInvoicePeriod,
 } from 'src/common/helpers/invoice.helper';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTransactionDto } from 'src/transactions/dto/create-transaction.dto';
@@ -66,6 +68,8 @@ export class TransactionsService {
         const installments =
           dto.type == 'CREDIT_CARD' && !dto.isRefund ? (dto.installments ?? 1) : 1;
         const transactions: Transaction[] = [];
+        const originalDate = parseDateOnly(dto.date);
+        let firstInvoicePeriod: { year: number; month: number } | null = null;
 
         let parentId: string | null = null;
         let receivableParentId: string | null = null;
@@ -73,17 +77,40 @@ export class TransactionsService {
         for (let i = 0; i < installments; i++) {
           let invoiceId: string | null = null;
           let invoice: Invoice | null = null;
-          const installmentDate = getInstallmentDate(parseDateOnly(dto.date), i);
+          const installmentDate = originalDate;
 
           if (dto.type == 'CREDIT_CARD') {
-            invoice = await findOrCreateInvoice(
-              tx,
-              userId,
-              dto.bankId,
-              bank.invoiceDueDate,
-              bank.invoiceDueDaysAfterClose,
-              installmentDate,
-            );
+            if (i === 0) {
+              invoice = await findOrCreateInvoice(
+                tx,
+                userId,
+                dto.bankId,
+                bank.invoiceDueDate,
+                bank.invoiceDueDaysAfterClose,
+                originalDate,
+              );
+              firstInvoicePeriod = {
+                year: invoice.year,
+                month: invoice.month,
+              };
+            } else {
+              const period = offsetInvoicePeriod(
+                firstInvoicePeriod!.year,
+                firstInvoicePeriod!.month,
+                i,
+              );
+              invoice = await findOrCreateInvoiceForPeriod(
+                tx,
+                userId,
+                dto.bankId,
+                {
+                  invoiceDueDate: bank.invoiceDueDate,
+                  invoiceDueDaysAfterClose: bank.invoiceDueDaysAfterClose,
+                },
+                period.year,
+                period.month,
+              );
+            }
 
             invoiceId = invoice.id;
           }
@@ -247,6 +274,15 @@ export class TransactionsService {
         );
         const updatedTransactions: Transaction[] = [];
         let bank: Bank | null = null;
+        let installmentBaseDate: Date | null = null;
+
+        if (existingTransaction.parentId) {
+          const parentTransaction = await tx.transaction.findUnique({
+            where: { id: existingTransaction.parentId, userId },
+            select: { date: true },
+          });
+          installmentBaseDate = parentTransaction?.date ?? null;
+        }
 
         if (
           dto.type === 'CREDIT_CARD' ||
@@ -263,7 +299,13 @@ export class TransactionsService {
           const type = dto.type ?? transaction.type;
           const amount = dto.amount ?? Number(transaction.amount);
           const isRefund = dto.isRefund ?? transaction.isRefund;
-          const date = dto.date ? parseDateOnly(dto.date) : transaction.date;
+          const installmentIndex = this.getInstallmentIndex(transaction);
+          const date =
+            installmentIndex !== null && installmentBaseDate
+              ? installmentBaseDate
+              : dto.date
+                ? parseDateOnly(dto.date)
+                : transaction.date;
 
           if (isRefund && type !== 'CREDIT_CARD') {
             throw new BadRequestException('Reembolsos devem ser transações de cartão de crédito');
@@ -304,14 +346,40 @@ export class TransactionsService {
             invoiceId = null;
 
             if (type === 'CREDIT_CARD') {
-              const invoice = await findOrCreateInvoice(
-                tx,
-                userId,
-                bankId,
-                bank!.invoiceDueDate,
-                bank!.invoiceDueDaysAfterClose,
-                date,
-              );
+              const schedule = {
+                invoiceDueDate: bank!.invoiceDueDate,
+                invoiceDueDaysAfterClose: bank!.invoiceDueDaysAfterClose,
+              };
+              let invoice: Invoice;
+
+              if (installmentIndex !== null && installmentBaseDate) {
+                const firstPeriod = getInvoicePeriodForDate(
+                  schedule,
+                  installmentBaseDate,
+                );
+                const period = offsetInvoicePeriod(
+                  firstPeriod.year,
+                  firstPeriod.month,
+                  installmentIndex,
+                );
+                invoice = await findOrCreateInvoiceForPeriod(
+                  tx,
+                  userId,
+                  bankId,
+                  schedule,
+                  period.year,
+                  period.month,
+                );
+              } else {
+                invoice = await findOrCreateInvoice(
+                  tx,
+                  userId,
+                  bankId,
+                  bank!.invoiceDueDate,
+                  bank!.invoiceDueDaysAfterClose,
+                  date,
+                );
+              }
 
               invoiceId = invoice.id;
             }
@@ -425,18 +493,20 @@ export class TransactionsService {
     }
 
     if (scope === 'NEXT') {
-      return await tx.transaction.findMany({
+      const siblings = await tx.transaction.findMany({
         where: {
           userId,
           parentId: transaction.parentId,
-          date: {
-            gte: transaction.date,
-          },
         },
         orderBy: {
-          date: 'asc',
+          createdAt: 'asc',
         },
       });
+
+      const currentIndex = siblings.findIndex(
+        (sibling) => sibling.id === transaction.id,
+      );
+      return currentIndex >= 0 ? siblings.slice(currentIndex) : [transaction];
     }
 
     return await tx.transaction.findMany({
@@ -445,9 +515,15 @@ export class TransactionsService {
         parentId: transaction.parentId,
       },
       orderBy: {
-        date: 'asc',
+        createdAt: 'asc',
       },
     });
+  }
+
+  private getInstallmentIndex(transaction: Transaction): number | null {
+    const match = transaction.title.match(/\s(\d+)\/\d+$/);
+    if (!match) return null;
+    return Math.max(0, Number(match[1]) - 1);
   }
 
   private async syncLinkedReceivable(

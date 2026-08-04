@@ -7,7 +7,7 @@ export function getLegacyCloseDay(
   dueDay: number,
   daysAfterClose: number,
 ): number {
-  const closeOffset = Math.max(0, daysAfterClose - 1);
+  const closeOffset = Math.max(1, daysAfterClose);
   return ((dueDay - 1 - closeOffset) % 31 + 31) % 31 + 1;
 }
 
@@ -32,7 +32,7 @@ export async function findOrCreateSystemReceivableBank(
   });
 }
 
-type InvoiceSchedule = Pick<
+export type InvoiceSchedule = Pick<
   Bank,
   'invoiceDueDate' | 'invoiceDueDaysAfterClose'
 >;
@@ -62,14 +62,14 @@ function intervalDays(bank: Pick<Bank, 'invoiceDueDaysAfterClose'>): number {
 }
 
 function closeOffsetDays(bank: Pick<Bank, 'invoiceDueDaysAfterClose'>): number {
-  return Math.max(0, intervalDays(bank) - 1);
+  return intervalDays(bank);
 }
 
 /**
  * Invoice periods are identified by the month in which the statement closes.
  * The due date is calculated from the configured due day and the number of
- * calendar days in the closing-to-due interval. The configured interval is
- * inclusive, so an interval of 7 means the due date is 6 days after closing.
+ * calendar days between closing and due date. An interval of 7 means closing
+ * is seven calendar days before the due date.
  * Due days beyond the end of a month are clamped to that month's last day.
  */
 export function getInvoiceCloseDateForPeriod(
@@ -103,38 +103,53 @@ export function getInvoiceDueDate(bank: Bank, invoice: Invoice): Date {
   return getInvoiceDueDateForPeriod(bank, invoice.year, invoice.month);
 }
 
-export async function findOrCreateInvoice(
-  tx: Prisma.TransactionClient,
-  userId: string,
-  bankId: string,
-  invoiceDueDate: number,
-  invoiceDueDaysAfterClose: number,
+export function getInvoicePeriodForDate(
+  bank: InvoiceSchedule,
   transactionDate: Date,
-): Promise<Invoice> {
-  const schedule = { invoiceDueDate, invoiceDueDaysAfterClose };
+): { year: number; month: number } {
   let month = transactionDate.getUTCMonth() + 1;
   let year = transactionDate.getUTCFullYear();
 
-  const closeDate = getInvoiceCloseDateForPeriod(schedule, year, month);
+  const closeDate = getInvoiceCloseDateForPeriod(bank, year, month);
   if (transactionDate >= closeDate) {
     month = (month % 12) + 1;
-    if (month === 1) {
-      year += 1;
-    }
+    if (month === 1) year += 1;
   }
 
+  return { year, month };
+}
+
+export function offsetInvoicePeriod(
+  year: number,
+  month: number,
+  offset: number,
+): { year: number; month: number } {
+  const date = new Date(Date.UTC(year, month - 1 + offset, 1));
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+  };
+}
+
+export async function findOrCreateInvoiceForPeriod(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  bankId: string,
+  schedule: InvoiceSchedule,
+  year: number,
+  month: number,
+): Promise<Invoice> {
   let invoice = await tx.invoice.findFirst({
-    where: {
-      userId,
-      bankId,
-      month,
-      year,
-    },
+    where: { userId, bankId, month, year },
   });
 
   if (!invoice) {
     const today = new Date();
-    const periodCloseDate = getInvoiceCloseDateForPeriod(schedule, year, month);
+    const periodCloseDate = getInvoiceCloseDateForPeriod(
+      schedule,
+      year,
+      month,
+    );
     const dueDate = getInvoiceDueDateForPeriod(schedule, year, month);
 
     const status =
@@ -145,15 +160,29 @@ export async function findOrCreateInvoice(
           : 'OPEN';
 
     invoice = await tx.invoice.create({
-      data: {
-        userId,
-        bankId,
-        month,
-        year,
-        status,
-      },
+      data: { userId, bankId, month, year, status },
     });
   }
 
   return invoice;
+}
+
+export async function findOrCreateInvoice(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  bankId: string,
+  invoiceDueDate: number,
+  invoiceDueDaysAfterClose: number,
+  transactionDate: Date,
+): Promise<Invoice> {
+  const schedule = { invoiceDueDate, invoiceDueDaysAfterClose };
+  const { year, month } = getInvoicePeriodForDate(schedule, transactionDate);
+  return findOrCreateInvoiceForPeriod(
+    tx,
+    userId,
+    bankId,
+    schedule,
+    year,
+    month,
+  );
 }

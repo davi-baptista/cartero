@@ -118,7 +118,7 @@ export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankShee
               {...register('invoiceDueDaysAfterClose', { valueAsNumber: true })}
             />
             <p className="text-xs text-muted-foreground">
-              Normalmente são 7 dias corridos, contando o fechamento e o vencimento.
+              Normalmente são 7 dias corridos antes do vencimento.
             </p>
             {errors.invoiceDueDaysAfterClose && (
               <p className="text-xs text-destructive">{errors.invoiceDueDaysAfterClose.message}</p>
