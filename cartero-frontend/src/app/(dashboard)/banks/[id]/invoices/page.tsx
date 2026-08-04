@@ -548,7 +548,7 @@ export default function BankInvoicesPage() {
           </h1>
           {bank ? (
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Vence dia {bank.invoiceDueDate} · {bank.invoiceDueDaysAfterClose ?? 7} dias entre fechamento e vencimento
+              Vence dia {bank.invoiceDueDate} · intervalo de {bank.invoiceDueDaysAfterClose ?? 7} dias
             </p>
           ) : (
             <Skeleton className="mt-1.5 h-4 w-40" />

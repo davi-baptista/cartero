@@ -107,7 +107,7 @@ export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankShee
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="invoice-due-days-after-close">Dias entre fechamento e vencimento</Label>
+            <Label htmlFor="invoice-due-days-after-close">Dias do intervalo da fatura</Label>
             <Input
               id="invoice-due-days-after-close"
               type="number"
@@ -118,7 +118,7 @@ export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankShee
               {...register('invoiceDueDaysAfterClose', { valueAsNumber: true })}
             />
             <p className="text-xs text-muted-foreground">
-              Normalmente são 7 dias corridos. O fechamento é calculado automaticamente.
+              Normalmente são 7 dias corridos, contando o fechamento e o vencimento.
             </p>
             {errors.invoiceDueDaysAfterClose && (
               <p className="text-xs text-destructive">{errors.invoiceDueDaysAfterClose.message}</p>

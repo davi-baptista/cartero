@@ -7,7 +7,8 @@ export function getLegacyCloseDay(
   dueDay: number,
   daysAfterClose: number,
 ): number {
-  return ((dueDay - 1 - Math.max(1, daysAfterClose)) % 31 + 31) % 31 + 1;
+  const closeOffset = Math.max(0, daysAfterClose - 1);
+  return ((dueDay - 1 - closeOffset) % 31 + 31) % 31 + 1;
 }
 
 export async function findOrCreateSystemReceivableBank(
@@ -60,11 +61,16 @@ function intervalDays(bank: Pick<Bank, 'invoiceDueDaysAfterClose'>): number {
   );
 }
 
+function closeOffsetDays(bank: Pick<Bank, 'invoiceDueDaysAfterClose'>): number {
+  return Math.max(0, intervalDays(bank) - 1);
+}
+
 /**
  * Invoice periods are identified by the month in which the statement closes.
  * The due date is calculated from the configured due day and the number of
- * calendar days between closing and due date. Due days beyond the end of a
- * month are clamped to that month's last day.
+ * calendar days in the closing-to-due interval. The configured interval is
+ * inclusive, so an interval of 7 means the due date is 6 days after closing.
+ * Due days beyond the end of a month are clamped to that month's last day.
  */
 export function getInvoiceCloseDateForPeriod(
   bank: InvoiceSchedule,
@@ -72,7 +78,7 @@ export function getInvoiceCloseDateForPeriod(
   month: number,
 ): Date {
   const dueDate = getInvoiceDueDateForPeriod(bank, year, month);
-  return addDays(dueDate, -intervalDays(bank));
+  return addDays(dueDate, -closeOffsetDays(bank));
 }
 
 export function getInvoiceDueDateForPeriod(
@@ -80,7 +86,7 @@ export function getInvoiceDueDateForPeriod(
   year: number,
   month: number,
 ): Date {
-  const days = intervalDays(bank);
+  const days = closeOffsetDays(bank);
 
   // A period's due date is normally in the same month as its close date. If
   // subtracting the interval would move closing into the previous month, use

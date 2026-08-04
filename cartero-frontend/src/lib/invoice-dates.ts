@@ -20,6 +20,10 @@ function intervalDays(daysAfterClose?: number): number {
   return Math.max(1, daysAfterClose ?? DEFAULT_INVOICE_DAYS_AFTER_CLOSE)
 }
 
+function closeOffsetDays(daysAfterClose?: number): number {
+  return Math.max(0, intervalDays(daysAfterClose) - 1)
+}
+
 /** Returns the local date on which an invoice period closes. */
 export function getInvoiceCloseDate(
   year: number,
@@ -29,13 +33,14 @@ export function getInvoiceCloseDate(
 ): Date {
   return addDays(
     getInvoiceDueDate(year, month, dueDay, daysAfterClose),
-    -intervalDays(daysAfterClose),
+    -closeOffsetDays(daysAfterClose),
   )
 }
 
 /**
  * Returns the local due date for an invoice period.
- * Due days beyond the end of a month are clamped to that month's last day.
+ * The configured interval is inclusive: 7 means the due date is 6 days after
+ * closing. Due days beyond the end of a month are clamped to that month's last day.
  */
 export function getInvoiceDueDate(
   year: number,
@@ -43,7 +48,7 @@ export function getInvoiceDueDate(
   dueDay: number,
   daysAfterClose?: number,
 ): Date {
-  const days = intervalDays(daysAfterClose)
+  const days = closeOffsetDays(daysAfterClose)
   const sameMonthDue = dateForDay(year, month, dueDay)
   if (isSamePeriod(addDays(sameMonthDue, -days), year, month)) {
     return sameMonthDue
