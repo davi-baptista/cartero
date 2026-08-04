@@ -99,13 +99,12 @@ function useNearestInvoice(bank: Bank): NearestInvoiceInfo | null {
   return { amount: null, label: 'Em dia', urgency: 'none' }
 }
 
-// Amount + due badge — the nearest invoice's essential info, at a glance.
-// Right-aligned as the row's primary stat on desktop; left-aligned under the name on mobile.
-function NearestInvoiceStat({ info, align = 'end' }: { info: NearestInvoiceInfo; align?: 'start' | 'end' }) {
-  const badge = (
+// Status + due countdown — sits next to the bank name, same spot as the invoice-row badge.
+function NearestInvoiceBadge({ info }: { info: NearestInvoiceInfo }) {
+  return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium',
+        'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium',
         NEAREST_INVOICE_BADGE_CLASS[info.urgency],
       )}
     >
@@ -118,21 +117,20 @@ function NearestInvoiceStat({ info, align = 'end' }: { info: NearestInvoiceInfo;
       {info.label}
     </span>
   )
+}
 
-  if (info.amount == null) return badge
-
+// The amount alone, standing as the row's primary stat.
+function NearestInvoiceAmount({ info }: { info: NearestInvoiceInfo }) {
+  if (info.amount == null) return null
   return (
-    <div className={cn('flex flex-col gap-1', align === 'end' ? 'items-end' : 'items-start')}>
-      <span
-        className={cn(
-          'text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
-          NEAREST_INVOICE_TEXT_CLASS[info.urgency],
-        )}
-      >
-        {formatCurrency(info.amount)}
-      </span>
-      {badge}
-    </div>
+    <span
+      className={cn(
+        'text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
+        NEAREST_INVOICE_TEXT_CLASS[info.urgency],
+      )}
+    >
+      {formatCurrency(info.amount)}
+    </span>
   )
 }
 
@@ -149,75 +147,48 @@ function BankRow({
   const nearest = useNearestInvoice(bank)
 
   return (
-    <div className="group flex items-center gap-4 px-2 py-4">
+    <div className="group flex items-center gap-4 border-b border-border px-1 py-4 last:border-b-0">
       {/* Monogram */}
       <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/40 text-[14px] font-semibold text-muted-foreground select-none">
         {initial}
       </div>
 
-      {/* Name + nearest invoice (mobile only — desktop promotes this to the stat on the right) */}
+      {/* Name + status badge — same pairing as the invoice list rows */}
       <div className="min-w-0 flex-1">
-        <span className="text-[15px] font-medium">{bank.name}</span>
-        {nearest && (
-          <div className="mt-1.5 sm:hidden">
-            <NearestInvoiceStat info={nearest} align="start" />
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[15px] font-medium">{bank.name}</span>
+          {nearest && <NearestInvoiceBadge info={nearest} />}
+        </div>
       </div>
 
-      {/* Desktop: nearest invoice — amount + due countdown, the essential at-a-glance info */}
-      <div className="hidden shrink-0 sm:block">
-        {nearest && <NearestInvoiceStat info={nearest} />}
+      {/* Amount alone — the row's primary stat */}
+      <div className="shrink-0">
+        {nearest && <NearestInvoiceAmount info={nearest} />}
       </div>
 
       {/* Actions */}
       <div className="flex shrink-0 items-center gap-1">
-        {/* Desktop hover edit/delete */}
-        <div className="hidden items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={() => onEdit(bank)}
-            aria-label="Editar banco"
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            aria-label="Mais opções"
           >
-            <Pencil className="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground hover:text-destructive"
-            onClick={() => onDelete(bank)}
-            aria-label="Excluir banco"
-          >
-            <Trash2 className="size-3.5" />
-          </Button>
-        </div>
-
-        {/* Mobile dropdown */}
-        <div className="sm:hidden">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              aria-label="Mais opções"
+            <MoreVertical className="size-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => onEdit(bank)}>
+              <Pencil className="size-3.5" />
+              Editar
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => onDelete(bank)}
+              className="text-destructive focus:text-destructive"
             >
-              <MoreVertical className="size-3.5" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onEdit(bank)}>
-                <Pencil className="size-3.5" />
-                Editar
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => onDelete(bank)}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="size-3.5" />
-                Excluir
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+              <Trash2 className="size-3.5" />
+              Excluir
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Ver faturas — always visible */}
         <Link
@@ -239,7 +210,7 @@ function BankRow({
 
 function RowSkeleton() {
   return (
-    <div className="flex items-center gap-4 border-b border-border px-2 py-4 last:border-b-0">
+    <div className="flex items-center gap-4 border-b border-border px-1 py-4 last:border-b-0">
       <Skeleton className="size-10 rounded-xl" />
       <div className="flex flex-1 items-center gap-6">
         <Skeleton className="h-4 w-32" />
@@ -386,7 +357,7 @@ export default function BanksPage() {
       </div>
 
       {/* Bank list */}
-      <div>
+      <div className="border-t border-border">
         {isLoading ? (
           <div>
             {Array.from({ length: 4 }).map((_, i) => (
