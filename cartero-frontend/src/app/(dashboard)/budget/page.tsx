@@ -153,7 +153,7 @@ export default function BudgetPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Orçamento</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">

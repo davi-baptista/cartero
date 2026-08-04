@@ -1,9 +1,5 @@
 # Product
 
-## Register
-
-product
-
 ## Users
 
 Primary user: the developer themselves, managing personal finances daily. Power user who built the tool — familiar with financial concepts (faturas, parcelas, PIX, boletos), comfortable with dense information. Potentially expanded to other individuals in the future, but the baseline is a single person who trusts the interface because they built it.

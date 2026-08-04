@@ -27,15 +27,35 @@ import { getBanks, createBank, updateBank, deleteBank } from '@/services/banks.s
 import { getBankInvoices, getInvoices } from '@/services/invoices.service'
 import { formatCurrency } from '@/lib/formatters'
 import { getInvoiceCloseDate, getInvoiceDueDate } from '@/lib/invoice-dates'
+import { cn } from '@/lib/utils'
 import { InvoiceStatus } from '@/types'
 import type { Bank } from '@/types'
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function InvoicePill({ bank }: { bank: Bank }) {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+type InvoiceUrgency = 'overdue' | 'closing' | 'open' | 'none'
 
+interface NearestInvoiceInfo {
+  amount: number | null
+  label: string
+  urgency: InvoiceUrgency
+}
+
+const NEAREST_INVOICE_TEXT_CLASS: Record<InvoiceUrgency, string> = {
+  overdue: 'text-destructive',
+  closing: 'text-pending',
+  open: 'text-primary',
+  none: 'text-receivable',
+}
+
+const NEAREST_INVOICE_BADGE_CLASS: Record<InvoiceUrgency, string> = {
+  overdue: 'bg-destructive/15 text-destructive',
+  closing: 'bg-pending/15 text-pending',
+  open: 'bg-primary/10 text-primary',
+  none: 'bg-receivable/10 text-receivable',
+}
+
+function useNearestInvoice(bank: Bank): NearestInvoiceInfo | null {
   const { data: invoices } = useQuery({
     queryKey: ['bank-invoices-mini', bank.id],
     queryFn: () => getBankInvoices(bank.id),
@@ -43,6 +63,9 @@ function InvoicePill({ bank }: { bank: Bank }) {
   })
 
   if (!invoices || invoices.length === 0) return null
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
 
   const nonEmpty = invoices.filter((i) => Number(i.totalAmount) > 0)
   const overdue = nonEmpty.find((i) => i.status === InvoiceStatus.OVERDUE)
@@ -52,51 +75,63 @@ function InvoicePill({ bank }: { bank: Bank }) {
   if (overdue) {
     const due = getInvoiceDueDate(overdue.year, overdue.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
     const daysLate = Math.ceil((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24))
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-destructive/12 px-2.5 py-0.5 text-[11px] font-medium text-destructive">
-        <span className="relative flex size-1.5 shrink-0">
-          <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/60" />
-          <span className="size-1.5 rounded-full bg-destructive" />
-        </span>
-        Vencida {daysLate > 0 ? `há ${daysLate}d` : 'hoje'} · {formatCurrency(overdue.totalAmount)}
-      </span>
-    )
+    return {
+      amount: Number(overdue.totalAmount),
+      label: daysLate > 0 ? `Vencida há ${daysLate}d` : 'Vencida hoje',
+      urgency: 'overdue',
+    }
   }
 
   if (closed) {
     const due = getInvoiceDueDate(closed.year, closed.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
     const diff = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     const label = diff === 0 ? 'Vence hoje' : diff === 1 ? 'Vence amanhã' : diff > 0 ? `Vence em ${diff}d` : `Venceu há ${Math.abs(diff)}d`
-    return (
-      <span className="inline-flex items-center rounded-full bg-pending/15 px-2.5 py-0.5 text-[11px] font-medium text-pending">
-        {label} · {formatCurrency(closed.totalAmount)}
-      </span>
-    )
+    return { amount: Number(closed.totalAmount), label, urgency: 'closing' }
   }
 
   if (open) {
     const close = getInvoiceCloseDate(open.year, open.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
     const diff = Math.ceil((close.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     const label = diff === 0 ? 'Fecha hoje' : diff === 1 ? 'Fecha amanhã' : diff > 0 ? `Fecha em ${diff}d` : `Fechou há ${Math.abs(diff)}d`
-    return (
-      <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
-        {label}{open.totalAmount > 0 ? ` · ${formatCurrency(open.totalAmount)}` : ''}
-      </span>
-    )
+    return { amount: Number(open.totalAmount), label, urgency: 'open' }
   }
 
-  return (
-    <span className="inline-flex items-center rounded-full bg-receivable/10 px-2.5 py-0.5 text-[11px] font-medium text-receivable">
-      Em dia
-    </span>
-  )
+  return { amount: null, label: 'Em dia', urgency: 'none' }
 }
 
-function DateStat({ label, value }: { label: string; value: number }) {
+// Amount + due badge — the nearest invoice's essential info, at a glance.
+// Right-aligned as the row's primary stat on desktop; left-aligned under the name on mobile.
+function NearestInvoiceStat({ info, align = 'end' }: { info: NearestInvoiceInfo; align?: 'start' | 'end' }) {
+  const badge = (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium',
+        NEAREST_INVOICE_BADGE_CLASS[info.urgency],
+      )}
+    >
+      {info.urgency === 'overdue' && (
+        <span className="relative flex size-1.5 shrink-0">
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/60" />
+          <span className="size-1.5 rounded-full bg-destructive" />
+        </span>
+      )}
+      {info.label}
+    </span>
+  )
+
+  if (info.amount == null) return badge
+
   return (
-    <div className="flex flex-col items-center gap-0.5 min-w-[2.75rem]">
-      <span className="text-[10px] text-muted-foreground">{label}</span>
-      <span className="text-[22px] font-semibold leading-none tabular-nums">{value}</span>
+    <div className={cn('flex flex-col gap-1', align === 'end' ? 'items-end' : 'items-start')}>
+      <span
+        className={cn(
+          'text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
+          NEAREST_INVOICE_TEXT_CLASS[info.urgency],
+        )}
+      >
+        {formatCurrency(info.amount)}
+      </span>
+      {badge}
     </div>
   )
 }
@@ -111,6 +146,7 @@ function BankRow({
   onDelete: (b: Bank) => void
 }) {
   const initial = bank.name[0]?.toUpperCase() ?? '?'
+  const nearest = useNearestInvoice(bank)
 
   return (
     <div className="group flex items-center gap-4 px-2 py-4">
@@ -119,30 +155,19 @@ function BankRow({
         {initial}
       </div>
 
-      {/* Name + pill + mobile dates */}
+      {/* Name + nearest invoice (mobile only — desktop promotes this to the stat on the right) */}
       <div className="min-w-0 flex-1">
         <span className="text-[15px] font-medium">{bank.name}</span>
-        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          <InvoicePill bank={bank} />
-          {/* Mobile: dates inline */}
-          <div className="flex items-center gap-2 sm:hidden">
-            <span className="text-[10px] text-muted-foreground/40" aria-hidden>·</span>
-            <span className="text-xs text-muted-foreground">
-              Vence <strong className="font-semibold text-foreground">{bank.invoiceDueDate}</strong>
-            </span>
-            <span className="text-[10px] text-muted-foreground/40" aria-hidden>|</span>
-            <span className="text-xs text-muted-foreground">
-              <strong className="font-semibold text-foreground">{bank.invoiceDueDaysAfterClose ?? 7}</strong> dias
-            </span>
+        {nearest && (
+          <div className="mt-1.5 sm:hidden">
+            <NearestInvoiceStat info={nearest} align="start" />
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Desktop: date stats */}
-      <div className="hidden shrink-0 items-center gap-2 sm:flex">
-        <DateStat label="Vence" value={bank.invoiceDueDate} />
-        <div className="h-8 w-px bg-border/60 mx-1" aria-hidden />
-        <DateStat label="Dias" value={bank.invoiceDueDaysAfterClose ?? 7} />
+      {/* Desktop: nearest invoice — amount + due countdown, the essential at-a-glance info */}
+      <div className="hidden shrink-0 sm:block">
+        {nearest && <NearestInvoiceStat info={nearest} />}
       </div>
 
       {/* Actions */}
