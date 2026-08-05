@@ -541,6 +541,14 @@ export default function DebtsPage() {
           <div className="w-36 sm:w-40">
             <DatePicker value={endDate} onChange={setEndDate} placeholder="Data fim" />
           </div>
+          <MonthQuickFilter
+            startDate={startDate}
+            endDate={endDate}
+            onChange={({ startDate: nextStart, endDate: nextEnd }) => {
+              setStartDate(nextStart)
+              setEndDate(nextEnd)
+            }}
+          />
           {persons.length > 0 && (
             <Select
               value={personFilter ?? ''}
@@ -592,14 +600,6 @@ export default function DebtsPage() {
             </Button>
           )}
           </div>
-          <MonthQuickFilter
-            startDate={startDate}
-            endDate={endDate}
-            onChange={({ startDate: nextStart, endDate: nextEnd }) => {
-              setStartDate(nextStart)
-              setEndDate(nextEnd)
-            }}
-          />
         <div className="flex flex-wrap gap-2">
           {tabs.map(({ value, label }) => (
             <button

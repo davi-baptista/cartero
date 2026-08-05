@@ -592,14 +592,14 @@ export default function TransactionsPage() {
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
           {/* Date range */}
-          <div className="w-40">
+          <div className="w-36 sm:w-40">
             <DatePicker
               value={filters.startDate}
               onChange={(v) => setFilters((f) => ({ ...f, startDate: v }))}
               placeholder="Data início"
             />
           </div>
-          <div className="w-40">
+          <div className="w-36 sm:w-40">
             <DatePicker
               value={filters.endDate}
               onChange={(v) => setFilters((f) => ({ ...f, endDate: v }))}

@@ -257,15 +257,30 @@ export default function BudgetPage() {
               </p>
             )}
 
-            {/* Reimbursable breakdown — only when relevant */}
+            {/* Reimbursable breakdown — mini stat row, no card chrome */}
             {summary.totalReimbursable > 0 && (
-              <p className="text-[12px] text-muted-foreground">
-                <span>{formatCurrency(summary.totalAll)} em faturas</span>
-                <span className="mx-1.5 text-muted-foreground/40" aria-hidden>·</span>
-                <span>{formatCurrency(summary.totalReimbursable)} a receber de terceiros</span>
-                <span className="mx-1.5 text-muted-foreground/40" aria-hidden>·</span>
-                <span className="font-medium">{formatCurrency(summary.netAmount)} líquido</span>
-              </p>
+              <div className="flex flex-wrap items-stretch gap-x-5 gap-y-3">
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Em faturas</p>
+                  <p className="mt-0.5 text-[15px] font-semibold tabular-nums tracking-[-0.01em]">
+                    {formatCurrency(summary.totalAll)}
+                  </p>
+                </div>
+                <div className="w-px shrink-0 bg-border/60" aria-hidden />
+                <div>
+                  <p className="text-[11px] text-muted-foreground">A receber de terceiros</p>
+                  <p className="mt-0.5 text-[15px] font-semibold tabular-nums tracking-[-0.01em] text-receivable">
+                    {formatCurrency(summary.totalReimbursable)}
+                  </p>
+                </div>
+                <div className="w-px shrink-0 bg-border/60" aria-hidden />
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Líquido</p>
+                  <p className="mt-0.5 text-[15px] font-semibold tabular-nums tracking-[-0.01em]">
+                    {formatCurrency(summary.netAmount)}
+                  </p>
+                </div>
+              </div>
             )}
           </>
         ) : (

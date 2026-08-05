@@ -16,7 +16,7 @@ import {
   Undo2,
   MoreVertical,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -431,25 +431,27 @@ function StatementSheet({
         <SheetHeader className="px-6 pt-6 pb-0">
           <SheetTitle>{person?.name}</SheetTitle>
           <SheetDescription>Extrato consolidado de dívidas e cobranças</SheetDescription>
-          <div className="flex gap-2 pt-2">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={openNewReceivable}>
-              <Plus className="size-3.5" />
-              Nova cobrança
-            </Button>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={openNewDebt}>
-              <Plus className="size-3.5" />
-              Nova dívida
-            </Button>
-            {pendingCount > 0 && (
-              <Button size="sm" className="gap-1.5" disabled={!allStatement} onClick={() => setSettleOpen(true)}>
-                <Check className="size-3.5" />
-                Quitar tudo
-              </Button>
-            )}
+          <div className="pt-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger className={buttonVariants({ variant: 'outline', size: 'sm', className: 'gap-1.5' })}>
+                <Plus className="size-3.5" />
+                Adicionar
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-44">
+                <DropdownMenuItem onClick={openNewReceivable}>
+                  <Plus className="size-3.5" />
+                  Nova cobrança
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={openNewDebt}>
+                  <Plus className="size-3.5" />
+                  Nova dívida
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </SheetHeader>
 
-        <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
+        <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-6 pt-4 pb-5">
           {/* Date filters */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="w-36">
@@ -504,19 +506,27 @@ function StatementSheet({
                     ? `${person?.name} te deve no total`
                     : `Você deve ${formatCurrency(Math.abs(netBalance))} para ${person?.name}`}
                 </p>
-                <div className="mt-3 flex gap-4 text-xs text-muted-foreground">
-                  <span>
-                    A receber{' '}
-                    <span className="font-medium text-receivable">
-                      {formatCurrency(data.totalReceivables)}
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex gap-4 text-xs text-muted-foreground">
+                    <span>
+                      A receber{' '}
+                      <span className="font-medium text-receivable">
+                        {formatCurrency(data.totalReceivables)}
+                      </span>
                     </span>
-                  </span>
-                  <span>
-                    A pagar{' '}
-                    <span className="font-medium text-destructive">
-                      {formatCurrency(data.totalDebts)}
+                    <span>
+                      A pagar{' '}
+                      <span className="font-medium text-destructive">
+                        {formatCurrency(data.totalDebts)}
+                      </span>
                     </span>
-                  </span>
+                  </div>
+                  {pendingCount > 0 && (
+                    <Button size="sm" className="gap-1.5" disabled={!allStatement} onClick={() => setSettleOpen(true)}>
+                      <Check className="size-3.5" />
+                      Quitar tudo
+                    </Button>
+                  )}
                 </div>
               </div>
 
