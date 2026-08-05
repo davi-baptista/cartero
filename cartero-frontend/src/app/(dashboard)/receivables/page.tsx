@@ -59,8 +59,9 @@ import { getPersons } from '@/services/persons.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
-import type { Receivable, TransactionType } from '@/types'
+import type { Receivable } from '@/types'
 import { InstallmentScope } from '@/types'
+import { useAuth } from '@/providers/auth-provider'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -280,6 +281,7 @@ function RowSkeleton() {
 type TabFilter = 'pending' | 'received'
 
 export default function ReceivablesPage() {
+  const { user } = useAuth()
   const qc = useQueryClient()
   const searchParams = useSearchParams()
   const highlightId = searchParams.get('highlight') ?? undefined
@@ -429,13 +431,17 @@ export default function ReceivablesPage() {
 
   function handleToggleReceived(receivable: Receivable) {
     if (!receivable.isPaid) {
-      setMarkPaidTarget(receivable)
+      if (user?.createIncomeOnReceivablePaid === false) {
+        updateMut.mutate({ id: receivable.id, payload: { isPaid: true } })
+      } else {
+        setMarkPaidTarget(receivable)
+      }
     } else {
       setUnmarkPaidTarget(receivable)
     }
   }
 
-  function handleMarkPaidConfirm(payload: { paymentBankId?: string; paymentType: TransactionType }) {
+  function handleMarkPaidConfirm(payload: { paymentDate?: string }) {
     if (!markPaidTarget) return
     updateMut.mutate({
       id: markPaidTarget.id,
@@ -690,10 +696,11 @@ export default function ReceivablesPage() {
         onCancel={() => setLinkedWarningTarget(null)}
       />
 
-      {/* Mark as received — asks for bank + payment type */}
+      {/* Mark as received — asks for the receipt date */}
       <MarkAsPaidDialog
         open={markPaidTarget !== null}
         kind="receivable"
+        createTransaction={user?.createIncomeOnReceivablePaid ?? true}
         onConfirm={handleMarkPaidConfirm}
         onCancel={() => setMarkPaidTarget(null)}
       />

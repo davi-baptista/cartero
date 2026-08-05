@@ -19,8 +19,10 @@ import {
 } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { DatePicker } from '@/components/ui/date-picker'
 import { getBanks } from '@/services/banks.service'
 import { TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
+import { todayDateValue } from '@/lib/date'
 import { TransactionType } from '@/types'
 
 const PAYMENT_TYPE_OPTIONS = [
@@ -35,13 +37,15 @@ type PaymentType = typeof PAYMENT_TYPE_OPTIONS[number]
 interface MarkAsPaidDialogProps {
   open: boolean
   kind: 'debt' | 'receivable'
-  onConfirm: (payload: { paymentBankId?: string; paymentType: TransactionType }) => void
+  createTransaction?: boolean
+  onConfirm: (payload: { paymentBankId?: string; paymentType?: TransactionType; paymentDate?: string }) => void
   onCancel: () => void
 }
 
-export function MarkAsPaidDialog({ open, kind, onConfirm, onCancel }: MarkAsPaidDialogProps) {
+export function MarkAsPaidDialog({ open, kind, createTransaction = true, onConfirm, onCancel }: MarkAsPaidDialogProps) {
   const [bankId, setBankId] = useState<string>('')
   const [type, setType] = useState<PaymentType | ''>('')
+  const [paymentDate, setPaymentDate] = useState(todayDateValue())
 
   const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: getBanks })
 
@@ -49,10 +53,15 @@ export function MarkAsPaidDialog({ open, kind, onConfirm, onCancel }: MarkAsPaid
     if (!open) {
       setBankId('')
       setType('')
+      setPaymentDate(todayDateValue())
     }
   }, [open])
 
-  const canConfirm = Boolean(type) && (kind === 'receivable' || Boolean(bankId))
+  const canConfirm = !createTransaction
+    ? true
+    : kind === 'receivable'
+    ? Boolean(paymentDate)
+    : Boolean(type) && Boolean(bankId)
   const selectedBank = banks.find((b) => b.id === bankId)
 
   return (
@@ -63,8 +72,12 @@ export function MarkAsPaidDialog({ open, kind, onConfirm, onCancel }: MarkAsPaid
             {kind === 'debt' ? 'Marcar dívida como paga' : 'Marcar cobrança como recebida'}
           </DialogTitle>
           <DialogDescription>
-            {kind === 'receivable'
-              ? 'Informe apenas a forma de recebimento.'
+            {!createTransaction
+              ? kind === 'receivable'
+                ? 'A cobrança será marcada como recebida sem criar uma receita.'
+                : 'A dívida será marcada como paga sem criar um gasto.'
+              : kind === 'receivable'
+              ? 'Informe a data em que o valor foi recebido.'
               : kind === 'debt'
               ? 'Escolha o banco e a forma de pagamento. Isso vai criar uma transação vinculada.'
               : 'Escolha o banco e a forma de recebimento. Isso vai criar uma transação de receita vinculada — independente da forma escolhida, ela será registrada como receita.'}
@@ -72,7 +85,7 @@ export function MarkAsPaidDialog({ open, kind, onConfirm, onCancel }: MarkAsPaid
         </DialogHeader>
 
         <div className="flex flex-col gap-3 py-1">
-          {kind === 'debt' && <div className="flex flex-col gap-1.5">
+          {kind === 'debt' && createTransaction && <div className="flex flex-col gap-1.5">
             <Label>Banco</Label>
             <Select value={bankId} onValueChange={(v) => setBankId(v ?? '')}>
               <SelectTrigger aria-label="Banco">
@@ -88,28 +101,43 @@ export function MarkAsPaidDialog({ open, kind, onConfirm, onCancel }: MarkAsPaid
             </Select>
           </div>}
 
-          <div className="flex flex-col gap-1.5">
-            <Label>{kind === 'debt' ? 'Forma de pagamento' : 'Forma de recebimento'}</Label>
-            <Select<PaymentType> value={type || null} onValueChange={(v) => setType(v ?? '')}>
-              <SelectTrigger aria-label="Tipo">
-                <SelectValue placeholder="Selecione">
-                  {type ? TRANSACTION_TYPE_LABELS[type] : undefined}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent alignItemWithTrigger={false}>
-                {PAYMENT_TYPE_OPTIONS.map((t) => (
-                  <SelectItem key={t} value={t}>{TRANSACTION_TYPE_LABELS[t]}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {kind === 'receivable' && createTransaction ? (
+            <div className="flex flex-col gap-1.5">
+              <Label>Data do recebimento</Label>
+              <DatePicker value={paymentDate} onChange={setPaymentDate} />
+            </div>
+          ) : createTransaction ? (
+            <div className="flex flex-col gap-1.5">
+              <Label>Forma de pagamento</Label>
+              <Select<PaymentType> value={type || null} onValueChange={(v) => setType(v ?? '')}>
+                <SelectTrigger aria-label="Tipo">
+                  <SelectValue placeholder="Selecione">
+                    {type ? TRANSACTION_TYPE_LABELS[type] : undefined}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  {PAYMENT_TYPE_OPTIONS.map((t) => (
+                    <SelectItem key={t} value={t}>{TRANSACTION_TYPE_LABELS[t]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onCancel}>Cancelar</Button>
           <Button
             disabled={!canConfirm}
-            onClick={() => canConfirm && onConfirm({ ...(bankId ? { paymentBankId: bankId } : {}), paymentType: type as TransactionType })}
+            onClick={() => canConfirm && onConfirm(
+              !createTransaction
+                ? {}
+                : kind === 'receivable'
+                ? { paymentDate }
+                : createTransaction
+                ? { paymentBankId: bankId, paymentType: type as TransactionType }
+                : {},
+            )}
           >
             Confirmar
           </Button>

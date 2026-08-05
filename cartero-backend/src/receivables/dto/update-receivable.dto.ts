@@ -41,6 +41,10 @@ export class UpdateReceivableDto {
   isPaid?: boolean;
 
   @IsOptional()
+  @IsDateString()
+  paymentDate?: string;
+
+  @IsOptional()
   @IsUUID()
   paymentBankId?: string;
 

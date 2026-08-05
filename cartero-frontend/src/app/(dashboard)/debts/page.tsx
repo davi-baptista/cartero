@@ -62,6 +62,7 @@ import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type { Debt, TransactionType } from '@/types'
 import { InstallmentScope } from '@/types'
+import { useAuth } from '@/providers/auth-provider'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -288,6 +289,7 @@ function RowSkeleton() {
 type TabFilter = 'pending' | 'paid'
 
 export default function DebtsPage() {
+  const { user } = useAuth()
   const qc = useQueryClient()
   const searchParams = useSearchParams()
   const highlightId = searchParams.get('highlight') ?? undefined
@@ -437,15 +439,19 @@ export default function DebtsPage() {
 
   function handleTogglePaid(debt: Debt) {
     if (!debt.isPaid) {
-      setMarkPaidTarget(debt)
+      if (user?.createExpenseOnDebtPaid === false) {
+        updateMut.mutate({ id: debt.id, payload: { isPaid: true } })
+      } else {
+        setMarkPaidTarget(debt)
+      }
     } else {
       setUnmarkPaidTarget(debt)
     }
   }
 
-  function handleMarkPaidConfirm(payload: { paymentBankId?: string; paymentType: TransactionType }) {
+  function handleMarkPaidConfirm(payload: { paymentBankId?: string; paymentType?: TransactionType }) {
     if (!markPaidTarget) return
-    if (!payload.paymentBankId) return
+    if (!payload.paymentBankId || !payload.paymentType) return
     updateMut.mutate({
       id: markPaidTarget.id,
       payload: { isPaid: true, ...payload },
@@ -693,6 +699,7 @@ export default function DebtsPage() {
       <MarkAsPaidDialog
         open={markPaidTarget !== null}
         kind="debt"
+        createTransaction={user?.createExpenseOnDebtPaid ?? true}
         onConfirm={handleMarkPaidConfirm}
         onCancel={() => setMarkPaidTarget(null)}
       />

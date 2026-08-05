@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsNumber,
   IsOptional,
   IsString,
@@ -21,4 +22,12 @@ export class UpdateUserDto {
   @IsNumber()
   @Min(0)
   salary?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  createIncomeOnReceivablePaid?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  createExpenseOnDebtPaid?: boolean;
 }

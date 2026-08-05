@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePicker } from '@/components/ui/date-picker'
+import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
 import { MonthQuickFilter } from '@/components/month-quick-filter'
 import {
   Sheet,
@@ -59,6 +60,8 @@ import { formatCurrency, formatDate } from '@/lib/formatters'
 import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type { Person, Debt, Receivable } from '@/types'
+import { TransactionType } from '@/types'
+import { useAuth } from '@/providers/auth-provider'
 
 // ─── Statement sheet ─────────────────────────────────────────────────────────
 
@@ -102,6 +105,7 @@ function StatementSheet({
   onClose: () => void
 }) {
   const qc = useQueryClient()
+  const { user } = useAuth()
 
   function defaultStart() {
     const d = new Date()
@@ -114,6 +118,8 @@ function StatementSheet({
 
   const [startDate, setStartDate] = useState<string | undefined>(defaultStart)
   const [endDate, setEndDate] = useState<string | undefined>(defaultEnd)
+  const [markPaidDebt, setMarkPaidDebt] = useState<Debt | null>(null)
+  const [markReceivedReceivable, setMarkReceivedReceivable] = useState<Receivable | null>(null)
 
   useEffect(() => {
     if (person) {
@@ -129,8 +135,12 @@ function StatementSheet({
   })
 
   const toggleDebtMut = useMutation({
-    mutationFn: ({ id, isPaid }: { id: string; isPaid: boolean }) =>
-      updateDebt(id, { isPaid }),
+    mutationFn: ({ id, isPaid, paymentBankId, paymentType }: {
+      id: string
+      isPaid: boolean
+      paymentBankId?: string
+      paymentType?: TransactionType
+    }) => updateDebt(id, { isPaid, paymentBankId, paymentType }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['person-statement', person?.id] })
       qc.invalidateQueries({ queryKey: ['debts'] })
@@ -139,8 +149,11 @@ function StatementSheet({
   })
 
   const toggleReceivableMut = useMutation({
-    mutationFn: ({ id, isPaid }: { id: string; isPaid: boolean }) =>
-      updateReceivable(id, { isPaid }),
+    mutationFn: ({ id, isPaid, paymentDate }: {
+      id: string
+      isPaid: boolean
+      paymentDate?: string
+    }) => updateReceivable(id, { isPaid, paymentDate }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['person-statement', person?.id] })
       qc.invalidateQueries({ queryKey: ['receivables'] })
@@ -148,12 +161,33 @@ function StatementSheet({
     onError: () => toast.error('Erro ao atualizar — tente novamente'),
   })
 
+  function handleDebtToggle(debt: Debt) {
+    if (debt.isPaid) {
+      toggleDebtMut.mutate({ id: debt.id, isPaid: false })
+    } else if (user?.createExpenseOnDebtPaid === false) {
+      toggleDebtMut.mutate({ id: debt.id, isPaid: true })
+    } else {
+      setMarkPaidDebt(debt)
+    }
+  }
+
+  function handleReceivableToggle(receivable: Receivable) {
+    if (receivable.isPaid) {
+      toggleReceivableMut.mutate({ id: receivable.id, isPaid: false })
+    } else if (user?.createIncomeOnReceivablePaid === false) {
+      toggleReceivableMut.mutate({ id: receivable.id, isPaid: true })
+    } else {
+      setMarkReceivedReceivable(receivable)
+    }
+  }
+
   const netBalance = data?.netBalance ?? 0
   const isPositive = netBalance >= 0
   const hasFilters = !!(startDate || endDate)
 
   return (
-    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
+    <>
+      <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="flex w-full flex-col sm:max-w-lg" showCloseButton>
         <SheetHeader className="px-6 pt-6 pb-0">
           <SheetTitle>{person?.name}</SheetTitle>
@@ -243,7 +277,7 @@ function StatementSheet({
                       >
                         <ToggleButton
                           isPaid={r.isPaid}
-                          onToggle={() => toggleReceivableMut.mutate({ id: r.id, isPaid: !r.isPaid })}
+                          onToggle={() => handleReceivableToggle(r)}
                           label={r.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
                         />
                         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -287,7 +321,7 @@ function StatementSheet({
                       >
                         <ToggleButton
                           isPaid={d.isPaid}
-                          onToggle={() => toggleDebtMut.mutate({ id: d.id, isPaid: !d.isPaid })}
+                          onToggle={() => handleDebtToggle(d)}
                           label={d.isPaid ? 'Marcar como pendente' : 'Marcar como paga'}
                         />
                         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -326,7 +360,40 @@ function StatementSheet({
           ) : null}
         </div>
       </SheetContent>
-    </Sheet>
+      </Sheet>
+
+      <MarkAsPaidDialog
+        open={markPaidDebt !== null}
+        kind="debt"
+        createTransaction={user?.createExpenseOnDebtPaid ?? true}
+        onConfirm={(payload) => {
+          if (!markPaidDebt || !payload.paymentBankId || !payload.paymentType) return
+          toggleDebtMut.mutate({
+            id: markPaidDebt.id,
+            isPaid: true,
+            paymentBankId: payload.paymentBankId,
+            paymentType: payload.paymentType,
+          })
+          setMarkPaidDebt(null)
+        }}
+        onCancel={() => setMarkPaidDebt(null)}
+      />
+      <MarkAsPaidDialog
+        open={markReceivedReceivable !== null}
+        kind="receivable"
+        createTransaction={user?.createIncomeOnReceivablePaid ?? true}
+        onConfirm={(payload) => {
+          if (!markReceivedReceivable || !payload.paymentDate) return
+          toggleReceivableMut.mutate({
+            id: markReceivedReceivable.id,
+            isPaid: true,
+            paymentDate: payload.paymentDate,
+          })
+          setMarkReceivedReceivable(null)
+        }}
+        onCancel={() => setMarkReceivedReceivable(null)}
+      />
+    </>
   )
 }
 

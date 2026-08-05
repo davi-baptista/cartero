@@ -59,6 +59,12 @@ export default function ProfilePage() {
   const [salary, setSalary] = useState(
     user?.salary != null ? Number(user.salary) : 0,
   )
+  const [createIncomeOnReceivablePaid, setCreateIncomeOnReceivablePaid] = useState(
+    user?.createIncomeOnReceivablePaid ?? true,
+  )
+  const [createExpenseOnDebtPaid, setCreateExpenseOnDebtPaid] = useState(
+    user?.createExpenseOnDebtPaid ?? true,
+  )
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showNew, setShowNew] = useState(false)
@@ -69,6 +75,8 @@ export default function ProfilePage() {
     if (user) {
       setName(user.name)
       setSalary(user.salary != null ? Number(user.salary) : 0)
+      setCreateIncomeOnReceivablePaid(user.createIncomeOnReceivablePaid ?? true)
+      setCreateExpenseOnDebtPaid(user.createExpenseOnDebtPaid ?? true)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
@@ -101,6 +109,15 @@ export default function ProfilePage() {
     onError: () => toast.error('Não foi possível atualizar a senha'),
   })
 
+  const preferencesMut = useMutation({
+    mutationFn: () => updateMe({ createIncomeOnReceivablePaid, createExpenseOnDebtPaid }),
+    onSuccess: (updated) => {
+      updateUser(updated)
+      toast.success('Preferências atualizadas')
+    },
+    onError: () => toast.error('Não foi possível atualizar as preferências'),
+  })
+
   function handlePasswordSave() {
     if (newPassword.length < 6) {
       toast.error('A senha deve ter pelo menos 6 caracteres')
@@ -117,6 +134,9 @@ export default function ProfilePage() {
 
   const currentSalary = user.salary != null ? Number(user.salary) : null
   const salaryUnchanged = salary === (currentSalary ?? 0)
+  const preferencesUnchanged =
+    createIncomeOnReceivablePaid === (user.createIncomeOnReceivablePaid ?? true) &&
+    createExpenseOnDebtPaid === (user.createExpenseOnDebtPaid ?? true)
 
   return (
     <div className="flex flex-col gap-6">
@@ -204,6 +224,46 @@ export default function ProfilePage() {
               </p>
             )}
           </Field>
+        </SectionCard>
+
+        {/* Preferências financeiras */}
+        <SectionCard
+          title="Preferências financeiras"
+          description="Escolha se o sistema deve criar uma transação ao marcar um valor como pago ou recebido"
+          footer={
+            <Button
+              size="sm"
+              onClick={() => preferencesMut.mutate()}
+              disabled={preferencesMut.isPending || preferencesUnchanged}
+            >
+              {preferencesMut.isPending ? 'Salvando…' : 'Salvar'}
+            </Button>
+          }
+        >
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border/70 p-3 transition-colors hover:bg-muted/40">
+            <input
+              type="checkbox"
+              checked={createIncomeOnReceivablePaid}
+              onChange={(event) => setCreateIncomeOnReceivablePaid(event.target.checked)}
+              className="mt-0.5 size-4 accent-primary"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">Criar receita ao marcar “A Receber” como recebido</span>
+              <span className="text-xs text-muted-foreground">Gera uma receita vinculada ao recebimento.</span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border/70 p-3 transition-colors hover:bg-muted/40">
+            <input
+              type="checkbox"
+              checked={createExpenseOnDebtPaid}
+              onChange={(event) => setCreateExpenseOnDebtPaid(event.target.checked)}
+              className="mt-0.5 size-4 accent-primary"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">Criar gasto ao marcar “Dívidas” como paga</span>
+              <span className="text-xs text-muted-foreground">Gera um gasto no banco e na forma de pagamento escolhidos.</span>
+            </span>
+          </label>
         </SectionCard>
 
         {/* Senha */}

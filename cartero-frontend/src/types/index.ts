@@ -24,6 +24,8 @@ export interface User {
   email: string
   name: string
   salary?: number
+  createIncomeOnReceivablePaid: boolean
+  createExpenseOnDebtPaid: boolean
   createdAt: string
   updatedAt: string
 }

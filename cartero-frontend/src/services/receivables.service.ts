@@ -33,6 +33,7 @@ export async function updateReceivable(
     dueDate: string
     description: string
     isPaid: boolean
+    paymentDate: string
     paymentBankId?: string
     paymentType: TransactionType
   }>,

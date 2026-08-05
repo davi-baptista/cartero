@@ -13,6 +13,8 @@ model User {
   password  String
   name      String
   salary    Decimal?
+  createIncomeOnReceivablePaid Boolean @default(true)
+  createExpenseOnDebtPaid      Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -125,21 +125,21 @@ export class ReceivablesService {
     }
 
     const markingAsReceived = dto.isPaid === true;
+    const userPreferences = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { createIncomeOnReceivablePaid: true },
+    });
+    const shouldCreatePaymentTransaction =
+      markingAsReceived && userPreferences.createIncomeOnReceivablePaid;
 
-    if (markingAsReceived && !dto.paymentType) {
-      throw new BadRequestException(
-        'Informe paymentBankId e paymentType para marcar a cobrança como recebida',
-      );
-    }
-
-    const paymentBank = markingAsReceived && dto.paymentBankId
+    const paymentBank = shouldCreatePaymentTransaction && dto.paymentBankId
       ? await this.entityValidationService.validateBank(
           dto.paymentBankId,
           userId,
         )
       : null;
 
-    const { paymentBankId, paymentType, ...receivableDto } = dto;
+    const { paymentBankId, paymentType, paymentDate, ...receivableDto } = dto;
     const { title: _title, dueDate: _dueDate, ...installmentSafeDto } = receivableDto;
 
     return await this.prisma.$transaction(
@@ -158,7 +158,9 @@ export class ReceivablesService {
         for (const receivable of receivablesToUpdate) {
           const paidAt =
             dto.isPaid === true && !receivable.isPaid
-              ? new Date()
+              ? paymentDate
+                ? parseDateOnly(paymentDate)
+                : new Date()
               : dto.isPaid === false && receivable.isPaid
                 ? null
                 : undefined;
@@ -166,6 +168,7 @@ export class ReceivablesService {
           let paymentTransactionId = receivable.paymentTransactionId;
 
           if (
+            shouldCreatePaymentTransaction &&
             paidAt !== undefined &&
             paidAt !== null &&
             !receivable.paymentTransactionId

@@ -10,6 +10,8 @@ export async function updateMe(payload: {
   name?: string
   salary?: number
   password?: string
+  createIncomeOnReceivablePaid?: boolean
+  createExpenseOnDebtPaid?: boolean
 }): Promise<User> {
   const { data } = await api.patch<User>('/users/me', payload)
   return data

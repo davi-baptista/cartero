@@ -118,8 +118,14 @@ export class DebtsService {
     }
 
     const markingAsPaid = dto.isPaid === true;
+    const userPreferences = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { createExpenseOnDebtPaid: true },
+    });
+    const shouldCreatePaymentTransaction =
+      markingAsPaid && userPreferences.createExpenseOnDebtPaid;
 
-    if (markingAsPaid) {
+    if (shouldCreatePaymentTransaction) {
       if (!dto.paymentBankId || !dto.paymentType) {
         throw new BadRequestException(
           'Informe paymentBankId e paymentType para marcar a dívida como paga',
@@ -132,7 +138,7 @@ export class DebtsService {
       }
     }
 
-    const paymentBank = markingAsPaid
+    const paymentBank = shouldCreatePaymentTransaction
       ? await this.entityValidationService.validateBank(
           dto.paymentBankId as string,
           userId,
@@ -163,6 +169,7 @@ export class DebtsService {
           let paymentTransactionId = debt.paymentTransactionId;
 
           if (
+            shouldCreatePaymentTransaction &&
             paidAt !== undefined &&
             paidAt !== null &&
             !debt.paymentTransactionId
