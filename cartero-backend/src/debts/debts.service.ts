@@ -156,6 +156,11 @@ export class DebtsService {
           userId,
           normalizedScope,
         );
+        if (debtsToUpdate.some((debt) => debt.settledAt)) {
+          throw new BadRequestException(
+            'Esta dÃ­vida faz parte de um acerto concluÃ­do e nÃ£o pode mais ser alterada',
+          );
+        }
         const updatedDebts: Debt[] = [];
 
         for (const debt of debtsToUpdate) {
@@ -289,6 +294,11 @@ export class DebtsService {
           userId,
           normalizedScope,
         );
+        if (debtsToDelete.some((debt) => debt.settledAt)) {
+          throw new BadRequestException(
+            'Esta dÃ­vida faz parte de um acerto concluÃ­do e nÃ£o pode mais ser excluÃ­da',
+          );
+        }
 
         for (const debt of debtsToDelete) {
           await tx.debt.delete({

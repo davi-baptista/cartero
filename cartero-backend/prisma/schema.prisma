@@ -8,15 +8,15 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  name      String
-  salary    Decimal?
-  createIncomeOnReceivablePaid Boolean @default(true)
-  createExpenseOnDebtPaid      Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                           String   @id @default(uuid())
+  email                        String   @unique
+  password                     String
+  name                         String
+  salary                       Decimal?
+  createIncomeOnReceivablePaid Boolean  @default(true)
+  createExpenseOnDebtPaid      Boolean  @default(true)
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
 
   banks        Bank[]
   categories   Category[]
@@ -28,15 +28,15 @@ model User {
 }
 
 model Bank {
-  id               String   @id @default(uuid())
-  userId           String
-  name             String
-  isSystem         Boolean  @default(false)
-  invoiceCloseDate Int
-  invoiceDueDate   Int
-  invoiceDueDaysAfterClose Int @default(7)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @default(now())
+  id                       String   @id @default(uuid())
+  userId                   String
+  name                     String
+  isSystem                 Boolean  @default(false)
+  invoiceCloseDate         Int
+  invoiceDueDate           Int
+  invoiceDueDaysAfterClose Int      @default(7)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @default(now())
 
   user         User          @relation(fields: [userId], references: [id])
   transactions Transaction[]
@@ -116,6 +116,7 @@ model Debt {
   isAlertEnabled       Boolean   @default(true)
   isPaid               Boolean   @default(false)
   paidAt               DateTime?
+  settledAt            DateTime?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @default(now())
 
@@ -125,21 +126,22 @@ model Debt {
 }
 
 model Receivable {
-  id                   String       @id @default(uuid())
+  id                   String    @id @default(uuid())
   userId               String
   personId             String?
   parentId             String?
-  transactionId        String?      @unique
-  paymentTransactionId String?      @unique
+  transactionId        String?   @unique
+  paymentTransactionId String?   @unique
   title                String
   debtorName           String
   amount               Decimal
   description          String?
   dueDate              DateTime
-  isPaid               Boolean      @default(false)
+  isPaid               Boolean   @default(false)
   paidAt               DateTime?
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @default(now())
+  settledAt            DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @default(now())
 
   user               User         @relation(fields: [userId], references: [id])
   person             Person?      @relation(fields: [personId], references: [id])

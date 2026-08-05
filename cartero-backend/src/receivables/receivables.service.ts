@@ -150,6 +150,11 @@ export class ReceivablesService {
           userId,
           normalizedScope,
         );
+        if (receivablesToUpdate.some((receivable) => receivable.settledAt)) {
+          throw new BadRequestException(
+            'Esta cobranÃ§a faz parte de um acerto concluÃ­do e nÃ£o pode mais ser alterada',
+          );
+        }
         const updatedReceivables: Receivable[] = [];
         const receivableBank = markingAsReceived
           ? paymentBank ?? (await findOrCreateSystemReceivableBank(tx, userId))
@@ -290,6 +295,11 @@ export class ReceivablesService {
           userId,
           normalizedScope,
         );
+        if (receivablesToDelete.some((receivable) => receivable.settledAt)) {
+          throw new BadRequestException(
+            'Esta cobranÃ§a faz parte de um acerto concluÃ­do e nÃ£o pode mais ser excluÃ­da',
+          );
+        }
 
         for (const receivable of receivablesToDelete) {
           await tx.receivable.delete({

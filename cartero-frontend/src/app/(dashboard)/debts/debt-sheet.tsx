@@ -58,10 +58,11 @@ interface DebtSheetProps {
   onOpenChange: (open: boolean) => void
   editTarget: Debt | null
   editScope: InstallmentScope | null
+  initialPersonId?: string
   onSubmit: (data: DebtFormData, scope: InstallmentScope | null) => Promise<void>
 }
 
-export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit }: DebtSheetProps) {
+export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPersonId, onSubmit }: DebtSheetProps) {
   const isEditing = editTarget !== null
   const [creditorMode, setCreditorMode] = useState<CreditorMode>('manual')
   const [showInlineCreate, setShowInlineCreate] = useState(false)
@@ -121,10 +122,10 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit 
           isAlertEnabled: editTarget.isAlertEnabled,
         })
       } else {
-        setCreditorMode('manual')
+        setCreditorMode(initialPersonId ? 'person' : 'manual')
         reset({
           creditorName: '',
-          personId: undefined,
+          personId: initialPersonId,
           title: '',
           amount: 0,
           dueDate: '',
@@ -134,7 +135,7 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, onSubmit 
         })
       }
     }
-  }, [open, editTarget, reset])
+  }, [open, editTarget, initialPersonId, reset])
 
   function handleModeChange(mode: CreditorMode) {
     setCreditorMode(mode)

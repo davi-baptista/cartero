@@ -120,6 +120,7 @@ export interface Debt {
   isAlertEnabled: boolean
   isPaid: boolean
   paidAt?: string
+  settledAt?: string
   paymentTransactionId?: string
   parentId?: string
   createdAt: string
@@ -140,6 +141,7 @@ export interface Receivable {
   dueDate: string
   isPaid: boolean
   paidAt?: string
+  settledAt?: string
   parentId?: string
   createdAt: string
   updatedAt: string

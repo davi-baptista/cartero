@@ -17,6 +17,7 @@ import { CreatePersonDto } from './dto/create-person.dto';
 import { UpdatePersonDto } from './dto/update-person.dto';
 import { FindPersonsDto } from './dto/find-persons.dto';
 import { GetStatementDto } from './dto/get-statement.dto';
+import { SettlePersonDto } from './dto/settle-person.dto';
 
 @Controller('persons')
 @UseGuards(JwtAuthGuard)
@@ -49,6 +50,15 @@ export class PersonsController {
     @Query() filters: GetStatementDto,
   ) {
     return this.PersonsService.getStatement(id, user.id, filters);
+  }
+
+  @Post(':id/settle')
+  settle(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() dto: SettlePersonDto,
+  ) {
+    return this.PersonsService.settle(id, user.id, dto);
   }
 
   @Get(':id')

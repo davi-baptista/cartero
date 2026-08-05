@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { Person, PersonStatement } from '@/types'
+import type { Person, PersonStatement, TransactionType } from '@/types'
 
 export async function getPersons(): Promise<Person[]> {
   const { data } = await api.get<Person[]>('/persons')
@@ -27,5 +27,13 @@ export async function getPersonStatement(
   const { data } = await api.get<PersonStatement>(`/persons/${id}/statement`, {
     params: filters,
   })
+  return data
+}
+
+export async function settlePerson(
+  id: string,
+  payload: { paymentDate?: string; paymentBankId?: string; paymentType?: TransactionType } = {},
+): Promise<{ netBalance: number; settledDebts: number; settledReceivables: number }> {
+  const { data } = await api.post(`/persons/${id}/settle`, payload)
   return data
 }

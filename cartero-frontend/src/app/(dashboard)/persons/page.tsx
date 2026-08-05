@@ -22,6 +22,11 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePicker } from '@/components/ui/date-picker'
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
+import { InstallmentScopeDialog } from '../transactions/installment-scope-dialog'
+import { DeleteLinkedWarningDialog } from '../transactions/delete-linked-warning-dialog'
+import { DebtSheet, type DebtFormData } from '../debts/debt-sheet'
+import { ReceivableSheet, type ReceivableFormData } from '../receivables/receivable-sheet'
+import { SettlePersonDialog } from './settle-person-dialog'
 import { MonthQuickFilter } from '@/components/month-quick-filter'
 import {
   Sheet,
@@ -53,14 +58,15 @@ import {
   updatePerson,
   deletePerson,
   getPersonStatement,
+  settlePerson,
 } from '@/services/persons.service'
-import { updateDebt } from '@/services/debts.service'
-import { updateReceivable } from '@/services/receivables.service'
+import { createDebt, updateDebt, deleteDebt } from '@/services/debts.service'
+import { createReceivable, updateReceivable, deleteReceivable } from '@/services/receivables.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type { Person, Debt, Receivable } from '@/types'
-import { TransactionType } from '@/types'
+import { InstallmentScope, TransactionType } from '@/types'
 import { useAuth } from '@/providers/auth-provider'
 
 // ─── Statement sheet ─────────────────────────────────────────────────────────
@@ -69,10 +75,12 @@ function ToggleButton({
   isPaid,
   onToggle,
   label,
+  disabled = false,
 }: {
   isPaid: boolean
   onToggle: () => void
   label: string
+  disabled?: boolean
 }) {
   return (
     <motion.button
@@ -80,9 +88,13 @@ function ToggleButton({
       whileTap={{ scale: 0.85 }}
       transition={{ duration: 0.1 }}
       onClick={onToggle}
+      disabled={disabled}
       aria-label={label}
       title={label}
-      className="group/dot flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/50 ring-1 ring-border/50 transition-colors hover:bg-muted hover:ring-border"
+      className={cn(
+        'group/dot flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/50 ring-1 ring-border/50 transition-colors hover:bg-muted hover:ring-border',
+        disabled && 'cursor-not-allowed opacity-50 hover:bg-muted/50 hover:ring-border/50',
+      )}
     >
       {isPaid ? (
         <Undo2 className="size-3 text-muted-foreground/50 transition-colors group-hover/dot:text-muted-foreground" />
@@ -120,6 +132,27 @@ function StatementSheet({
   const [endDate, setEndDate] = useState<string | undefined>(defaultEnd)
   const [markPaidDebt, setMarkPaidDebt] = useState<Debt | null>(null)
   const [markReceivedReceivable, setMarkReceivedReceivable] = useState<Receivable | null>(null)
+  const [settleOpen, setSettleOpen] = useState(false)
+  const [sheetKind, setSheetKind] = useState<'debt' | 'receivable' | null>(null)
+  const [editDebt, setEditDebt] = useState<Debt | null>(null)
+  const [editReceivable, setEditReceivable] = useState<Receivable | null>(null)
+  const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
+  const [scopeDialog, setScopeDialog] = useState<{
+    kind: 'debt' | 'receivable'
+    mode: 'edit' | 'delete'
+    debt?: Debt
+    receivable?: Receivable
+  } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{
+    kind: 'debt' | 'receivable'
+    debt?: Debt
+    receivable?: Receivable
+  } | null>(null)
+  const [linkedWarningTarget, setLinkedWarningTarget] = useState<{
+    kind: 'debt' | 'receivable'
+    debt?: Debt
+    receivable?: Receivable
+  } | null>(null)
 
   useEffect(() => {
     if (person) {
@@ -133,6 +166,87 @@ function StatementSheet({
     queryFn: () => getPersonStatement(person!.id, { startDate, endDate }),
     enabled: !!person,
   })
+  const { data: allStatement } = useQuery({
+    queryKey: ['person-statement-all', person?.id],
+    queryFn: () => getPersonStatement(person!.id),
+    enabled: !!person,
+  })
+
+  async function invalidateStatement() {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['person-statement', person?.id] }),
+      qc.invalidateQueries({ queryKey: ['person-statement-all', person?.id] }),
+      qc.invalidateQueries({ queryKey: ['debts'] }),
+      qc.invalidateQueries({ queryKey: ['receivables'] }),
+      qc.invalidateQueries({ queryKey: ['transactions'] }),
+      qc.invalidateQueries({ queryKey: ['bank-invoices'] }),
+      qc.invalidateQueries({ queryKey: ['budget'] }),
+    ])
+  }
+
+  const createDebtMut = useMutation({
+    mutationFn: createDebt,
+    onSuccess: () => {
+      invalidateStatement()
+      setSheetKind(null)
+      toast.success('DÃ­vida criada')
+    },
+    onError: () => toast.error('Erro ao criar dÃ­vida'),
+  })
+
+  const createReceivableMut = useMutation({
+    mutationFn: createReceivable,
+    onSuccess: () => {
+      invalidateStatement()
+      setSheetKind(null)
+      toast.success('CobranÃ§a criada')
+    },
+    onError: () => toast.error('Erro ao criar cobranÃ§a'),
+  })
+
+  const updateDebtManageMut = useMutation({
+    mutationFn: ({ id, payload, scope }: { id: string; payload: Parameters<typeof updateDebt>[1]; scope?: InstallmentScope }) =>
+      updateDebt(id, payload, scope),
+    onSuccess: () => {
+      invalidateStatement()
+      setSheetKind(null)
+      setEditDebt(null)
+      setEditScope(null)
+      toast.success('DÃ­vida atualizada')
+    },
+    onError: () => toast.error('Erro ao salvar dÃ­vida'),
+  })
+
+  const updateReceivableManageMut = useMutation({
+    mutationFn: ({ id, payload, scope }: { id: string; payload: Parameters<typeof updateReceivable>[1]; scope?: InstallmentScope }) =>
+      updateReceivable(id, payload, scope),
+    onSuccess: () => {
+      invalidateStatement()
+      setSheetKind(null)
+      setEditReceivable(null)
+      setEditScope(null)
+      toast.success('CobranÃ§a atualizada')
+    },
+    onError: () => toast.error('Erro ao salvar cobranÃ§a'),
+  })
+
+  const deleteDebtMut = useMutation({
+    mutationFn: ({ id, scope }: { id: string; scope?: InstallmentScope }) => deleteDebt(id, scope),
+    onSuccess: () => {
+      invalidateStatement()
+      toast.success('DÃ­vida excluÃ­da')
+    },
+    onError: () => toast.error('Erro ao excluir dÃ­vida'),
+  })
+
+  const deleteReceivableMut = useMutation({
+    mutationFn: ({ id, scope }: { id: string; scope?: InstallmentScope }) => deleteReceivable(id, scope),
+    onSuccess: () => {
+      invalidateStatement()
+      toast.success('CobranÃ§a excluÃ­da')
+    },
+    onError: () => toast.error('Erro ao excluir cobranÃ§a'),
+  })
 
   const toggleDebtMut = useMutation({
     mutationFn: ({ id, isPaid, paymentBankId, paymentType }: {
@@ -141,9 +255,8 @@ function StatementSheet({
       paymentBankId?: string
       paymentType?: TransactionType
     }) => updateDebt(id, { isPaid, paymentBankId, paymentType }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['person-statement', person?.id] })
-      qc.invalidateQueries({ queryKey: ['debts'] })
+    onSuccess: async () => {
+      await invalidateStatement()
     },
     onError: () => toast.error('Erro ao atualizar — tente novamente'),
   })
@@ -154,11 +267,20 @@ function StatementSheet({
       isPaid: boolean
       paymentDate?: string
     }) => updateReceivable(id, { isPaid, paymentDate }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['person-statement', person?.id] })
-      qc.invalidateQueries({ queryKey: ['receivables'] })
+    onSuccess: async () => {
+      await invalidateStatement()
     },
     onError: () => toast.error('Erro ao atualizar — tente novamente'),
+  })
+
+  const settleMut = useMutation({
+    mutationFn: (payload: Parameters<typeof settlePerson>[1]) => settlePerson(person!.id, payload),
+    onSuccess: async (result) => {
+      await invalidateStatement()
+      setSettleOpen(false)
+      toast.success(`${result.settledDebts + result.settledReceivables} itens resolvidos`)
+    },
+    onError: () => toast.error('Não foi possível quitar o saldo'),
   })
 
   function handleDebtToggle(debt: Debt) {
@@ -181,9 +303,126 @@ function StatementSheet({
     }
   }
 
+  function openNewDebt() {
+    setEditDebt(null)
+    setEditScope(null)
+    setSheetKind('debt')
+  }
+
+  function openNewReceivable() {
+    setEditReceivable(null)
+    setEditScope(null)
+    setSheetKind('receivable')
+  }
+
+  function handleEditDebt(debt: Debt) {
+    if (debt.parentId) {
+      setScopeDialog({ kind: 'debt', mode: 'edit', debt })
+    } else {
+      setEditDebt(debt)
+      setEditScope(null)
+      setSheetKind('debt')
+    }
+  }
+
+  function handleEditReceivable(receivable: Receivable) {
+    if (receivable.parentId) {
+      setScopeDialog({ kind: 'receivable', mode: 'edit', receivable })
+    } else {
+      setEditReceivable(receivable)
+      setEditScope(null)
+      setSheetKind('receivable')
+    }
+  }
+
+  function handleDeleteDebt(debt: Debt) {
+    if (debt.paymentTransactionId && !debt.parentId) {
+      setLinkedWarningTarget({ kind: 'debt', debt })
+    } else if (debt.parentId) {
+      setScopeDialog({ kind: 'debt', mode: 'delete', debt })
+    } else {
+      setDeleteTarget({ kind: 'debt', debt })
+    }
+  }
+
+  function handleDeleteReceivable(receivable: Receivable) {
+    if ((receivable.transactionId || receivable.paymentTransactionId) && !receivable.parentId) {
+      setLinkedWarningTarget({ kind: 'receivable', receivable })
+    } else if (receivable.parentId) {
+      setScopeDialog({ kind: 'receivable', mode: 'delete', receivable })
+    } else {
+      setDeleteTarget({ kind: 'receivable', receivable })
+    }
+  }
+
+  function handleScopeConfirm(scope: InstallmentScope) {
+    if (!scopeDialog) return
+    if (scopeDialog.kind === 'debt' && scopeDialog.debt) {
+      if (scopeDialog.mode === 'delete') {
+        deleteDebtMut.mutate({ id: scopeDialog.debt.id, scope })
+      } else {
+        setEditDebt(scopeDialog.debt)
+        setEditScope(scope)
+        setSheetKind('debt')
+      }
+    } else if (scopeDialog.kind === 'receivable' && scopeDialog.receivable) {
+      if (scopeDialog.mode === 'delete') {
+        deleteReceivableMut.mutate({ id: scopeDialog.receivable.id, scope })
+      } else {
+        setEditReceivable(scopeDialog.receivable)
+        setEditScope(scope)
+        setSheetKind('receivable')
+      }
+    }
+    setScopeDialog(null)
+  }
+
+  async function handleDebtSheetSubmit(data: DebtFormData, scope: InstallmentScope | null) {
+    if (editDebt) {
+      const { installments, ...payload } = data
+      void installments
+      await updateDebtManageMut.mutateAsync({ id: editDebt.id, payload, scope: scope ?? undefined })
+    } else {
+      await createDebtMut.mutateAsync({ ...data, personId: person?.id })
+    }
+  }
+
+  async function handleReceivableSheetSubmit(data: ReceivableFormData, scope: InstallmentScope | null) {
+    if (editReceivable) {
+      const { installments, ...payload } = data
+      void installments
+      await updateReceivableManageMut.mutateAsync({ id: editReceivable.id, payload, scope: scope ?? undefined })
+    } else {
+      await createReceivableMut.mutateAsync({ ...data, personId: person?.id })
+    }
+  }
+
+  function confirmLinkedDelete() {
+    if (!linkedWarningTarget) return
+    if (linkedWarningTarget.kind === 'debt' && linkedWarningTarget.debt) {
+      deleteDebtMut.mutate({ id: linkedWarningTarget.debt.id })
+    } else if (linkedWarningTarget.kind === 'receivable' && linkedWarningTarget.receivable) {
+      deleteReceivableMut.mutate({ id: linkedWarningTarget.receivable.id })
+    }
+    setLinkedWarningTarget(null)
+  }
+
+  function confirmDelete() {
+    if (!deleteTarget) return
+    if (deleteTarget.kind === 'debt' && deleteTarget.debt) {
+      deleteDebtMut.mutate({ id: deleteTarget.debt.id })
+    } else if (deleteTarget.kind === 'receivable' && deleteTarget.receivable) {
+      deleteReceivableMut.mutate({ id: deleteTarget.receivable.id })
+    }
+    setDeleteTarget(null)
+  }
+
   const netBalance = data?.netBalance ?? 0
   const isPositive = netBalance >= 0
   const hasFilters = !!(startDate || endDate)
+  const pendingCount = (allStatement?.debts.filter((item) => !item.isPaid).length ?? 0) +
+    (allStatement?.receivables.filter((item) => !item.isPaid).length ?? 0)
+  const settlementNetBalance = allStatement?.netBalance ?? 0
 
   return (
     <>
@@ -192,6 +431,22 @@ function StatementSheet({
         <SheetHeader className="px-6 pt-6 pb-0">
           <SheetTitle>{person?.name}</SheetTitle>
           <SheetDescription>Extrato consolidado de dívidas e cobranças</SheetDescription>
+          <div className="flex gap-2 pt-2">
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={openNewReceivable}>
+              <Plus className="size-3.5" />
+              Nova cobrança
+            </Button>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={openNewDebt}>
+              <Plus className="size-3.5" />
+              Nova dívida
+            </Button>
+            {pendingCount > 0 && (
+              <Button size="sm" className="gap-1.5" disabled={!allStatement} onClick={() => setSettleOpen(true)}>
+                <Check className="size-3.5" />
+                Quitar tudo
+              </Button>
+            )}
+          </div>
         </SheetHeader>
 
         <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
@@ -277,8 +532,9 @@ function StatementSheet({
                       >
                         <ToggleButton
                           isPaid={r.isPaid}
-                          onToggle={() => handleReceivableToggle(r)}
-                          label={r.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
+                          disabled={Boolean(r.settledAt)}
+                          onToggle={() => { if (!r.settledAt) handleReceivableToggle(r) }}
+                          label={r.settledAt ? 'Acerto concluído' : r.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
                         />
                         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                           <span
@@ -303,6 +559,19 @@ function StatementSheet({
                         >
                           +{formatCurrency(r.amount)}
                         </span>
+                        {!r.settledAt && <DropdownMenu>
+                          <DropdownMenuTrigger className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted" aria-label="Ações da cobrança">
+                            <MoreVertical className="size-4" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleEditReceivable(r)}>
+                              <Pencil className="size-3.5" /> Editar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDeleteReceivable(r)} className="text-destructive focus:text-destructive">
+                              <Trash2 className="size-3.5" /> Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>}
                       </div>
                     ))}
                   </div>
@@ -321,8 +590,9 @@ function StatementSheet({
                       >
                         <ToggleButton
                           isPaid={d.isPaid}
-                          onToggle={() => handleDebtToggle(d)}
-                          label={d.isPaid ? 'Marcar como pendente' : 'Marcar como paga'}
+                          disabled={Boolean(d.settledAt)}
+                          onToggle={() => { if (!d.settledAt) handleDebtToggle(d) }}
+                          label={d.settledAt ? 'Acerto concluído' : d.isPaid ? 'Marcar como pendente' : 'Marcar como paga'}
                         />
                         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                           <span
@@ -345,6 +615,19 @@ function StatementSheet({
                         >
                           -{formatCurrency(d.amount)}
                         </span>
+                        {!d.settledAt && <DropdownMenu>
+                          <DropdownMenuTrigger className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted" aria-label="Ações da dívida">
+                            <MoreVertical className="size-4" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleEditDebt(d)}>
+                              <Pencil className="size-3.5" /> Editar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDeleteDebt(d)} className="text-destructive focus:text-destructive">
+                              <Trash2 className="size-3.5" /> Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>}
                       </div>
                     ))}
                   </div>
@@ -393,6 +676,74 @@ function StatementSheet({
         }}
         onCancel={() => setMarkReceivedReceivable(null)}
       />
+      <SettlePersonDialog
+        open={settleOpen}
+        personName={person?.name ?? ''}
+        netBalance={settlementNetBalance}
+        createIncome={user?.createIncomeOnReceivablePaid ?? true}
+        createExpense={user?.createExpenseOnDebtPaid ?? true}
+        onConfirm={(payload) => settleMut.mutate(payload)}
+        onCancel={() => setSettleOpen(false)}
+      />
+
+      <DebtSheet
+        open={sheetKind === 'debt'}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setSheetKind(null)
+            setEditDebt(null)
+            setEditScope(null)
+          }
+        }}
+        editTarget={editDebt}
+        editScope={editScope}
+        initialPersonId={person?.id}
+        onSubmit={handleDebtSheetSubmit}
+      />
+      <ReceivableSheet
+        open={sheetKind === 'receivable'}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setSheetKind(null)
+            setEditReceivable(null)
+            setEditScope(null)
+          }
+        }}
+        editTarget={editReceivable}
+        editScope={editScope}
+        initialPersonId={person?.id}
+        onSubmit={handleReceivableSheetSubmit}
+      />
+
+      <InstallmentScopeDialog
+        open={scopeDialog !== null}
+        mode={scopeDialog?.mode ?? 'edit'}
+        linkedWarning={Boolean(
+          scopeDialog?.debt?.paymentTransactionId ||
+          scopeDialog?.receivable?.transactionId ||
+          scopeDialog?.receivable?.paymentTransactionId,
+        )}
+        onConfirm={handleScopeConfirm}
+        onCancel={() => setScopeDialog(null)}
+      />
+      <DeleteLinkedWarningDialog
+        open={linkedWarningTarget !== null}
+        kind={linkedWarningTarget?.kind ?? 'debt'}
+        onConfirm={confirmLinkedDelete}
+        onCancel={() => setLinkedWarningTarget(null)}
+      />
+      <Dialog open={deleteTarget !== null} onOpenChange={(nextOpen) => !nextOpen && setDeleteTarget(null)}>
+        <DialogContent showCloseButton={false} className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Excluir {deleteTarget?.kind === 'debt' ? 'dívida' : 'cobrança'}</DialogTitle>
+            <DialogDescription>Esta ação não pode ser desfeita.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={confirmDelete}>Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

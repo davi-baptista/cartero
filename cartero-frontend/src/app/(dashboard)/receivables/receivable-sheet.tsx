@@ -57,6 +57,7 @@ interface ReceivableSheetProps {
   onOpenChange: (open: boolean) => void
   editTarget: Receivable | null
   editScope: InstallmentScope | null
+  initialPersonId?: string
   onSubmit: (data: ReceivableFormData, scope: InstallmentScope | null) => Promise<void>
 }
 
@@ -65,6 +66,7 @@ export function ReceivableSheet({
   onOpenChange,
   editTarget,
   editScope,
+  initialPersonId,
   onSubmit,
 }: ReceivableSheetProps) {
   const isEditing = editTarget !== null
@@ -124,10 +126,10 @@ export function ReceivableSheet({
           description: editTarget.description ?? '',
         })
       } else {
-        setDebtorMode('manual')
+        setDebtorMode(initialPersonId ? 'person' : 'manual')
         reset({
           debtorName: '',
-          personId: undefined,
+          personId: initialPersonId,
           title: '',
           amount: 0,
           dueDate: '',
@@ -136,7 +138,7 @@ export function ReceivableSheet({
         })
       }
     }
-  }, [open, editTarget, reset])
+  }, [open, editTarget, initialPersonId, reset])
 
   function handleModeChange(mode: DebtorMode) {
     setDebtorMode(mode)
