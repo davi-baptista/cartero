@@ -32,7 +32,13 @@ export async function getPersonStatement(
 
 export async function settlePerson(
   id: string,
-  payload: { paymentDate?: string; paymentBankId?: string; paymentType?: TransactionType } = {},
+  payload: {
+    startDate?: string
+    endDate?: string
+    paymentDate?: string
+    paymentBankId?: string
+    paymentType?: TransactionType
+  } = {},
 ): Promise<{ netBalance: number; settledDebts: number; settledReceivables: number }> {
   const { data } = await api.post(`/persons/${id}/settle`, payload)
   return data

@@ -52,7 +52,13 @@ export class ReceivablesController {
     @Param('id') id: string,
     @CurrentUser() user: User,
     @Query('scope') scope?: string,
+    @Query('preserveTransaction') preserveTransaction?: string,
   ) {
-    return this.receivablesService.remove(id, user.id, scope);
+    return this.receivablesService.remove(
+      id,
+      user.id,
+      scope,
+      preserveTransaction === 'true',
+    );
   }
 }

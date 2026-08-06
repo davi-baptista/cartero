@@ -357,8 +357,8 @@ export default function ReceivablesPage() {
   })
 
   const deleteMut = useMutation({
-    mutationFn: ({ id, scope }: { id: string; scope?: InstallmentScope }) =>
-      deleteReceivable(id, scope),
+    mutationFn: ({ id, scope, preserveTransaction }: { id: string; scope?: InstallmentScope; preserveTransaction?: boolean }) =>
+      deleteReceivable(id, scope, preserveTransaction),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['receivables'] })
       qc.invalidateQueries({ queryKey: ['transactions'] })
@@ -425,6 +425,13 @@ export default function ReceivablesPage() {
   function handleLinkedWarningConfirm() {
     if (linkedWarningTarget) {
       deleteMut.mutate({ id: linkedWarningTarget.id })
+      setLinkedWarningTarget(null)
+    }
+  }
+
+  function handleLinkedWarningDeleteOnly() {
+    if (linkedWarningTarget) {
+      deleteMut.mutate({ id: linkedWarningTarget.id, preserveTransaction: true })
       setLinkedWarningTarget(null)
     }
   }
@@ -693,6 +700,7 @@ export default function ReceivablesPage() {
         open={linkedWarningTarget !== null}
         kind="receivable"
         onConfirm={handleLinkedWarningConfirm}
+        onDeleteOnly={handleLinkedWarningDeleteOnly}
         onCancel={() => setLinkedWarningTarget(null)}
       />
 

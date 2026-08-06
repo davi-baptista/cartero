@@ -45,8 +45,15 @@ export async function updateReceivable(
   return data
 }
 
-export async function deleteReceivable(id: string, scope?: InstallmentScope): Promise<void> {
+export async function deleteReceivable(
+  id: string,
+  scope?: InstallmentScope,
+  preserveTransaction = false,
+): Promise<void> {
   await api.delete(`/receivables/${id}`, {
-    params: scope ? { scope } : undefined,
+    params: {
+      ...(scope ? { scope } : {}),
+      ...(preserveTransaction ? { preserveTransaction: 'true' } : {}),
+    },
   })
 }

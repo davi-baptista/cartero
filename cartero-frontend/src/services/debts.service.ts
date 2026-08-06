@@ -46,8 +46,15 @@ export async function updateDebt(
   return data
 }
 
-export async function deleteDebt(id: string, scope?: InstallmentScope): Promise<void> {
+export async function deleteDebt(
+  id: string,
+  scope?: InstallmentScope,
+  preserveTransaction = false,
+): Promise<void> {
   await api.delete(`/debts/${id}`, {
-    params: scope ? { scope } : undefined,
+    params: {
+      ...(scope ? { scope } : {}),
+      ...(preserveTransaction ? { preserveTransaction: 'true' } : {}),
+    },
   })
 }

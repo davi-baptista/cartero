@@ -279,7 +279,12 @@ export class DebtsService {
     );
   }
 
-  async remove(id: string, userId: string, scope?: string) {
+  async remove(
+    id: string,
+    userId: string,
+    scope?: string,
+    preserveTransaction = false,
+  ) {
     const existing = await this.entityValidationService.validateDebt(
       id,
       userId,
@@ -305,7 +310,7 @@ export class DebtsService {
             where: { id: debt.id, userId },
           });
 
-          if (debt.paymentTransactionId) {
+          if (debt.paymentTransactionId && !preserveTransaction) {
             const transaction = await tx.transaction.findUnique({
               where: { id: debt.paymentTransactionId, userId },
             });

@@ -80,9 +80,13 @@ export class PersonsService {
     const person = await this.entityValidationService.validatePerson(id, userId);
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const dueDate = {
+        gte: dto.startDate ? parseDateFilterStart(dto.startDate) : undefined,
+        lte: dto.endDate ? parseDateFilterEnd(dto.endDate) : undefined,
+      };
       const [debts, receivables, user] = await Promise.all([
-        tx.debt.findMany({ where: { userId, personId: person.id, isPaid: false } }),
-        tx.receivable.findMany({ where: { userId, personId: person.id, isPaid: false } }),
+        tx.debt.findMany({ where: { userId, personId: person.id, isPaid: false, dueDate } }),
+        tx.receivable.findMany({ where: { userId, personId: person.id, isPaid: false, dueDate } }),
         tx.user.findUniqueOrThrow({
           where: { id: userId },
           select: {
@@ -161,7 +165,7 @@ export class PersonsService {
 
       if (debts.length > 0) {
         await tx.debt.updateMany({
-          where: { userId, personId: person.id, isPaid: false },
+          where: { userId, id: { in: debts.map((debt) => debt.id) }, isPaid: false },
           data: {
             isPaid: true,
             paidAt: paymentDate,
@@ -171,7 +175,7 @@ export class PersonsService {
       }
       if (receivables.length > 0) {
         await tx.receivable.updateMany({
-          where: { userId, personId: person.id, isPaid: false },
+          where: { userId, id: { in: receivables.map((receivable) => receivable.id) }, isPaid: false },
           data: {
             isPaid: true,
             paidAt: paymentDate,

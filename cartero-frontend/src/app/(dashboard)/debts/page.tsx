@@ -365,8 +365,8 @@ export default function DebtsPage() {
   })
 
   const deleteMut = useMutation({
-    mutationFn: ({ id, scope }: { id: string; scope?: InstallmentScope }) =>
-      deleteDebt(id, scope),
+    mutationFn: ({ id, scope, preserveTransaction }: { id: string; scope?: InstallmentScope; preserveTransaction?: boolean }) =>
+      deleteDebt(id, scope, preserveTransaction),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['debts'] })
       qc.invalidateQueries({ queryKey: ['transactions'] })
@@ -433,6 +433,13 @@ export default function DebtsPage() {
   function handleLinkedWarningConfirm() {
     if (linkedWarningTarget) {
       deleteMut.mutate({ id: linkedWarningTarget.id })
+      setLinkedWarningTarget(null)
+    }
+  }
+
+  function handleLinkedWarningDeleteOnly() {
+    if (linkedWarningTarget) {
+      deleteMut.mutate({ id: linkedWarningTarget.id, preserveTransaction: true })
       setLinkedWarningTarget(null)
     }
   }
@@ -717,6 +724,7 @@ export default function DebtsPage() {
         open={linkedWarningTarget !== null}
         kind="debt"
         onConfirm={handleLinkedWarningConfirm}
+        onDeleteOnly={handleLinkedWarningDeleteOnly}
         onCancel={() => setLinkedWarningTarget(null)}
       />
 

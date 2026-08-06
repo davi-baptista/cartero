@@ -280,7 +280,12 @@ export class ReceivablesService {
     );
   }
 
-  async remove(id: string, userId: string, scope?: string) {
+  async remove(
+    id: string,
+    userId: string,
+    scope?: string,
+    preserveTransaction = false,
+  ) {
     const existing = await this.entityValidationService.validateReceivable(
       id,
       userId,
@@ -306,7 +311,7 @@ export class ReceivablesService {
             where: { id: receivable.id, userId },
           });
 
-          if (receivable.transactionId) {
+          if (receivable.transactionId && !preserveTransaction) {
             const transaction = await tx.transaction.findUnique({
               where: { id: receivable.transactionId, userId },
             });
@@ -333,7 +338,7 @@ export class ReceivablesService {
             }
           }
 
-          if (receivable.paymentTransactionId) {
+          if (receivable.paymentTransactionId && !preserveTransaction) {
             const paymentTransaction = await tx.transaction.findUnique({
               where: { id: receivable.paymentTransactionId, userId },
             });

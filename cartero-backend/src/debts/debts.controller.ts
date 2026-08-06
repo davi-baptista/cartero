@@ -52,7 +52,13 @@ export class DebtsController {
     @Param('id') id: string,
     @CurrentUser() user: User,
     @Query('scope') scope?: string,
+    @Query('preserveTransaction') preserveTransaction?: string,
   ) {
-    return this.debtsService.remove(id, user.id, scope);
+    return this.debtsService.remove(
+      id,
+      user.id,
+      scope,
+      preserveTransaction === 'true',
+    );
   }
 }

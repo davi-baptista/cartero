@@ -167,8 +167,8 @@ function StatementSheet({
     enabled: !!person,
   })
   const { data: allStatement } = useQuery({
-    queryKey: ['person-statement-all', person?.id],
-    queryFn: () => getPersonStatement(person!.id),
+    queryKey: ['person-statement-all', person?.id, startDate, endDate],
+    queryFn: () => getPersonStatement(person!.id, { startDate, endDate }),
     enabled: !!person,
   })
 
@@ -231,7 +231,8 @@ function StatementSheet({
   })
 
   const deleteDebtMut = useMutation({
-    mutationFn: ({ id, scope }: { id: string; scope?: InstallmentScope }) => deleteDebt(id, scope),
+    mutationFn: ({ id, scope, preserveTransaction }: { id: string; scope?: InstallmentScope; preserveTransaction?: boolean }) =>
+      deleteDebt(id, scope, preserveTransaction),
     onSuccess: () => {
       invalidateStatement()
       toast.success('DÃ­vida excluÃ­da')
@@ -240,7 +241,8 @@ function StatementSheet({
   })
 
   const deleteReceivableMut = useMutation({
-    mutationFn: ({ id, scope }: { id: string; scope?: InstallmentScope }) => deleteReceivable(id, scope),
+    mutationFn: ({ id, scope, preserveTransaction }: { id: string; scope?: InstallmentScope; preserveTransaction?: boolean }) =>
+      deleteReceivable(id, scope, preserveTransaction),
     onSuccess: () => {
       invalidateStatement()
       toast.success('CobranÃ§a excluÃ­da')
@@ -274,7 +276,11 @@ function StatementSheet({
   })
 
   const settleMut = useMutation({
-    mutationFn: (payload: Parameters<typeof settlePerson>[1]) => settlePerson(person!.id, payload),
+    mutationFn: (payload: Parameters<typeof settlePerson>[1]) => settlePerson(person!.id, {
+      ...payload,
+      startDate,
+      endDate,
+    }),
     onSuccess: async (result) => {
       await invalidateStatement()
       setSettleOpen(false)
@@ -403,6 +409,16 @@ function StatementSheet({
       deleteDebtMut.mutate({ id: linkedWarningTarget.debt.id })
     } else if (linkedWarningTarget.kind === 'receivable' && linkedWarningTarget.receivable) {
       deleteReceivableMut.mutate({ id: linkedWarningTarget.receivable.id })
+    }
+    setLinkedWarningTarget(null)
+  }
+
+  function confirmLinkedDeleteOnly() {
+    if (!linkedWarningTarget) return
+    if (linkedWarningTarget.kind === 'debt' && linkedWarningTarget.debt) {
+      deleteDebtMut.mutate({ id: linkedWarningTarget.debt.id, preserveTransaction: true })
+    } else if (linkedWarningTarget.kind === 'receivable' && linkedWarningTarget.receivable) {
+      deleteReceivableMut.mutate({ id: linkedWarningTarget.receivable.id, preserveTransaction: true })
     }
     setLinkedWarningTarget(null)
   }
@@ -740,6 +756,7 @@ function StatementSheet({
         open={linkedWarningTarget !== null}
         kind={linkedWarningTarget?.kind ?? 'debt'}
         onConfirm={confirmLinkedDelete}
+        onDeleteOnly={confirmLinkedDeleteOnly}
         onCancel={() => setLinkedWarningTarget(null)}
       />
       <Dialog open={deleteTarget !== null} onOpenChange={(nextOpen) => !nextOpen && setDeleteTarget(null)}>
