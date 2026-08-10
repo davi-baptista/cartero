@@ -3,6 +3,7 @@ import { Inter, Geist_Mono } from 'next/font/google'
 import { Toaster } from '@/components/ui/sonner'
 import { QueryProvider } from '@/providers/query-provider'
 import { AuthProvider } from '@/providers/auth-provider'
+import { PwaRegister } from '@/components/pwa-register'
 import './globals.css'
 
 const inter = Inter({
@@ -23,6 +24,12 @@ export const metadata: Metadata = {
     ],
     shortcut: ['/logo-vertical-sem-nome.png'],
     apple: [{ url: '/logo-vertical-sem-nome.png', type: 'image/png' }],
+  },
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Cartero',
   },
   description: 'Gestão financeira pessoal',
 }
@@ -47,6 +54,7 @@ export default function RootLayout({
             {children}
           </AuthProvider>
         </QueryProvider>
+        <PwaRegister />
         <Toaster richColors position="top-right" />
       </body>
     </html>
