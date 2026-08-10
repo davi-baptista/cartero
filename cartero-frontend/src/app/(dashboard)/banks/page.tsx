@@ -57,7 +57,9 @@ const NEAREST_INVOICE_BADGE_CLASS: Record<InvoiceUrgency, string> = {
 
 function useNearestInvoice(bank: Bank): NearestInvoiceInfo | null {
   const { data: invoices } = useQuery({
-    queryKey: ['bank-invoices-mini', bank.id],
+    // Keep this under the bank-invoices prefix so transaction mutations
+    // invalidate the amount shown in the bank list immediately.
+    queryKey: ['bank-invoices', 'mini', bank.id],
     queryFn: () => getBankInvoices(bank.id),
     staleTime: 5 * 60 * 1000,
   })

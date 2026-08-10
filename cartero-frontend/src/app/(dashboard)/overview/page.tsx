@@ -757,8 +757,8 @@ export default function OverviewPage() {
 
   // ── Queries ──
   const { data: transactions, isLoading: txLoading } = useQuery({
-    queryKey: ['transactions', { startDate, endDate }],
-    queryFn: () => getTransactions({ startDate, endDate }),
+    queryKey: ['transactions', { startDate, endDate, invoicePeriod: true }],
+    queryFn: () => getTransactions({ startDate, endDate, invoicePeriod: true }),
   })
 
   const { data: invoices = [], isLoading: invLoading } = useQuery({

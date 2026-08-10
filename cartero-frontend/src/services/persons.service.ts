@@ -6,12 +6,12 @@ export async function getPersons(): Promise<Person[]> {
   return data
 }
 
-export async function createPerson(payload: { name: string }): Promise<Person> {
+export async function createPerson(payload: { name: string; phone?: string }): Promise<Person> {
   const { data } = await api.post<Person>('/persons', payload)
   return data
 }
 
-export async function updatePerson(id: string, payload: { name: string }): Promise<Person> {
+export async function updatePerson(id: string, payload: { name: string; phone?: string | null }): Promise<Person> {
   const { data } = await api.patch<Person>(`/persons/${id}`, payload)
   return data
 }

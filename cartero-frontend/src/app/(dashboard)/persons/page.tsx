@@ -15,6 +15,7 @@ import {
   Check,
   Undo2,
   MoreVertical,
+  MessageCircle,
 } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -69,6 +70,11 @@ import type { Person, Debt, Receivable } from '@/types'
 import { InstallmentScope, TransactionType } from '@/types'
 import { useAuth } from '@/providers/auth-provider'
 
+function normalizeWhatsAppPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '')
+  return digits.startsWith('55') ? digits : `55${digits}`
+}
+
 // ─── Statement sheet ─────────────────────────────────────────────────────────
 
 function ToggleButton({
@@ -92,7 +98,7 @@ function ToggleButton({
       aria-label={label}
       title={label}
       className={cn(
-        'group/dot flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/50 ring-1 ring-border/50 transition-colors hover:bg-muted hover:ring-border',
+        'group/dot flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md bg-muted/50 ring-1 ring-border/50 transition-colors hover:bg-muted hover:ring-border',
         disabled && 'cursor-not-allowed opacity-50 hover:bg-muted/50 hover:ring-border/50',
       )}
     >
@@ -440,14 +446,46 @@ function StatementSheet({
     (allStatement?.receivables.filter((item) => !item.isPaid).length ?? 0)
   const settlementNetBalance = allStatement?.netBalance ?? 0
 
+  function sendReceivablesToWhatsApp() {
+    if (!person?.phone) {
+      toast.error('Cadastre o número de WhatsApp desta pessoa primeiro')
+      return
+    }
+
+    const pendingReceivables = (data?.receivables ?? []).filter((item) => !item.isPaid)
+    if (pendingReceivables.length === 0) {
+      toast.info('Não há cobranças pendentes no período selecionado')
+      return
+    }
+
+    const periodLabel = startDate && endDate
+      ? `${formatDate(startDate)} a ${formatDate(endDate)}`
+      : 'período selecionado'
+    const total = pendingReceivables.reduce((sum, item) => sum + Number(item.amount), 0)
+    const items = pendingReceivables
+      .map((item) => `• ${item.title} — ${formatCurrency(Number(item.amount))} — vence ${formatDate(item.dueDate)}`)
+      .join('\n')
+    const message = [
+      `Oi, ${person.name}!`,
+      '',
+      `Segue o resumo das cobranças pendentes do período de ${periodLabel}:`,
+      items,
+      '',
+      `Total: ${formatCurrency(total)}`,
+    ].join('\n')
+
+    const phone = normalizeWhatsAppPhone(person.phone)
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
+  }
+
   return (
     <>
       <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="flex w-full flex-col sm:max-w-lg" showCloseButton>
         <SheetHeader className="px-6 pt-6 pb-0">
-          <SheetTitle>{person?.name}</SheetTitle>
+          <SheetTitle className="mr-8 truncate">{person?.name}</SheetTitle>
           <SheetDescription>Extrato consolidado de dívidas e cobranças</SheetDescription>
-          <div className="pt-2">
+          <div className="flex items-center gap-2 pt-2">
             <DropdownMenu>
               <DropdownMenuTrigger className={buttonVariants({ variant: 'outline', size: 'sm', className: 'gap-1.5' })}>
                 <Plus className="size-3.5" />
@@ -464,6 +502,16 @@ function StatementSheet({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-receivable hover:text-receivable"
+              onClick={sendReceivablesToWhatsApp}
+            >
+              <MessageCircle className="size-3.5" />
+              Cobrar no WhatsApp
+            </Button>
           </div>
         </SheetHeader>
 
@@ -786,13 +834,17 @@ function PersonFormSheet({
   open: boolean
   onOpenChange: (o: boolean) => void
   editTarget: Person | null
-  onSubmit: (name: string) => Promise<void>
+  onSubmit: (name: string, phone: string) => Promise<void>
 }) {
   const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    if (open) setName(editTarget?.name ?? '')
+    if (open) {
+      setName(editTarget?.name ?? '')
+      setPhone(editTarget?.phone ?? '')
+    }
   }, [open, editTarget])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -800,8 +852,9 @@ function PersonFormSheet({
     if (!name.trim()) return
     setSubmitting(true)
     try {
-      await onSubmit(name.trim())
+      await onSubmit(name.trim(), phone.trim())
       setName('')
+      setPhone('')
     } finally {
       setSubmitting(false)
     }
@@ -831,6 +884,20 @@ function PersonFormSheet({
               onChange={(e) => setName(e.target.value)}
               autoFocus
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="phone">WhatsApp (opcional)</Label>
+            <Input
+              id="phone"
+              type="tel"
+              inputMode="tel"
+              placeholder="Ex: (85) 99999-9999"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Inclua o DDD. O código do Brasil (+55) será adicionado automaticamente.
+            </p>
           </div>
         </form>
 
@@ -864,7 +931,8 @@ export default function PersonsPage() {
   })
 
   const createMut = useMutation({
-    mutationFn: (name: string) => createPerson({ name }),
+    mutationFn: ({ name, phone }: { name: string; phone: string }) =>
+      createPerson({ name, phone: phone || undefined }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['persons'] })
       setFormOpen(false)
@@ -874,7 +942,8 @@ export default function PersonsPage() {
   })
 
   const updateMut = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) => updatePerson(id, { name }),
+    mutationFn: ({ id, name, phone }: { id: string; name: string; phone: string }) =>
+      updatePerson(id, { name, phone: phone || null }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['persons'] })
       qc.invalidateQueries({ queryKey: ['debts'] })
@@ -897,11 +966,11 @@ export default function PersonsPage() {
     onError: () => toast.error('Erro ao remover — tente novamente'),
   })
 
-  async function handleFormSubmit(name: string) {
+  async function handleFormSubmit(name: string, phone: string) {
     if (editTarget) {
-      await updateMut.mutateAsync({ id: editTarget.id, name })
+      await updateMut.mutateAsync({ id: editTarget.id, name, phone })
     } else {
-      await createMut.mutateAsync(name)
+      await createMut.mutateAsync({ name, phone })
     }
   }
 
@@ -971,7 +1040,7 @@ export default function PersonsPage() {
                   {/* Name */}
                   <button
                     type="button"
-                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
                     onClick={() => setStatementPerson(person)}
                   >
                     <span className="truncate text-sm font-medium">{person.name}</span>

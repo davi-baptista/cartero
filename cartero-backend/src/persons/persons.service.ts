@@ -38,6 +38,7 @@ export class PersonsService {
       data: {
         userId,
         name: dto.name,
+        phone: dto.phone?.trim() || null,
       },
     });
   }
@@ -62,7 +63,10 @@ export class PersonsService {
 
     return await this.prisma.person.update({
       where: { id, userId },
-      data: dto,
+      data: {
+        ...dto,
+        phone: dto.phone === undefined ? undefined : dto.phone?.trim() || null,
+      },
     });
   }
 

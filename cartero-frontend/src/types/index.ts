@@ -94,6 +94,7 @@ export interface Person {
   id: string
   userId: string
   name: string
+  phone?: string | null
   createdAt: string
   updatedAt: string
 }
