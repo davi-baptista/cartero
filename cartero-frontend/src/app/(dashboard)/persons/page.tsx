@@ -16,6 +16,7 @@ import {
   Undo2,
   MoreVertical,
   MessageCircle,
+  FileText,
 } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -65,6 +66,7 @@ import { createDebt, updateDebt, deleteDebt } from '@/services/debts.service'
 import { createReceivable, updateReceivable, deleteReceivable } from '@/services/receivables.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { formatDateValue } from '@/lib/date'
+import { generateStatementPdf, statementPdfFileName } from '@/lib/statement-pdf'
 import { cn } from '@/lib/utils'
 import type { Person, Debt, Receivable } from '@/types'
 import { InstallmentScope, TransactionType } from '@/types'
@@ -446,53 +448,99 @@ function StatementSheet({
     (allStatement?.receivables.filter((item) => !item.isPaid).length ?? 0)
   const settlementNetBalance = allStatement?.netBalance ?? 0
 
-  function sendStatementToWhatsApp() {
+  function buildStatementContext() {
     if (!person?.phone) {
       toast.error('Cadastre o número de WhatsApp desta pessoa primeiro')
-      return
+      return null
     }
 
     const pendingReceivables = (data?.receivables ?? []).filter((item) => !item.isPaid)
     const pendingDebts = (data?.debts ?? []).filter((item) => !item.isPaid)
     if (pendingReceivables.length === 0 && pendingDebts.length === 0) {
       toast.info('Não há pendências no período selecionado')
-      return
+      return null
     }
 
     const periodLabel = startDate && endDate
       ? `${formatDate(startDate)} a ${formatDate(endDate)}`
       : 'período selecionado'
-    const receivableItems = pendingReceivables
-      .map((item) => `• ${item.title} — ${formatCurrency(Number(item.amount))} — vence ${formatDate(item.dueDate)}`)
-      .join('\n')
-    const debtItems = pendingDebts
-      .map((item) => `• ${item.title} — ${formatCurrency(Number(item.amount))} — vence ${formatDate(item.dueDate)}`)
-      .join('\n')
+
+    return { person, pendingReceivables, pendingDebts, periodLabel }
+  }
+
+  function buildWhatsAppMessage({
+    person,
+    pendingReceivables,
+    pendingDebts,
+    periodLabel,
+  }: NonNullable<ReturnType<typeof buildStatementContext>>) {
+    const totalReceivable = pendingReceivables.reduce((sum, item) => sum + Number(item.amount), 0)
+    const totalDebt = pendingDebts.reduce((sum, item) => sum + Number(item.amount), 0)
     const balance = Number(data?.netBalance ?? 0)
     const balanceLine = balance > 0.005
-      ? `Saldo: você me deve ${formatCurrency(balance)}.`
+      ? `Saldo: você me deve *${formatCurrency(balance)}*.`
       : balance < -0.005
-        ? `Saldo: eu te devo ${formatCurrency(Math.abs(balance))}.`
+        ? `Saldo: eu te devo *${formatCurrency(Math.abs(balance))}*.`
         : 'Saldo: estamos quites neste período.'
-    const sections = [
+    const breakdownLines = [
       pendingReceivables.length > 0
-        ? `Valores que você me deve:\n${receivableItems}`
+        ? `Você me deve: *${formatCurrency(totalReceivable)}* (${pendingReceivables.length} ${pendingReceivables.length === 1 ? 'pendência' : 'pendências'})`
         : '',
       pendingDebts.length > 0
-        ? `Valores que eu te devo:\n${debtItems}`
+        ? `Eu te devo: *${formatCurrency(totalDebt)}* (${pendingDebts.length} ${pendingDebts.length === 1 ? 'pendência' : 'pendências'})`
         : '',
     ].filter(Boolean)
-    const message = [
+
+    return [
       `Oi, ${person.name}!`,
       '',
-      `Segue o resumo do nosso extrato no período de ${periodLabel}:`,
+      `Resumo do nosso extrato — ${periodLabel}:`,
       '',
-      sections.join('\n\n'),
+      breakdownLines.join('\n'),
       '',
       balanceLine,
     ].join('\n')
+  }
 
-    const phone = normalizeWhatsAppPhone(person.phone)
+  function sendStatementToWhatsApp() {
+    const context = buildStatementContext()
+    if (!context) return
+
+    const message = buildWhatsAppMessage(context)
+    const phone = normalizeWhatsAppPhone(context.person.phone!)
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
+  }
+
+  async function sendStatementPdfToWhatsApp() {
+    const context = buildStatementContext()
+    if (!context) return
+    const { person, pendingReceivables, pendingDebts, periodLabel } = context
+
+    const doc = await generateStatementPdf({
+      personName: person.name,
+      periodLabel,
+      netBalance: Number(data?.netBalance ?? 0),
+      receivables: pendingReceivables,
+      debts: pendingDebts,
+    })
+    const fileName = statementPdfFileName(person.name)
+    const message = buildWhatsAppMessage(context)
+    const phone = normalizeWhatsAppPhone(person.phone!)
+
+    const pdfBlob = doc.output('blob')
+    const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' })
+
+    if (navigator.canShare?.({ files: [pdfFile] })) {
+      try {
+        await navigator.share({ files: [pdfFile], text: message })
+        return
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return
+      }
+    }
+
+    doc.save(fileName)
+    toast.info('PDF baixado — anexe o arquivo na conversa que vai abrir no WhatsApp')
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
   }
 
@@ -503,7 +551,7 @@ function StatementSheet({
         <SheetHeader className="px-6 pt-6 pb-0">
           <SheetTitle className="mr-8 truncate">{person?.name}</SheetTitle>
           <SheetDescription>Extrato consolidado de dívidas e cobranças</SheetDescription>
-          <div className="flex items-center gap-2 pt-2">
+          <div className="flex flex-wrap items-center gap-2 pt-2">
             <DropdownMenu>
               <DropdownMenuTrigger className={buttonVariants({ variant: 'outline', size: 'sm', className: 'gap-1.5' })}>
                 <Plus className="size-3.5" />
@@ -529,6 +577,16 @@ function StatementSheet({
             >
               <MessageCircle className="size-3.5" />
               Enviar no WhatsApp
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-receivable hover:text-receivable"
+              onClick={sendStatementPdfToWhatsApp}
+            >
+              <FileText className="size-3.5" />
+              PDF + WhatsApp
             </Button>
           </div>
         </SheetHeader>
