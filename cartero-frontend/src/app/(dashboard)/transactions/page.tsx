@@ -77,6 +77,16 @@ const EXPENSE_BG = 'var(--color-expense-bg)'
 const EXPENSE_ICON_CLR = 'var(--color-expense-icon)'
 const INCOME_COLOR = 'var(--color-income)'
 
+const INVOICE_MONTHS = [
+  'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
+  'jul', 'ago', 'set', 'out', 'nov', 'dez',
+]
+
+function formatInvoicePeriod(invoice?: Transaction['invoice']) {
+  if (!invoice) return null
+  return `${INVOICE_MONTHS[invoice.month - 1] ?? invoice.month}/${invoice.year}`
+}
+
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 const CategoryBadge = memo(function CategoryBadge({ icon, color, name }: { icon?: string | null; color?: string | null; name: string }) {
@@ -154,6 +164,14 @@ function TransactionRow({
               <>
                 <span aria-hidden>·</span>
                 <span className="shrink-0 text-primary/60">parcelado</span>
+              </>
+            )}
+            {tx.invoice && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="shrink-0 text-muted-foreground/70">
+                  fatura {formatInvoicePeriod(tx.invoice)}
+                </span>
               </>
             )}
             {tx.person && (
@@ -291,6 +309,11 @@ function TransactionDetailsDialog({
           {installment && (
             <DetailRow label="Lançamento">Parcelado</DetailRow>
           )}
+          {transaction.invoice && (
+            <DetailRow label="Fatura">
+              {formatInvoicePeriod(transaction.invoice)}
+            </DetailRow>
+          )}
           {transaction.description && (
             <DetailRow label="Descrição">
               <span className="whitespace-pre-wrap">{transaction.description}</span>
@@ -364,6 +387,7 @@ interface FilterState {
   bankId?: string
   categoryId?: string
   type?: TransactionType
+  invoicePeriod?: boolean
 }
 
 // ─── Page ────────────────────────────────────────────────────────────────────
@@ -405,7 +429,7 @@ export default function TransactionsPage() {
   // ── Queries ──
   const { data: transactions, isLoading: txLoading } = useQuery({
     queryKey: ['transactions', filters],
-    queryFn: () => getTransactions(filters),
+    queryFn: () => getTransactions({ ...filters, invoicePeriod: true }),
   })
 
   const { data: banks = [] } = useQuery({

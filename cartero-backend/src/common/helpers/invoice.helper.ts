@@ -50,10 +50,6 @@ function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
-function isSamePeriod(date: Date, year: number, month: number): boolean {
-  return date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month;
-}
-
 function intervalDays(bank: Pick<Bank, 'invoiceDueDaysAfterClose'>): number {
   return Math.max(
     1,
@@ -66,11 +62,11 @@ function closeOffsetDays(bank: Pick<Bank, 'invoiceDueDaysAfterClose'>): number {
 }
 
 /**
- * Invoice periods are identified by the month in which the statement closes.
- * The due date is calculated from the configured due day and the number of
- * calendar days between closing and due date. An interval of 7 means closing
- * is seven calendar days before the due date.
- * Due days beyond the end of a month are clamped to that month's last day.
+ * Invoice periods are identified by the month in which the invoice is due.
+ * The closing date is calculated backwards from that due date using the
+ * configured number of calendar days. This is important for cards that close
+ * near the end of one month and are due early in the next one: an invoice for
+ * August can close on July 30 and still be the August invoice.
  */
 export function getInvoiceCloseDateForPeriod(
   bank: InvoiceSchedule,
@@ -86,17 +82,9 @@ export function getInvoiceDueDateForPeriod(
   year: number,
   month: number,
 ): Date {
-  const days = closeOffsetDays(bank);
-
-  // A period's due date is normally in the same month as its close date. If
-  // subtracting the interval would move closing into the previous month, use
-  // the next month's occurrence of the due day instead (close 30, due 6).
-  const sameMonthDue = dateForDayUtc(year, month, bank.invoiceDueDate);
-  if (isSamePeriod(addDays(sameMonthDue, -days), year, month)) {
-    return sameMonthDue;
-  }
-
-  return dateForDayUtc(year, month + 1, bank.invoiceDueDate);
+  // The invoice period always follows the due month. The close date may be
+  // in the previous month; that does not change the invoice's month/year.
+  return dateForDayUtc(year, month, bank.invoiceDueDate);
 }
 
 export function getInvoiceDueDate(bank: Bank, invoice: Invoice): Date {
@@ -111,7 +99,9 @@ export function getInvoicePeriodForDate(
   let year = transactionDate.getUTCFullYear();
 
   const closeDate = getInvoiceCloseDateForPeriod(bank, year, month);
-  if (transactionDate >= closeDate) {
+  // The closing day belongs to the current invoice; transactions after it
+  // move to the next invoice (whose due date is in the following month).
+  if (transactionDate > closeDate) {
     month = (month % 12) + 1;
     if (month === 1) year += 1;
   }

@@ -197,24 +197,78 @@ export class TransactionsService {
   }
 
   async findAll(userId: string, filters: FindTransactionsDto = {}) {
+    const dateFilter = {
+      gte: filters.startDate ? parseDateFilterStart(filters.startDate) : undefined,
+      lte: filters.endDate ? parseDateFilterEnd(filters.endDate) : undefined,
+    };
+
+    const invoicePeriods = filters.invoicePeriod
+      ? this.getInvoicePeriods(filters.startDate, filters.endDate)
+      : [];
+
+    // The original purchase date is intentionally preserved on every
+    // installment. For the transactions screen, however, a credit-card
+    // installment belongs to the month of its linked invoice. Non-card
+    // transactions still use their own date.
+    const periodFilter =
+      filters.invoicePeriod && invoicePeriods.length > 0
+        ? {
+            OR: [
+              {
+                invoice: {
+                  OR: invoicePeriods.map(({ year, month }) => ({ year, month })),
+                },
+              },
+              {
+                invoiceId: null,
+                date: dateFilter,
+              },
+            ],
+          }
+        : { date: dateFilter };
+
     return await this.prisma.transaction.findMany({
       where: {
         userId,
         categoryId: filters.categoryId,
         bankId: filters.bankId,
         type: filters.type,
-        date: {
-          gte: filters.startDate ? parseDateFilterStart(filters.startDate) : undefined,
-          lte: filters.endDate ? parseDateFilterEnd(filters.endDate) : undefined,
-        },
+        ...periodFilter,
       },
       include: {
         bank: { select: { id: true, name: true, isSystem: true } },
         category: { select: { id: true, name: true, color: true, icon: true } },
         person: { select: { id: true, name: true } },
+        invoice: { select: { id: true, month: true, year: true, status: true } },
       },
       orderBy: { date: 'desc' },
     });
+  }
+
+  private getInvoicePeriods(
+    startDate?: string,
+    endDate?: string,
+  ): Array<{ year: number; month: number }> {
+    const start = startDate?.slice(0, 10).split('-').map(Number);
+    const end = endDate?.slice(0, 10).split('-').map(Number);
+
+    if (!start || start.length !== 3 || !end || end.length !== 3) {
+      return [];
+    }
+
+    const periods: Array<{ year: number; month: number }> = [];
+    const cursor = new Date(Date.UTC(start[0], start[1] - 1, 1));
+    const last = new Date(Date.UTC(end[0], end[1] - 1, 1));
+
+    while (cursor <= last) {
+      periods.push({
+        year: cursor.getUTCFullYear(),
+        month: cursor.getUTCMonth() + 1,
+      });
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+
+    return periods;
   }
 
   async update(

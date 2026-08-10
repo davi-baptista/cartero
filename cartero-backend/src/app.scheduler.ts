@@ -30,8 +30,8 @@ export class AppScheduler implements OnApplicationBootstrap {
     const now = new Date();
 
     for (const invoice of invoices) {
-      // Fortaleza is UTC-3. The helper also handles cycles that cross the
-      // calendar boundary (close 30, due 6 => due in the following month).
+      // Fortaleza is UTC-3. The invoice month follows the due month even when
+      // the closing date falls in the previous calendar month.
       const closeDate = getInvoiceCloseDateForPeriod(
         invoice.bank,
         invoice.year,

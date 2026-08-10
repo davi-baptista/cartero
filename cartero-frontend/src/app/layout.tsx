@@ -17,6 +17,13 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'Cartero',
+  icons: {
+    icon: [
+      { url: '/logo-vertical-sem-nome.png', type: 'image/png', sizes: '1024x1024' },
+    ],
+    shortcut: ['/logo-vertical-sem-nome.png'],
+    apple: [{ url: '/logo-vertical-sem-nome.png', type: 'image/png' }],
+  },
   description: 'Gestão financeira pessoal',
 }
 
@@ -30,6 +37,10 @@ export default function RootLayout({
       lang="pt-BR"
       className={`${inter.variable} ${geistMono.variable} dark`}
     >
+      <head>
+        <link rel="icon" href="/logo-vertical-sem-nome.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/logo-vertical-sem-nome.png" />
+      </head>
       <body className="min-h-screen bg-background text-foreground antialiased">
         <QueryProvider>
           <AuthProvider>

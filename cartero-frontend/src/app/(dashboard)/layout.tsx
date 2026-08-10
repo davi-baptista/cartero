@@ -36,6 +36,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useAuth } from '@/providers/auth-provider'
 import { Skeleton } from '@/components/ui/skeleton'
 import { NavigationProgress } from '@/components/ui/navigation-progress'
+import Image from 'next/image'
 
 function SidebarNav({ pathname }: { pathname: string }) {
   const { isMobile, setOpenMobile } = useSidebar()
@@ -150,10 +151,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className="text-primary"
             />
           </svg>
-          {/* Brand monogram */}
-          <div className="flex size-10 items-center justify-center rounded-xl bg-primary text-[15px] font-bold text-primary-foreground select-none">
-            C
-          </div>
+          {/* Brand */}
+          <Image
+            src="/logo-vertical-.png"
+            alt="Cartero"
+            width={96}
+            height={96}
+            className="size-24 object-contain"
+            priority
+            unoptimized
+          />
         </div>
       </div>
     )
@@ -178,11 +185,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Sidebar collapsible="icon">
           {/* Brand */}
           <SidebarHeader className="px-4 py-5 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-4">
-            <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
-              <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-[11px] font-bold text-primary-foreground select-none">
-                C
-              </div>
-              <span className="text-[15px] font-semibold tracking-tight group-data-[collapsible=icon]:hidden">Cartero</span>
+            <div className="flex items-center group-data-[collapsible=icon]:justify-center">
+              <Image
+                src="/logo-vertical-sem-nome.png"
+                alt="Cartero"
+                width={28}
+                height={28}
+                className="size-7 shrink-0 object-contain group-data-[collapsible=icon]:block hidden"
+                unoptimized
+              />
+              <Image
+                src="/logo-horizontal.png"
+                alt="Cartero"
+                width={112}
+                height={28}
+                className="h-7 w-auto object-contain group-data-[collapsible=icon]:hidden"
+                unoptimized
+              />
             </div>
           </SidebarHeader>
 
@@ -213,6 +232,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
             <SidebarToggle />
+            <Image
+              src="/logo-vertical-sem-nome.png"
+              alt="Cartero"
+              width={28}
+              height={28}
+              className="size-7 object-contain md:hidden"
+              unoptimized
+            />
             {currentPageLabel && (
               <>
                 <div className="h-4 w-px bg-border" aria-hidden />

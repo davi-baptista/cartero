@@ -158,6 +158,7 @@ export interface TransactionFilters {
   bankId?: string
   categoryId?: string
   type?: TransactionType
+  invoicePeriod?: boolean
 }
 
 export interface ApiError {

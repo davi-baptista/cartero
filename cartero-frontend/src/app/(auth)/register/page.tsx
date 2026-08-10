@@ -13,6 +13,7 @@ import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/providers/auth-provider'
 import { register as registerService } from '@/services/auth.service'
+import Image from 'next/image'
 
 const schema = z.object({
   name: z.string().min(2, 'Nome deve ter ao menos 2 caracteres'),
@@ -45,7 +46,9 @@ export default function RegisterPage() {
   return (
     <div className="rounded-xl border border-border bg-card px-8 py-8">
       <div className="mb-7">
-        <p className="mb-2 text-sm font-semibold text-primary">Cartero</p>
+        <div className="mb-3 flex items-center">
+          <Image src="/logo-horizontal.png" alt="Cartero" width={128} height={32} className="h-8 w-auto object-contain" unoptimized />
+        </div>
         <h1 className="text-xl font-semibold tracking-tight">Criar conta</h1>
         <p className="mt-1 text-sm text-muted-foreground">Preencha seus dados para começar</p>
       </div>
