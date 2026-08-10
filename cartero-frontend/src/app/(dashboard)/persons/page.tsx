@@ -446,32 +446,50 @@ function StatementSheet({
     (allStatement?.receivables.filter((item) => !item.isPaid).length ?? 0)
   const settlementNetBalance = allStatement?.netBalance ?? 0
 
-  function sendReceivablesToWhatsApp() {
+  function sendStatementToWhatsApp() {
     if (!person?.phone) {
       toast.error('Cadastre o número de WhatsApp desta pessoa primeiro')
       return
     }
 
     const pendingReceivables = (data?.receivables ?? []).filter((item) => !item.isPaid)
-    if (pendingReceivables.length === 0) {
-      toast.info('Não há cobranças pendentes no período selecionado')
+    const pendingDebts = (data?.debts ?? []).filter((item) => !item.isPaid)
+    if (pendingReceivables.length === 0 && pendingDebts.length === 0) {
+      toast.info('Não há pendências no período selecionado')
       return
     }
 
     const periodLabel = startDate && endDate
       ? `${formatDate(startDate)} a ${formatDate(endDate)}`
       : 'período selecionado'
-    const total = pendingReceivables.reduce((sum, item) => sum + Number(item.amount), 0)
-    const items = pendingReceivables
+    const receivableItems = pendingReceivables
       .map((item) => `• ${item.title} — ${formatCurrency(Number(item.amount))} — vence ${formatDate(item.dueDate)}`)
       .join('\n')
+    const debtItems = pendingDebts
+      .map((item) => `• ${item.title} — ${formatCurrency(Number(item.amount))} — vence ${formatDate(item.dueDate)}`)
+      .join('\n')
+    const balance = Number(data?.netBalance ?? 0)
+    const balanceLine = balance > 0.005
+      ? `Saldo: você me deve ${formatCurrency(balance)}.`
+      : balance < -0.005
+        ? `Saldo: eu te devo ${formatCurrency(Math.abs(balance))}.`
+        : 'Saldo: estamos quites neste período.'
+    const sections = [
+      pendingReceivables.length > 0
+        ? `Valores que você me deve:\n${receivableItems}`
+        : '',
+      pendingDebts.length > 0
+        ? `Valores que eu te devo:\n${debtItems}`
+        : '',
+    ].filter(Boolean)
     const message = [
       `Oi, ${person.name}!`,
       '',
-      `Segue o resumo das cobranças pendentes do período de ${periodLabel}:`,
-      items,
+      `Segue o resumo do nosso extrato no período de ${periodLabel}:`,
       '',
-      `Total: ${formatCurrency(total)}`,
+      sections.join('\n\n'),
+      '',
+      balanceLine,
     ].join('\n')
 
     const phone = normalizeWhatsAppPhone(person.phone)
@@ -507,10 +525,10 @@ function StatementSheet({
               variant="outline"
               size="sm"
               className="gap-1.5 text-receivable hover:text-receivable"
-              onClick={sendReceivablesToWhatsApp}
+              onClick={sendStatementToWhatsApp}
             >
               <MessageCircle className="size-3.5" />
-              Cobrar no WhatsApp
+              Enviar no WhatsApp
             </Button>
           </div>
         </SheetHeader>
