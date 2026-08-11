@@ -107,7 +107,11 @@ export function SettlePersonDialog({
                 <div className="flex flex-col gap-1.5">
                   <Label>Forma de pagamento</Label>
                   <Select<TransactionType> value={paymentType || null} onValueChange={(value) => setPaymentType(value ? value as TransactionType : '')}>
-                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione">
+                        {paymentType ? TRANSACTION_TYPE_LABELS[paymentType] : undefined}
+                      </SelectValue>
+                    </SelectTrigger>
                     <SelectContent alignItemWithTrigger={false}>
                       {PAYMENT_TYPES.map((type) => <SelectItem key={type} value={type}>{TRANSACTION_TYPE_LABELS[type]}</SelectItem>)}
                     </SelectContent>

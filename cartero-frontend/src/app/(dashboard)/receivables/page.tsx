@@ -715,7 +715,7 @@ export default function ReceivablesPage() {
       <MarkAsPaidDialog
         open={markPaidTarget !== null}
         kind="receivable"
-        createTransaction={user?.createIncomeOnReceivablePaid ?? true}
+        createTransaction={user?.createIncomeOnReceivablePaid ?? false}
         onConfirm={handleMarkPaidConfirm}
         onCancel={() => setMarkPaidTarget(null)}
       />

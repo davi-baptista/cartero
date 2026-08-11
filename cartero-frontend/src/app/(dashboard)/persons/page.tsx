@@ -608,49 +608,53 @@ function StatementSheet({
         <SheetHeader className="px-6 pt-6 pb-0">
           <SheetTitle className="mr-8 truncate">{person?.name}</SheetTitle>
           <SheetDescription>Extrato consolidado de dívidas e cobranças</SheetDescription>
-          <div className="flex flex-wrap items-center gap-2 pt-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger className={buttonVariants({ variant: 'outline', size: 'sm', className: 'gap-1.5' })}>
-                <Plus className="size-3.5" />
-                Adicionar
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="min-w-44">
-                <DropdownMenuItem onClick={openNewReceivable}>
+          <div className="flex flex-col gap-2 pt-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger className={buttonVariants({ variant: 'outline', size: 'sm', className: 'gap-1.5' })}>
                   <Plus className="size-3.5" />
-                  Nova cobrança
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={openNewDebt}>
-                  <Plus className="size-3.5" />
-                  Nova dívida
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={sendStatementToWhatsApp}
-            >
-              <MessageCircle className="size-3.5" />
-              Enviar no WhatsApp
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger className={buttonVariants({ variant: 'outline', size: 'sm', className: 'gap-1.5' })}>
-                <FileText className="size-3.5" />
-                Extrato em PDF
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="min-w-48">
-                <DropdownMenuItem onClick={downloadStatementPdf}>
-                  <Download className="size-3.5" />
-                  Baixar PDF
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={shareStatementPdf}>
-                  <Share2 className="size-3.5" />
-                  Compartilhar PDF
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  Adicionar dívida ou cobrança
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="min-w-44">
+                  <DropdownMenuItem onClick={openNewReceivable}>
+                    <Plus className="size-3.5" />
+                    Nova cobrança
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={openNewDebt}>
+                    <Plus className="size-3.5" />
+                    Nova dívida
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={sendStatementToWhatsApp}
+              >
+                <MessageCircle className="size-3.5" />
+                Enviar no WhatsApp
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger className={buttonVariants({ variant: 'outline', size: 'sm', className: 'gap-1.5' })}>
+                  <FileText className="size-3.5" />
+                  Extrato em PDF
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="min-w-48">
+                  <DropdownMenuItem onClick={downloadStatementPdf}>
+                    <Download className="size-3.5" />
+                    Baixar PDF
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={shareStatementPdf}>
+                    <Share2 className="size-3.5" />
+                    Compartilhar PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </SheetHeader>
 
@@ -859,7 +863,7 @@ function StatementSheet({
       <MarkAsPaidDialog
         open={markPaidDebt !== null}
         kind="debt"
-        createTransaction={user?.createExpenseOnDebtPaid ?? true}
+        createTransaction={user?.createExpenseOnDebtPaid ?? false}
         onConfirm={(payload) => {
           if (!markPaidDebt || !payload.paymentBankId || !payload.paymentType) return
           toggleDebtMut.mutate({
@@ -875,7 +879,7 @@ function StatementSheet({
       <MarkAsPaidDialog
         open={markReceivedReceivable !== null}
         kind="receivable"
-        createTransaction={user?.createIncomeOnReceivablePaid ?? true}
+        createTransaction={user?.createIncomeOnReceivablePaid ?? false}
         onConfirm={(payload) => {
           if (!markReceivedReceivable || !payload.paymentDate) return
           toggleReceivableMut.mutate({
@@ -899,8 +903,8 @@ function StatementSheet({
         netBalance={settlementNetBalance}
         hasPendingDebts={pendingDebtsCount > 0}
         hasPendingReceivables={pendingReceivablesCount > 0}
-        createIncome={user?.createIncomeOnReceivablePaid ?? true}
-        createExpense={user?.createExpenseOnDebtPaid ?? true}
+        createIncome={user?.createIncomeOnReceivablePaid ?? false}
+        createExpense={user?.createExpenseOnDebtPaid ?? false}
         onConfirm={(payload) => settleMut.mutate(payload)}
         onCancel={() => setSettleOpen(false)}
       />

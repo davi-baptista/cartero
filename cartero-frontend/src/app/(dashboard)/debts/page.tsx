@@ -713,7 +713,7 @@ export default function DebtsPage() {
       <MarkAsPaidDialog
         open={markPaidTarget !== null}
         kind="debt"
-        createTransaction={user?.createExpenseOnDebtPaid ?? true}
+        createTransaction={user?.createExpenseOnDebtPaid ?? false}
         onConfirm={handleMarkPaidConfirm}
         onCancel={() => setMarkPaidTarget(null)}
       />

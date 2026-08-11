@@ -60,10 +60,10 @@ export default function ProfilePage() {
     user?.salary != null ? Number(user.salary) : 0,
   )
   const [createIncomeOnReceivablePaid, setCreateIncomeOnReceivablePaid] = useState(
-    user?.createIncomeOnReceivablePaid ?? true,
+    user?.createIncomeOnReceivablePaid ?? false,
   )
   const [createExpenseOnDebtPaid, setCreateExpenseOnDebtPaid] = useState(
-    user?.createExpenseOnDebtPaid ?? true,
+    user?.createExpenseOnDebtPaid ?? false,
   )
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -75,8 +75,8 @@ export default function ProfilePage() {
     if (user) {
       setName(user.name)
       setSalary(user.salary != null ? Number(user.salary) : 0)
-      setCreateIncomeOnReceivablePaid(user.createIncomeOnReceivablePaid ?? true)
-      setCreateExpenseOnDebtPaid(user.createExpenseOnDebtPaid ?? true)
+      setCreateIncomeOnReceivablePaid(user.createIncomeOnReceivablePaid ?? false)
+      setCreateExpenseOnDebtPaid(user.createExpenseOnDebtPaid ?? false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
@@ -135,8 +135,8 @@ export default function ProfilePage() {
   const currentSalary = user.salary != null ? Number(user.salary) : null
   const salaryUnchanged = salary === (currentSalary ?? 0)
   const preferencesUnchanged =
-    createIncomeOnReceivablePaid === (user.createIncomeOnReceivablePaid ?? true) &&
-    createExpenseOnDebtPaid === (user.createExpenseOnDebtPaid ?? true)
+    createIncomeOnReceivablePaid === (user.createIncomeOnReceivablePaid ?? false) &&
+    createExpenseOnDebtPaid === (user.createExpenseOnDebtPaid ?? false)
 
   return (
     <div className="flex flex-col gap-6">
