@@ -30,6 +30,9 @@ export class CreateDebtDto {
   description?: string;
 
   @IsDateString()
+  occurredAt: string;
+
+  @IsDateString()
   dueDate: string;
 
   @IsOptional()

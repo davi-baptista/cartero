@@ -49,4 +49,8 @@ export class UpdateTransactionDto {
   @ValidateIf((o: UpdateTransactionDto) => o.personId !== null)
   @IsUUID()
   personId?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  confirmReopenClosedInvoice?: boolean;
 }

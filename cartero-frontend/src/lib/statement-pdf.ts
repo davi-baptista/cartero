@@ -155,7 +155,7 @@ function addRow(
   y: number,
   width: number,
   title: string,
-  dueDate: string,
+  occurredAt: string,
   amount: number,
   color: [number, number, number],
   sign: '+' | '-',
@@ -187,7 +187,7 @@ function addRow(
   doc.setFont('Inter', 'normal')
   doc.setFontSize(SIZE_LABEL)
   doc.setTextColor(...COLOR_MUTED)
-  doc.text(`Vence ${dueDate}`, x, y + 4.5)
+  doc.text(`Em ${occurredAt}`, x, y + 4.5)
 }
 
 export async function generateStatementPdf(input: StatementPdfInput): Promise<jsPDF> {
@@ -249,8 +249,8 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
   doc.setTextColor(...COLOR_MUTED)
   doc.text(
     isPositive
-      ? `${input.personName} deve este valor no total`
-      : `Valor devido a ${input.personName} no total`,
+      ? `${input.personName} está te devendo esse valor no total`
+      : `Você está devendo esse valor para ${input.personName}`,
     margin + 8,
     cardY,
   )
@@ -268,7 +268,7 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
     y += 8
 
     for (const item of input.receivables) {
-      addRow(doc, margin, y, contentWidth, item.title, formatDate(item.dueDate), Number(item.amount), COLOR_RECEIVABLE, '+')
+      addRow(doc, margin, y, contentWidth, item.title, formatDate(item.occurredAt), Number(item.amount), COLOR_RECEIVABLE, '+')
       y += ROW_HEIGHT
     }
     y += 4
@@ -285,7 +285,7 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
     y += 8
 
     for (const item of input.debts) {
-      addRow(doc, margin, y, contentWidth, item.title, formatDate(item.dueDate), Number(item.amount), COLOR_DESTRUCTIVE, '-')
+      addRow(doc, margin, y, contentWidth, item.title, formatDate(item.occurredAt), Number(item.amount), COLOR_DESTRUCTIVE, '-')
       y += ROW_HEIGHT
     }
   }

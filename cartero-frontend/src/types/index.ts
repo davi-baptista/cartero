@@ -117,11 +117,11 @@ export interface Debt {
   title: string
   amount: number
   description?: string
+  occurredAt: string
   dueDate: string
   isAlertEnabled: boolean
   isPaid: boolean
   paidAt?: string
-  settledAt?: string
   paymentTransactionId?: string
   parentId?: string
   createdAt: string
@@ -139,10 +139,10 @@ export interface Receivable {
   title: string
   amount: number
   description?: string
+  occurredAt: string
   dueDate: string
   isPaid: boolean
   paidAt?: string
-  settledAt?: string
   parentId?: string
   createdAt: string
   updatedAt: string

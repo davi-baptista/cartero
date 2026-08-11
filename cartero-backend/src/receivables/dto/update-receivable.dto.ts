@@ -34,6 +34,10 @@ export class UpdateReceivableDto {
 
   @IsOptional()
   @IsDateString()
+  occurredAt?: string;
+
+  @IsOptional()
+  @IsDateString()
   dueDate?: string;
 
   @IsOptional()

@@ -29,6 +29,9 @@ export class CreateReceivableDto {
   description?: string;
 
   @IsDateString()
+  occurredAt: string;
+
+  @IsDateString()
   dueDate: string;
 
   @IsOptional()

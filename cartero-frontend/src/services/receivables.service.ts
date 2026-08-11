@@ -16,6 +16,7 @@ export async function createReceivable(payload: {
   personId?: string
   title: string
   amount: number
+  occurredAt: string
   dueDate: string
   description?: string
   installments?: number
@@ -30,6 +31,7 @@ export async function updateReceivable(
     debtorName: string
     title: string
     amount: number
+    occurredAt: string
     dueDate: string
     description: string
     isPaid: boolean

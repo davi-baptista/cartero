@@ -104,10 +104,8 @@ export class PersonsService {
       const totalDebts = debts.reduce((sum, item) => sum + Number(item.amount), 0);
       const netBalance = totalReceivables - totalDebts;
       const paymentDate = dto.paymentDate ? parseDateOnly(dto.paymentDate) : new Date();
-      const createsIncome = netBalance > 0 && user.createIncomeOnReceivablePaid;
-      const createsExpense = netBalance < 0 && user.createExpenseOnDebtPaid;
-
-      let paymentTransactionId: string | null = null;
+      const createsIncome = receivables.length > 0 && user.createIncomeOnReceivablePaid;
+      const createsExpense = debts.length > 0 && user.createExpenseOnDebtPaid;
 
       if (createsExpense) {
         if (!dto.paymentBankId || !dto.paymentType) {
@@ -118,73 +116,105 @@ export class PersonsService {
         }
       }
 
-      if (createsIncome || createsExpense) {
-        const category = await this.entityValidationService.findOrCreateSystemCategory(
+      // Cada dívida/cobrança gera sua própria transação de pagamento individual —
+      // exatamente como marcar um item sozinho — para que a reversão funcione
+      // normalmente item a item, sem um registro agregado irreversível.
+      if (createsExpense) {
+        const debtCategory = await this.entityValidationService.findOrCreateSystemCategory(
           tx,
           userId,
-          createsIncome ? RECEIVABLE_RECEIVED_CATEGORY_NAME : DEBT_PAID_CATEGORY_NAME,
+          DEBT_PAID_CATEGORY_NAME,
           SYSTEM_CATEGORY_ICON,
-          createsIncome ? RECEIVABLE_RECEIVED_CATEGORY_COLOR : DEBT_PAID_CATEGORY_COLOR,
+          DEBT_PAID_CATEGORY_COLOR,
         );
+        const paymentBank = await this.entityValidationService.validateBank(dto.paymentBankId as string, userId);
 
-        const paymentBank = createsExpense
-          ? await this.entityValidationService.validateBank(dto.paymentBankId as string, userId)
-          : await findOrCreateSystemReceivableBank(tx, userId);
+        for (const debt of debts) {
+          let invoiceId: string | null = null;
+          if (dto.paymentType === TransactionType.CREDIT_CARD) {
+            const invoice = await findOrCreateInvoice(
+              tx,
+              userId,
+              paymentBank.id,
+              paymentBank.invoiceDueDate,
+              paymentBank.invoiceDueDaysAfterClose,
+              paymentDate,
+            );
+            invoiceId = invoice.id;
+          }
 
-        let invoiceId: string | null = null;
-        if (createsExpense && dto.paymentType === TransactionType.CREDIT_CARD) {
-          const invoice = await findOrCreateInvoice(
-            tx,
-            userId,
-            paymentBank.id,
-            paymentBank.invoiceDueDate,
-            paymentBank.invoiceDueDaysAfterClose,
-            paymentDate,
-          );
-          invoiceId = invoice.id;
-        }
+          const paymentTransaction = await tx.transaction.create({
+            data: {
+              userId,
+              bankId: paymentBank.id,
+              categoryId: debtCategory.id,
+              invoiceId,
+              title: debt.title,
+              type: dto.paymentType as TransactionType,
+              amount: debt.amount,
+              date: paymentDate,
+            },
+          });
 
-        const paymentTransaction = await tx.transaction.create({
-          data: {
-            userId,
-            bankId: paymentBank.id,
-            categoryId: category.id,
-            invoiceId,
-            title: `Acerto com ${person.name}`,
-            type: createsIncome ? TransactionType.INCOME : (dto.paymentType as TransactionType),
-            amount: Math.abs(netBalance),
-            date: paymentDate,
-          },
-        });
+          if (invoiceId) {
+            await tx.invoice.update({
+              where: { id: invoiceId, userId },
+              data: { totalAmount: { increment: debt.amount } },
+            });
+          }
 
-        paymentTransactionId = paymentTransaction.id;
-
-        if (invoiceId) {
-          await tx.invoice.update({
-            where: { id: invoiceId, userId },
-            data: { totalAmount: { increment: Math.abs(netBalance) } },
+          await tx.debt.update({
+            where: { id: debt.id, userId },
+            data: {
+              isPaid: true,
+              paidAt: paymentDate,
+              paymentTransactionId: paymentTransaction.id,
+            },
           });
         }
-      }
-
-      if (debts.length > 0) {
+      } else if (debts.length > 0) {
         await tx.debt.updateMany({
           where: { userId, id: { in: debts.map((debt) => debt.id) }, isPaid: false },
-          data: {
-            isPaid: true,
-            paidAt: paymentDate,
-            settledAt: paymentTransactionId ? paymentDate : null,
-          },
+          data: { isPaid: true, paidAt: paymentDate },
         });
       }
-      if (receivables.length > 0) {
+
+      if (createsIncome) {
+        const receivableCategory = await this.entityValidationService.findOrCreateSystemCategory(
+          tx,
+          userId,
+          RECEIVABLE_RECEIVED_CATEGORY_NAME,
+          SYSTEM_CATEGORY_ICON,
+          RECEIVABLE_RECEIVED_CATEGORY_COLOR,
+        );
+        const receivableBank = await findOrCreateSystemReceivableBank(tx, userId);
+
+        for (const receivable of receivables) {
+          const paymentTransaction = await tx.transaction.create({
+            data: {
+              userId,
+              bankId: receivableBank.id,
+              categoryId: receivableCategory.id,
+              title: receivable.title,
+              type: TransactionType.INCOME,
+              amount: receivable.amount,
+              date: paymentDate,
+            },
+          });
+
+          await tx.receivable.update({
+            where: { id: receivable.id, userId },
+            data: {
+              isPaid: true,
+              paidAt: paymentDate,
+              paymentTransactionId: paymentTransaction.id,
+            },
+          });
+        }
+      } else if (receivables.length > 0) {
         await tx.receivable.updateMany({
           where: { userId, id: { in: receivables.map((receivable) => receivable.id) }, isPaid: false },
-          data: {
-            isPaid: true,
-            paidAt: paymentDate,
-            settledAt: paymentTransactionId ? paymentDate : null,
-          },
+          data: { isPaid: true, paidAt: paymentDate },
         });
       }
 
@@ -195,7 +225,6 @@ export class PersonsService {
         netBalance,
         settledDebts: debts.length,
         settledReceivables: receivables.length,
-        paymentTransactionId,
       };
     });
   }

@@ -23,6 +23,8 @@ interface SettlePersonDialogProps {
   open: boolean
   personName: string
   netBalance: number
+  hasPendingDebts: boolean
+  hasPendingReceivables: boolean
   createIncome: boolean
   createExpense: boolean
   onConfirm: (payload: { paymentDate?: string; paymentBankId?: string; paymentType?: TransactionType }) => void
@@ -33,6 +35,8 @@ export function SettlePersonDialog({
   open,
   personName,
   netBalance,
+  hasPendingDebts,
+  hasPendingReceivables,
   createIncome,
   createExpense,
   onConfirm,
@@ -41,8 +45,11 @@ export function SettlePersonDialog({
   const [paymentDate, setPaymentDate] = useState(todayDateValue())
   const [bankId, setBankId] = useState('')
   const [paymentType, setPaymentType] = useState<TransactionType | ''>('')
-  const createsTransaction = netBalance > 0 ? createIncome : netBalance < 0 ? createExpense : false
-  const needsExpenseDetails = netBalance < 0 && createExpense
+  // Cada dívida/cobrança pendente gera sua própria transação — então os dados
+  // de pagamento são necessários sempre que houver QUALQUER dívida pendente,
+  // não só quando o saldo líquido total for negativo.
+  const createsTransaction = (hasPendingReceivables && createIncome) || (hasPendingDebts && createExpense)
+  const needsExpenseDetails = hasPendingDebts && createExpense
   const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: getBanks, enabled: open && needsExpenseDetails })
   const selectedBank = banks.find((bank) => bank.id === bankId)
   const canConfirm = !createsTransaction || (
@@ -76,7 +83,13 @@ export function SettlePersonDialog({
         {createsTransaction && (
           <div className="flex flex-col gap-3 py-1">
             <div className="flex flex-col gap-1.5">
-              <Label>{netBalance > 0 ? 'Data do recebimento' : 'Data do pagamento'}</Label>
+              <Label>
+                {hasPendingReceivables && hasPendingDebts
+                  ? 'Data do acerto'
+                  : hasPendingReceivables
+                    ? 'Data do recebimento'
+                    : 'Data do pagamento'}
+              </Label>
               <DatePicker value={paymentDate} onChange={setPaymentDate} />
             </div>
 

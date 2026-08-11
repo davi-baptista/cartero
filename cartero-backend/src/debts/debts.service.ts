@@ -60,6 +60,7 @@ export class DebtsService {
               personId: dto.personId,
               amount: dto.amount,
               description: dto.description,
+              occurredAt: parseDateOnly(dto.occurredAt),
               dueDate: installmentDate,
               isAlertEnabled: dto.isAlertEnabled,
             },
@@ -146,7 +147,12 @@ export class DebtsService {
       : null;
 
     const { paymentBankId, paymentType, ...debtDto } = dto;
-    const { title: _title, dueDate: _dueDate, ...installmentSafeDto } = debtDto;
+    const {
+      title: _title,
+      dueDate: _dueDate,
+      occurredAt: _occurredAt,
+      ...installmentSafeDto
+    } = debtDto;
 
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
@@ -156,11 +162,23 @@ export class DebtsService {
           userId,
           normalizedScope,
         );
-        if (debtsToUpdate.some((debt) => debt.settledAt)) {
-          throw new BadRequestException(
-            'Esta dÃ­vida faz parte de um acerto concluÃ­do e nÃ£o pode mais ser alterada',
-          );
+
+        // occurredAt representa a mesma ocorrência parcelada — propaga para toda a
+        // cadeia (o pai e todas as parcelas filhas) independente do scope escolhido
+        // para os demais campos, mas só quando o valor de fato mudou.
+        const occurredAtChanged =
+          dto.occurredAt &&
+          parseDateOnly(dto.occurredAt).getTime() !== existing.occurredAt.getTime();
+        if (existing.parentId && occurredAtChanged) {
+          await tx.debt.updateMany({
+            where: {
+              userId,
+              OR: [{ id: existing.parentId }, { parentId: existing.parentId }],
+            },
+            data: { occurredAt: parseDateOnly(dto.occurredAt as string) },
+          });
         }
+
         const updatedDebts: Debt[] = [];
 
         for (const debt of debtsToUpdate) {
@@ -261,6 +279,9 @@ export class DebtsService {
             data: {
               ...(existing.parentId ? installmentSafeDto : debtDto),
               creditorName,
+              occurredAt: dto.occurredAt
+                ? parseDateOnly(dto.occurredAt)
+                : debt.occurredAt,
               dueDate: existing.parentId
                 ? debt.dueDate
                 : dto.dueDate
@@ -299,11 +320,6 @@ export class DebtsService {
           userId,
           normalizedScope,
         );
-        if (debtsToDelete.some((debt) => debt.settledAt)) {
-          throw new BadRequestException(
-            'Esta dÃ­vida faz parte de um acerto concluÃ­do e nÃ£o pode mais ser excluÃ­da',
-          );
-        }
 
         for (const debt of debtsToDelete) {
           await tx.debt.delete({

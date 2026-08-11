@@ -14,6 +14,7 @@ import {
   Search,
   MoreVertical,
   X,
+  Repeat2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -158,22 +159,26 @@ const ReceivableRow = memo(function ReceivableRow({
 
       {/* Title + debtor */}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span
-          className={cn(
-            'truncate text-[15px] font-medium leading-tight',
-            receivable.isPaid && 'text-muted-foreground line-through',
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span
+            className={cn(
+              'truncate text-[15px] font-medium leading-tight',
+              receivable.isPaid && 'text-muted-foreground line-through',
+            )}
+          >
+            {receivable.title}
+          </span>
+          {receivable.parentId && (
+            <>
+              <Repeat2 aria-hidden="true" className="size-3.5 shrink-0 text-primary/70" />
+              <span className="sr-only">Parcelado</span>
+            </>
           )}
-        >
-          {receivable.title}
         </span>
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <span className="truncate">{receivable.person?.name ?? receivable.debtorName}{receivable.description ? <> · <i>{receivable.description}</i></> : ''}</span>
-          {receivable.parentId && (
-            <>
-              <span>·</span>
-              <span className="text-primary/70">parcelado</span>
-            </>
-          )}
+          <span>·</span>
+          <span className="shrink-0">em {formatDate(receivable.occurredAt)}</span>
         </div>
       </div>
 
@@ -443,8 +448,10 @@ export default function ReceivablesPage() {
       } else {
         setMarkPaidTarget(receivable)
       }
-    } else {
+    } else if (receivable.paymentTransactionId) {
       setUnmarkPaidTarget(receivable)
+    } else {
+      updateMut.mutate({ id: receivable.id, payload: { isPaid: false } })
     }
   }
 

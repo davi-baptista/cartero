@@ -83,6 +83,7 @@ export function TransactionSheet({
   onSubmit,
 }: TransactionSheetProps) {
   const isEditing = editTarget !== null
+  const isInstallment = Boolean(editTarget?.parentId) || /\s\d+\/\d+$/.test(editTarget?.title ?? '')
   const submittingRef = useRef(false)
   const qc = useQueryClient()
 
@@ -228,7 +229,7 @@ export function TransactionSheet({
           categoryId: editTarget.categoryId,
           type: editTarget.type,
           title: editTarget.title,
-          amount: editTarget.amount,
+          amount: Number(editTarget.amount),
           isRefund: editTarget.isRefund ?? false,
           date: editTarget.date,
           description: editTarget.description ?? '',
@@ -364,10 +365,10 @@ export function TransactionSheet({
               id="title"
               placeholder="Ex: Mercado, Netflix..."
               aria-invalid={!!errors.title}
-              disabled={!!editTarget?.parentId}
+              disabled={isInstallment}
               {...register('title')}
             />
-            {editTarget?.parentId
+            {isInstallment
               ? <p className="text-xs text-muted-foreground">Título não pode ser alterado em compras parceladas.</p>
               : errors.title && <p className="text-xs text-destructive">{errors.title.message}</p>}
           </div>
@@ -401,13 +402,14 @@ export function TransactionSheet({
                   value={field.value}
                   onChange={field.onChange}
                   placeholder="Selecionar data"
-                  disabled={!!editTarget?.parentId}
                 />
               )}
             />
-            {editTarget?.parentId
-              ? <p className="text-xs text-muted-foreground">Data não pode ser alterada em compras parceladas.</p>
-              : errors.date && <p className="text-xs text-destructive">{errors.date.message}</p>}
+            {errors.date ? (
+              <p className="text-xs text-destructive">{errors.date.message}</p>
+            ) : isInstallment ? (
+              <p className="text-xs text-muted-foreground">Altera a data em todas as parcelas desta compra e recalcula as faturas.</p>
+            ) : null}
           </div>
 
           {/* Bank */}

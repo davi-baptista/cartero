@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/select'
 import { createPerson, getPersons } from '@/services/persons.service'
 import { cn } from '@/lib/utils'
+import { formatDateValue } from '@/lib/date'
 import type { Debt, InstallmentScope } from '@/types'
 
 const schema = z
@@ -36,6 +37,7 @@ const schema = z
     personId: z.string().optional(),
     title: z.string().min(1, 'Título obrigatório'),
     amount: z.number({ message: 'Valor inválido' }).positive('Valor deve ser positivo'),
+    occurredAt: z.string().min(1, 'Data da dívida obrigatória'),
     dueDate: z.string().min(1, 'Data de vencimento obrigatória'),
     description: z.string().optional(),
     isAlertEnabled: z.boolean().optional(),
@@ -100,6 +102,7 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPe
       personId: undefined,
       title: '',
       amount: 0,
+      occurredAt: formatDateValue(),
       dueDate: '',
       description: '',
       isAlertEnabled: true,
@@ -116,7 +119,8 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPe
           creditorName: editTarget.creditorName,
           personId: editTarget.personId ?? undefined,
           title: editTarget.title,
-          amount: editTarget.amount,
+          amount: Number(editTarget.amount),
+          occurredAt: editTarget.occurredAt,
           dueDate: editTarget.dueDate,
           description: editTarget.description ?? '',
           isAlertEnabled: editTarget.isAlertEnabled,
@@ -128,6 +132,7 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPe
           personId: initialPersonId,
           title: '',
           amount: 0,
+          occurredAt: formatDateValue(),
           dueDate: '',
           description: '',
           isAlertEnabled: true,
@@ -344,27 +349,54 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPe
             )}
           </div>
 
-          {/* Due date */}
-          <div className="space-y-1.5">
-            <Label>Vencimento</Label>
-            <Controller
-              control={control}
-              name="dueDate"
-              render={({ field }) => (
-                <DatePicker
-                  value={field.value}
-                  onChange={field.onChange}
-                  placeholder="Selecionar data"
-                  disabled={!!editTarget?.parentId}
-                />
+          {/* Dates */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Data da dívida</Label>
+              <Controller
+                control={control}
+                name="occurredAt"
+                render={({ field }) => (
+                  <DatePicker
+                    value={field.value}
+                    onChange={field.onChange}
+                    placeholder="Selecionar data"
+                  />
+                )}
+              />
+              {errors.occurredAt && (
+                <p className="text-xs text-destructive">{errors.occurredAt.message}</p>
               )}
-            />
-            {editTarget?.parentId
-              ? <p className="text-xs text-muted-foreground">A data não pode ser alterada em parcelas.</p>
-              : errors.dueDate && (
-              <p className="text-xs text-destructive">{errors.dueDate.message}</p>
-            )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Vencimento</Label>
+              <Controller
+                control={control}
+                name="dueDate"
+                render={({ field }) => (
+                  <DatePicker
+                    value={field.value}
+                    onChange={field.onChange}
+                    placeholder="Selecionar data"
+                    disabled={!!editTarget?.parentId}
+                  />
+                )}
+              />
+              {errors.dueDate && (
+                <p className="text-xs text-destructive">{errors.dueDate.message}</p>
+              )}
+            </div>
           </div>
+          {editTarget?.parentId ? (
+            <p className="-mt-2 text-xs text-muted-foreground">
+              A data da dívida altera todas as parcelas; o vencimento não pode ser alterado em parcelas.
+            </p>
+          ) : (
+            <p className="-mt-2 text-xs text-muted-foreground">
+              Data da dívida é quando ela aconteceu de fato, diferente do vencimento.
+            </p>
+          )}
 
           {/* Installments — create only */}
           {!isEditing && (

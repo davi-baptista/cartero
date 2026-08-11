@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
@@ -171,6 +172,7 @@ export class TransactionsService {
                 title,
                 debtorName: person.name,
                 amount: dto.amount,
+                occurredAt: installmentDate,
                 dueDate,
               },
             });
@@ -279,12 +281,37 @@ export class TransactionsService {
   ) {
     const existingTransaction =
       await this.entityValidationService.validateTransaction(id, userId);
-    const normalizedScope = this.normalizeScope(scope);
 
-    if (existingTransaction.parentId && dto.date) {
-      dto.date = undefined;
+    const isInstallment =
+      existingTransaction.parentId !== null ||
+      (await this.hasInstallmentChildren(existingTransaction.id, userId));
+
+    // A data representa quando a compra parcelada aconteceu — é a mesma para
+    // toda a série, então editá-la sempre afeta todas as parcelas de uma vez,
+    // independente do scope escolhido para os demais campos. O frontend sempre
+    // envia `date` no payload (mesmo sem alteração), então só tratamos como
+    // "editando a data" quando o valor de fato mudou.
+    const editingInstallmentDate =
+      isInstallment &&
+      Boolean(dto.date) &&
+      parseDateOnly(dto.date as string).getTime() !==
+        existingTransaction.date.getTime();
+    const normalizedScope = editingInstallmentDate
+      ? 'ALL'
+      : this.normalizeScope(scope);
+
+    if (isInstallment) {
       dto.title = undefined;
     }
+
+    if (editingInstallmentDate) {
+      await this.assertInvoiceReassignmentAllowed(
+        existingTransaction,
+        userId,
+        dto,
+      );
+    }
+    delete dto.confirmReopenClosedInvoice;
 
     if (dto.bankId && dto.bankId !== existingTransaction.bankId) {
       await this.entityValidationService.validateBank(dto.bankId, userId);
@@ -320,17 +347,21 @@ export class TransactionsService {
 
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
-        const transactionsToUpdate = await this.getTransactionsByScope(
-          tx,
-          existingTransaction,
-          userId,
-          normalizedScope,
-        );
+        const transactionsToUpdate = editingInstallmentDate
+          ? await this.getInstallmentSeries(tx, existingTransaction, userId)
+          : await this.getTransactionsByScope(
+              tx,
+              existingTransaction,
+              userId,
+              normalizedScope,
+            );
         const updatedTransactions: Transaction[] = [];
         let bank: Bank | null = null;
         let installmentBaseDate: Date | null = null;
 
-        if (existingTransaction.parentId) {
+        if (editingInstallmentDate) {
+          installmentBaseDate = parseDateOnly(dto.date as string);
+        } else if (existingTransaction.parentId) {
           const parentTransaction = await tx.transaction.findUnique({
             where: { id: existingTransaction.parentId, userId },
             select: { date: true },
@@ -580,6 +611,102 @@ export class TransactionsService {
     return Math.max(0, Number(match[1]) - 1);
   }
 
+  private async getInstallmentSeries(
+    tx: Prisma.TransactionClient | PrismaService,
+    transaction: Transaction,
+    userId: string,
+  ): Promise<Transaction[]> {
+    const parentId = transaction.parentId ?? transaction.id;
+    return tx.transaction.findMany({
+      where: {
+        userId,
+        OR: [{ id: parentId }, { parentId }],
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  private async hasInstallmentChildren(
+    transactionId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const child = await this.prisma.transaction.findFirst({
+      where: { userId, parentId: transactionId },
+      select: { id: true },
+    });
+    return child !== null;
+  }
+
+  /**
+   * Editar a data de uma compra parcelada pode mover parcelas para outra
+   * fatura. Bloqueia se qualquer fatura afetada já estiver PAID; se alguma
+   * estiver CLOSED, exige confirmação explícita do usuário antes de aplicar.
+   */
+  private async assertInvoiceReassignmentAllowed(
+    existingTransaction: Transaction,
+    userId: string,
+    dto: UpdateTransactionDto,
+  ): Promise<void> {
+    if (existingTransaction.type !== 'CREDIT_CARD') return;
+
+    const bank = await this.entityValidationService.validateBank(
+      dto.bankId ?? existingTransaction.bankId,
+      userId,
+    );
+    const schedule = {
+      invoiceDueDate: bank.invoiceDueDate,
+      invoiceDueDaysAfterClose: bank.invoiceDueDaysAfterClose,
+    };
+
+    const seriesTransactions = await this.getInstallmentSeries(
+      this.prisma,
+      existingTransaction,
+      userId,
+    );
+
+    const newBaseDate = parseDateOnly(dto.date as string);
+    const firstPeriod = getInvoicePeriodForDate(schedule, newBaseDate);
+
+    const affectedInvoices = await Promise.all(
+      seriesTransactions.map(async (transaction) => {
+        const installmentIndex = this.getInstallmentIndex(transaction) ?? 0;
+        const period = offsetInvoicePeriod(
+          firstPeriod.year,
+          firstPeriod.month,
+          installmentIndex,
+        );
+        return this.prisma.invoice.findFirst({
+          where: {
+            userId,
+            bankId: dto.bankId ?? existingTransaction.bankId,
+            year: period.year,
+            month: period.month,
+          },
+        });
+      }),
+    );
+
+    const paidInvoice = affectedInvoices.find(
+      (invoice) => invoice?.status === 'PAID',
+    );
+    if (paidInvoice) {
+      throw new ForbiddenException(
+        'Não é possível alterar a data: uma das faturas afetadas já está paga',
+      );
+    }
+
+    const closedInvoice = affectedInvoices.find(
+      (invoice) => invoice?.status === 'CLOSED',
+    );
+    if (closedInvoice && !dto.confirmReopenClosedInvoice) {
+      throw new ConflictException({
+        message:
+          'Essa alteração vai mover parcelas para uma fatura já fechada. Confirme para continuar.',
+        code: 'CLOSED_INVOICE_REASSIGNMENT',
+      });
+    }
+  }
+
   private async syncLinkedReceivable(
     tx: Prisma.TransactionClient,
     userId: string,
@@ -630,6 +757,7 @@ export class TransactionsService {
           title: updatedTransaction.title,
           debtorName: personForNew.name,
           amount: updatedTransaction.amount,
+          occurredAt: updatedTransaction.date,
           dueDate,
         },
       });
@@ -653,6 +781,7 @@ export class TransactionsService {
         data: {
           amount: updatedTransaction.amount,
           title: updatedTransaction.title,
+          occurredAt: updatedTransaction.date,
           personId: personForSync ? personForSync.id : undefined,
           debtorName: personForSync ? personForSync.name : undefined,
         },

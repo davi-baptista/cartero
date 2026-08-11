@@ -63,6 +63,7 @@ export class ReceivablesService {
               personId: dto.personId,
               amount: dto.amount,
               description: dto.description,
+              occurredAt: parseDateOnly(dto.occurredAt),
               dueDate: installmentDate,
             },
           });
@@ -140,7 +141,12 @@ export class ReceivablesService {
       : null;
 
     const { paymentBankId, paymentType, paymentDate, ...receivableDto } = dto;
-    const { title: _title, dueDate: _dueDate, ...installmentSafeDto } = receivableDto;
+    const {
+      title: _title,
+      dueDate: _dueDate,
+      occurredAt: _occurredAt,
+      ...installmentSafeDto
+    } = receivableDto;
 
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
@@ -150,11 +156,23 @@ export class ReceivablesService {
           userId,
           normalizedScope,
         );
-        if (receivablesToUpdate.some((receivable) => receivable.settledAt)) {
-          throw new BadRequestException(
-            'Esta cobranÃ§a faz parte de um acerto concluÃ­do e nÃ£o pode mais ser alterada',
-          );
+
+        // occurredAt representa a mesma ocorrência parcelada — propaga para toda a
+        // cadeia (o pai e todas as parcelas filhas) independente do scope escolhido
+        // para os demais campos, mas só quando o valor de fato mudou.
+        const occurredAtChanged =
+          dto.occurredAt &&
+          parseDateOnly(dto.occurredAt).getTime() !== existing.occurredAt.getTime();
+        if (existing.parentId && occurredAtChanged) {
+          await tx.receivable.updateMany({
+            where: {
+              userId,
+              OR: [{ id: existing.parentId }, { parentId: existing.parentId }],
+            },
+            data: { occurredAt: parseDateOnly(dto.occurredAt as string) },
+          });
         }
+
         const updatedReceivables: Receivable[] = [];
         const receivableBank = markingAsReceived
           ? paymentBank ?? (await findOrCreateSystemReceivableBank(tx, userId))
@@ -260,6 +278,9 @@ export class ReceivablesService {
             data: {
               ...(existing.parentId ? installmentSafeDto : receivableDto),
               debtorName,
+              occurredAt: dto.occurredAt
+                ? parseDateOnly(dto.occurredAt)
+                : receivable.occurredAt,
               dueDate: existing.parentId
                 ? receivable.dueDate
                 : dto.dueDate
@@ -300,11 +321,6 @@ export class ReceivablesService {
           userId,
           normalizedScope,
         );
-        if (receivablesToDelete.some((receivable) => receivable.settledAt)) {
-          throw new BadRequestException(
-            'Esta cobranÃ§a faz parte de um acerto concluÃ­do e nÃ£o pode mais ser excluÃ­da',
-          );
-        }
 
         for (const receivable of receivablesToDelete) {
           await tx.receivable.delete({

@@ -16,6 +16,7 @@ export async function createDebt(payload: {
   personId?: string
   title: string
   amount: number
+  occurredAt: string
   dueDate: string
   description?: string
   isAlertEnabled?: boolean
@@ -31,6 +32,7 @@ export async function updateDebt(
     creditorName: string
     title: string
     amount: number
+    occurredAt: string
     dueDate: string
     description: string
     isAlertEnabled: boolean

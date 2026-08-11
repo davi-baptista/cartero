@@ -52,6 +52,7 @@ export async function updateTransaction(
     date: string
     description: string
     personId: string | null
+    confirmReopenClosedInvoice: boolean
   }>,
   scope?: InstallmentScope,
 ): Promise<Transaction | Transaction[]> {

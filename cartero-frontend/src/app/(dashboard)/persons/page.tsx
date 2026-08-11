@@ -17,6 +17,8 @@ import {
   MoreVertical,
   MessageCircle,
   FileText,
+  Download,
+  Share2,
 } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,6 +26,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePicker } from '@/components/ui/date-picker'
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
+import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dialog'
 import { InstallmentScopeDialog } from '../transactions/installment-scope-dialog'
 import { DeleteLinkedWarningDialog } from '../transactions/delete-linked-warning-dialog'
 import { DebtSheet, type DebtFormData } from '../debts/debt-sheet'
@@ -140,6 +143,9 @@ function StatementSheet({
   const [endDate, setEndDate] = useState<string | undefined>(defaultEnd)
   const [markPaidDebt, setMarkPaidDebt] = useState<Debt | null>(null)
   const [markReceivedReceivable, setMarkReceivedReceivable] = useState<Receivable | null>(null)
+  const [unmarkPaidTarget, setUnmarkPaidTarget] = useState<
+    { kind: 'debt'; debt: Debt } | { kind: 'receivable'; receivable: Receivable } | null
+  >(null)
   const [settleOpen, setSettleOpen] = useState(false)
   const [sheetKind, setSheetKind] = useState<'debt' | 'receivable' | null>(null)
   const [editDebt, setEditDebt] = useState<Debt | null>(null)
@@ -299,7 +305,11 @@ function StatementSheet({
 
   function handleDebtToggle(debt: Debt) {
     if (debt.isPaid) {
-      toggleDebtMut.mutate({ id: debt.id, isPaid: false })
+      if (debt.paymentTransactionId) {
+        setUnmarkPaidTarget({ kind: 'debt', debt })
+      } else {
+        toggleDebtMut.mutate({ id: debt.id, isPaid: false })
+      }
     } else if (user?.createExpenseOnDebtPaid === false) {
       toggleDebtMut.mutate({ id: debt.id, isPaid: true })
     } else {
@@ -309,12 +319,26 @@ function StatementSheet({
 
   function handleReceivableToggle(receivable: Receivable) {
     if (receivable.isPaid) {
-      toggleReceivableMut.mutate({ id: receivable.id, isPaid: false })
+      if (receivable.paymentTransactionId) {
+        setUnmarkPaidTarget({ kind: 'receivable', receivable })
+      } else {
+        toggleReceivableMut.mutate({ id: receivable.id, isPaid: false })
+      }
     } else if (user?.createIncomeOnReceivablePaid === false) {
       toggleReceivableMut.mutate({ id: receivable.id, isPaid: true })
     } else {
       setMarkReceivedReceivable(receivable)
     }
+  }
+
+  function handleUnmarkPaidConfirm() {
+    if (!unmarkPaidTarget) return
+    if (unmarkPaidTarget.kind === 'debt') {
+      toggleDebtMut.mutate({ id: unmarkPaidTarget.debt.id, isPaid: false })
+    } else {
+      toggleReceivableMut.mutate({ id: unmarkPaidTarget.receivable.id, isPaid: false })
+    }
+    setUnmarkPaidTarget(null)
   }
 
   function openNewDebt() {
@@ -444,8 +468,9 @@ function StatementSheet({
   const netBalance = data?.netBalance ?? 0
   const isPositive = netBalance >= 0
   const hasFilters = !!(startDate || endDate)
-  const pendingCount = (allStatement?.debts.filter((item) => !item.isPaid).length ?? 0) +
-    (allStatement?.receivables.filter((item) => !item.isPaid).length ?? 0)
+  const pendingDebtsCount = allStatement?.debts.filter((item) => !item.isPaid).length ?? 0
+  const pendingReceivablesCount = allStatement?.receivables.filter((item) => !item.isPaid).length ?? 0
+  const pendingCount = pendingDebtsCount + pendingReceivablesCount
   const settlementNetBalance = allStatement?.netBalance ?? 0
 
   function buildStatementContext() {
@@ -478,10 +503,10 @@ function StatementSheet({
     const totalDebt = pendingDebts.reduce((sum, item) => sum + Number(item.amount), 0)
     const balance = Number(data?.netBalance ?? 0)
     const balanceLine = balance > 0.005
-      ? `Saldo: você me deve *${formatCurrency(balance)}*.`
+      ? `Você está me devendo *${formatCurrency(balance)}* 🙂`
       : balance < -0.005
-        ? `Saldo: eu te devo *${formatCurrency(Math.abs(balance))}*.`
-        : 'Saldo: estamos quites neste período.'
+        ? `Estou te devendo *${formatCurrency(Math.abs(balance))}* 🙂`
+        : 'Estamos quites nesse período — nada pendente! 🎉'
     const breakdownLines = [
       pendingReceivables.length > 0
         ? `Você me deve: *${formatCurrency(totalReceivable)}* (${pendingReceivables.length} ${pendingReceivables.length === 1 ? 'pendência' : 'pendências'})`
@@ -511,9 +536,9 @@ function StatementSheet({
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
   }
 
-  async function sendStatementPdfToWhatsApp() {
+  async function buildStatementPdf() {
     const context = buildStatementContext()
-    if (!context) return
+    if (!context) return null
     const { person, pendingReceivables, pendingDebts, periodLabel } = context
 
     const doc = await generateStatementPdf({
@@ -527,21 +552,53 @@ function StatementSheet({
     const message = buildWhatsAppMessage(context)
     const phone = normalizeWhatsAppPhone(person.phone!)
 
+    return { doc, fileName, message, phone }
+  }
+
+  async function downloadStatementPdf() {
+    const built = await buildStatementPdf()
+    if (!built) return
+    const { doc, fileName, message, phone } = built
+
+    doc.save(fileName)
+    try {
+      await navigator.clipboard.writeText(message)
+      toast.info('PDF baixado e mensagem copiada — cole na conversa que vai abrir no WhatsApp')
+    } catch {
+      toast.info('PDF baixado — anexe o arquivo na conversa que vai abrir no WhatsApp')
+    }
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
+  }
+
+  async function shareStatementPdf() {
+    const built = await buildStatementPdf()
+    if (!built) return
+    const { doc, fileName, message } = built
+
     const pdfBlob = doc.output('blob')
     const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' })
 
-    if (navigator.canShare?.({ files: [pdfFile] })) {
-      try {
-        await navigator.share({ files: [pdfFile], text: message })
-        return
-      } catch (err) {
-        if ((err as Error).name === 'AbortError') return
-      }
+    if (!navigator.canShare?.({ files: [pdfFile] })) {
+      toast.error('Compartilhamento não suportado neste navegador — use "Baixar PDF"')
+      return
     }
 
-    doc.save(fileName)
-    toast.info('PDF baixado — anexe o arquivo na conversa que vai abrir no WhatsApp')
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
+    // WhatsApp ignora o campo `text` do share() quando um arquivo é enviado junto —
+    // copiamos a mensagem antes para o usuário colar na conversa depois do PDF.
+    try {
+      await navigator.clipboard.writeText(message)
+      toast.info('Mensagem copiada — cole na conversa depois de enviar o PDF')
+    } catch {
+      // Sem permissão de clipboard — segue o compartilhamento mesmo assim.
+    }
+
+    try {
+      await navigator.share({ files: [pdfFile] })
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        toast.error('Não foi possível compartilhar o PDF')
+      }
+    }
   }
 
   return (
@@ -572,22 +629,28 @@ function StatementSheet({
               type="button"
               variant="outline"
               size="sm"
-              className="gap-1.5 text-receivable hover:text-receivable"
+              className="gap-1.5"
               onClick={sendStatementToWhatsApp}
             >
               <MessageCircle className="size-3.5" />
               Enviar no WhatsApp
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-1.5 text-receivable hover:text-receivable"
-              onClick={sendStatementPdfToWhatsApp}
-            >
-              <FileText className="size-3.5" />
-              PDF + WhatsApp
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger className={buttonVariants({ variant: 'outline', size: 'sm', className: 'gap-1.5' })}>
+                <FileText className="size-3.5" />
+                Extrato em PDF
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-48">
+                <DropdownMenuItem onClick={downloadStatementPdf}>
+                  <Download className="size-3.5" />
+                  Baixar PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={shareStatementPdf}>
+                  <Share2 className="size-3.5" />
+                  Compartilhar PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </SheetHeader>
 
@@ -682,9 +745,8 @@ function StatementSheet({
                       >
                         <ToggleButton
                           isPaid={r.isPaid}
-                          disabled={Boolean(r.settledAt)}
-                          onToggle={() => { if (!r.settledAt) handleReceivableToggle(r) }}
-                          label={r.settledAt ? 'Acerto concluído' : r.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
+                          onToggle={() => handleReceivableToggle(r)}
+                          label={r.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
                         />
                         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                           <span
@@ -709,7 +771,7 @@ function StatementSheet({
                         >
                           +{formatCurrency(r.amount)}
                         </span>
-                        {!r.settledAt && <DropdownMenu>
+                        <DropdownMenu>
                           <DropdownMenuTrigger className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted" aria-label="Ações da cobrança">
                             <MoreVertical className="size-4" />
                           </DropdownMenuTrigger>
@@ -721,7 +783,7 @@ function StatementSheet({
                               <Trash2 className="size-3.5" /> Excluir
                             </DropdownMenuItem>
                           </DropdownMenuContent>
-                        </DropdownMenu>}
+                        </DropdownMenu>
                       </div>
                     ))}
                   </div>
@@ -740,9 +802,8 @@ function StatementSheet({
                       >
                         <ToggleButton
                           isPaid={d.isPaid}
-                          disabled={Boolean(d.settledAt)}
-                          onToggle={() => { if (!d.settledAt) handleDebtToggle(d) }}
-                          label={d.settledAt ? 'Acerto concluído' : d.isPaid ? 'Marcar como pendente' : 'Marcar como paga'}
+                          onToggle={() => handleDebtToggle(d)}
+                          label={d.isPaid ? 'Marcar como pendente' : 'Marcar como paga'}
                         />
                         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                           <span
@@ -765,7 +826,7 @@ function StatementSheet({
                         >
                           -{formatCurrency(d.amount)}
                         </span>
-                        {!d.settledAt && <DropdownMenu>
+                        <DropdownMenu>
                           <DropdownMenuTrigger className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted" aria-label="Ações da dívida">
                             <MoreVertical className="size-4" />
                           </DropdownMenuTrigger>
@@ -777,7 +838,7 @@ function StatementSheet({
                               <Trash2 className="size-3.5" /> Excluir
                             </DropdownMenuItem>
                           </DropdownMenuContent>
-                        </DropdownMenu>}
+                        </DropdownMenu>
                       </div>
                     ))}
                   </div>
@@ -826,10 +887,18 @@ function StatementSheet({
         }}
         onCancel={() => setMarkReceivedReceivable(null)}
       />
+      <UnmarkPaidWarningDialog
+        open={unmarkPaidTarget !== null}
+        kind={unmarkPaidTarget?.kind ?? 'debt'}
+        onConfirm={handleUnmarkPaidConfirm}
+        onCancel={() => setUnmarkPaidTarget(null)}
+      />
       <SettlePersonDialog
         open={settleOpen}
         personName={person?.name ?? ''}
         netBalance={settlementNetBalance}
+        hasPendingDebts={pendingDebtsCount > 0}
+        hasPendingReceivables={pendingReceivablesCount > 0}
         createIncome={user?.createIncomeOnReceivablePaid ?? true}
         createExpense={user?.createExpenseOnDebtPaid ?? true}
         onConfirm={(payload) => settleMut.mutate(payload)}

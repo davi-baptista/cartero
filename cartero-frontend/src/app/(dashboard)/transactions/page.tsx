@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, memo } from 'react'
+import { useState, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import type { LucideIcon } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -17,6 +17,7 @@ import {
   Search,
   X,
   MoreVertical,
+  Repeat2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -89,16 +90,6 @@ function formatInvoicePeriod(invoice?: Transaction['invoice']) {
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-const CategoryBadge = memo(function CategoryBadge({ icon, color, name }: { icon?: string | null; color?: string | null; name: string }) {
-  const { Icon } = resolveCategoryIcon(icon)
-  return (
-    <span className="flex min-w-0 items-center gap-1 truncate">
-      <Icon aria-hidden="true" className="size-3 shrink-0" style={color ? { color } : undefined} />
-      <span className="truncate">{name}</span>
-    </span>
-  )
-})
-
 function AmountDisplay({ amount, type, isRefund = false, size = 'md' }: { amount: number; type: TransactionType; isRefund?: boolean; size?: 'sm' | 'md' }) {
   const expense = isExpense(type, isRefund)
   const formatted = formatCurrency(amount)
@@ -148,24 +139,22 @@ function TransactionRow({
 
         {/* Title + badges + description */}
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <span className="truncate text-sm font-medium leading-tight sm:text-[15px]">{tx.title}</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-medium leading-tight sm:text-[15px]">{tx.title}</span>
+            {(tx.parentId || /\s\d+\/\d+$/.test(tx.title)) && (
+              <>
+                <Repeat2 aria-hidden="true" className="size-3.5 shrink-0 text-primary/70" />
+                <span className="sr-only">Parcelado</span>
+              </>
+            )}
+          </span>
 
-          {/* Type · bank · category — inline, quiet */}
+          {/* Type · bank · invoice · person — inline, quiet */}
           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] text-muted-foreground">
             <span className="shrink-0">{TRANSACTION_TYPE_LABELS[tx.type]}</span>
             {tx.isRefund && <span className="shrink-0 text-primary">· reembolso</span>}
             {visibleBank && <span aria-hidden>·</span>}
             {visibleBank && <span className="truncate">{visibleBank.name}</span>}
-            {visibleBank && tx.category && <span aria-hidden>·</span>}
-            {tx.category && (
-              <CategoryBadge icon={tx.category.icon} color={tx.category.color} name={tx.category.name} />
-            )}
-            {(tx.parentId || /\s\d+\/\d+$/.test(tx.title)) && (
-              <>
-                <span aria-hidden>·</span>
-                <span className="shrink-0 text-primary/60">parcelado</span>
-              </>
-            )}
             {tx.invoice && (
               <>
                 <span aria-hidden>·</span>
@@ -425,6 +414,11 @@ export default function TransactionsPage() {
 
   const [scopeDialog, setScopeDialog] = useState<{ tx: Transaction; mode: 'edit' | 'delete' } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null)
+  const [closedInvoiceConfirm, setClosedInvoiceConfirm] = useState<{
+    id: string
+    payload: Parameters<typeof updateTransaction>[1]
+    scope?: InstallmentScope
+  } | null>(null)
 
   // ── Queries ──
   const { data: transactions, isLoading: txLoading } = useQuery({
@@ -466,12 +460,21 @@ export default function TransactionsPage() {
       qc.invalidateQueries({ queryKey: ['receivables'] })
       qc.invalidateQueries({ queryKey: ['invoices'] })
       qc.invalidateQueries({ queryKey: ['budget'] })
+      setClosedInvoiceConfirm(null)
       setSheetOpen(false)
       setEditTx(null)
       setEditScope(null)
       toast.success('Transação atualizada')
     },
-    onError: (err) => {
+    onError: (err, variables) => {
+      if (
+        isAxiosError(err) &&
+        err.response?.status === 409 &&
+        err.response.data?.code === 'CLOSED_INVOICE_REASSIGNMENT'
+      ) {
+        setClosedInvoiceConfirm(variables)
+        return
+      }
       if (isAxiosError(err) && err.response?.status === 403) {
         toast.error('Não é possível editar transações de faturas já pagas.')
       } else {
@@ -553,9 +556,9 @@ export default function TransactionsPage() {
 
   async function handleSheetSubmit(data: TransactionFormData, scope: InstallmentScope | null) {
     if (editTx) {
-      const { installments, date, title, personId, ...rest } = data
+      const { installments, title, personId, ...rest } = data
       void installments
-      const payload = editTx.parentId ? rest : { ...rest, date, title }
+      const payload = editTx.parentId ? rest : { ...rest, title }
       const finalPayload = {
         ...payload,
         personId: data.type === TransactionType.CREDIT_CARD ? (personId ?? null) : null,
@@ -830,6 +833,34 @@ export default function TransactionsPage() {
         onCancel={() => setScopeDialog(null)}
         linkedWarning={Boolean(scopeDialog?.tx.personId)}
       />
+
+      <Dialog open={closedInvoiceConfirm !== null} onOpenChange={(o) => !o && setClosedInvoiceConfirm(null)}>
+        <DialogContent showCloseButton={false} className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Fatura já fechada</DialogTitle>
+            <DialogDescription>
+              Essa alteração vai mover parcelas para uma fatura que já está fechada. Deseja continuar?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClosedInvoiceConfirm(null)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                if (closedInvoiceConfirm) {
+                  updateMut.mutate({
+                    ...closedInvoiceConfirm,
+                    payload: { ...closedInvoiceConfirm.payload, confirmReopenClosedInvoice: true },
+                  })
+                }
+              }}
+            >
+              Continuar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Simple delete confirm for non-parcelado */}
       <Dialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
