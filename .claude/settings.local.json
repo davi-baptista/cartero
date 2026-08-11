@@ -35,10 +35,40 @@
       "Bash(mkdir -p \"C:\\\\Users\\\\davi.inov\\\\.claude\\\\plans\" 2>/dev/null; echo ok)",
       "Bash(cp \"C:/Users/davi.inov/.claude/plans/tidy-wiggling-feather-agent-a28387378f218461f.md\" \"C:/Users/davi.inov/.claude/plans/tidy-wiggling-feather.md\")",
       "Bash(node_modules/.bin/prisma migrate *)",
-      "Bash(node_modules/.bin/prisma generate *)"
+      "Bash(node_modules/.bin/prisma generate *)",
+      "Skill(impeccable)",
+      "Skill(impeccable:*)"
     ],
     "additionalDirectories": [
       "C:\\Users\\davi.inov\\.claude\\plans"
     ]
-  }
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/.claude/skills/impeccable/scripts/hook.mjs\" ] || node \"${CLAUDE_PROJECT_DIR}/.claude/skills/impeccable/scripts/hook.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking UI changes"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/.claude/skills/impeccable/scripts/hook.mjs\" ] || node \"${CLAUDE_PROJECT_DIR}/.claude/skills/impeccable/scripts/hook.mjs\"",
+            "timeout": 30,
+            "statusMessage": "Design deep pass"
+          }
+        ]
+      }
+    ]
+  },
+  "description": "Impeccable design detector: immediate-tier checks after Edit/Write/MultiEdit on UI files, full-rule deep pass on Stop."
 }
