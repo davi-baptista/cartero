@@ -26,6 +26,7 @@ export interface User {
   salary?: number
   createIncomeOnReceivablePaid: boolean
   createExpenseOnDebtPaid: boolean
+  notifyDaysBefore: number
   createdAt: string
   updatedAt: string
 }

@@ -1,8 +1,10 @@
 import {
   IsBoolean,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   Min,
   MinLength,
 } from 'class-validator';
@@ -30,4 +32,10 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   createExpenseOnDebtPaid?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  notifyDaysBefore?: number;
 }

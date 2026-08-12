@@ -15,16 +15,29 @@ model User {
   salary                       Decimal?
   createIncomeOnReceivablePaid Boolean  @default(false)
   createExpenseOnDebtPaid      Boolean  @default(false)
+  notifyDaysBefore             Int      @default(3)
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
 
-  banks        Bank[]
-  categories   Category[]
-  transactions Transaction[]
-  invoices     Invoice[]
-  debts        Debt[]
-  receivables  Receivable[]
-  people       Person[]
+  banks             Bank[]
+  categories        Category[]
+  transactions      Transaction[]
+  invoices          Invoice[]
+  debts             Debt[]
+  receivables       Receivable[]
+  people            Person[]
+  pushSubscriptions PushSubscription[]
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model Bank {

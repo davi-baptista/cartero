@@ -10,6 +10,8 @@ import { CurrencyInput } from '@/components/ui/currency-input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/providers/auth-provider'
 import { updateMe } from '@/services/users.service'
+import { getPublicKey, subscribePush, unsubscribePush } from '@/services/notifications.service'
+import { enablePushNotifications, disablePushNotifications, getExistingPushSubscription } from '@/lib/push'
 import { formatCurrency } from '@/lib/formatters'
 
 // ─── Section Card ─────────────────────────────────────────────────────────────
@@ -65,10 +67,21 @@ export default function ProfilePage() {
   const [createExpenseOnDebtPaid, setCreateExpenseOnDebtPaid] = useState(
     user?.createExpenseOnDebtPaid ?? false,
   )
+  const [notifyDaysBefore, setNotifyDaysBefore] = useState(
+    user?.notifyDaysBefore ?? 3,
+  )
+  const [pushEnabled, setPushEnabled] = useState(false)
+  const [pushBusy, setPushBusy] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+
+  useEffect(() => {
+    getExistingPushSubscription()
+      .then((subscription) => setPushEnabled(subscription !== null))
+      .catch(() => setPushEnabled(false))
+  }, [])
 
   // Sync form when user changes (e.g. on mount if context hydrates after render)
   useEffect(() => {
@@ -77,6 +90,7 @@ export default function ProfilePage() {
       setSalary(user.salary != null ? Number(user.salary) : 0)
       setCreateIncomeOnReceivablePaid(user.createIncomeOnReceivablePaid ?? false)
       setCreateExpenseOnDebtPaid(user.createExpenseOnDebtPaid ?? false)
+      setNotifyDaysBefore(user.notifyDaysBefore ?? 3)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
@@ -99,6 +113,15 @@ export default function ProfilePage() {
     onError: () => toast.error('Não foi possível atualizar o salário'),
   })
 
+  const notifyDaysMut = useMutation({
+    mutationFn: () => updateMe({ notifyDaysBefore }),
+    onSuccess: (updated) => {
+      updateUser(updated)
+      toast.success('Preferência de notificação atualizada')
+    },
+    onError: () => toast.error('Não foi possível atualizar a preferência'),
+  })
+
   const passwordMut = useMutation({
     mutationFn: () => updateMe({ password: newPassword }),
     onSuccess: () => {
@@ -117,6 +140,28 @@ export default function ProfilePage() {
     },
     onError: () => toast.error('Não foi possível atualizar as preferências'),
   })
+
+  async function handleTogglePush(nextEnabled: boolean) {
+    setPushBusy(true)
+    try {
+      if (nextEnabled) {
+        const publicKey = await getPublicKey()
+        const subscription = await enablePushNotifications(publicKey)
+        await subscribePush(subscription.toJSON())
+        setPushEnabled(true)
+        toast.success('Notificações push ativadas')
+      } else {
+        const endpoint = await disablePushNotifications()
+        if (endpoint) await unsubscribePush(endpoint)
+        setPushEnabled(false)
+        toast.success('Notificações push desativadas')
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não foi possível atualizar as notificações')
+    } finally {
+      setPushBusy(false)
+    }
+  }
 
   function handlePasswordSave() {
     if (newPassword.length < 6) {
@@ -264,6 +309,47 @@ export default function ProfilePage() {
               <span className="text-xs text-muted-foreground">Gera um gasto no banco e na forma de pagamento escolhidos.</span>
             </span>
           </label>
+        </SectionCard>
+
+        {/* Notificações */}
+        <SectionCard
+          title="Notificações"
+          description="Receba um aviso no celular quando algo estiver vencendo"
+          footer={
+            <Button
+              size="sm"
+              onClick={() => notifyDaysMut.mutate()}
+              disabled={notifyDaysMut.isPending || notifyDaysBefore === (user.notifyDaysBefore ?? 3)}
+            >
+              {notifyDaysMut.isPending ? 'Salvando…' : 'Salvar'}
+            </Button>
+          }
+        >
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border/70 p-3 transition-colors hover:bg-muted/40">
+            <input
+              type="checkbox"
+              checked={pushEnabled}
+              disabled={pushBusy}
+              onChange={(event) => handleTogglePush(event.target.checked)}
+              className="mt-0.5 size-4 accent-primary"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">Ativar notificações push</span>
+              <span className="text-xs text-muted-foreground">
+                Avisa mesmo com o app fechado. Pede permissão do navegador na primeira vez.
+              </span>
+            </span>
+          </label>
+          <Field label="Avisar com quantos dias de antecedência">
+            <Input
+              type="number"
+              min={1}
+              max={30}
+              value={notifyDaysBefore}
+              onChange={(e) => setNotifyDaysBefore(Number(e.target.value))}
+              className="h-8 w-24 text-sm"
+            />
+          </Field>
         </SectionCard>
 
         {/* Senha */}

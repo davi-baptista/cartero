@@ -16,6 +16,7 @@ import { ReceivablesModule } from './receivables/receivables.module';
 import { PersonsModule } from './persons/persons.module';
 import { BudgetModule } from './budget/budget.module';
 import { HealthModule } from './health/health.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { HealthModule } from './health/health.module';
     PersonsModule,
     BudgetModule,
     HealthModule,
+    NotificationsModule,
     ScheduleModule.forRoot(),
   ],
   providers: [AppScheduler],
