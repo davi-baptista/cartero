@@ -8,6 +8,14 @@ export interface BudgetSummary {
   totalInvoices: number
   totalReimbursable: number
   netAmount: number
+  /** Débito, PIX e boleto lançados dentro do mês. */
+  totalDirectPayments: number
+  /** Dívidas com vencimento dentro do mês. */
+  totalDebts: number
+  /** Custo real do mês: faturas + pagamentos diretos + dívidas. */
+  totalToPay: number
+  totalPaid: number
+  totalPending: number
   invoices: Invoice[]
 }
 

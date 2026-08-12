@@ -21,6 +21,12 @@ export class FindTransactionsDto {
   @IsBoolean()
   invoicePeriod?: boolean;
 
+  /** Return only child rows from an installment series. */
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  installmentsOnly?: boolean;
+
   @IsOptional()
   @IsUUID()
   categoryId?: string;

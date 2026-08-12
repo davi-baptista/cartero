@@ -112,7 +112,7 @@ function SidebarToggle() {
 const navItems = [
   { href: '/overview', label: 'Visão Geral', icon: LayoutDashboard },
   { href: '/budget', label: 'Orçamento', icon: PiggyBank },
-  { href: '/transactions', label: 'Transações', icon: ArrowDownUp },
+  { href: '/transactions', label: 'Extrato', icon: ArrowDownUp },
   { href: '/banks', label: 'Bancos', icon: Landmark },
   { href: '/categories', label: 'Categorias', icon: Tags },
   { href: '/debts', label: 'Dívidas', icon: HandCoins },

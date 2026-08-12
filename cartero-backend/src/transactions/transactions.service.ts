@@ -140,13 +140,6 @@ export class TransactionsService {
 
           if (i === 0 && installments > 1) {
             parentId = transaction.id;
-
-            await tx.transaction.update({
-              where: { id: transaction.id, userId },
-              data: { parentId },
-            });
-
-            transaction.parentId = parentId;
           }
 
           if (invoiceId) {
@@ -179,11 +172,6 @@ export class TransactionsService {
 
             if (i === 0 && installments > 1) {
               receivableParentId = receivable.id;
-
-              await tx.receivable.update({
-                where: { id: receivable.id, userId },
-                data: { parentId: receivableParentId },
-              });
             }
           }
 
@@ -209,9 +197,8 @@ export class TransactionsService {
       : [];
 
     // The original purchase date is intentionally preserved on every
-    // installment. For the transactions screen, however, a credit-card
-    // installment belongs to the month of its linked invoice. Non-card
-    // transactions still use their own date.
+    // installment. Callers that need invoice-period semantics can opt in;
+    // the regular transaction list remains date-based.
     const periodFilter =
       filters.invoicePeriod && invoicePeriods.length > 0
         ? {
@@ -235,6 +222,7 @@ export class TransactionsService {
         categoryId: filters.categoryId,
         bankId: filters.bankId,
         type: filters.type,
+        parentId: filters.installmentsOnly ? { not: null } : undefined,
         ...periodFilter,
       },
       include: {

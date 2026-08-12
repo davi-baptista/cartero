@@ -161,6 +161,7 @@ export interface TransactionFilters {
   categoryId?: string
   type?: TransactionType
   invoicePeriod?: boolean
+  installmentsOnly?: boolean
 }
 
 export interface ApiError {

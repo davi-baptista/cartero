@@ -16,8 +16,6 @@ import {
   TrendingUp,
   Search,
   X,
-  MoreVertical,
-  Repeat2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -39,12 +37,6 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { MotionRow } from '@/components/ui/motion-row'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { TransactionSheet, type TransactionFormData } from './transaction-sheet'
 import { InstallmentScopeDialog } from './installment-scope-dialog'
 import {
@@ -88,6 +80,24 @@ function formatInvoicePeriod(invoice?: Transaction['invoice']) {
   return `${INVOICE_MONTHS[invoice.month - 1] ?? invoice.month}/${invoice.year}`
 }
 
+function isInstallmentChild(tx: Transaction): boolean {
+  const match = tx.title.match(/\s(\d+)\/\d+$/)
+  // The first installment is the purchase root, even for legacy rows that
+  // accidentally stored their own id in parentId.
+  return Boolean(tx.parentId && match && Number(match[1]) > 1)
+}
+
+/** Total de parcelas da compra, lido do sufixo "x/y" do título. */
+function getInstallmentCount(tx: Transaction): number | null {
+  const match = tx.title.match(/\s\d+\/(\d+)$/)
+  return match ? Number(match[1]) : null
+}
+
+/** Título sem o sufixo de parcela — "Notebook 1/10" vira "Notebook". */
+function stripInstallmentSuffix(title: string): string {
+  return title.replace(/\s\d+\/\d+$/, '')
+}
+
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 function AmountDisplay({ amount, type, isRefund = false, size = 'md' }: { amount: number; type: TransactionType; isRefund?: boolean; size?: 'sm' | 'md' }) {
@@ -110,25 +120,20 @@ function AmountDisplay({ amount, type, isRefund = false, size = 'md' }: { amount
 function TransactionRow({
   tx,
   onView,
-  onEdit,
-  onDelete,
 }: {
   tx: Transaction
   onView: (tx: Transaction) => void
-  onEdit: (tx: Transaction) => void
-  onDelete: (tx: Transaction) => void
 }) {
   const Icon = TYPE_ICON[tx.type]
   const visibleBank = tx.bank?.isSystem ? undefined : tx.bank
 
   return (
-    <div className="group flex items-center gap-2 px-0 py-3.5 sm:gap-4 sm:px-2 sm:py-4">
-      <button
-        type="button"
-        onClick={() => onView(tx)}
-        className="-my-1 flex min-w-0 flex-1 items-center gap-3 rounded-lg py-1 text-left outline-none transition-colors active:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4"
-        aria-label={`Ver detalhes de ${tx.title}`}
-      >
+    <button
+      type="button"
+      onClick={() => onView(tx)}
+      className="group flex w-full min-w-0 items-center gap-3 rounded-lg px-0 py-3.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4 sm:px-2 sm:py-4"
+      aria-label={`Ver detalhes de ${tx.title}`}
+    >
         {/* Type icon — green for income, neutral for all expenses */}
         <div
           className="flex size-10 shrink-0 items-center justify-center rounded-xl sm:size-11 sm:rounded-2xl"
@@ -140,13 +145,9 @@ function TransactionRow({
         {/* Title + badges + description */}
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm font-medium leading-tight sm:text-[15px]">{tx.title}</span>
-            {(tx.parentId || /\s\d+\/\d+$/.test(tx.title)) && (
-              <>
-                <Repeat2 aria-hidden="true" className="size-3.5 shrink-0 text-primary/70" />
-                <span className="sr-only">Parcelado</span>
-              </>
-            )}
+            <span className="truncate text-sm font-medium leading-tight sm:text-[15px]">
+              {tx.title}
+            </span>
           </span>
 
           {/* Type · bank · invoice · person — inline, quiet */}
@@ -188,52 +189,128 @@ function TransactionRow({
         <div className="flex shrink-0 sm:hidden">
           <AmountDisplay amount={tx.amount} type={tx.type} isRefund={tx.isRefund} size="sm" />
         </div>
+    </button>
+  )
+}
+
+/**
+ * Compra parcelada como um item só: mostra o valor total no dia da compra e
+ * revela as parcelas individuais ao expandir.
+ */
+const VISIBLE_INSTALLMENTS = 3
+
+function InstallmentGroup({
+  root,
+  installments,
+  onView,
+}: {
+  root: Transaction
+  installments: Transaction[]
+  onView: (tx: Transaction) => void
+}) {
+  const [showAll, setShowAll] = useState(false)
+  const Icon = TYPE_ICON[root.type]
+  const visibleBank = root.bank?.isSystem ? undefined : root.bank
+  const count = getInstallmentCount(root) ?? installments.length
+  const total = installments.reduce((sum, tx) => sum + tx.amount, 0)
+  const baseTitle = stripInstallmentSuffix(root.title)
+
+  const visible = showAll ? installments : installments.slice(0, VISIBLE_INSTALLMENTS)
+  const hiddenCount = installments.length - visible.length
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => onView(root)}
+        className="flex w-full min-w-0 items-center gap-3 rounded-lg px-0 py-3.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4 sm:px-2 sm:py-4"
+        aria-label={`Ver detalhes de ${baseTitle}`}
+      >
+        <div
+          className="flex size-10 shrink-0 items-center justify-center rounded-xl sm:size-11 sm:rounded-2xl"
+          style={{ backgroundColor: EXPENSE_BG }}
+        >
+          <Icon aria-hidden="true" className="size-4.5 sm:size-5" style={{ color: EXPENSE_ICON_CLR }} />
+        </div>
+
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-medium leading-tight sm:text-[15px]">
+              {baseTitle}
+            </span>
+            <span className="shrink-0 text-[11px] font-medium text-primary/70">{count}x</span>
+          </span>
+
+          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] text-muted-foreground">
+            <span className="shrink-0">{TRANSACTION_TYPE_LABELS[root.type]}</span>
+            {visibleBank && <span aria-hidden>·</span>}
+            {visibleBank && <span className="truncate">{visibleBank.name}</span>}
+            {root.person && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="truncate">{root.person.name}</span>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="hidden shrink-0 flex-col items-end gap-1 sm:flex">
+          <AmountDisplay amount={total} type={root.type} isRefund={root.isRefund} />
+          <span className="text-xs text-muted-foreground">{formatDate(root.date)}</span>
+        </div>
+
+        <div className="flex shrink-0 sm:hidden">
+          <AmountDisplay amount={total} type={root.type} isRefund={root.isRefund} />
+        </div>
       </button>
 
-      {/* Desktop hover actions */}
-      <div className="hidden items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground hover:text-foreground"
-          onClick={() => onEdit(tx)}
-          aria-label="Editar transação"
-        >
-          <Pencil className="size-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground hover:text-destructive"
-          onClick={() => onDelete(tx)}
-          aria-label="Excluir transação"
-        >
-          <Trash2 className="size-3.5" />
-        </Button>
-      </div>
+      {/* Parcelas — subordinadas ao item, sempre visíveis */}
+      <div className="ml-5 border-l border-border/50 pl-3 sm:ml-7 sm:pl-4">
+        {visible.map((tx) => (
+          <InstallmentRow key={tx.id} tx={tx} onView={onView} />
+        ))}
 
-      {/* Mobile dropdown */}
-      <div className="sm:hidden">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            aria-label="Mais opções"
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowAll(true)}
+            className="py-2 text-[11px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
           >
-            <MoreVertical className="size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onEdit(tx)}>
-              <Pencil className="size-3.5" />
-              Editar
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onDelete(tx)} className="text-destructive focus:text-destructive">
-              <Trash2 className="size-3.5" />
-              Excluir
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            Ver todas as {installments.length} parcelas
+          </button>
+        )}
       </div>
     </div>
+  )
+}
+
+/** Parcela individual dentro de um grupo — discreta, subordinada ao item pai. */
+function InstallmentRow({
+  tx,
+  onView,
+}: {
+  tx: Transaction
+  onView: (tx: Transaction) => void
+}) {
+  const label = tx.title.match(/\s(\d+\/\d+)$/)?.[1] ?? tx.title
+
+  return (
+    <button
+      type="button"
+      onClick={() => onView(tx)}
+      className="flex w-full min-w-0 items-center gap-3 rounded-md py-1.5 pr-0 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring/50 sm:pr-2"
+      aria-label={`Ver detalhes da parcela ${label}`}
+    >
+      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/70">{label}</span>
+      {tx.invoice && (
+        <span className="truncate text-[11px] text-muted-foreground/60">
+          fatura {formatInvoicePeriod(tx.invoice)}
+        </span>
+      )}
+      <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+        {formatCurrency(tx.amount)}
+      </span>
+    </button>
   )
 }
 
@@ -395,6 +472,10 @@ export default function TransactionsPage() {
         startDate: spStart ?? undefined,
         endDate: spEnd ?? undefined,
         categoryId: spCategory ?? undefined,
+        // Preserva a competência de fatura quando a navegação vem de uma tela
+        // que soma por vencimento — senão a lista mostraria itens diferentes
+        // do número que foi clicado.
+        invoicePeriod: searchParams.get('invoicePeriod') === 'true' || undefined,
       }
     }
     const d = new Date()
@@ -423,7 +504,7 @@ export default function TransactionsPage() {
   // ── Queries ──
   const { data: transactions, isLoading: txLoading } = useQuery({
     queryKey: ['transactions', filters],
-    queryFn: () => getTransactions({ ...filters, invoicePeriod: true }),
+    queryFn: () => getTransactions(filters),
   })
 
   const { data: banks = [] } = useQuery({
@@ -502,7 +583,7 @@ export default function TransactionsPage() {
   })
 
   // ── Client-side search filter ──
-  const displayTransactions = useMemo(() => {
+  const filteredTransactions = useMemo(() => {
     if (!transactions) return undefined
     if (!search) return transactions
     const q = search.toLowerCase()
@@ -513,18 +594,62 @@ export default function TransactionsPage() {
     )
   }, [transactions, search])
 
+  /**
+   * Cada compra parcelada vira um item único, ancorado na data da compra e
+   * carregando todas as suas parcelas. O restante entra como transação avulsa.
+   */
+  const displayItems = useMemo(() => {
+    if (!filteredTransactions) return undefined
+
+    const groups = new Map<string, Transaction[]>()
+    const items: Array<
+      { kind: 'single'; tx: Transaction } | { kind: 'installment'; groupId: string }
+    > = []
+
+    for (const tx of filteredTransactions) {
+      // A primeira parcela é a raiz da série e tem parentId nulo — ela se
+      // identifica pelo próprio id, senão viraria um item solto.
+      const isInstallment = Boolean(tx.parentId) || /\s\d+\/\d+$/.test(tx.title)
+      if (!isInstallment) {
+        items.push({ kind: 'single', tx })
+        continue
+      }
+
+      const groupId = tx.parentId ?? tx.id
+      const existing = groups.get(groupId)
+      if (existing) {
+        existing.push(tx)
+      } else {
+        groups.set(groupId, [tx])
+        items.push({ kind: 'installment', groupId })
+      }
+    }
+
+    // Ordena as parcelas de cada grupo por número (1/10, 2/10, …).
+    for (const list of groups.values()) {
+      list.sort((a, b) => {
+        const na = Number(a.title.match(/\s(\d+)\/\d+$/)?.[1] ?? 0)
+        const nb = Number(b.title.match(/\s(\d+)\/\d+$/)?.[1] ?? 0)
+        return na - nb
+      })
+    }
+
+    return { items, groups }
+  }, [filteredTransactions])
+
   // ── Summary ──
   const summary = useMemo(() => {
-    if (!displayTransactions) return { receitas: 0, gastos: 0, saldo: 0 }
-    const receitas = displayTransactions.filter((t) => !isExpense(t.type, t.isRefund)).reduce((s, t) => s + t.amount, 0)
-    const gastos = displayTransactions.filter((t) => isExpense(t.type, t.isRefund)).reduce((s, t) => s + t.amount, 0)
+    const list = filteredTransactions ?? []
+    if (list.length === 0) return { receitas: 0, gastos: 0, saldo: 0 }
+    const receitas = list.filter((t) => !isExpense(t.type, t.isRefund)).reduce((s, t) => s + t.amount, 0)
+    const gastos = list.filter((t) => isExpense(t.type, t.isRefund)).reduce((s, t) => s + t.amount, 0)
     return { receitas, gastos, saldo: receitas - gastos }
-  }, [displayTransactions])
+  }, [filteredTransactions])
 
   // ── Handlers ──
   function handleEdit(tx: Transaction) {
     setDetailsTx(null)
-    if (tx.parentId) {
+    if (isInstallmentChild(tx)) {
       setScopeDialog({ tx, mode: 'edit' })
     } else {
       setEditTx(tx)
@@ -535,7 +660,7 @@ export default function TransactionsPage() {
 
   function handleDelete(tx: Transaction) {
     setDetailsTx(null)
-    if (tx.parentId) {
+    if (isInstallmentChild(tx)) {
       setScopeDialog({ tx, mode: 'delete' })
     } else {
       setDeleteTarget(tx)
@@ -604,9 +729,9 @@ export default function TransactionsPage() {
       {/* Page header */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Transações</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Extrato</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Registre e acompanhe seus gastos e receitas
+            Histórico do que aconteceu, na data em que aconteceu
           </p>
         </div>
         <Button onClick={() => { setEditTx(null); setEditScope(null); setSheetOpen(true) }}>
@@ -731,7 +856,7 @@ export default function TransactionsPage() {
       </div>
 
       {/* Summary tiles */}
-      {!txLoading && displayTransactions && displayTransactions.length > 0 && (
+      {!txLoading && (displayItems?.items.length ?? 0) > 0 && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
           <div className="min-w-0 rounded-xl bg-muted/30 px-3 py-3 sm:rounded-2xl sm:px-4">
             <p className="text-xs font-medium text-muted-foreground">Receitas</p>
@@ -766,7 +891,7 @@ export default function TransactionsPage() {
           <div>
             {Array.from({ length: 8 }).map((_, i) => <RowSkeleton key={i} />)}
           </div>
-        ) : !displayTransactions || displayTransactions.length === 0 ? (
+        ) : !displayItems || displayItems.items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="mb-4 flex size-16 items-center justify-center rounded-3xl bg-muted/40">
               <TrendingUp className="size-7 text-muted-foreground" />
@@ -791,16 +916,29 @@ export default function TransactionsPage() {
           </div>
         ) : (
           <div>
-            {displayTransactions.map((tx, i) => (
-              <MotionRow key={tx.id} index={i}>
-                <TransactionRow
-                  tx={tx}
-                  onView={setDetailsTx}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                />
-              </MotionRow>
-            ))}
+            {displayItems.items.map((item, i) => {
+              if (item.kind === 'single') {
+                return (
+                  <MotionRow key={item.tx.id} index={i}>
+                    <TransactionRow tx={item.tx} onView={setDetailsTx} />
+                  </MotionRow>
+                )
+              }
+
+              const installments = displayItems.groups.get(item.groupId) ?? []
+              const root = installments[0]
+              if (!root) return null
+
+              return (
+                <MotionRow key={item.groupId} index={i}>
+                  <InstallmentGroup
+                    root={root}
+                    installments={installments}
+                    onView={setDetailsTx}
+                  />
+                </MotionRow>
+              )
+            })}
           </div>
         )}
       </div>

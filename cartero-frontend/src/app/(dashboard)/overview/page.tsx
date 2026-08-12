@@ -265,7 +265,7 @@ function CategoryBreakdown({
               key={row.categoryId}
               {...row}
               index={i}
-              href={`/transactions?startDate=${startDate}&endDate=${endDate}&categoryId=${row.categoryId}`}
+              href={`/transactions?startDate=${startDate}&endDate=${endDate}&categoryId=${row.categoryId}&invoicePeriod=true`}
             />
           ))}
         </div>

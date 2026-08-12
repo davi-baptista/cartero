@@ -9,7 +9,6 @@ import {
   CreditCard,
   PiggyBank,
   ArrowRight,
-  AlertCircle,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getBudget } from '@/services/budget.service'
@@ -106,14 +105,9 @@ export default function BudgetPage() {
       return
     }
 
-    const invoicesWithAmount = budget.invoices.filter(
-      (invoice) => Number(invoice.totalAmount) > 0,
-    )
-
-    if (
-      invoicesWithAmount.length > 0 &&
-      invoicesWithAmount.every((invoice) => invoice.status === InvoiceStatus.PAID)
-    ) {
+    // Só adianta o mês quando não sobrou nada a pagar — faturas, pagamentos
+    // diretos e dívidas incluídos.
+    if (budget.totalToPay > 0 && budget.totalPending === 0) {
       autoAdvanced.current = true
       window.setTimeout(() => {
         if (month === 12) {
@@ -135,20 +129,24 @@ export default function BudgetPage() {
 
   const salary = budget?.salary ?? null
 
-  const summary = useMemo(() => {
-    const totalPaid = invoices
-      .filter((inv) => inv.status === InvoiceStatus.PAID)
-      .reduce((s, inv) => s + Number(inv.totalAmount), 0)
-    const totalAll = budget?.totalInvoices ?? 0
-    const totalReimbursable = budget?.totalReimbursable ?? 0
-    const netAmount = budget?.netAmount ?? 0
-    const totalPending = totalAll - totalPaid
-    return { totalAll, totalPaid, totalPending, totalReimbursable, netAmount }
-  }, [invoices, budget])
+  const summary = useMemo(
+    () => ({
+      totalAll: budget?.totalInvoices ?? 0,
+      totalReimbursable: budget?.totalReimbursable ?? 0,
+      netAmount: budget?.netAmount ?? 0,
+      totalDirectPayments: budget?.totalDirectPayments ?? 0,
+      totalDebts: budget?.totalDebts ?? 0,
+      totalToPay: budget?.totalToPay ?? 0,
+      totalPaid: budget?.totalPaid ?? 0,
+      totalPending: budget?.totalPending ?? 0,
+    }),
+    [budget],
+  )
 
-  const balance = salary != null ? salary - summary.netAmount : null
+  const balance = salary != null ? salary - summary.totalToPay : null
   const hasMix = summary.totalPaid > 0 && summary.totalPending > 0
-  const pct = salary != null && salary > 0 ? (summary.netAmount / salary) * 100 : null
+  const pct =
+    salary != null && salary > 0 ? (summary.totalToPay / salary) * 100 : null
 
   return (
     <div className="flex flex-col gap-6">
@@ -157,28 +155,11 @@ export default function BudgetPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Orçamento</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Projeção mensal do seu fluxo financeiro
+            Quanto sai do seu bolso neste mês
           </p>
         </div>
         <MonthNav year={year} month={month} onPrev={prevMonth} onNext={nextMonth} />
       </div>
-
-      {/* No salary warning */}
-      {!salary && (
-        <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/20 px-4 py-3">
-          <AlertCircle className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <p className="text-sm text-muted-foreground">
-            Configure seu salário em{' '}
-            <Link
-              href="/profile"
-              className="font-medium text-foreground underline-offset-4 hover:underline"
-            >
-              Perfil
-            </Link>{' '}
-            para ver projeções de saldo.
-          </p>
-        </div>
-      )}
 
       {/* Summary — single block with hierarchy, no identical card grid */}
       <div className="space-y-4">
@@ -189,64 +170,19 @@ export default function BudgetPage() {
             <Skeleton className="mt-1 h-1.5 w-full rounded-full" />
             <Skeleton className="h-3 w-32" />
           </div>
-        ) : salary != null ? (
+        ) : (
           <>
-            {/* Hero: saldo projetado */}
+            {/* Hero: total a pagar no mês */}
             <div>
-              <p
-                className={cn(
-                  'text-[38px] font-semibold tabular-nums tracking-[-0.025em] leading-none',
-                  balance! < 0 ? 'text-destructive' : 'text-receivable',
-                )}
-              >
-                {formatCurrency(balance!)}
+              <p className="text-[38px] font-semibold tabular-nums tracking-[-0.025em] leading-none">
+                {formatCurrency(summary.totalToPay)}
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
-                {summary.totalAll > 0
-                  ? `Saldo de ${formatCurrency(salary)} após ${formatCurrency(summary.totalAll)} em faturas`
-                  : `${formatCurrency(salary)} disponível — sem faturas neste mês`}
+                {summary.totalToPay > 0
+                  ? 'a pagar neste mês'
+                  : 'nada a pagar neste mês'}
               </p>
             </div>
-
-            {/* Progress bar */}
-            {pct != null && summary.totalAll > 0 && (
-              <div>
-                <div
-                  role="progressbar"
-                  aria-valuenow={Math.min(Math.round(pct), 100)}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label="Percentual do salário comprometido"
-                  className="relative h-1.5 overflow-hidden rounded-full bg-muted/50"
-                >
-                  <div
-                    aria-hidden
-                    className={cn(
-                      'absolute inset-y-0 left-0 rounded-full motion-safe:transition-[width] motion-safe:duration-700 motion-safe:ease-out',
-                      pct > 100
-                        ? 'bg-destructive'
-                        : pct > 70
-                          ? 'bg-amber-400'
-                          : 'bg-receivable',
-                    )}
-                    style={{ width: `${Math.min(pct, 100)}%` }}
-                  />
-                </div>
-                <p
-                  className={cn(
-                    'mt-1.5 text-[11px] tabular-nums',
-                    pct > 100
-                      ? 'text-destructive'
-                      : pct > 70
-                        ? 'text-amber-400'
-                        : 'text-muted-foreground',
-                  )}
-                >
-                  {pct.toFixed(0)}% do salário comprometido
-                  {pct > 100 && ` — ${(pct - 100).toFixed(0)}% acima do limite`}
-                </p>
-              </div>
-            )}
 
             {/* Paid / pending — inline, without a separate card */}
             {hasMix && (
@@ -257,42 +193,110 @@ export default function BudgetPage() {
               </p>
             )}
 
-            {/* Reimbursable breakdown — mini stat row, no card chrome */}
-            {summary.totalReimbursable > 0 && (
+            {/* Composição do total — mini stat row, no card chrome */}
+            {summary.totalToPay > 0 && (
               <div className="flex flex-wrap items-stretch gap-x-5 gap-y-3">
-                <div>
-                  <p className="text-[11px] text-muted-foreground">Em faturas</p>
-                  <p className="mt-0.5 text-[15px] font-semibold tabular-nums tracking-[-0.01em]">
-                    {formatCurrency(summary.totalAll)}
-                  </p>
-                </div>
-                <div className="w-px shrink-0 bg-border/60" aria-hidden />
-                <div>
-                  <p className="text-[11px] text-muted-foreground">A receber de terceiros</p>
-                  <p className="mt-0.5 text-[15px] font-semibold tabular-nums tracking-[-0.01em] text-receivable">
-                    {formatCurrency(summary.totalReimbursable)}
-                  </p>
-                </div>
-                <div className="w-px shrink-0 bg-border/60" aria-hidden />
-                <div>
-                  <p className="text-[11px] text-muted-foreground">Líquido</p>
-                  <p className="mt-0.5 text-[15px] font-semibold tabular-nums tracking-[-0.01em]">
-                    {formatCurrency(summary.netAmount)}
-                  </p>
-                </div>
+                {summary.netAmount > 0 && (
+                  <div>
+                    <p className="text-[11px] text-muted-foreground">Faturas</p>
+                    <p className="mt-0.5 text-[15px] font-semibold tabular-nums tracking-[-0.01em]">
+                      {formatCurrency(summary.netAmount)}
+                    </p>
+                  </div>
+                )}
+                {summary.totalDirectPayments > 0 && (
+                  <>
+                    <div className="w-px shrink-0 bg-border/60" aria-hidden />
+                    <div>
+                      <p className="text-[11px] text-muted-foreground">Débito, PIX e boleto</p>
+                      <p className="mt-0.5 text-[15px] font-semibold tabular-nums tracking-[-0.01em]">
+                        {formatCurrency(summary.totalDirectPayments)}
+                      </p>
+                    </div>
+                  </>
+                )}
+                {summary.totalDebts > 0 && (
+                  <>
+                    <div className="w-px shrink-0 bg-border/60" aria-hidden />
+                    <div>
+                      <p className="text-[11px] text-muted-foreground">Dívidas</p>
+                      <p className="mt-0.5 text-[15px] font-semibold tabular-nums tracking-[-0.01em]">
+                        {formatCurrency(summary.totalDebts)}
+                      </p>
+                    </div>
+                  </>
+                )}
+                {summary.totalReimbursable > 0 && (
+                  <>
+                    <div className="w-px shrink-0 bg-border/60" aria-hidden />
+                    <div>
+                      <p className="text-[11px] text-muted-foreground">A receber de terceiros</p>
+                      <p className="mt-0.5 text-[15px] font-semibold tabular-nums tracking-[-0.01em] text-receivable">
+                        −{formatCurrency(summary.totalReimbursable)}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Salário — complemento opcional */}
+            {salary != null && salary > 0 && (
+              <div className="border-t border-border/60 pt-4">
+                <p className="text-sm text-muted-foreground">
+                  Sobra estimada de{' '}
+                  <span
+                    className={cn(
+                      'font-semibold tabular-nums',
+                      balance! < 0 ? 'text-destructive' : 'text-receivable',
+                    )}
+                  >
+                    {formatCurrency(balance!)}
+                  </span>{' '}
+                  sobre {formatCurrency(salary)}
+                </p>
+
+                {pct != null && summary.totalToPay > 0 && (
+                  <div className="mt-2">
+                    <div
+                      role="progressbar"
+                      aria-valuenow={Math.min(Math.round(pct), 100)}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label="Percentual do salário comprometido"
+                      className="relative h-1.5 overflow-hidden rounded-full bg-muted/50"
+                    >
+                      <div
+                        aria-hidden
+                        className={cn(
+                          'absolute inset-y-0 left-0 rounded-full motion-safe:transition-[width] motion-safe:duration-700 motion-safe:ease-out',
+                          pct > 100
+                            ? 'bg-destructive'
+                            : pct > 70
+                              ? 'bg-amber-400'
+                              : 'bg-receivable',
+                        )}
+                        style={{ width: `${Math.min(pct, 100)}%` }}
+                      />
+                    </div>
+                    <p
+                      className={cn(
+                        'mt-1.5 text-[11px] tabular-nums',
+                        pct > 100
+                          ? 'text-destructive'
+                          : pct > 70
+                            ? 'text-amber-400'
+                            : 'text-muted-foreground',
+                      )}
+                    >
+                      {pct.toFixed(0)}% do salário comprometido
+                      {pct > 100 && ` — ${(pct - 100).toFixed(0)}% acima do limite`}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </>
-        ) : (
-          /* No salary — show net invoice total only */
-          summary.netAmount > 0 && (
-            <div>
-              <p className="text-[38px] font-semibold tabular-nums tracking-[-0.025em] leading-none text-destructive">
-                {formatCurrency(summary.netAmount)}
-              </p>
-              <p className="mt-2 text-sm text-muted-foreground">em faturas neste mês</p>
-            </div>
-          )
         )}
       </div>
 
