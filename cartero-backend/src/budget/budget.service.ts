@@ -38,6 +38,9 @@ export class BudgetService {
           type: { in: DIRECT_PAYMENT_TYPES },
           isRefund: false,
           date: { gte: monthStart, lt: monthEnd },
+          // Transação-espelho de "Dívida paga" já é contada via totalDebts —
+          // incluí-la aqui também duplicaria o valor no total do mês.
+          paymentDebt: null,
         },
         select: { amount: true },
       }),
