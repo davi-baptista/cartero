@@ -12,6 +12,10 @@ export interface BudgetSummary {
   totalDirectPayments: number
   /** Dívidas com vencimento dentro do mês. */
   totalDebts: number
+  /** Quantidade de dívidas com vencimento dentro do mês. */
+  debtsCount: number
+  /** Quantas dessas dívidas já estão pagas. */
+  paidDebtsCount: number
   /** Custo real do mês: faturas + pagamentos diretos + dívidas. */
   totalToPay: number
   totalPaid: number

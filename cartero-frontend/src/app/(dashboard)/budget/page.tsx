@@ -9,10 +9,13 @@ import {
   CreditCard,
   PiggyBank,
   ArrowRight,
+  Wallet,
+  HandCoins,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getBudget } from '@/services/budget.service'
 import { formatCurrency, formatMonthYear } from '@/lib/formatters'
+import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import { InvoiceStatus } from '@/types'
 
@@ -29,6 +32,16 @@ const STATUS_CONFIG: Record<InvoiceStatus, { label: string; className: string }>
 
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+function debtsStatus(paidCount: number, totalCount: number): { label: string; className: string } {
+  if (paidCount === totalCount) {
+    return { label: totalCount > 1 ? 'Todas pagas' : 'Paga', className: 'bg-paid/15 text-paid' }
+  }
+  if (paidCount === 0) {
+    return { label: totalCount > 1 ? 'Nenhuma paga' : 'Não paga', className: 'bg-amber-500/15 text-amber-400' }
+  }
+  return { label: `${paidCount}/${totalCount} pagas`, className: 'bg-primary/15 text-primary' }
 }
 
 // ─── Month nav ────────────────────────────────────────────────────────────────
@@ -136,12 +149,17 @@ export default function BudgetPage() {
       netAmount: budget?.netAmount ?? 0,
       totalDirectPayments: budget?.totalDirectPayments ?? 0,
       totalDebts: budget?.totalDebts ?? 0,
+      debtsCount: budget?.debtsCount ?? 0,
+      paidDebtsCount: budget?.paidDebtsCount ?? 0,
       totalToPay: budget?.totalToPay ?? 0,
       totalPaid: budget?.totalPaid ?? 0,
       totalPending: budget?.totalPending ?? 0,
     }),
     [budget],
   )
+
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
+  const monthEnd = formatDateValue(new Date(year, month, 0))
 
   const balance = salary != null ? salary - summary.totalToPay : null
   const hasMix = summary.totalPaid > 0 && summary.totalPending > 0
@@ -177,11 +195,9 @@ export default function BudgetPage() {
               <p className="text-[38px] font-semibold tabular-nums tracking-[-0.025em] leading-none">
                 {formatCurrency(summary.totalToPay)}
               </p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {summary.totalToPay > 0
-                  ? 'a pagar neste mês'
-                  : 'nada a pagar neste mês'}
-              </p>
+              {summary.totalToPay === 0 && (
+                <p className="mt-2 text-sm text-muted-foreground">nada a pagar neste mês</p>
+              )}
             </div>
 
             {/* Paid / pending — inline, without a separate card */}
@@ -191,53 +207,6 @@ export default function BudgetPage() {
                 <span className="mx-1.5 text-muted-foreground/40" aria-hidden>·</span>
                 <span className="font-medium">{formatCurrency(summary.totalPending)} a pagar</span>
               </p>
-            )}
-
-            {/* Composição do total — mini stat row, no card chrome */}
-            {summary.totalToPay > 0 && (
-              <div className="flex flex-wrap items-stretch gap-x-5 gap-y-3">
-                {summary.netAmount > 0 && (
-                  <div>
-                    <p className="text-[11px] text-muted-foreground">Faturas</p>
-                    <p className="mt-0.5 text-[15px] font-semibold tabular-nums tracking-[-0.01em]">
-                      {formatCurrency(summary.netAmount)}
-                    </p>
-                  </div>
-                )}
-                {summary.totalDirectPayments > 0 && (
-                  <>
-                    <div className="w-px shrink-0 bg-border/60" aria-hidden />
-                    <div>
-                      <p className="text-[11px] text-muted-foreground">Débito, PIX e boleto</p>
-                      <p className="mt-0.5 text-[15px] font-semibold tabular-nums tracking-[-0.01em]">
-                        {formatCurrency(summary.totalDirectPayments)}
-                      </p>
-                    </div>
-                  </>
-                )}
-                {summary.totalDebts > 0 && (
-                  <>
-                    <div className="w-px shrink-0 bg-border/60" aria-hidden />
-                    <div>
-                      <p className="text-[11px] text-muted-foreground">Dívidas</p>
-                      <p className="mt-0.5 text-[15px] font-semibold tabular-nums tracking-[-0.01em]">
-                        {formatCurrency(summary.totalDebts)}
-                      </p>
-                    </div>
-                  </>
-                )}
-                {summary.totalReimbursable > 0 && (
-                  <>
-                    <div className="w-px shrink-0 bg-border/60" aria-hidden />
-                    <div>
-                      <p className="text-[11px] text-muted-foreground">A receber de terceiros</p>
-                      <p className="mt-0.5 text-[15px] font-semibold tabular-nums tracking-[-0.01em] text-receivable">
-                        −{formatCurrency(summary.totalReimbursable)}
-                      </p>
-                    </div>
-                  </>
-                )}
-              </div>
             )}
 
             {/* Salário — complemento opcional */}
@@ -302,7 +271,25 @@ export default function BudgetPage() {
 
       {/* Invoice list */}
       <div>
-        <h2 className="mb-3 text-[15px] font-semibold tracking-tight">Faturas</h2>
+        <div className="mb-3 flex items-baseline justify-between gap-2">
+          <h2 className="text-[15px] font-semibold tracking-tight">
+            Faturas
+            {!isLoading && summary.netAmount > 0 && (
+              <span className="ml-1.5 font-normal text-muted-foreground">
+                · {formatCurrency(summary.netAmount)}
+              </span>
+            )}
+          </h2>
+          {!isLoading && summary.totalReimbursable > 0 && (
+            <p className="text-[11px] text-muted-foreground">
+              já descontado{' '}
+              <span className="font-medium text-receivable">
+                {formatCurrency(summary.totalReimbursable)}
+              </span>{' '}
+              gasto por outra pessoa
+            </p>
+          )}
+        </div>
 
         {isLoading ? (
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
@@ -383,6 +370,71 @@ export default function BudgetPage() {
           </div>
         )}
       </div>
+
+      {/* Outros gastos do mês */}
+      {!isLoading && (summary.totalDirectPayments > 0 || summary.totalDebts > 0) && (
+        <div>
+          <h2 className="mb-3 text-[15px] font-semibold tracking-tight">Outros gastos do mês</h2>
+          <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
+            {summary.totalDirectPayments > 0 && (
+              <Link
+                href={`/transactions?startDate=${monthStart}&endDate=${monthEnd}&group=direct`}
+                className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30"
+              >
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
+                  <Wallet className="size-4 text-muted-foreground" aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
+                    Débito, PIX e boleto
+                  </span>
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                    Ver no extrato
+                  </p>
+                </div>
+                <span className="shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]">
+                  {formatCurrency(summary.totalDirectPayments)}
+                </span>
+                <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary/60" aria-hidden />
+              </Link>
+            )}
+            {summary.totalDebts > 0 && (
+              <Link
+                href={`/debts?endDate=${monthEnd}`}
+                className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30"
+              >
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
+                  <HandCoins className="size-4 text-muted-foreground" aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
+                      Dívidas com vencimento no mês
+                    </span>
+                    {(() => {
+                      const { label, className } = debtsStatus(summary.paidDebtsCount, summary.debtsCount)
+                      return (
+                        <span
+                          className={cn(
+                            'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
+                            className,
+                          )}
+                        >
+                          {label}
+                        </span>
+                      )
+                    })()}
+                  </div>
+                </div>
+                <span className="shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]">
+                  {formatCurrency(summary.totalDebts)}
+                </span>
+                <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary/60" aria-hidden />
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

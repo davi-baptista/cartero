@@ -65,6 +65,12 @@ const TYPE_ICON: Record<TransactionType, LucideIcon> = {
   [TransactionType.BOLETO]: FileText,
 }
 
+// Grupos de tipo combinados para navegação vinda de outras telas.
+type TypeGroup = 'direct'
+const TYPE_GROUPS: Record<TypeGroup, TransactionType[]> = {
+  direct: [TransactionType.DEBIT_CARD, TransactionType.PIX, TransactionType.BOLETO],
+}
+
 const INCOME_BG = 'var(--color-income-bg)'
 const EXPENSE_BG = 'var(--color-expense-bg)'
 const EXPENSE_ICON_CLR = 'var(--color-expense-icon)'
@@ -467,11 +473,16 @@ export default function TransactionsPage() {
     const spStart = searchParams.get('startDate')
     const spEnd = searchParams.get('endDate')
     const spCategory = searchParams.get('categoryId')
-    if (spStart || spEnd || spCategory) {
+    const spType = searchParams.get('type')
+    const spTypeValid = spType && Object.values(TransactionType).includes(spType as TransactionType)
+      ? (spType as TransactionType)
+      : undefined
+    if (spStart || spEnd || spCategory || spTypeValid) {
       return {
         startDate: spStart ?? undefined,
         endDate: spEnd ?? undefined,
         categoryId: spCategory ?? undefined,
+        type: spTypeValid,
         // Preserva a competência de fatura quando a navegação vem de uma tela
         // que soma por vencimento — senão a lista mostraria itens diferentes
         // do número que foi clicado.
@@ -487,6 +498,11 @@ export default function TransactionsPage() {
   const [bankFilter, setBankFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState(() => searchParams.get('categoryId') ?? '')
   const [search, setSearch] = useState('')
+  // Grupo de tipos combinados vindo de navegação externa (ex: Orçamento →
+  // "Débito, PIX e boleto"). Filtro client-side, não passa pelo backend.
+  const [typeGroup, setTypeGroup] = useState<TypeGroup | undefined>(
+    () => (searchParams.get('group') as TypeGroup | null) === 'direct' ? 'direct' : undefined,
+  )
 
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editTx, setEditTx] = useState<Transaction | null>(null)
@@ -585,14 +601,21 @@ export default function TransactionsPage() {
   // ── Client-side search filter ──
   const filteredTransactions = useMemo(() => {
     if (!transactions) return undefined
-    if (!search) return transactions
-    const q = search.toLowerCase()
-    return transactions.filter(
-      (tx) =>
-        tx.title.toLowerCase().includes(q) ||
-        (tx.description?.toLowerCase().includes(q) ?? false),
-    )
-  }, [transactions, search])
+    let result = transactions
+    if (typeGroup) {
+      const allowed = TYPE_GROUPS[typeGroup]
+      result = result.filter((tx) => allowed.includes(tx.type))
+    }
+    if (search) {
+      const q = search.toLowerCase()
+      result = result.filter(
+        (tx) =>
+          tx.title.toLowerCase().includes(q) ||
+          (tx.description?.toLowerCase().includes(q) ?? false),
+      )
+    }
+    return result
+  }, [transactions, search, typeGroup])
 
   /**
    * Cada compra parcelada vira um item único, ancorado na data da compra e
@@ -715,6 +738,7 @@ export default function TransactionsPage() {
     setBankFilter('')
     setCategoryFilter('')
     setSearch('')
+    setTypeGroup(undefined)
   }
 
   const typeFilterValues: Array<{ label: string; value: TransactionType | undefined }> = [
@@ -823,7 +847,7 @@ export default function TransactionsPage() {
           </div>
 
           {/* Clear filters */}
-          {(hasActiveFilters(filters) || !!search) && (
+          {(hasActiveFilters(filters) || !!search || !!typeGroup) && (
             <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1 text-muted-foreground">
               <X className="size-3.5" />
               Limpar filtros
@@ -897,14 +921,14 @@ export default function TransactionsPage() {
               <TrendingUp className="size-7 text-muted-foreground" />
             </div>
             <p className="text-base font-semibold">
-              {(hasActiveFilters(filters) || search) ? 'Nenhuma transação encontrada' : 'Ainda sem transações'}
+              {(hasActiveFilters(filters) || search || typeGroup) ? 'Nenhuma transação encontrada' : 'Ainda sem transações'}
             </p>
             <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
-              {(hasActiveFilters(filters) || search)
+              {(hasActiveFilters(filters) || search || typeGroup)
                 ? 'Nenhuma transação corresponde aos filtros aplicados. Tente ajustá-los ou limpar a busca.'
                 : 'Crie sua primeira transação para começar a acompanhar seus gastos e receitas.'}
             </p>
-            {!hasActiveFilters(filters) && !search && (
+            {!hasActiveFilters(filters) && !search && !typeGroup && (
               <Button
                 className="mt-5"
                 onClick={() => { setEditTx(null); setEditScope(null); setSheetOpen(true) }}

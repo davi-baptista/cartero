@@ -89,6 +89,7 @@ export class BudgetService {
     const paidDebts = debts
       .filter((debt) => debt.isPaid)
       .reduce((sum, debt) => sum + Number(debt.amount), 0);
+    const paidDebtsCount = debts.filter((debt) => debt.isPaid).length;
 
     // Pagamentos diretos já aconteceram por definição — a transação só existe
     // porque o dinheiro saiu.
@@ -103,6 +104,8 @@ export class BudgetService {
       netAmount,
       totalDirectPayments,
       totalDebts,
+      debtsCount: debts.length,
+      paidDebtsCount,
       totalToPay,
       totalPaid,
       totalPending: totalToPay - totalPaid,
