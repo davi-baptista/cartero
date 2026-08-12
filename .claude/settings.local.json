@@ -37,7 +37,10 @@
       "Bash(node_modules/.bin/prisma migrate *)",
       "Bash(node_modules/.bin/prisma generate *)",
       "Skill(impeccable)",
-      "Skill(impeccable:*)"
+      "Skill(impeccable:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001)",
+      "Bash(npx web-push *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\davi.inov\\.claude\\plans"

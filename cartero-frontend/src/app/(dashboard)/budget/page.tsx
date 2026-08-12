@@ -168,15 +168,18 @@ export default function BudgetPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      {/* Header — em mobile o seletor de mês desce para depois do resumo, para
+          não separar o subtítulo do valor que ele descreve. */}
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Orçamento</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             Quanto sai do seu bolso neste mês
           </p>
         </div>
-        <MonthNav year={year} month={month} onPrev={prevMonth} onNext={nextMonth} />
+        <div className="hidden sm:block">
+          <MonthNav year={year} month={month} onPrev={prevMonth} onNext={nextMonth} />
+        </div>
       </div>
 
       {/* Summary — single block with hierarchy, no identical card grid */}
@@ -267,6 +270,11 @@ export default function BudgetPage() {
             )}
           </>
         )}
+      </div>
+
+      {/* Seletor de mês em mobile — abaixo do resumo, como controle da página */}
+      <div className="flex justify-center border-y border-border/60 py-1 sm:hidden">
+        <MonthNav year={year} month={month} onPrev={prevMonth} onNext={nextMonth} />
       </div>
 
       {/* Invoice list */}
