@@ -34,8 +34,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useAuth } from '@/providers/auth-provider'
-import { Skeleton } from '@/components/ui/skeleton'
 import { NavigationProgress } from '@/components/ui/navigation-progress'
+import { MonthNav, MonthPeriodProvider, useMonthPeriod } from '@/components/month-nav'
 import Image from 'next/image'
 
 function SidebarNav({ pathname }: { pathname: string }) {
@@ -109,6 +109,27 @@ function SidebarToggle() {
   )
 }
 
+/**
+ * Rotas cujo conteúdo é recortado pelo mês selecionado. Pessoas fica de fora:
+ * o extrato abre num Sheet que cobre a barra, então ele tem o próprio seletor.
+ */
+const MONTH_SCOPED_ROUTES = ['/overview', '/budget', '/transactions', '/debts', '/receivables']
+
+function HeaderMonthNav({ pathname }: { pathname: string }) {
+  const { period, setPeriod } = useMonthPeriod()
+  if (!MONTH_SCOPED_ROUTES.some((route) => pathname.startsWith(route))) return null
+  // No mobile o nome da página sai da barra, então o seletor ocupa o espaço
+  // livre centralizado; no desktop ele volta a encostar à direita.
+  return (
+    <MonthNav
+      period={period}
+      onChange={setPeriod}
+      compact
+      className="mx-auto sm:ml-auto sm:mr-0"
+    />
+  )
+}
+
 const navItems = [
   { href: '/overview', label: 'Visão Geral', icon: LayoutDashboard },
   { href: '/budget', label: 'Orçamento', icon: PiggyBank },
@@ -179,6 +200,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const currentPageLabel = currentPage?.label ?? (pathname === '/profile' ? 'Meu perfil' : undefined)
 
   return (
+    <MonthPeriodProvider>
     <SidebarProvider>
       <NavigationProgress />
       <div className="flex min-h-screen w-full">
@@ -230,26 +252,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Content */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
+          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 sm:gap-3">
             <SidebarToggle />
             <Image
               src="/logo-vertical-sem-nome.png"
               alt="Cartero"
               width={28}
               height={28}
-              className="size-7 object-contain md:hidden"
+              className="size-7 shrink-0 object-contain md:hidden"
               unoptimized
             />
             {currentPageLabel && (
               <>
-                <div className="h-4 w-px bg-border" aria-hidden />
-                <span className="text-sm font-medium">{currentPageLabel}</span>
+                <div className="hidden h-4 w-px shrink-0 bg-border sm:block" aria-hidden />
+                <span className="hidden truncate text-sm font-medium sm:block">
+                  {currentPageLabel}
+                </span>
               </>
             )}
+            <HeaderMonthNav pathname={pathname} />
           </header>
           <main className="flex-1 p-6">{children}</main>
         </div>
       </div>
     </SidebarProvider>
+    </MonthPeriodProvider>
   )
 }

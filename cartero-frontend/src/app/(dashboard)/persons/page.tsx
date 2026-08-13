@@ -11,7 +11,6 @@ import {
   Users,
   ChevronRight,
   Loader2,
-  X,
   Check,
   Undo2,
   MoreVertical,
@@ -24,7 +23,7 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { DatePicker } from '@/components/ui/date-picker'
+import { MonthNav, monthBounds, currentPeriod, type MonthPeriod } from '@/components/month-nav'
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
 import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dialog'
 import { InstallmentScopeDialog } from '../transactions/installment-scope-dialog'
@@ -32,7 +31,6 @@ import { DeleteLinkedWarningDialog } from '../transactions/delete-linked-warning
 import { DebtSheet, type DebtFormData } from '../debts/debt-sheet'
 import { ReceivableSheet, type ReceivableFormData } from '../receivables/receivable-sheet'
 import { SettlePersonDialog } from './settle-person-dialog'
-import { MonthQuickFilter } from '@/components/month-quick-filter'
 import {
   Sheet,
   SheetContent,
@@ -68,7 +66,6 @@ import {
 import { createDebt, updateDebt, deleteDebt } from '@/services/debts.service'
 import { createReceivable, updateReceivable, deleteReceivable } from '@/services/receivables.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
-import { formatDateValue } from '@/lib/date'
 import { generateStatementPdf, statementPdfFileName } from '@/lib/statement-pdf'
 import { cn } from '@/lib/utils'
 import type { Person, Debt, Receivable } from '@/types'
@@ -130,17 +127,9 @@ function StatementSheet({
   const qc = useQueryClient()
   const { user } = useAuth()
 
-  function defaultStart() {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
-  }
-  function defaultEnd() {
-    const d = new Date()
-    return formatDateValue(new Date(d.getFullYear(), d.getMonth() + 1, 0))
-  }
-
-  const [startDate, setStartDate] = useState<string | undefined>(defaultStart)
-  const [endDate, setEndDate] = useState<string | undefined>(defaultEnd)
+  // Mês próprio do extrato — independente do mês global das outras telas.
+  const [period, setPeriod] = useState<MonthPeriod>(currentPeriod)
+  const { startDate, endDate } = monthBounds(period)
   const [markPaidDebt, setMarkPaidDebt] = useState<Debt | null>(null)
   const [markReceivedReceivable, setMarkReceivedReceivable] = useState<Receivable | null>(null)
   const [unmarkPaidTarget, setUnmarkPaidTarget] = useState<
@@ -168,11 +157,9 @@ function StatementSheet({
     receivable?: Receivable
   } | null>(null)
 
+  // Cada pessoa abre no mês corrente, não no mês da pessoa anterior.
   useEffect(() => {
-    if (person) {
-      setStartDate(defaultStart())
-      setEndDate(defaultEnd())
-    }
+    if (person) setPeriod(currentPeriod())
   }, [person?.id])
 
   const { data, isLoading } = useQuery({
@@ -467,7 +454,6 @@ function StatementSheet({
 
   const netBalance = data?.netBalance ?? 0
   const isPositive = netBalance >= 0
-  const hasFilters = !!(startDate || endDate)
   const pendingDebtsCount = allStatement?.debts.filter((item) => !item.isPaid).length ?? 0
   const pendingReceivablesCount = allStatement?.receivables.filter((item) => !item.isPaid).length ?? 0
   const pendingCount = pendingDebtsCount + pendingReceivablesCount
@@ -659,34 +645,11 @@ function StatementSheet({
         </SheetHeader>
 
         <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-6 pt-4 pb-5">
-          {/* Date filters */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="w-36">
-              <DatePicker value={startDate} onChange={setStartDate} placeholder="Data início" />
-            </div>
-            <div className="w-36">
-              <DatePicker value={endDate} onChange={setEndDate} placeholder="Data fim" />
-            </div>
-            {hasFilters && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { setStartDate(undefined); setEndDate(undefined) }}
-                className="gap-1 text-muted-foreground"
-              >
-                <X className="size-3.5" />
-                Limpar
-              </Button>
-            )}
+          {/* O Sheet cobre a barra superior, então o extrato tem o próprio
+              seletor de mês — independente do mês global das outras telas. */}
+          <div className="-mx-6 flex justify-center border-y border-border/60 px-6 py-1">
+            <MonthNav period={period} onChange={setPeriod} />
           </div>
-          <MonthQuickFilter
-            startDate={startDate}
-            endDate={endDate}
-            onChange={({ startDate: nextStart, endDate: nextEnd }) => {
-              setStartDate(nextStart)
-              setEndDate(nextEnd)
-            }}
-          />
 
           {isLoading ? (
             <div className="flex flex-col gap-3">
@@ -851,7 +814,7 @@ function StatementSheet({
 
               {data.debts.length === 0 && data.receivables.length === 0 && (
                 <p className="text-center text-sm text-muted-foreground">
-                  Nenhuma dívida ou cobrança{hasFilters ? ' no período selecionado' : ` vinculada a ${person?.name}`}.
+                  Nenhuma dívida ou cobrança no mês selecionado.
                 </p>
               )}
             </>

@@ -19,8 +19,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { DatePicker } from '@/components/ui/date-picker'
-import { MonthQuickFilter } from '@/components/month-quick-filter'
+import { monthBounds, periodFromDate, useMonthPeriod } from '@/components/month-nav'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -302,15 +301,20 @@ export default function DebtsPage() {
 
   const [tab, setTab] = useState<TabFilter>('pending')
   const [personFilter, setPersonFilter] = useState<string | undefined>(undefined)
-  const [startDate, setStartDate] = useState<string | undefined>(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
-  })
-  const [endDate, setEndDate] = useState<string | undefined>(() => {
-    if (endDateParam) return endDateParam
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()).padStart(2, '0')}`
-  })
+
+  // O mês vem da barra superior; um `endDate` na URL (vindo da visão geral)
+  // alinha o mês global àquele período uma única vez.
+  const { period, setPeriod } = useMonthPeriod()
+  const urlPeriodApplied = useRef(false)
+
+  useEffect(() => {
+    if (urlPeriodApplied.current || !endDateParam) return
+    urlPeriodApplied.current = true
+    const next = periodFromDate(endDateParam)
+    if (next.month !== period.month || next.year !== period.year) setPeriod(next)
+  }, [endDateParam, period.month, period.year, setPeriod])
+
+  const { startDate, endDate } = monthBounds(period)
   const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editDebt, setEditDebt] = useState<Debt | null>(null)
@@ -326,14 +330,26 @@ export default function DebtsPage() {
     queryFn: getPersons,
   })
 
-  const { data: debts, isLoading } = useQuery({
-    queryKey: ['debts', personFilter, startDate, endDate],
+  // Sem `startDate` na query: o backend devolve tudo até o fim do mês
+  // selecionado, e o recorte por mês acontece no cliente — assim dívidas
+  // vencidas de meses anteriores continuam visíveis em qualquer mês.
+  const { data: allDebts, isLoading } = useQuery({
+    queryKey: ['debts', personFilter, endDate],
     queryFn: () => getDebts({
       personId: personFilter,
-      startDate,
       endDate,
     }),
   })
+
+  const debts = useMemo(() => {
+    if (!allDebts) return allDebts
+    return allDebts.filter((debt) => {
+      const due = debt.dueDate.slice(0, 10)
+      if (due >= startDate) return true
+      // Anterior ao mês selecionado: só continua na lista se ainda estiver em aberto.
+      return !debt.isPaid
+    })
+  }, [allDebts, startDate])
 
   const createMut = useMutation({
     mutationFn: createDebt,
@@ -549,20 +565,6 @@ export default function DebtsPage() {
       {/* Filters */}
       <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
-          <div className="w-36 sm:w-40">
-            <DatePicker value={startDate} onChange={setStartDate} placeholder="Data início" />
-          </div>
-          <div className="w-36 sm:w-40">
-            <DatePicker value={endDate} onChange={setEndDate} placeholder="Data fim" />
-          </div>
-          <MonthQuickFilter
-            startDate={startDate}
-            endDate={endDate}
-            onChange={({ startDate: nextStart, endDate: nextEnd }) => {
-              setStartDate(nextStart)
-              setEndDate(nextEnd)
-            }}
-          />
           {persons.length > 0 && (
             <Select
               value={personFilter ?? ''}
@@ -602,11 +604,11 @@ export default function DebtsPage() {
             )}
           </div>
 
-          {(startDate || endDate || personFilter || search) && (
+          {(personFilter || search) && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => { setStartDate(undefined); setEndDate(undefined); setPersonFilter(undefined); setSearch('') }}
+              onClick={() => { setPersonFilter(undefined); setSearch('') }}
               className="gap-1 text-muted-foreground"
             >
               <X className="size-3.5" />

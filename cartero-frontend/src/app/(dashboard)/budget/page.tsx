@@ -4,8 +4,6 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import {
-  ChevronLeft,
-  ChevronRight,
   CreditCard,
   PiggyBank,
   ArrowRight,
@@ -13,8 +11,9 @@ import {
   HandCoins,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { addMonths, currentPeriod, useMonthPeriod } from '@/components/month-nav'
 import { getBudget } from '@/services/budget.service'
-import { formatCurrency, formatMonthYear } from '@/lib/formatters'
+import { formatCurrency } from '@/lib/formatters'
 import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import { InvoiceStatus } from '@/types'
@@ -30,10 +29,6 @@ const STATUS_CONFIG: Record<InvoiceStatus, { label: string; className: string }>
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function capitalize(s: string) {
-  return s.charAt(0).toUpperCase() + s.slice(1)
-}
-
 function debtsStatus(paidCount: number, totalCount: number): { label: string; className: string } {
   if (paidCount === totalCount) {
     return { label: totalCount > 1 ? 'Todas pagas' : 'Paga', className: 'bg-paid/15 text-paid' }
@@ -44,63 +39,14 @@ function debtsStatus(paidCount: number, totalCount: number): { label: string; cl
   return { label: `${paidCount}/${totalCount} pagas`, className: 'bg-primary/15 text-primary' }
 }
 
-// ─── Month nav ────────────────────────────────────────────────────────────────
-
-function MonthNav({
-  year,
-  month,
-  onPrev,
-  onNext,
-}: {
-  year: number
-  month: number
-  onPrev: () => void
-  onNext: () => void
-}) {
-  return (
-    <div className="flex items-center gap-0.5">
-      <button
-        type="button"
-        onClick={onPrev}
-        aria-label="Mês anterior"
-        className="flex size-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-      >
-        <ChevronLeft className="size-4" aria-hidden />
-      </button>
-      <span className="min-w-[9.5rem] select-none text-center text-sm font-medium">
-        {capitalize(formatMonthYear(month, year))}
-      </span>
-      <button
-        type="button"
-        onClick={onNext}
-        aria-label="Próximo mês"
-        className="flex size-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-      >
-        <ChevronRight className="size-4" aria-hidden />
-      </button>
-    </div>
-  )
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function BudgetPage() {
-  const [initialPeriod] = useState(() => {
-    const today = new Date()
-    return { year: today.getFullYear(), month: today.getMonth() + 1 }
-  })
-  const [year, setYear] = useState(initialPeriod.year)
-  const [month, setMonth] = useState(initialPeriod.month)
+  const [initialPeriod] = useState(currentPeriod)
+  // O mês é contexto do app, controlado pela barra superior.
+  const { period, setPeriod } = useMonthPeriod()
+  const { month, year } = period
   const autoAdvanced = useRef(false)
-
-  function prevMonth() {
-    if (month === 1) { setMonth(12); setYear((y) => y - 1) }
-    else setMonth((m) => m - 1)
-  }
-  function nextMonth() {
-    if (month === 12) { setMonth(1); setYear((y) => y + 1) }
-    else setMonth((m) => m + 1)
-  }
 
   const { data: budget, isLoading } = useQuery({
     queryKey: ['budget', { month, year }],
@@ -122,16 +68,9 @@ export default function BudgetPage() {
     // diretos e dívidas incluídos.
     if (budget.totalToPay > 0 && budget.totalPending === 0) {
       autoAdvanced.current = true
-      window.setTimeout(() => {
-        if (month === 12) {
-          setMonth(1)
-          setYear((currentYear) => currentYear + 1)
-        } else {
-          setMonth((currentMonth) => currentMonth + 1)
-        }
-      }, 0)
+      window.setTimeout(() => setPeriod(addMonths(period, 1)), 0)
     }
-  }, [budget, initialPeriod.month, initialPeriod.year, isLoading, month, year])
+  }, [budget, initialPeriod.month, initialPeriod.year, isLoading, month, year, period, setPeriod])
 
   const allInvoices = budget?.invoices ?? []
 
@@ -168,18 +107,12 @@ export default function BudgetPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header — em mobile o seletor de mês desce para depois do resumo, para
-          não separar o subtítulo do valor que ele descreve. */}
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Orçamento</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Quanto sai do seu bolso neste mês
-          </p>
-        </div>
-        <div className="hidden sm:block">
-          <MonthNav year={year} month={month} onPrev={prevMonth} onNext={nextMonth} />
-        </div>
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Orçamento</h1>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          Quanto sai do seu bolso neste mês
+        </p>
       </div>
 
       {/* Summary — single block with hierarchy, no identical card grid */}
@@ -270,11 +203,6 @@ export default function BudgetPage() {
             )}
           </>
         )}
-      </div>
-
-      {/* Seletor de mês em mobile — abaixo do resumo, como controle da página */}
-      <div className="flex justify-center border-y border-border/60 py-1 sm:hidden">
-        <MonthNav year={year} month={month} onPrev={prevMonth} onNext={nextMonth} />
       </div>
 
       {/* Invoice list */}

@@ -6,8 +6,6 @@ import { useQuery } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import type { LucideIcon } from 'lucide-react'
 import {
-  ChevronLeft,
-  ChevronRight,
   ShoppingBag,
   CreditCard,
   HandCoins,
@@ -17,6 +15,7 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useMonthPeriod } from '@/components/month-nav'
 import { getTransactions } from '@/services/transactions.service'
 import { getInvoices } from '@/services/invoices.service'
 import { getBanks } from '@/services/banks.service'
@@ -114,43 +113,6 @@ function computeInvoiceDue(
   if (diffDays === 0) return { text: 'Vence hoje', urgency: 'overdue', diffDays }
   if (diffDays === 1) return { text: 'Vence amanhã', urgency: 'urgent', diffDays }
   return { text: `Vence em ${diffDays} dias`, urgency: 'urgent', diffDays }
-}
-
-// ─── Month navigator ──────────────────────────────────────────────────────────
-
-function MonthNav({
-  year,
-  month,
-  onPrev,
-  onNext,
-}: {
-  year: number
-  month: number
-  onPrev: () => void
-  onNext: () => void
-}) {
-  const label = capitalize(formatMonthYear(month, year))
-  return (
-    <div className="flex items-center gap-0.5">
-      <button
-        type="button"
-        onClick={onPrev}
-        aria-label="Mês anterior"
-        className="flex size-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-      >
-        <ChevronLeft className="size-4" />
-      </button>
-      <span className="min-w-[9.5rem] select-none text-center text-sm font-medium">{label}</span>
-      <button
-        type="button"
-        onClick={onNext}
-        aria-label="Próximo mês"
-        className="flex size-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-      >
-        <ChevronRight className="size-4" />
-      </button>
-    </div>
-  )
 }
 
 // ─── Category breakdown ───────────────────────────────────────────────────────
@@ -739,19 +701,9 @@ function CalendarSection({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function OverviewPage() {
-  const today = new Date()
-  const [year, setYear] = useState(today.getFullYear())
-  const [month, setMonth] = useState(today.getMonth() + 1)
-
-  function prevMonth() {
-    if (month === 1) { setMonth(12); setYear((y) => y - 1) }
-    else setMonth((m) => m - 1)
-  }
-
-  function nextMonth() {
-    if (month === 12) { setMonth(1); setYear((y) => y + 1) }
-    else setMonth((m) => m + 1)
-  }
+  // O mês é contexto do app, controlado pela barra superior.
+  const { period } = useMonthPeriod()
+  const { month, year } = period
 
   const { startDate, endDate } = useMemo(() => monthRange(year, month), [year, month])
 
@@ -877,20 +829,10 @@ export default function OverviewPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header — em mobile o seletor de mês desce para uma faixa própria */}
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Visão Geral</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">Resumo do seu mês financeiro</p>
-        </div>
-        <div className="hidden sm:block">
-          <MonthNav year={year} month={month} onPrev={prevMonth} onNext={nextMonth} />
-        </div>
-      </div>
-
-      {/* Seletor de mês em mobile — faixa própria, como controle da página */}
-      <div className="flex justify-center border-y border-border/60 py-1 sm:hidden">
-        <MonthNav year={year} month={month} onPrev={prevMonth} onNext={nextMonth} />
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Visão Geral</h1>
+        <p className="mt-0.5 text-sm text-muted-foreground">Resumo do seu mês financeiro</p>
       </div>
 
       {/* Main grid */}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import type { LucideIcon } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { DatePicker } from '@/components/ui/date-picker'
+import { monthBounds, periodFromDate, useMonthPeriod } from '@/components/month-nav'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -49,7 +49,6 @@ import { getBanks } from '@/services/banks.service'
 import { getCategories } from '@/services/categories.service'
 import { isAxiosError } from 'axios'
 import { formatCurrency, formatDate, isExpense, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
-import { formatDateValue } from '@/lib/date'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { cn } from '@/lib/utils'
 import type { Transaction } from '@/types'
@@ -271,7 +270,7 @@ function InstallmentGroup({
       </button>
 
       {/* Parcelas — subordinadas ao item, sempre visíveis */}
-      <div className="ml-5 border-l border-border/50 pl-3 sm:ml-7 sm:pl-4">
+      <div className="ml-5 border-l border-border/50 pl-1 sm:ml-7 sm:pl-2">
         {visible.map((tx) => (
           <InstallmentRow key={tx.id} tx={tx} onView={onView} />
         ))}
@@ -280,7 +279,7 @@ function InstallmentGroup({
           <button
             type="button"
             onClick={() => setShowAll(true)}
-            className="py-2 text-[11px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+            className="px-2 py-2 text-[11px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
           >
             Ver todas as {installments.length} parcelas
           </button>
@@ -304,7 +303,7 @@ function InstallmentRow({
     <button
       type="button"
       onClick={() => onView(tx)}
-      className="flex w-full min-w-0 items-center gap-3 rounded-md py-1.5 pr-0 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring/50 sm:pr-2"
+      className="flex w-full min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring/50"
       aria-label={`Ver detalhes da parcela ${label}`}
     >
       <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/70">{label}</span>
@@ -447,8 +446,10 @@ function RowSkeleton() {
   )
 }
 
-function hasActiveFilters(f: FilterState): boolean {
-  return !!(f.startDate || f.endDate || f.bankId || f.categoryId || f.type)
+// O mês selecionado é navegação, não filtro — só conta o que restringe a lista
+// dentro daquele mês.
+function hasActiveFilters(f: Omit<FilterState, 'startDate' | 'endDate'>): boolean {
+  return !!(f.bankId || f.categoryId || f.type)
 }
 
 // ─── Filter state type ────────────────────────────────────────────────────────
@@ -469,30 +470,33 @@ export default function TransactionsPage() {
   const searchParams = useSearchParams()
 
   // ── State ──
-  const [filters, setFilters] = useState<FilterState>(() => {
-    const spStart = searchParams.get('startDate')
-    const spEnd = searchParams.get('endDate')
+  // O mês é contexto do app (barra superior). Quando a navegação vem de outra
+  // tela com um intervalo na URL, alinhamos o mês global àquele intervalo.
+  const { period, setPeriod } = useMonthPeriod()
+  const urlPeriodApplied = useRef(false)
+
+  useEffect(() => {
+    if (urlPeriodApplied.current) return
+    const spDate = searchParams.get('startDate') ?? searchParams.get('endDate')
+    if (!spDate) return
+    urlPeriodApplied.current = true
+    const next = periodFromDate(spDate)
+    if (next.month !== period.month || next.year !== period.year) setPeriod(next)
+  }, [searchParams, period.month, period.year, setPeriod])
+
+  const [filters, setFilters] = useState<Omit<FilterState, 'startDate' | 'endDate'>>(() => {
     const spCategory = searchParams.get('categoryId')
     const spType = searchParams.get('type')
     const spTypeValid = spType && Object.values(TransactionType).includes(spType as TransactionType)
       ? (spType as TransactionType)
       : undefined
-    if (spStart || spEnd || spCategory || spTypeValid) {
-      return {
-        startDate: spStart ?? undefined,
-        endDate: spEnd ?? undefined,
-        categoryId: spCategory ?? undefined,
-        type: spTypeValid,
-        // Preserva a competência de fatura quando a navegação vem de uma tela
-        // que soma por vencimento — senão a lista mostraria itens diferentes
-        // do número que foi clicado.
-        invoicePeriod: searchParams.get('invoicePeriod') === 'true' || undefined,
-      }
-    }
-    const d = new Date()
     return {
-      startDate: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`,
-      endDate: formatDateValue(new Date(d.getFullYear(), d.getMonth() + 1, 0)),
+      categoryId: spCategory ?? undefined,
+      type: spTypeValid,
+      // Preserva a competência de fatura quando a navegação vem de uma tela
+      // que soma por vencimento — senão a lista mostraria itens diferentes
+      // do número que foi clicado.
+      invoicePeriod: searchParams.get('invoicePeriod') === 'true' || undefined,
     }
   })
   const [bankFilter, setBankFilter] = useState('')
@@ -517,10 +521,15 @@ export default function TransactionsPage() {
     scope?: InstallmentScope
   } | null>(null)
 
+  const queryFilters = useMemo<FilterState>(
+    () => ({ ...filters, ...monthBounds(period) }),
+    [filters, period],
+  )
+
   // ── Queries ──
   const { data: transactions, isLoading: txLoading } = useQuery({
-    queryKey: ['transactions', filters],
-    queryFn: () => getTransactions(filters),
+    queryKey: ['transactions', queryFilters],
+    queryFn: () => getTransactions(queryFilters),
   })
 
   const { data: banks = [] } = useQuery({
@@ -767,22 +776,6 @@ export default function TransactionsPage() {
       {/* Filter bar */}
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          {/* Date range */}
-          <div className="w-36 sm:w-40">
-            <DatePicker
-              value={filters.startDate}
-              onChange={(v) => setFilters((f) => ({ ...f, startDate: v }))}
-              placeholder="Data início"
-            />
-          </div>
-          <div className="w-36 sm:w-40">
-            <DatePicker
-              value={filters.endDate}
-              onChange={(v) => setFilters((f) => ({ ...f, endDate: v }))}
-              placeholder="Data fim"
-            />
-          </div>
-
           {/* Bank select */}
           <Select value={bankFilter} onValueChange={setBankFilterValue}>
             <SelectTrigger className="w-40" aria-label="Filtrar por banco">
