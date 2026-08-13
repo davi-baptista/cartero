@@ -272,7 +272,7 @@ function TxRow({ tx }: { tx: Transaction }) {
 
       <div className="shrink-0 text-right">
         <span
-          className="text-[14px] font-semibold tabular-nums tracking-[-0.01em]"
+          className="text-sm font-semibold tabular-nums tracking-[-0.01em]"
           style={{ color: expense ? undefined : INCOME_COLOR }}
         >
           {expense ? `−${formatCurrency(Number(tx.amount))}` : `+${formatCurrency(Number(tx.amount))}`}

@@ -138,7 +138,7 @@ export default function BudgetPage() {
 
             {/* Paid / pending — inline, without a separate card */}
             {hasMix && (
-              <p className="text-[12px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 <span className="font-medium text-paid">{formatCurrency(summary.totalPaid)} pago</span>
                 <span className="mx-1.5 text-muted-foreground/40" aria-hidden>·</span>
                 <span className="font-medium">{formatCurrency(summary.totalPending)} a pagar</span>

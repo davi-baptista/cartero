@@ -16,28 +16,67 @@ colors:
   border: "oklch(1 0 0 / 10%)"
   input-bg: "oklch(1 0 0 / 5%)"
 typography:
+  hero:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "38px"
+    fontWeight: 600
+    lineHeight: 1
+    letterSpacing: "-0.025em"
   headline:
     fontFamily: "Inter, system-ui, sans-serif"
     fontSize: "1.5rem"
     fontWeight: 600
     lineHeight: 1.3
     letterSpacing: "-0.01em"
+  amount-lg:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "22px"
+    fontWeight: 600
+    lineHeight: 1.2
+    letterSpacing: "-0.02em"
+  amount:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "17px"
+    fontWeight: 600
+    lineHeight: 1.3
+    letterSpacing: "-0.02em"
   title:
     fontFamily: "Inter, system-ui, sans-serif"
     fontSize: "1rem"
     fontWeight: 500
     lineHeight: 1.4
+  subtitle:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "15px"
+    fontWeight: 600
+    lineHeight: 1.4
+    letterSpacing: "-0.01em"
   body:
     fontFamily: "Inter, system-ui, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 400
     lineHeight: 1.5
+  body-compact:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "13px"
+    fontWeight: 500
+    lineHeight: 1.4
   label:
     fontFamily: "Inter, system-ui, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 500
     lineHeight: 1.4
     letterSpacing: "0.01em"
+  meta:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "11px"
+    fontWeight: 400
+    lineHeight: 1.4
+  micro:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "10px"
+    fontWeight: 500
+    lineHeight: 1.3
   mono:
     fontFamily: "Geist Mono, monospace"
     fontSize: "0.875rem"
@@ -168,16 +207,28 @@ A near-achromatic dark system with a single accent. All eleven color tokens serv
 **Character:** Inter carries all UI text. It has more optical weight than geometric alternatives at the same declared size — the right choice for dark surfaces where thin strokes read as fragile. Numbers render with optical balance at all sizes. No display/body pairing needed; this is a tool, not an editorial.
 
 ### Hierarchy
-- **Headline** (600 weight, 24px/1.5rem, -0.01em tracking, 1.3 line-height): page titles only. One per screen. Appears at the top of each route (`Transações`, `Bancos`, `Faturas`).
+
+Eleven steps, from 10px to 38px. The ramp is deliberately fine in the 10–17px band because that is where the ledger lives: a transaction row stacks a title, a type, a bank, an invoice period and a person, and each needs to sit a visible step below the one above it without any of them growing large enough to compete with the amount. Coarser steps would force those five levels into three.
+
+- **Hero** (600 weight, 38px, -0.025em tracking, 1.0 line-height): the single headline number of a screen — the month total in `/budget`. At most one per route; never for a label.
+- **Headline** (600 weight, 24px/1.5rem, -0.01em tracking, 1.3 line-height): page titles only. One per screen. Appears at the top of each route (`Extrato`, `Bancos`, `Faturas`).
+- **Amount-lg** (600 weight, 22px, -0.02em tracking): invoice total in the invoice detail sheet header.
+- **Amount** (600 weight, 17px, -0.02em tracking): the primary monetary value of a list row. The largest thing in the row, by design.
 - **Title** (500 weight, 16px/1rem, 1.4 line-height): section headings, card titles, sheet titles. Appears frequently; stays compact.
-- **Body** (400 weight, 14px/0.875rem, 1.5 line-height): all list content, description text, form field values. The dominant size on most screens.
-- **Label** (500 weight, 12px/0.75rem, +0.01em tracking, 1.4 line-height): form labels, table column headers, badge text, metadata chips. Uppercase only for column headers.
+- **Subtitle** (600 weight, 15px, -0.01em tracking): in-page section headings that sit below the page title (`Faturas`, `Outros gastos do mês`), and list-row titles at desktop width.
+- **Body** (400 weight, 14px/0.875rem, 1.5 line-height): description text, form field values, empty-state copy. The dominant size in prose.
+- **Body-compact** (500 weight, 13px, 1.4 line-height): the title line of a dense list row, and the amount beside it in secondary rows.
+- **Label** (500 weight, 12px/0.75rem, +0.01em tracking, 1.4 line-height): form labels, table column headers. Uppercase only for column headers.
+- **Meta** (400 weight, 11px, 1.4 line-height): the quiet line under a row title — type, bank, invoice period, person name, relative dates. The most common small size in the app.
+- **Micro** (500 weight, 10px, 1.3 line-height): status badge text only (`Paga`, `Vencida`, `Nenhuma paga`).
 - **Mono** (400 weight, Geist Mono, 14px, 1.5 line-height): numeric amounts in transaction rows where alignment across rows matters, invoice IDs.
 
 ### Named Rules
 **The Amount Rule.** Monetary amounts always render as R$ formatted (`Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })`). Positive amounts in Income Green; negative/expense amounts in Ledger Red; neutral/historical amounts in Ledger White. Never raw decimal strings.
 
-**The Fixed Scale Rule.** No `clamp()`, no fluid typography. This is a product UI viewed at consistent viewport widths; font sizes are fixed rem values across breakpoints.
+**The Fixed Scale Rule.** No `clamp()`, no fluid typography. This is a product UI viewed at consistent viewport widths; font sizes are fixed values across breakpoints.
+
+**The Closed Ramp Rule.** The eleven steps above are the whole ramp. A size that is not on it does not get written into a component — either an existing step fits, or the ramp gains a named step here first, with the role that earned it. `text-[12px]` and `text-[14px]` written as literals are the same steps as Label and Body; use `text-xs` and `text-sm` instead of restating them in pixels.
 
 ## 4. Elevation
 

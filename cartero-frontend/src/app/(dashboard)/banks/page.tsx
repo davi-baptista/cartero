@@ -151,7 +151,7 @@ function BankRow({
   return (
     <div className="group flex items-center gap-4 border-b border-border px-1 py-4 last:border-b-0">
       {/* Monogram */}
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/40 text-[14px] font-semibold text-muted-foreground select-none">
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/40 text-sm font-semibold text-muted-foreground select-none">
         {initial}
       </div>
 
