@@ -113,6 +113,18 @@ export class TransactionsService {
               );
             }
 
+            // Uma fatura paga não pode receber lançamentos novos: o total
+            // mudaria depois do pagamento, deixando registrado como quitado um
+            // valor diferente do que foi pago. Vale para qualquer parcela —
+            // um parcelamento longo pode atravessar uma fatura ja quitada.
+            if (invoice.status === 'PAID') {
+              throw new ForbiddenException(
+                installments > 1
+                  ? 'Não é possível lançar: uma das faturas do parcelamento já está paga'
+                  : 'Não é possível lançar em uma fatura já paga',
+              );
+            }
+
             invoiceId = invoice.id;
           }
 
@@ -514,6 +526,27 @@ export class TransactionsService {
           userId,
           normalizedScope,
         );
+
+        // Excluir de uma fatura paga alteraria o total de algo já quitado —
+        // mesma razão que impede criar e editar nesse estado.
+        const invoiceIds = [
+          ...new Set(
+            transactionsToDelete
+              .map((transaction) => transaction.invoiceId)
+              .filter((invoiceId): invoiceId is string => invoiceId !== null),
+          ),
+        ];
+        if (invoiceIds.length > 0) {
+          const paid = await tx.invoice.findFirst({
+            where: { id: { in: invoiceIds }, userId, status: 'PAID' },
+            select: { id: true },
+          });
+          if (paid) {
+            throw new ForbiddenException(
+              'Não é possível excluir: a transação pertence a uma fatura já paga',
+            );
+          }
+        }
 
         for (const transaction of transactionsToDelete) {
           await tx.receivable.deleteMany({

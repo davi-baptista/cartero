@@ -73,6 +73,15 @@ interface TransactionSheetProps {
   editTarget: Transaction | null
   editScope: InstallmentScope | null
   onSubmit: (data: TransactionFormData, scope: InstallmentScope | null) => Promise<void>
+  /**
+   * Valores iniciais ao criar. Usado quando o contexto já determina parte do
+   * lançamento — dentro de uma fatura, o banco e o tipo são conhecidos.
+   */
+  createDefaults?: {
+    bankId?: string
+    type?: TransactionType
+    date?: string
+  }
 }
 
 export function TransactionSheet({
@@ -81,6 +90,7 @@ export function TransactionSheet({
   editTarget,
   editScope,
   onSubmit,
+  createDefaults,
 }: TransactionSheetProps) {
   const isEditing = editTarget !== null
   const isInstallment = Boolean(editTarget?.parentId) || /\s\d+\/\d+$/.test(editTarget?.title ?? '')
@@ -237,20 +247,29 @@ export function TransactionSheet({
         })
       } else {
         reset({
-          bankId: '',
+          bankId: createDefaults?.bankId ?? '',
           categoryId: '',
-          type: TransactionType.PIX,
+          type: createDefaults?.type ?? TransactionType.PIX,
           title: '',
           amount: 0,
           isRefund: false,
-          date: formatDateValue(),
+          date: createDefaults?.date ?? formatDateValue(),
           description: '',
           installments: undefined,
           personId: undefined,
         })
       }
     }
-  }, [open, editTarget, reset])
+    // `createDefaults` é recriado a cada render de quem chama; comparar pelos
+    // campos evita reabrir o formulário em looping.
+  }, [
+    open,
+    editTarget,
+    reset,
+    createDefaults?.bankId,
+    createDefaults?.type,
+    createDefaults?.date,
+  ])
 
   async function handleFormSubmit(data: TransactionFormData) {
     if (submittingRef.current) return

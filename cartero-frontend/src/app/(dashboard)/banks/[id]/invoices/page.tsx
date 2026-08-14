@@ -18,6 +18,9 @@ import {
   CheckCircle2,
   Loader2,
   Undo2,
+  Plus,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -39,6 +42,14 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { MotionRow } from '@/components/ui/motion-row'
+import { TransactionSheet, type TransactionFormData } from '../../../transactions/transaction-sheet'
+import { InstallmentScopeDialog } from '../../../transactions/installment-scope-dialog'
+import {
+  createTransaction,
+  updateTransaction,
+  deleteTransaction,
+} from '@/services/transactions.service'
+import { isAxiosError } from 'axios'
 import {
   getBankInvoices,
   getInvoice,
@@ -51,11 +62,11 @@ import {
   formatMonthYear,
   isExpense,
 } from '@/lib/formatters'
-import { parseDateOnly } from '@/lib/date'
+import { parseDateOnly, formatDateValue } from '@/lib/date'
 import { getInvoiceCloseDate, getInvoiceDueDate } from '@/lib/invoice-dates'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import type { Invoice, Bank, Transaction } from '@/types'
-import { InvoiceStatus, TransactionType } from '@/types'
+import { InvoiceStatus, TransactionType, InstallmentScope } from '@/types'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -240,12 +251,22 @@ function InvoiceRow({
   )
 }
 
-function TxRow({ tx }: { tx: Transaction }) {
+function TxRow({
+  tx,
+  onEdit,
+  onDelete,
+}: {
+  tx: Transaction
+  /** Ausentes quando a fatura está paga — nada nela pode ser alterado. */
+  onEdit?: (tx: Transaction) => void
+  onDelete?: (tx: Transaction) => void
+}) {
   const Icon = TYPE_ICON[tx.type]
   const expense = isExpense(tx.type, tx.isRefund)
+  const editable = Boolean(onEdit && onDelete)
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3.5">
+    <div className="group flex items-center gap-3 px-4 py-3.5">
       <div
         className="flex size-9 shrink-0 items-center justify-center rounded-xl"
         style={{ backgroundColor: expense ? EXPENSE_BG : INCOME_BG }}
@@ -297,6 +318,30 @@ function TxRow({ tx }: { tx: Transaction }) {
           </p>
         )}
       </div>
+
+      {editable && (
+        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => onEdit!(tx)}
+            aria-label={`Editar ${tx.title}`}
+            title="Editar"
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => onDelete!(tx)}
+            aria-label={`Excluir ${tx.title}`}
+            title="Excluir"
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
@@ -306,6 +351,7 @@ const EASE_OUT_EXPO = [0.16, 1, 0.3, 1] as const
 function InvoiceDetailSheet({
   invoiceId,
   bankId,
+  bank,
   open,
   onOpenChange,
 }: {
@@ -317,6 +363,14 @@ function InvoiceDetailSheet({
 }) {
   const qc = useQueryClient()
   const [reopenConfirm, setReopenConfirm] = useState(false)
+  const [txSheetOpen, setTxSheetOpen] = useState(false)
+  const [editTx, setEditTx] = useState<Transaction | null>(null)
+  const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
+  const [scopeDialog, setScopeDialog] = useState<{
+    tx: Transaction
+    mode: 'edit' | 'delete'
+  } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null)
 
   const { data: invoice, isLoading } = useQuery({
     queryKey: ['invoice', invoiceId],
@@ -346,10 +400,143 @@ function InvoiceDetailSheet({
     onError: () => toast.error('Erro ao reabrir fatura'),
   })
 
+  /** Toda escrita na fatura muda o total dela — o resto do app precisa saber. */
+  function invalidateAfterTxChange() {
+    qc.invalidateQueries({ queryKey: ['invoice', invoiceId] })
+    qc.invalidateQueries({ queryKey: ['bank-invoices', bankId] })
+    qc.invalidateQueries({ queryKey: ['transactions'] })
+    qc.invalidateQueries({ queryKey: ['budget'] })
+  }
+
+  const createTxMut = useMutation({
+    mutationFn: createTransaction,
+    onSuccess: () => {
+      invalidateAfterTxChange()
+      toast.success('Transação criada')
+    },
+    onError: (error) => {
+      const message = isAxiosError(error)
+        ? (error.response?.data as { message?: string })?.message
+        : undefined
+      toast.error(message ?? 'Erro ao criar transação')
+    },
+  })
+
+  const updateTxMut = useMutation({
+    mutationFn: ({
+      id,
+      payload,
+      scope,
+    }: {
+      id: string
+      payload: Parameters<typeof updateTransaction>[1]
+      scope?: InstallmentScope
+    }) => updateTransaction(id, payload, scope),
+    onSuccess: () => {
+      invalidateAfterTxChange()
+      toast.success('Transação atualizada')
+    },
+    onError: (error) => {
+      const message = isAxiosError(error)
+        ? (error.response?.data as { message?: string })?.message
+        : undefined
+      toast.error(message ?? 'Erro ao atualizar transação')
+    },
+  })
+
+  const deleteTxMut = useMutation({
+    mutationFn: ({ id, scope }: { id: string; scope?: InstallmentScope }) =>
+      deleteTransaction(id, scope),
+    onSuccess: () => {
+      invalidateAfterTxChange()
+      setDeleteTarget(null)
+      setScopeDialog(null)
+      toast.success('Transação excluída')
+    },
+    onError: (error) => {
+      const message = isAxiosError(error)
+        ? (error.response?.data as { message?: string })?.message
+        : undefined
+      toast.error(message ?? 'Erro ao excluir transação')
+    },
+  })
+
   const canMarkPaid =
     invoice &&
     (invoice.status === InvoiceStatus.CLOSED || invoice.status === InvoiceStatus.OVERDUE)
   const isPaid = invoice?.status === InvoiceStatus.PAID
+  /** Fatura paga é imutável: o total registrado tem de refletir o que foi pago. */
+  const canEditTransactions = Boolean(invoice) && !isPaid
+
+  /**
+   * Criar a partir da fatura já define banco e tipo. A data usa o fechamento
+   * do período: qualquer outra poderia jogar o lançamento em outra fatura.
+   */
+  const createDefaults = useMemo(() => {
+    if (!invoice || !bank) return undefined
+    return {
+      bankId: invoice.bankId,
+      type: TransactionType.CREDIT_CARD,
+      date: formatDateValue(
+        getInvoiceCloseDate(
+          invoice.year,
+          invoice.month,
+          bank.invoiceDueDate,
+          bank.invoiceDueDaysAfterClose,
+        ),
+      ),
+    }
+  }, [invoice, bank])
+
+  function handleEditTx(tx: Transaction) {
+    // Parcela de uma série: o usuário escolhe se altera uma, as próximas ou todas.
+    if (tx.parentId || /\s\d+\/\d+$/.test(tx.title)) {
+      setScopeDialog({ tx, mode: 'edit' })
+      return
+    }
+    setEditTx(tx)
+    setEditScope(null)
+    setTxSheetOpen(true)
+  }
+
+  function handleDeleteTx(tx: Transaction) {
+    if (tx.parentId || /\s\d+\/\d+$/.test(tx.title)) {
+      setScopeDialog({ tx, mode: 'delete' })
+      return
+    }
+    setDeleteTarget(tx)
+  }
+
+  function handleScopeConfirm(scope: InstallmentScope) {
+    if (!scopeDialog) return
+    const { tx, mode } = scopeDialog
+    if (mode === 'delete') {
+      deleteTxMut.mutate({ id: tx.id, scope })
+      return
+    }
+    setEditTx(tx)
+    setEditScope(scope)
+    setScopeDialog(null)
+    setTxSheetOpen(true)
+  }
+
+  async function handleTxSubmit(
+    data: TransactionFormData,
+    scope: InstallmentScope | null,
+  ) {
+    if (editTx) {
+      await updateTxMut.mutateAsync({
+        id: editTx.id,
+        payload: data,
+        scope: scope ?? undefined,
+      })
+    } else {
+      await createTxMut.mutateAsync(data)
+    }
+    setTxSheetOpen(false)
+    setEditTx(null)
+    setEditScope(null)
+  }
   const monthYear = invoice ? capitalize(formatMonthYear(invoice.month, invoice.year)) : ''
   const total = invoice ? Number(invoice.totalAmount) : 0
   const txCount = invoice?.transactions?.length ?? 0
@@ -433,6 +620,24 @@ function InvoiceDetailSheet({
               )}
             </div>
 
+            {/* Ações de transação — some quando a fatura está paga */}
+            {canEditTransactions && (
+              <div className="border-t border-border px-6 py-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEditTx(null)
+                    setEditScope(null)
+                    setTxSheetOpen(true)
+                  }}
+                >
+                  <Plus className="size-3.5" />
+                  Adicionar transação
+                </Button>
+              </div>
+            )}
+
             {/* Transaction list */}
             <div className="flex-1 overflow-y-auto">
               {txCount === 0 ? (
@@ -460,7 +665,11 @@ function InvoiceDetailSheet({
                           transition={{ duration: 0.2, delay: Math.min(i, 12) * 0.03, ease: EASE_OUT_EXPO }}
                           className="border-b border-border last:border-b-0"
                         >
-                          <TxRow tx={tx} />
+                          <TxRow
+                            tx={tx}
+                            onEdit={canEditTransactions ? handleEditTx : undefined}
+                            onDelete={canEditTransactions ? handleDeleteTx : undefined}
+                          />
                         </motion.div>
                       ))}
                     </div>
@@ -478,7 +687,11 @@ function InvoiceDetailSheet({
                           transition={{ duration: 0.2, delay: Math.min(i, 12) * 0.03, ease: EASE_OUT_EXPO }}
                           className="border-b border-border last:border-b-0"
                         >
-                          <TxRow tx={tx} />
+                          <TxRow
+                            tx={tx}
+                            onEdit={canEditTransactions ? handleEditTx : undefined}
+                            onDelete={canEditTransactions ? handleDeleteTx : undefined}
+                          />
                         </motion.div>
                       ))}
                     </div>
@@ -507,6 +720,56 @@ function InvoiceDetailSheet({
             <Button onClick={() => reopenMut.mutate()} disabled={reopenMut.isPending}>
               {reopenMut.isPending && <Loader2 className="size-3.5 animate-spin" />}
               Reabrir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <TransactionSheet
+        open={txSheetOpen}
+        onOpenChange={(open) => {
+          setTxSheetOpen(open)
+          if (!open) {
+            setEditTx(null)
+            setEditScope(null)
+          }
+        }}
+        editTarget={editTx}
+        editScope={editScope}
+        onSubmit={handleTxSubmit}
+        createDefaults={createDefaults}
+      />
+
+      <InstallmentScopeDialog
+        open={scopeDialog !== null}
+        mode={scopeDialog?.mode ?? 'delete'}
+        onConfirm={handleScopeConfirm}
+        onCancel={() => setScopeDialog(null)}
+        linkedWarning={Boolean(scopeDialog?.tx.personId)}
+      />
+
+      <Dialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Excluir transação</DialogTitle>
+            <DialogDescription>
+              {deleteTarget?.title} será removida da fatura e o total será
+              recalculado.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteTxMut.isPending}
+              onClick={() =>
+                deleteTarget && deleteTxMut.mutate({ id: deleteTarget.id })
+              }
+            >
+              {deleteTxMut.isPending && <Loader2 className="size-3.5 animate-spin" />}
+              Excluir
             </Button>
           </DialogFooter>
         </DialogContent>
