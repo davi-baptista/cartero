@@ -550,17 +550,24 @@ function InvoiceDetailSheet({
   const monthYear = invoice ? capitalize(formatMonthYear(invoice.month, invoice.year)) : ''
   const total = invoice ? Number(invoice.totalAmount) : 0
   const txCount = invoice?.transactions?.length ?? 0
-  const isInstallment = (tx: Transaction) => /\s\d+\/\d+$/.test(tx.title)
   const installmentNumber = (tx: Transaction) => {
     const match = tx.title.match(/\s(\d+)\/\d+$/)
     return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER
   }
-  const byDateDesc = (a: Transaction, b: Transaction) =>
-    parseDateOnly(b.date).getTime() - parseDateOnly(a.date).getTime() ||
-    installmentNumber(a) - installmentNumber(b) ||
-    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  const regularTxs = invoice?.transactions?.filter((tx) => !isInstallment(tx)).sort(byDateDesc) ?? []
-  const installmentTxs = invoice?.transactions?.filter((tx) => isInstallment(tx)).sort(byDateDesc) ?? []
+  /**
+   * Uma lista só, por data decrescente. Como toda parcela guarda a data da
+   * compra, as de meses anteriores afundam sozinhas e a parcela do próprio
+   * mês aparece junto das outras compras — sem precisar separar em seções.
+   */
+  const txs =
+    invoice?.transactions
+      ?.slice()
+      .sort(
+        (a, b) =>
+          parseDateOnly(b.date).getTime() - parseDateOnly(a.date).getTime() ||
+          installmentNumber(a) - installmentNumber(b) ||
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      ) ?? []
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -662,50 +669,24 @@ function InvoiceDetailSheet({
                 </div>
               ) : (
                 <>
-                  {regularTxs.length > 0 && (
-                    <div>
-                      <p className="border-y border-border px-4 py-3 text-[11px] font-medium text-muted-foreground">
-                        Transações · {regularTxs.length}
-                      </p>
-                      {regularTxs.map((tx, i) => (
-                        <motion.div
-                          key={tx.id}
-                          initial={{ opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.2, delay: Math.min(i, 12) * 0.03, ease: EASE_OUT_EXPO }}
-                          className="border-b border-border last:border-b-0"
-                        >
-                          <TxRow
-                            tx={tx}
-                            onEdit={canEditTransactions ? handleEditTx : undefined}
-                            onDelete={canEditTransactions ? handleDeleteTx : undefined}
-                          />
-                        </motion.div>
-                      ))}
-                    </div>
-                  )}
-                  {installmentTxs.length > 0 && (
-                    <div>
-                      <p className="border-y border-border px-4 py-3 text-[11px] font-medium text-muted-foreground">
-                        Parcelamentos · {installmentTxs.length}
-                      </p>
-                      {installmentTxs.map((tx, i) => (
-                        <motion.div
-                          key={tx.id}
-                          initial={{ opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.2, delay: Math.min(i, 12) * 0.03, ease: EASE_OUT_EXPO }}
-                          className="border-b border-border last:border-b-0"
-                        >
-                          <TxRow
-                            tx={tx}
-                            onEdit={canEditTransactions ? handleEditTx : undefined}
-                            onDelete={canEditTransactions ? handleDeleteTx : undefined}
-                          />
-                        </motion.div>
-                      ))}
-                    </div>
-                  )}
+                  <p className="border-y border-border px-4 py-3 text-[11px] font-medium text-muted-foreground">
+                    Transações · {txs.length}
+                  </p>
+                  {txs.map((tx, i) => (
+                    <motion.div
+                      key={tx.id}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2, delay: Math.min(i, 12) * 0.03, ease: EASE_OUT_EXPO }}
+                      className="border-b border-border last:border-b-0"
+                    >
+                      <TxRow
+                        tx={tx}
+                        onEdit={canEditTransactions ? handleEditTx : undefined}
+                        onDelete={canEditTransactions ? handleDeleteTx : undefined}
+                      />
+                    </motion.div>
+                  ))}
                 </>
               )}
             </div>
