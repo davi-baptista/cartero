@@ -374,8 +374,11 @@ interface CategorySlice {
  * Gastos por categoria da fatura. Estornos abatem a própria categoria — sem
  * isso um reembolso inflaria o gasto em vez de reduzi-lo.
  */
-function buildCategorySlices(transactions: Transaction[] | undefined): CategorySlice[] {
-  if (!transactions?.length) return []
+function buildCategorySlices(
+  transactions: Transaction[] | undefined,
+  expanded = false,
+): { slices: CategorySlice[]; hiddenCount: number } {
+  if (!transactions?.length) return { slices: [], hiddenCount: 0 }
 
   const totals = new Map<string, { name: string; color: string | null; icon: string | null; amount: number }>()
 
@@ -398,29 +401,35 @@ function buildCategorySlices(transactions: Transaction[] | undefined): CategoryS
     .filter((entry) => entry.amount > 0)
     .sort((a, b) => b.amount - a.amount)
 
-  if (ranked.length === 0) return []
+  if (ranked.length === 0) return { slices: [], hiddenCount: 0 }
 
-  const visible = ranked.slice(0, CATEGORY_CHART_LIMIT)
-  const rest = ranked.slice(CATEGORY_CHART_LIMIT)
-
-  if (rest.length > 0) {
-    visible.push({
-      key: '__outras__',
-      name: `Outras · ${rest.length}`,
-      color: null,
-      icon: null,
-      amount: rest.reduce((sum, entry) => sum + entry.amount, 0),
-    })
-  }
+  const hiddenCount = Math.max(0, ranked.length - CATEGORY_CHART_LIMIT)
+  const visible = expanded ? [...ranked] : ranked.slice(0, CATEGORY_CHART_LIMIT)
 
   // Proporção relativa à maior fatia: a barra compara categorias entre si,
-  // não contra o total da fatura.
-  const max = Math.max(...visible.map((entry) => entry.amount))
-  return visible.map((entry) => ({ ...entry, pct: (entry.amount / max) * 100 }))
+  // não contra o total da fatura. A escala vem sempre do ranking inteiro,
+  // para as barras não mudarem de tamanho ao expandir.
+  const max = ranked[0].amount
+  return {
+    slices: visible.map((entry) => ({ ...entry, pct: (entry.amount / max) * 100 })),
+    hiddenCount,
+  }
 }
 
-function CategoryChart({ transactions }: { transactions: Transaction[] | undefined }) {
-  const slices = useMemo(() => buildCategorySlices(transactions), [transactions])
+function CategoryChart({
+  transactions,
+  selectedCategory,
+  onSelectCategory,
+}: {
+  transactions: Transaction[] | undefined
+  selectedCategory: string | null
+  onSelectCategory: (key: string | null) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const { slices, hiddenCount } = useMemo(
+    () => buildCategorySlices(transactions, expanded),
+    [transactions, expanded],
+  )
   if (slices.length === 0) return null
 
   return (
@@ -428,15 +437,39 @@ function CategoryChart({ transactions }: { transactions: Transaction[] | undefin
       aria-label="Gastos por categoria nesta fatura"
       className="border-t border-border px-6 py-4"
     >
-      <h3 className="mb-3 text-[11px] font-medium text-muted-foreground">
-        Maiores gastos por categoria
-      </h3>
-      <div className="flex flex-col gap-2.5">
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <h3 className="text-[11px] font-medium text-muted-foreground">
+          Maiores gastos por categoria
+        </h3>
+        {selectedCategory && (
+          <button
+            type="button"
+            onClick={() => onSelectCategory(null)}
+            className="text-[11px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+          >
+            Limpar filtro
+          </button>
+        )}
+      </div>
+      <div className="flex flex-col gap-1">
         {slices.map((slice, i) => {
           const { Icon } = resolveCategoryIcon(slice.icon)
           const color = slice.color ?? 'oklch(0.640 0.210 272)'
+          const active = selectedCategory === slice.key
           return (
-            <div key={slice.key} className="flex items-center gap-2.5">
+            <button
+              key={slice.key}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onSelectCategory(active ? null : slice.key)}
+              className={cn(
+                '-mx-2 flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/40',
+                active && 'bg-muted/60',
+                // Uma categoria selecionada apaga as demais, para a lista
+                // abaixo e o gráfico contarem a mesma história.
+                selectedCategory && !active && 'opacity-40',
+              )}
+            >
               <div
                 className="flex size-6 shrink-0 items-center justify-center rounded-md"
                 style={{ backgroundColor: `color-mix(in oklch, ${color} 15%, transparent)` }}
@@ -456,10 +489,30 @@ function CategoryChart({ transactions }: { transactions: Transaction[] | undefin
               <span className="shrink-0 text-[11px] font-medium tabular-nums tracking-[-0.01em]">
                 {formatCurrency(slice.amount)}
               </span>
-            </div>
+            </button>
           )
         })}
       </div>
+
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="mt-2 flex items-center gap-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ChevronDown
+            className={cn(
+              'size-3.5 shrink-0 transition-transform duration-200',
+              expanded && 'rotate-180',
+            )}
+            aria-hidden="true"
+          />
+          {expanded
+            ? 'Ver menos'
+            : `Ver mais ${hiddenCount} ${hiddenCount === 1 ? 'categoria' : 'categorias'}`}
+        </button>
+      )}
     </section>
   )
 }
@@ -487,6 +540,20 @@ function InvoiceDetailSheet({
     mode: 'edit' | 'delete'
   } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null)
+  /**
+   * Categoria escolhida no gráfico — recorta a lista abaixo. Guarda junto a
+   * fatura a que pertence, para o filtro não vazar ao trocar de fatura.
+   */
+  const [categoryFilter, setCategoryFilter] = useState<{
+    invoiceId: string
+    key: string
+  } | null>(null)
+  const selectedCategory =
+    categoryFilter && categoryFilter.invoiceId === invoiceId ? categoryFilter.key : null
+
+  function handleSelectCategory(key: string | null) {
+    setCategoryFilter(key && invoiceId ? { invoiceId, key } : null)
+  }
 
   const { data: invoice, isLoading } = useQuery({
     queryKey: ['invoice', invoiceId],
@@ -668,6 +735,10 @@ function InvoiceDetailSheet({
   const txs =
     invoice?.transactions
       ?.slice()
+      .filter(
+        (tx) =>
+          !selectedCategory || (tx.categoryId ?? 'sem-categoria') === selectedCategory,
+      )
       .sort(
         (a, b) =>
           parseDateOnly(b.date).getTime() - parseDateOnly(a.date).getTime() ||
@@ -743,7 +814,11 @@ function InvoiceDetailSheet({
               )}
             </div>
 
-            <CategoryChart transactions={invoice.transactions} />
+            <CategoryChart
+              transactions={invoice.transactions}
+              selectedCategory={selectedCategory}
+              onSelectCategory={handleSelectCategory}
+            />
 
             {/* Ações de transação — some quando a fatura está paga */}
             {canEditTransactions && (
@@ -765,20 +840,23 @@ function InvoiceDetailSheet({
 
             {/* Transaction list */}
             <div className="flex-1 overflow-y-auto">
-              {txCount === 0 ? (
+              {txs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
                   <div className="mb-3 flex size-11 items-center justify-center rounded-xl bg-muted/40">
                     <Receipt className="size-5 text-muted-foreground/50" />
                   </div>
                   <p className="text-sm font-medium">Nenhuma transação</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Esta fatura não tem transações registradas.
+                    {selectedCategory
+                      ? 'Nenhuma transação nesta categoria.'
+                      : 'Esta fatura não tem transações registradas.'}
                   </p>
                 </div>
               ) : (
                 <>
                   <p className="border-y border-border px-4 py-3 text-[11px] font-medium text-muted-foreground">
                     Transações · {txs.length}
+                    {selectedCategory && ` de ${txCount}`}
                   </p>
                   {txs.map((tx, i) => (
                     <motion.div
