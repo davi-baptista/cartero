@@ -21,6 +21,7 @@ import {
   Plus,
   Pencil,
   Trash2,
+  MoreVertical,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -42,6 +43,12 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { MotionRow } from '@/components/ui/motion-row'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { TransactionSheet, type TransactionFormData } from '../../../transactions/transaction-sheet'
 import { InstallmentScopeDialog } from '../../../transactions/installment-scope-dialog'
 import {
@@ -266,7 +273,7 @@ function TxRow({
   const editable = Boolean(onEdit && onDelete)
 
   return (
-    <div className="group flex items-center gap-3 px-4 py-3.5">
+    <div className="flex items-center gap-3 px-4 py-3.5">
       <div
         className="flex size-9 shrink-0 items-center justify-center rounded-xl"
         style={{ backgroundColor: expense ? EXPENSE_BG : INCOME_BG }}
@@ -305,7 +312,7 @@ function TxRow({
         </div>
       </div>
 
-      <div className="shrink-0 text-right">
+      <div className={cn('shrink-0 text-right', editable && '-mr-1')}>
         <span
           className="text-sm font-semibold tabular-nums tracking-[-0.01em]"
           style={{ color: expense ? undefined : INCOME_COLOR }}
@@ -320,27 +327,30 @@ function TxRow({
       </div>
 
       {editable && (
-        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => onEdit!(tx)}
-            aria-label={`Editar ${tx.title}`}
-            title="Editar"
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="shrink-0 text-muted-foreground"
+                aria-label={`Ações de ${tx.title}`}
+              />
+            }
           >
-            <Pencil className="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => onDelete!(tx)}
-            aria-label={`Excluir ${tx.title}`}
-            title="Excluir"
-            className="text-muted-foreground hover:text-destructive"
-          >
-            <Trash2 className="size-3.5" />
-          </Button>
-        </div>
+            <MoreVertical className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => onEdit!(tx)}>
+              <Pencil className="size-3.5" />
+              Editar
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onDelete!(tx)} className="text-destructive">
+              <Trash2 className="size-3.5" />
+              Excluir
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
     </div>
   )
