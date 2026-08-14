@@ -8,16 +8,20 @@ datasource db {
 }
 
 model User {
-  id                           String   @id @default(uuid())
-  email                        String   @unique
+  id                           String    @id @default(uuid())
+  email                        String    @unique
   password                     String
   name                         String
   salary                       Decimal?
-  createIncomeOnReceivablePaid Boolean  @default(false)
-  createExpenseOnDebtPaid      Boolean  @default(false)
-  notifyDaysBefore             Int      @default(3)
-  createdAt                    DateTime @default(now())
-  updatedAt                    DateTime @updatedAt
+  createIncomeOnReceivablePaid Boolean   @default(false)
+  createExpenseOnDebtPaid      Boolean   @default(false)
+  notifyDaysBefore             Int       @default(3)
+  /**
+   * Corte para marcar como "novo" o que foi gerado desde a última visita.
+   */
+  lastSeenAt                   DateTime?
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
 
   banks             Bank[]
   categories        Category[]
@@ -27,6 +31,7 @@ model User {
   receivables       Receivable[]
   people            Person[]
   pushSubscriptions PushSubscription[]
+  subscriptions     Subscription[]
 }
 
 model PushSubscription {
@@ -51,9 +56,10 @@ model Bank {
   createdAt                DateTime @default(now())
   updatedAt                DateTime @default(now())
 
-  user         User          @relation(fields: [userId], references: [id])
-  transactions Transaction[]
-  invoices     Invoice[]
+  user          User           @relation(fields: [userId], references: [id])
+  transactions  Transaction[]
+  invoices      Invoice[]
+  subscriptions Subscription[]
 }
 
 model Category {
@@ -66,37 +72,71 @@ model Category {
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now())
 
-  user         User          @relation(fields: [userId], references: [id])
-  transactions Transaction[]
+  user          User           @relation(fields: [userId], references: [id])
+  transactions  Transaction[]
+  subscriptions Subscription[]
 
   @@unique([userId, name])
 }
 
-model Transaction {
-  id          String          @id @default(uuid())
-  parentId    String?
-  userId      String
-  bankId      String
-  categoryId  String
-  invoiceId   String?
-  personId    String?
-  title       String
-  type        TransactionType
-  amount      Decimal
-  isRefund    Boolean         @default(false)
-  description String?
-  date        DateTime
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @default(now())
+/// Regra recorrente que gera Transactions — uma assinatura mensal.
+model Subscription {
+  id               String          @id @default(uuid())
+  userId           String
+  bankId           String
+  categoryId       String
+  title            String
+  type             TransactionType
+  amount           Decimal
+  description      String?
+  /// Dia do mês da cobrança (1-31). Guarda SEMPRE o valor original: meses
+  /// curtos são ajustados na geração, nunca aqui, senão a data andaria para
+  /// trás de forma permanente.
+  dayOfMonth       Int
+  /// Primeiro ciclo coberto, no formato "YYYY-MM". Imutável após a criação.
+  startedAt        String
+  isActive         Boolean         @default(true)
+  /// Último ciclo já gerado, "YYYY-MM". Trava de idempotência: sozinho diz
+  /// quais ciclos ainda faltam, sem precisar varrer as transações.
+  lastGeneratedFor String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @default(now())
 
-  user              User        @relation(fields: [userId], references: [id])
-  bank              Bank        @relation(fields: [bankId], references: [id])
-  category          Category    @relation(fields: [categoryId], references: [id])
-  invoice           Invoice?    @relation(fields: [invoiceId], references: [id])
-  person            Person?     @relation(fields: [personId], references: [id])
-  receivable        Receivable? @relation("ReimbursableLink")
-  paymentReceivable Receivable? @relation("ReceivablePaymentLink")
-  paymentDebt       Debt?       @relation("DebtPaymentLink")
+  user         User          @relation(fields: [userId], references: [id])
+  bank         Bank          @relation(fields: [bankId], references: [id])
+  category     Category      @relation(fields: [categoryId], references: [id])
+  transactions Transaction[] @relation("SubscriptionLink")
+
+  @@index([userId, isActive])
+}
+
+model Transaction {
+  id             String          @id @default(uuid())
+  parentId       String?
+  userId         String
+  bankId         String
+  categoryId     String
+  invoiceId      String?
+  personId       String?
+  subscriptionId String?
+  title          String
+  type           TransactionType
+  amount         Decimal
+  isRefund       Boolean         @default(false)
+  description    String?
+  date           DateTime
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @default(now())
+
+  user              User          @relation(fields: [userId], references: [id])
+  bank              Bank          @relation(fields: [bankId], references: [id])
+  category          Category      @relation(fields: [categoryId], references: [id])
+  invoice           Invoice?      @relation(fields: [invoiceId], references: [id])
+  person            Person?       @relation(fields: [personId], references: [id])
+  subscription      Subscription? @relation("SubscriptionLink", fields: [subscriptionId], references: [id])
+  receivable        Receivable?   @relation("ReimbursableLink")
+  paymentReceivable Receivable?   @relation("ReceivablePaymentLink")
+  paymentDebt       Debt?         @relation("DebtPaymentLink")
 }
 
 model Invoice {

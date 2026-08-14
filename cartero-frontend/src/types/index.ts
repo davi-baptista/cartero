@@ -64,6 +64,8 @@ export interface Transaction {
   parentId?: string
   personId?: string
   person?: Person
+  /** Preenchido quando o lançamento foi gerado por uma assinatura. */
+  subscriptionId?: string
   type: TransactionType
   title: string
   amount: number
@@ -75,6 +77,35 @@ export interface Transaction {
   invoice?: Invoice
   createdAt: string
   updatedAt: string
+}
+
+export interface Subscription {
+  id: string
+  userId: string
+  bankId: string
+  categoryId: string
+  title: string
+  type: TransactionType
+  amount: number
+  description?: string
+  /** Dia da cobrança (1-31). Meses curtos são ajustados na geração. */
+  dayOfMonth: number
+  /** Primeiro ciclo coberto, "YYYY-MM". Imutável após a criação. */
+  startedAt: string
+  isActive: boolean
+  lastGeneratedFor?: string | null
+  bank?: Bank
+  category?: Category
+  createdAt: string
+  updatedAt: string
+}
+
+/** Um ciclo que a geração produziu (ou pulou). */
+export interface GenerationPlanItem {
+  cycle: string
+  date: string
+  skipped: boolean
+  skipReason?: 'invoice-paid'
 }
 
 export interface Invoice {

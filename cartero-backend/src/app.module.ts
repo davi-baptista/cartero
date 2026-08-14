@@ -17,6 +17,8 @@ import { PersonsModule } from './persons/persons.module';
 import { BudgetModule } from './budget/budget.module';
 import { HealthModule } from './health/health.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { CommitmentsModule } from './commitments/commitments.module';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { NotificationsModule } from './notifications/notifications.module';
     BudgetModule,
     HealthModule,
     NotificationsModule,
+    SubscriptionsModule,
+    CommitmentsModule,
     ScheduleModule.forRoot(),
   ],
   providers: [AppScheduler],

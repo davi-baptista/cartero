@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Search,
   X,
+  Repeat,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -173,6 +174,15 @@ function TransactionRow({
               <>
                 <span aria-hidden>·</span>
                 <span className="truncate">{tx.person.name}</span>
+              </>
+            )}
+            {tx.subscriptionId && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="inline-flex shrink-0 items-center gap-1">
+                  <Repeat className="size-3" aria-hidden />
+                  assinatura
+                </span>
               </>
             )}
           </div>

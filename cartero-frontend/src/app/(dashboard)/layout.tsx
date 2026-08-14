@@ -16,6 +16,8 @@ import {
   ChevronLeft,
   ChevronRight,
   PiggyBank,
+  Repeat,
+  CalendarClock,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -36,6 +38,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useAuth } from '@/providers/auth-provider'
 import { NavigationProgress } from '@/components/ui/navigation-progress'
 import { MonthNav, MonthPeriodProvider, useMonthPeriod } from '@/components/month-nav'
+import { SubscriptionRunner } from '@/components/subscription-runner'
 import Image from 'next/image'
 
 function SidebarNav({ pathname }: { pathname: string }) {
@@ -134,6 +137,8 @@ const navItems = [
   { href: '/overview', label: 'Visão Geral', icon: LayoutDashboard },
   { href: '/budget', label: 'Orçamento', icon: PiggyBank },
   { href: '/transactions', label: 'Extrato', icon: ArrowDownUp },
+  { href: '/subscriptions', label: 'Assinaturas', icon: Repeat },
+  { href: '/commitments', label: 'Compromissos', icon: CalendarClock },
   { href: '/banks', label: 'Bancos', icon: Landmark },
   { href: '/categories', label: 'Categorias', icon: Tags },
   { href: '/debts', label: 'Dívidas', icon: HandCoins },
@@ -156,19 +161,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
         <div className="relative flex items-center justify-center">
-          {/* Spinning ring */}
+          {/* Anel — orbita o logo por fora, com folga entre os dois */}
           <svg
-            className="absolute size-16 animate-spin"
+            className="absolute size-32 animate-spin"
             style={{ animationDuration: '1.1s', animationTimingFunction: 'linear' }}
-            viewBox="0 0 64 64"
+            viewBox="0 0 128 128"
             fill="none"
+            aria-hidden
           >
             <circle
-              cx="32" cy="32" r="28"
+              cx="64" cy="64" r="60"
               stroke="currentColor"
               strokeWidth="3"
               strokeLinecap="round"
-              strokeDasharray="44 132"
+              strokeDasharray="90 287"
               className="text-primary"
             />
           </svg>
@@ -178,7 +184,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             alt="Cartero"
             width={96}
             height={96}
-            className="size-24 object-contain"
+            className="relative size-24 object-contain"
             priority
             unoptimized
           />
@@ -203,6 +209,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <MonthPeriodProvider>
     <SidebarProvider>
       <NavigationProgress />
+      <SubscriptionRunner />
       <div className="flex min-h-screen w-full">
         <Sidebar collapsible="icon">
           {/* Brand */}
