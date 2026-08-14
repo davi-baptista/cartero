@@ -159,36 +159,49 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (isLoading) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-background">
-        <div className="relative flex items-center justify-center">
-          {/* Anel — orbita o logo por fora, com folga entre os dois */}
+      <div
+        className="flex h-screen w-full flex-col items-center justify-center gap-5 bg-background"
+        role="status"
+        aria-label="Carregando"
+      >
+        {/* O anel orbita apenas o ícone: o logo com o nome é mais alto que
+            largo, e um círculo centralizado nele cortaria a palavra. */}
+        <div className="relative flex size-20 items-center justify-center">
           <svg
-            className="absolute size-32 animate-spin"
+            className="absolute inset-0 size-full animate-spin motion-reduce:animate-none"
             style={{ animationDuration: '1.1s', animationTimingFunction: 'linear' }}
-            viewBox="0 0 128 128"
+            viewBox="0 0 80 80"
             fill="none"
             aria-hidden
           >
             <circle
-              cx="64" cy="64" r="60"
+              cx="40" cy="40" r="38"
               stroke="currentColor"
-              strokeWidth="3"
+              strokeWidth="2"
+              className="text-border"
+            />
+            <circle
+              cx="40" cy="40" r="38"
+              stroke="currentColor"
+              strokeWidth="2"
               strokeLinecap="round"
-              strokeDasharray="90 287"
+              strokeDasharray="60 179"
               className="text-primary"
             />
           </svg>
-          {/* Brand */}
           <Image
-            src="/logo-vertical-.png"
-            alt="Cartero"
-            width={96}
-            height={96}
-            className="relative size-24 object-contain"
+            src="/logo-vertical-sem-nome.png"
+            alt=""
+            width={48}
+            height={48}
+            className="size-12 object-contain"
             priority
             unoptimized
           />
         </div>
+        <span className="text-sm font-medium tracking-tight text-muted-foreground">
+          cartero
+        </span>
       </div>
     )
   }
