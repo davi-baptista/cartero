@@ -17,6 +17,7 @@ import {
   TrendingUp,
   CheckCircle2,
   Loader2,
+  Undo2,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -29,8 +30,21 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { MotionRow } from '@/components/ui/motion-row'
-import { getBankInvoices, getInvoice, updateInvoiceStatus } from '@/services/invoices.service'
+import {
+  getBankInvoices,
+  getInvoice,
+  updateInvoiceStatus,
+  reopenInvoice,
+} from '@/services/invoices.service'
 import { getBank } from '@/services/banks.service'
 import {
   formatCurrency,
@@ -302,6 +316,7 @@ function InvoiceDetailSheet({
   onOpenChange: (v: boolean) => void
 }) {
   const qc = useQueryClient()
+  const [reopenConfirm, setReopenConfirm] = useState(false)
 
   const { data: invoice, isLoading } = useQuery({
     queryKey: ['invoice', invoiceId],
@@ -319,9 +334,22 @@ function InvoiceDetailSheet({
     onError: () => toast.error('Erro ao atualizar fatura'),
   })
 
+  const reopenMut = useMutation({
+    mutationFn: () => reopenInvoice(invoiceId!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['invoice', invoiceId] })
+      qc.invalidateQueries({ queryKey: ['bank-invoices', bankId] })
+      qc.invalidateQueries({ queryKey: ['budget'] })
+      setReopenConfirm(false)
+      toast.success('Fatura reaberta')
+    },
+    onError: () => toast.error('Erro ao reabrir fatura'),
+  })
+
   const canMarkPaid =
     invoice &&
     (invoice.status === InvoiceStatus.CLOSED || invoice.status === InvoiceStatus.OVERDUE)
+  const isPaid = invoice?.status === InvoiceStatus.PAID
   const monthYear = invoice ? capitalize(formatMonthYear(invoice.month, invoice.year)) : ''
   const total = invoice ? Number(invoice.totalAmount) : 0
   const txCount = invoice?.transactions?.length ?? 0
@@ -389,6 +417,20 @@ function InvoiceDetailSheet({
                   Marcar como paga
                 </Button>
               )}
+              {isPaid && (
+                <Button
+                  variant="outline"
+                  onClick={() => setReopenConfirm(true)}
+                  disabled={reopenMut.isPending}
+                >
+                  {reopenMut.isPending ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Undo2 className="size-3.5" />
+                  )}
+                  Reabrir
+                </Button>
+              )}
             </div>
 
             {/* Transaction list */}
@@ -447,6 +489,28 @@ function InvoiceDetailSheet({
           </>
         )}
       </SheetContent>
+
+      <Dialog open={reopenConfirm} onOpenChange={setReopenConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reabrir fatura</DialogTitle>
+            <DialogDescription>
+              A fatura deixa de constar como paga e volta ao estado que a data
+              dela determina. Use isso quando precisar editar um lançamento —
+              depois é só marcar como paga de novo.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReopenConfirm(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={() => reopenMut.mutate()} disabled={reopenMut.isPending}>
+              {reopenMut.isPending && <Loader2 className="size-3.5 animate-spin" />}
+              Reabrir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   )
 }

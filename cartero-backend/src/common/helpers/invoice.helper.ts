@@ -1,4 +1,4 @@
-import { Bank, Invoice, Prisma } from '@prisma/client';
+import { Bank, Invoice, InvoiceStatus, Prisma } from '@prisma/client';
 
 export const SYSTEM_RECEIVABLE_BANK_NAME = '__system_receivables__';
 export const DEFAULT_INVOICE_DAYS_AFTER_CLOSE = 7;
@@ -121,6 +121,27 @@ export function offsetInvoicePeriod(
   };
 }
 
+/**
+ * Status que a fatura teria pelas suas próprias datas, ignorando pagamento.
+ *
+ * Usado ao criar uma fatura e ao reabrir uma paga: nos dois casos o estado
+ * correto vem do calendário, não de um valor fixo — reabrir uma fatura cujo
+ * vencimento já passou tem de devolvê-la como OVERDUE, não como CLOSED.
+ */
+export function deriveInvoiceStatus(
+  schedule: InvoiceSchedule,
+  year: number,
+  month: number,
+  today: Date = new Date(),
+): InvoiceStatus {
+  const closeDate = getInvoiceCloseDateForPeriod(schedule, year, month);
+  const dueDate = getInvoiceDueDateForPeriod(schedule, year, month);
+
+  if (today > dueDate) return 'OVERDUE';
+  if (today >= closeDate) return 'CLOSED';
+  return 'OPEN';
+}
+
 export async function findOrCreateInvoiceForPeriod(
   tx: Prisma.TransactionClient,
   userId: string,
@@ -134,20 +155,7 @@ export async function findOrCreateInvoiceForPeriod(
   });
 
   if (!invoice) {
-    const today = new Date();
-    const periodCloseDate = getInvoiceCloseDateForPeriod(
-      schedule,
-      year,
-      month,
-    );
-    const dueDate = getInvoiceDueDateForPeriod(schedule, year, month);
-
-    const status =
-      today > dueDate
-        ? 'OVERDUE'
-        : today >= periodCloseDate
-          ? 'CLOSED'
-          : 'OPEN';
+    const status = deriveInvoiceStatus(schedule, year, month);
 
     invoice = await tx.invoice.create({
       data: { userId, bankId, month, year, status },

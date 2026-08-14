@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -26,6 +27,11 @@ export class InvoicesController {
     @Body() dto: UpdateInvoiceDto,
   ) {
     return this.invoicesService.update(id, user.id, dto);
+  }
+
+  @Post(':id/reopen')
+  reopen(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.invoicesService.reopen(id, user.id);
   }
 
   @Get(':id')

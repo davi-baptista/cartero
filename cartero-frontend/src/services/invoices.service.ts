@@ -24,3 +24,9 @@ export async function updateInvoiceStatus(id: string, status: InvoiceStatus): Pr
   const { data } = await api.patch<Invoice>(`/invoices/${id}`, { status })
   return data
 }
+
+/** Desfaz o pagamento — o status volta a ser o que as datas determinam. */
+export async function reopenInvoice(id: string): Promise<Invoice> {
+  const { data } = await api.post<Invoice>(`/invoices/${id}/reopen`)
+  return data
+}
