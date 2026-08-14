@@ -4,7 +4,10 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { Layers, Repeat, ArrowRight, CalendarClock } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getCommitments } from '@/services/commitments.service'
+import {
+  getCommitments,
+  type ActiveInstallment,
+} from '@/services/commitments.service'
 import { formatCurrency, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 
@@ -16,6 +19,92 @@ function monthLabel({ month, year }: { month: number; year: number }) {
   return `${nome}/${String(year).slice(2)}`
 }
 
+function InstallmentSection({
+  title,
+  description,
+  items,
+  total,
+  showPerson = false,
+}: {
+  title: string
+  description?: string
+  items: ActiveInstallment[]
+  total: number
+  showPerson?: boolean
+}) {
+  return (
+    <div>
+      <div className="mb-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            {showPerson ? 'a receber ' : 'faltam '}
+            <span className="font-medium text-foreground">{formatCurrency(total)}</span>
+          </span>
+        </div>
+        {description && (
+          <p className="mt-0.5 text-[11px] text-muted-foreground">{description}</p>
+        )}
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
+        {items.map((item) => {
+          const progress = (item.paidCount / item.totalCount) * 100
+          return (
+            <div key={item.id} className="px-4 py-3.5">
+              <div className="flex items-center gap-3">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
+                  <Layers className="size-4 text-muted-foreground" aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="truncate text-[13px] font-medium">{item.title}</span>
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                    {showPerson && item.personName && `${item.personName} · `}
+                    {formatCurrency(item.installmentAmount)} × {item.totalCount}
+                    {item.bankName && ` · ${item.bankName}`}
+                    {item.endsAt && ` · até ${monthLabel(item.endsAt)}`}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <span
+                    className={cn(
+                      'text-[13px] font-semibold tabular-nums tracking-[-0.01em]',
+                      showPerson && 'text-receivable',
+                    )}
+                  >
+                    {formatCurrency(item.remaining)}
+                  </span>
+                  <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
+                    {item.paidCount}/{item.totalCount} pagas
+                  </p>
+                </div>
+              </div>
+
+              <div
+                role="progressbar"
+                aria-valuenow={Math.round(progress)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={`Progresso de ${item.title}`}
+                className="mt-2.5 ml-11 h-1 overflow-hidden rounded-full bg-muted/50"
+              >
+                <div
+                  aria-hidden
+                  className={cn(
+                    'h-full rounded-full',
+                    showPerson ? 'bg-receivable/40' : 'bg-primary/40',
+                  )}
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function CommitmentsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['commitments'],
@@ -23,12 +112,21 @@ export default function CommitmentsPage() {
   })
 
   const installments = data?.installments ?? []
+  const othersInstallments = data?.othersInstallments ?? []
   const subscriptions = data?.subscriptions ?? []
   const forecast = data?.forecast ?? []
-  const totals = data?.totals ?? { installmentsRemaining: 0, monthlySubscriptions: 0 }
+  const totals = data?.totals ?? {
+    installmentsRemaining: 0,
+    othersRemaining: 0,
+    monthlySubscriptions: 0,
+  }
 
   const maxForecast = Math.max(1, ...forecast.map((f) => f.total))
-  const isEmpty = !isLoading && installments.length === 0 && subscriptions.length === 0
+  const isEmpty =
+    !isLoading &&
+    installments.length === 0 &&
+    othersInstallments.length === 0 &&
+    subscriptions.length === 0
 
   return (
     <div className="flex flex-col gap-6">
@@ -111,68 +209,23 @@ export default function CommitmentsPage() {
 
           {/* Parcelamentos em aberto */}
           {installments.length > 0 && (
-            <div>
-              <div className="mb-3 flex items-baseline justify-between gap-2">
-                <h2 className="text-[15px] font-semibold tracking-tight">
-                  Parcelamentos em aberto
-                </h2>
-                <span className="text-[11px] text-muted-foreground">
-                  faltam{' '}
-                  <span className="font-medium text-foreground">
-                    {formatCurrency(totals.installmentsRemaining)}
-                  </span>
-                </span>
-              </div>
+            <InstallmentSection
+              title="Parcelamentos em aberto"
+              items={installments}
+              total={totals.installmentsRemaining}
+            />
+          )}
 
-              <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
-                {installments.map((item) => {
-                  const progress = (item.paidCount / item.totalCount) * 100
-                  return (
-                    <div key={item.id} className="px-4 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
-                          <Layers className="size-4 text-muted-foreground" aria-hidden />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <span className="truncate text-[13px] font-medium">
-                            {item.title}
-                          </span>
-                          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                            {formatCurrency(item.installmentAmount)} ×{' '}
-                            {item.totalCount}
-                            {item.bankName && ` · ${item.bankName}`}
-                            {item.endsAt && ` · até ${monthLabel(item.endsAt)}`}
-                          </p>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <span className="text-[13px] font-semibold tabular-nums tracking-[-0.01em]">
-                            {formatCurrency(item.remaining)}
-                          </span>
-                          <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
-                            {item.paidCount}/{item.totalCount} pagas
-                          </p>
-                        </div>
-                      </div>
-
-                      <div
-                        role="progressbar"
-                        aria-valuenow={Math.round(progress)}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-label={`Progresso de ${item.title}`}
-                        className="mt-2.5 ml-11 h-1 overflow-hidden rounded-full bg-muted/50"
-                      >
-                        <div
-                          aria-hidden
-                          className="h-full rounded-full bg-primary/40"
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
+          {/* Parcelas de terceiros — passam pelo seu cartão mas voltam
+              como recebível, então ficam fora do custo fixo acima. */}
+          {othersInstallments.length > 0 && (
+            <InstallmentSection
+              title="Parcelas de outras pessoas"
+              description="Passam pelo seu cartão, mas o valor volta para você — não entram no custo fixo."
+              items={othersInstallments}
+              total={totals.othersRemaining}
+              showPerson
+            />
           )}
 
           {/* Assinaturas ativas */}

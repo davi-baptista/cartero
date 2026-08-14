@@ -11,6 +11,8 @@ export interface ActiveInstallment {
   endsAt: { month: number; year: number } | null
   bankName: string | null
   categoryName: string | null
+  /** Preenchido quando a compra foi feita em nome de outra pessoa. */
+  personName: string | null
 }
 
 export interface ForecastMonth {
@@ -23,9 +25,12 @@ export interface ForecastMonth {
 
 export interface Commitments {
   installments: ActiveInstallment[]
+  /** Compras parceladas feitas em nome de outra pessoa. */
+  othersInstallments: ActiveInstallment[]
   subscriptions: Subscription[]
   totals: {
     installmentsRemaining: number
+    othersRemaining: number
     monthlySubscriptions: number
   }
   forecast: ForecastMonth[]

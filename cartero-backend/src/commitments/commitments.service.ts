@@ -16,6 +16,8 @@ export interface ActiveInstallment {
   endsAt: { month: number; year: number } | null;
   bankName: string | null;
   categoryName: string | null;
+  /** Preenchido quando a compra foi feita em nome de outra pessoa. */
+  personName: string | null;
 }
 
 const INSTALLMENT_SUFFIX = /\s(\d+)\/(\d+)$/;
@@ -39,14 +41,19 @@ export class CommitmentsService {
       0,
     );
 
+    // Uma compra em nome de outra pessoa passa pelo cartão mas não é custo
+    // seu — o valor volta como recebível. Separar evita que a projeção
+    // apresente como compromisso algo que você não vai desembolsar.
+    const own = installments.filter((item) => !item.personName);
+    const others = installments.filter((item) => item.personName);
+
     return {
-      installments,
+      installments: own,
+      othersInstallments: others,
       subscriptions,
       totals: {
-        installmentsRemaining: installments.reduce(
-          (sum, i) => sum + i.remaining,
-          0,
-        ),
+        installmentsRemaining: own.reduce((sum, i) => sum + i.remaining, 0),
+        othersRemaining: others.reduce((sum, i) => sum + i.remaining, 0),
         monthlySubscriptions,
       },
       /** Custo fixo projetado para os próximos meses. */
@@ -76,6 +83,7 @@ export class CommitmentsService {
         invoice: { select: { month: true, year: true, status: true } },
         bank: { select: { name: true } },
         category: { select: { name: true } },
+        person: { select: { name: true } },
       },
     });
 
@@ -83,7 +91,7 @@ export class CommitmentsService {
     const currentYear = now.getUTCFullYear();
     const currentMonth = now.getUTCMonth() + 1;
 
-    const groups = new Map<string, ActiveInstallment & { seen: number }>();
+    const groups = new Map<string, ActiveInstallment>();
 
     for (const tx of rows) {
       const match = INSTALLMENT_SUFFIX.exec(tx.title);
@@ -109,10 +117,9 @@ export class CommitmentsService {
         endsAt: null,
         bankName: tx.bank?.name ?? null,
         categoryName: tx.category?.name ?? null,
-        seen: 0,
+        personName: tx.person?.name ?? null,
       };
 
-      entry.seen += 1;
       if (isFuture) entry.remaining += amount;
       else entry.paidCount += 1;
 
@@ -130,7 +137,6 @@ export class CommitmentsService {
 
     return [...groups.values()]
       .filter((entry) => entry.remaining > 0)
-      .map(({ seen: _seen, ...entry }) => entry)
       .sort((a, b) => b.remaining - a.remaining);
   }
 
@@ -149,7 +155,9 @@ export class CommitmentsService {
     }> = [];
 
     for (let i = 0; i < 6; i++) {
-      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + i, 1));
+      const d = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + i, 1),
+      );
       months.push({
         month: d.getUTCMonth() + 1,
         year: d.getUTCFullYear(),
@@ -168,6 +176,9 @@ export class CommitmentsService {
         type: 'CREDIT_CARD',
         isRefund: false,
         title: { contains: '/' },
+        // Compras em nome de terceiros voltam como recebível — a projeção
+        // mostra só o que sai do bolso.
+        personId: null,
         // Janela do primeiro ao último mês da projeção.
         invoice: {
           AND: [
