@@ -30,3 +30,17 @@ export async function reopenInvoice(id: string): Promise<Invoice> {
   const { data } = await api.post<Invoice>(`/invoices/${id}/reopen`)
   return data
 }
+
+/** Reabre todas as faturas pagas; devolve os ids para permitir desfazer. */
+export async function reopenAllPaidInvoices(): Promise<{ ids: string[]; count: number }> {
+  const { data } = await api.post<{ ids: string[]; count: number }>(
+    '/invoices/reopen-all-paid',
+  )
+  return data
+}
+
+/** Remarca como pagas as faturas indicadas. Ignora as que já estão pagas. */
+export async function markManyInvoicesPaid(ids: string[]): Promise<{ count: number }> {
+  const { data } = await api.post<{ count: number }>('/invoices/mark-many-paid', { ids })
+  return data
+}

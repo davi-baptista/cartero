@@ -14,6 +14,7 @@ import type { User } from '@prisma/client';
 import { InvoicesService } from './invoices.service';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { FindInvoicesDto } from './dto/find-invoices.dto';
+import { MarkManyPaidDto } from './dto/mark-many-paid.dto';
 
 @Controller('invoices')
 @UseGuards(JwtAuthGuard)
@@ -27,6 +28,17 @@ export class InvoicesController {
     @Body() dto: UpdateInvoiceDto,
   ) {
     return this.invoicesService.update(id, user.id, dto);
+  }
+
+  // Rotas em lote antes de `:id`, senão o parâmetro as capturaria.
+  @Post('reopen-all-paid')
+  reopenAllPaid(@CurrentUser() user: User) {
+    return this.invoicesService.reopenAllPaid(user.id);
+  }
+
+  @Post('mark-many-paid')
+  markManyPaid(@CurrentUser() user: User, @Body() dto: MarkManyPaidDto) {
+    return this.invoicesService.markManyPaid(user.id, dto.ids);
   }
 
   @Post(':id/reopen')

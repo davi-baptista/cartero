@@ -86,4 +86,55 @@ export class InvoicesService {
       },
     });
   }
+
+  /**
+   * Reabre todas as faturas pagas de uma vez — atalho de manutenção para
+   * corrigir lançamentos antigos sem abrir fatura por fatura.
+   *
+   * Devolve os ids afetados: quem chamou precisa deles para desfazer depois,
+   * já que o registro não guarda por que uma fatura foi reaberta.
+   */
+  async reopenAllPaid(userId: string) {
+    const paid = await this.prisma.invoice.findMany({
+      where: { userId, status: 'PAID' },
+      include: { bank: true },
+    });
+
+    await this.prisma.$transaction(
+      paid.map((invoice) =>
+        this.prisma.invoice.update({
+          where: { id: invoice.id, userId },
+          data: {
+            status: deriveInvoiceStatus(
+              {
+                invoiceDueDate: invoice.bank.invoiceDueDate,
+                invoiceDueDaysAfterClose: invoice.bank.invoiceDueDaysAfterClose,
+              },
+              invoice.year,
+              invoice.month,
+            ),
+          },
+        }),
+      ),
+    );
+
+    return { ids: paid.map((invoice) => invoice.id), count: paid.length };
+  }
+
+  /**
+   * Marca como pagas as faturas indicadas — o inverso de `reopenAllPaid`.
+   *
+   * Só age sobre faturas que não estejam pagas: se o usuário quitou alguma
+   * durante a manutenção, ela já está no estado certo e é ignorada.
+   */
+  async markManyPaid(userId: string, ids: string[]) {
+    if (ids.length === 0) return { count: 0 };
+
+    const result = await this.prisma.invoice.updateMany({
+      where: { userId, id: { in: ids }, status: { not: 'PAID' } },
+      data: { status: 'PAID' },
+    });
+
+    return { count: result.count };
+  }
 }

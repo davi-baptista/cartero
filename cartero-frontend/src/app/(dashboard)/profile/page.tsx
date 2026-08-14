@@ -13,6 +13,7 @@ import { updateMe } from '@/services/users.service'
 import { getPublicKey, subscribePush, unsubscribePush } from '@/services/notifications.service'
 import { enablePushNotifications, disablePushNotifications, getExistingPushSubscription } from '@/lib/push'
 import { formatCurrency } from '@/lib/formatters'
+import { MaintenanceMode } from './maintenance-mode'
 
 // ─── Section Card ─────────────────────────────────────────────────────────────
 
@@ -412,6 +413,8 @@ export default function ProfilePage() {
             </div>
           </Field>
         </SectionCard>
+
+        <MaintenanceMode />
       </div>
     </div>
   )
