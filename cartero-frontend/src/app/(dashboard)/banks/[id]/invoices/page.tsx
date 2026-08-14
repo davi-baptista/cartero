@@ -358,6 +358,112 @@ function TxRow({
 
 const EASE_OUT_EXPO = [0.16, 1, 0.3, 1] as const
 
+/** Categorias mostradas antes de agrupar o resto em "Outras". */
+const CATEGORY_CHART_LIMIT = 5
+
+interface CategorySlice {
+  key: string
+  name: string
+  color: string | null
+  icon: string | null
+  amount: number
+  pct: number
+}
+
+/**
+ * Gastos por categoria da fatura. Estornos abatem a própria categoria — sem
+ * isso um reembolso inflaria o gasto em vez de reduzi-lo.
+ */
+function buildCategorySlices(transactions: Transaction[] | undefined): CategorySlice[] {
+  if (!transactions?.length) return []
+
+  const totals = new Map<string, { name: string; color: string | null; icon: string | null; amount: number }>()
+
+  for (const tx of transactions) {
+    if (tx.type === TransactionType.INCOME) continue
+    const key = tx.categoryId ?? 'sem-categoria'
+    const entry = totals.get(key) ?? {
+      name: tx.category?.name ?? 'Sem categoria',
+      color: tx.category?.color ?? null,
+      icon: tx.category?.icon ?? null,
+      amount: 0,
+    }
+    entry.amount += tx.isRefund ? -Number(tx.amount) : Number(tx.amount)
+    totals.set(key, entry)
+  }
+
+  // Uma categoria que ficou negativa ou zerada não é "gasto" — some do gráfico.
+  const ranked = [...totals.entries()]
+    .map(([key, value]) => ({ key, ...value }))
+    .filter((entry) => entry.amount > 0)
+    .sort((a, b) => b.amount - a.amount)
+
+  if (ranked.length === 0) return []
+
+  const visible = ranked.slice(0, CATEGORY_CHART_LIMIT)
+  const rest = ranked.slice(CATEGORY_CHART_LIMIT)
+
+  if (rest.length > 0) {
+    visible.push({
+      key: '__outras__',
+      name: `Outras · ${rest.length}`,
+      color: null,
+      icon: null,
+      amount: rest.reduce((sum, entry) => sum + entry.amount, 0),
+    })
+  }
+
+  // Proporção relativa à maior fatia: a barra compara categorias entre si,
+  // não contra o total da fatura.
+  const max = Math.max(...visible.map((entry) => entry.amount))
+  return visible.map((entry) => ({ ...entry, pct: (entry.amount / max) * 100 }))
+}
+
+function CategoryChart({ transactions }: { transactions: Transaction[] | undefined }) {
+  const slices = useMemo(() => buildCategorySlices(transactions), [transactions])
+  if (slices.length === 0) return null
+
+  return (
+    <section
+      aria-label="Gastos por categoria nesta fatura"
+      className="border-t border-border px-6 py-4"
+    >
+      <h3 className="mb-3 text-[11px] font-medium text-muted-foreground">
+        Maiores gastos por categoria
+      </h3>
+      <div className="flex flex-col gap-2.5">
+        {slices.map((slice, i) => {
+          const { Icon } = resolveCategoryIcon(slice.icon)
+          const color = slice.color ?? 'oklch(0.640 0.210 272)'
+          return (
+            <div key={slice.key} className="flex items-center gap-2.5">
+              <div
+                className="flex size-6 shrink-0 items-center justify-center rounded-md"
+                style={{ backgroundColor: `color-mix(in oklch, ${color} 15%, transparent)` }}
+              >
+                <Icon aria-hidden="true" className="size-3" style={{ color }} />
+              </div>
+              <span className="w-24 shrink-0 truncate text-[11px]">{slice.name}</span>
+              <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-muted/50">
+                <motion.div
+                  className="absolute inset-y-0 left-0 rounded-full"
+                  style={{ backgroundColor: color }}
+                  initial={{ width: '0%' }}
+                  animate={{ width: `${slice.pct}%` }}
+                  transition={{ duration: 0.5, ease: EASE_OUT_EXPO, delay: i * 0.05 }}
+                />
+              </div>
+              <span className="shrink-0 text-[11px] font-medium tabular-nums tracking-[-0.01em]">
+                {formatCurrency(slice.amount)}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 function InvoiceDetailSheet({
   invoiceId,
   bankId,
@@ -636,6 +742,8 @@ function InvoiceDetailSheet({
                 </Button>
               )}
             </div>
+
+            <CategoryChart transactions={invoice.transactions} />
 
             {/* Ações de transação — some quando a fatura está paga */}
             {canEditTransactions && (
