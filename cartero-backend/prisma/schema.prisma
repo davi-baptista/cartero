@@ -16,10 +16,6 @@ model User {
   createIncomeOnReceivablePaid Boolean   @default(false)
   createExpenseOnDebtPaid      Boolean   @default(false)
   notifyDaysBefore             Int       @default(3)
-  /**
-   * Corte para marcar como "novo" o que foi gerado desde a última visita.
-   */
-  lastSeenAt                   DateTime?
   createdAt                    DateTime  @default(now())
   updatedAt                    DateTime  @updatedAt
 
