@@ -820,24 +820,6 @@ function InvoiceDetailSheet({
               onSelectCategory={handleSelectCategory}
             />
 
-            {/* Ações de transação — some quando a fatura está paga */}
-            {canEditTransactions && (
-              <div className="border-t border-border px-6 py-3">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setEditTx(null)
-                    setEditScope(null)
-                    setTxSheetOpen(true)
-                  }}
-                >
-                  <Plus className="size-3.5" />
-                  Adicionar transação
-                </Button>
-              </div>
-            )}
-
             {/* Transaction list */}
             <div className="flex-1 overflow-y-auto">
               {txs.length === 0 ? (
@@ -851,13 +833,49 @@ function InvoiceDetailSheet({
                       ? 'Nenhuma transação nesta categoria.'
                       : 'Esta fatura não tem transações registradas.'}
                   </p>
+                  {/* Sem o cabeçalho da lista, o botão precisa existir aqui —
+                      é justamente quando ele é mais útil. */}
+                  {canEditTransactions && !selectedCategory && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-4"
+                      onClick={() => {
+                        setEditTx(null)
+                        setEditScope(null)
+                        setTxSheetOpen(true)
+                      }}
+                    >
+                      <Plus className="size-3.5" />
+                      Adicionar transação
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <>
-                  <p className="border-y border-border px-4 py-3 text-[11px] font-medium text-muted-foreground">
-                    Transações · {txs.length}
-                    {selectedCategory && ` de ${txCount}`}
-                  </p>
+                  {/* O botão fica no cabeçalho da lista: é uma ação sobre ela,
+                      e uma faixa própria custava espaço num painel estreito. */}
+                  <div className="flex items-center justify-between gap-2 border-y border-border py-1.5 pl-4 pr-2">
+                    <p className="text-[11px] font-medium text-muted-foreground">
+                      Transações · {txs.length}
+                      {selectedCategory && ` de ${txCount}`}
+                    </p>
+                    {canEditTransactions && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                        onClick={() => {
+                          setEditTx(null)
+                          setEditScope(null)
+                          setTxSheetOpen(true)
+                        }}
+                      >
+                        <Plus className="size-3.5" />
+                        Adicionar
+                      </Button>
+                    )}
+                  </div>
                   {txs.map((tx, i) => (
                     <motion.div
                       key={tx.id}
