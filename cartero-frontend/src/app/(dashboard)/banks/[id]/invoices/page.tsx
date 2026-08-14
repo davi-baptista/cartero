@@ -520,13 +520,11 @@ function CategoryChart({
 function InvoiceDetailSheet({
   invoiceId,
   bankId,
-  bank,
   open,
   onOpenChange,
 }: {
   invoiceId: string | null
   bankId: string
-  bank: Bank | undefined
   open: boolean
   onOpenChange: (v: boolean) => void
 }) {
@@ -652,24 +650,22 @@ function InvoiceDetailSheet({
   const canEditTransactions = Boolean(invoice) && !isPaid
 
   /**
-   * Criar a partir da fatura já define banco e tipo. A data usa o fechamento
-   * do período: qualquer outra poderia jogar o lançamento em outra fatura.
+   * Criar a partir da fatura já define banco e tipo.
+   *
+   * A data cai no meio do mês que alimenta esta fatura — o anterior ao do
+   * vencimento. Usar o dia do fechamento colocava a data na borda da janela,
+   * e ajustá-la um dia para frente mandava o lançamento para a fatura
+   * seguinte. Um dia no miolo do mês é inequívoco e fácil de editar.
    */
   const createDefaults = useMemo(() => {
-    if (!invoice || !bank) return undefined
+    if (!invoice) return undefined
+    const period = new Date(invoice.year, invoice.month - 2, 15)
     return {
       bankId: invoice.bankId,
       type: TransactionType.CREDIT_CARD,
-      date: formatDateValue(
-        getInvoiceCloseDate(
-          invoice.year,
-          invoice.month,
-          bank.invoiceDueDate,
-          bank.invoiceDueDaysAfterClose,
-        ),
-      ),
+      date: formatDateValue(period),
     }
-  }, [invoice, bank])
+  }, [invoice])
 
   function handleEditTx(tx: Transaction) {
     // Parcela de uma série: o usuário escolhe se altera uma, as próximas ou todas.
@@ -1216,7 +1212,6 @@ export default function BankInvoicesPage() {
       <InvoiceDetailSheet
         invoiceId={selectedInvoiceId}
         bankId={bankId}
-        bank={bank}
         open={detailOpen}
         onOpenChange={setDetailOpen}
       />
