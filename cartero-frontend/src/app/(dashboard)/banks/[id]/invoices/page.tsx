@@ -851,7 +851,10 @@ function InvoiceDetailSheet({
                 <>
                   {/* O botão fica no cabeçalho da lista: é uma ação sobre ela,
                       e uma faixa própria custava espaço num painel estreito. */}
-                  <div className="flex items-center justify-between gap-2 border-y border-border py-1.5 pl-4 pr-2">
+                  {/* Altura fixa: sem ela a faixa encolhe quando o botão não
+                      aparece, e o cabeçalho muda de tamanho entre uma fatura
+                      paga e uma aberta. */}
+                  <div className="flex h-11 items-center justify-between gap-2 border-y border-border pl-4 pr-2">
                     <p className="text-[11px] font-medium text-muted-foreground">
                       Transações · {txs.length}
                       {selectedCategory && ` de ${txCount}`}
