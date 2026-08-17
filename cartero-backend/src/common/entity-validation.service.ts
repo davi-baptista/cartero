@@ -115,16 +115,23 @@ export class EntityValidationService {
     icon: string,
     color: string,
   ) {
-    let category = await tx.category.findFirst({
-      where: { userId, name, isSystem: true },
-    });
+    // A busca é só por nome porque a unicidade é `(userId, name)`: filtrar
+    // por `isSystem` deixaria passar uma categoria que o usuário já criou
+    // com esse nome, e o create seguinte violaria a constraint.
+    const existing = await tx.category.findFirst({ where: { userId, name } });
 
-    if (!category) {
-      category = await tx.category.create({
-        data: { userId, name, icon, color, isSystem: true },
+    if (existing) {
+      // Uma categoria própria com nome reservado é adotada pelo sistema —
+      // os lançamentos que já a usam continuam válidos.
+      if (existing.isSystem) return existing;
+      return tx.category.update({
+        where: { id: existing.id },
+        data: { isSystem: true, icon, color },
       });
     }
 
-    return category;
+    return tx.category.create({
+      data: { userId, name, icon, color, isSystem: true },
+    });
   }
 }
