@@ -94,6 +94,8 @@ export function TransactionSheet({
 }: TransactionSheetProps) {
   const isEditing = editTarget !== null
   const isInstallment = Boolean(editTarget?.parentId) || /\s\d+\/\d+$/.test(editTarget?.title ?? '')
+  /** Gerado por assinatura: a categoria é da regra, não deste lançamento. */
+  const isFromSubscription = Boolean(editTarget?.subscriptionId)
   const submittingRef = useRef(false)
   const qc = useQueryClient()
 
@@ -535,7 +537,11 @@ export function TransactionSheet({
                 control={control}
                 name="categoryId"
                 render={({ field }) => (
-                  <Select value={field.value ?? ''} onValueChange={field.onChange}>
+                  <Select
+                    value={field.value ?? ''}
+                    onValueChange={field.onChange}
+                    disabled={isFromSubscription}
+                  >
                     <SelectTrigger className="w-full" aria-invalid={!!errors.categoryId}>
                       <span data-slot="select-value" className="flex flex-1 items-center gap-1.5 text-left text-sm">
                         {selectedCategory ? (() => {
@@ -572,7 +578,11 @@ export function TransactionSheet({
                 )}
               />
 
-              {showCategoryCreate ? (
+              {isFromSubscription ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Categoria definida pela assinatura.
+                </p>
+              ) : showCategoryCreate ? (
                 <div className="flex gap-1.5">
                   <Input
                     ref={categoryNameRef}

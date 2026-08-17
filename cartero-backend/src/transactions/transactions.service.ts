@@ -304,6 +304,13 @@ export class TransactionsService {
       dto.title = undefined;
     }
 
+    // Lançamento gerado por assinatura tem categoria fixa: ela identifica a
+    // origem no extrato e é a mesma para toda a série. Ignorar o campo em vez
+    // de recusar a edição deixa os demais (valor, data, descrição) passarem.
+    if (existingTransaction.subscriptionId) {
+      dto.categoryId = undefined;
+    }
+
     if (editingInstallmentDate) {
       await this.assertInvoiceReassignmentAllowed(
         existingTransaction,
