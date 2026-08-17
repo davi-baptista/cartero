@@ -11,6 +11,11 @@ import {
   formatCycle,
   pendingCycles,
 } from 'src/common/helpers/subscription.helper';
+import {
+  SUBSCRIPTION_CATEGORY_COLOR,
+  SUBSCRIPTION_CATEGORY_NAME,
+  SYSTEM_CATEGORY_ICON,
+} from 'src/common/constants/system-categories';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 
@@ -49,13 +54,22 @@ export class SubscriptionsService {
 
   async create(userId: string, dto: CreateSubscriptionDto) {
     await this.entityValidation.validateBank(dto.bankId, userId);
-    await this.entityValidation.validateCategory(dto.categoryId, userId);
+
+    // Assinatura tem categoria própria e fixa — o usuário não escolhe, e os
+    // lançamentos gerados ficam identificáveis no extrato.
+    const category = await this.entityValidation.findOrCreateSystemCategory(
+      this.prisma,
+      userId,
+      SUBSCRIPTION_CATEGORY_NAME,
+      SYSTEM_CATEGORY_ICON,
+      SUBSCRIPTION_CATEGORY_COLOR,
+    );
 
     const subscription = await this.prisma.subscription.create({
       data: {
         userId,
         bankId: dto.bankId,
-        categoryId: dto.categoryId,
+        categoryId: category.id,
         title: dto.title,
         type: dto.type,
         amount: dto.amount,
@@ -76,19 +90,16 @@ export class SubscriptionsService {
     await this.findOne(id, userId);
     if (dto.bankId)
       await this.entityValidation.validateBank(dto.bankId, userId);
-    if (dto.categoryId) {
-      await this.entityValidation.validateCategory(dto.categoryId, userId);
-    }
 
-    // Campo a campo de propósito: `startedAt` e `lastGeneratedFor` não podem
-    // ser alterados por payload, e o ValidationPipe global não usa whitelist,
-    // então um spread deixaria passar o que viesse no corpo da requisição.
+    // Campo a campo de propósito: `startedAt`, `lastGeneratedFor` e
+    // `categoryId` não podem ser alterados por payload, e o ValidationPipe
+    // global não usa whitelist — um spread deixaria passar o que viesse no
+    // corpo da requisição.
     await this.prisma.subscription.update({
       where: { id },
       data: {
         title: dto.title,
         bankId: dto.bankId,
-        categoryId: dto.categoryId,
         type: dto.type,
         amount: dto.amount,
         description: dto.description,

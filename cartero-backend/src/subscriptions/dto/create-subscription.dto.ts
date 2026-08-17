@@ -18,9 +18,6 @@ export class CreateSubscriptionDto {
   @IsUUID()
   bankId: string;
 
-  @IsUUID()
-  categoryId: string;
-
   @IsEnum(TransactionType)
   type: TransactionType;
 

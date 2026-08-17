@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Tags, MoreVertical } from 'lucide-react'
+import { Plus, Pencil, Trash2, Tags, MoreVertical, ChevronDown } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -139,11 +140,15 @@ export default function CategoriesPage() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editCategory, setEditCategory] = useState<Category | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null)
+  const [showSystem, setShowSystem] = useState(false)
 
   const { data: categories, isLoading } = useQuery({
     queryKey: ['categories'],
     queryFn: getCategories,
   })
+
+  const ownCategories = (categories ?? []).filter((c) => !c.isSystem)
+  const systemCategories = (categories ?? []).filter((c) => c.isSystem)
 
   const createMut = useMutation({
     mutationFn: (data: CategoryFormData) =>
@@ -222,7 +227,7 @@ export default function CategoriesPage() {
               <RowSkeleton key={i} />
             ))}
           </div>
-        ) : !categories || categories.length === 0 ? (
+        ) : ownCategories.length === 0 && systemCategories.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="mb-3 flex size-12 items-center justify-center rounded-xl bg-muted/50">
               <Tags className="size-5 text-muted-foreground" />
@@ -234,7 +239,7 @@ export default function CategoriesPage() {
           </div>
         ) : (
           <div>
-            {categories.map((category, i) => (
+            {ownCategories.map((category, i) => (
               <MotionRow key={category.id} index={i}>
                 <CategoryRow
                   category={category}
@@ -243,6 +248,41 @@ export default function CategoriesPage() {
                 />
               </MotionRow>
             ))}
+
+            {/* Categorias de sistema — criadas e mantidas pelo app, sem
+                edição possível. Ficam recolhidas para não competir com as
+                suas na leitura. */}
+            {systemCategories.length > 0 && (
+              <div className="mt-2 border-t border-border/60 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSystem((v) => !v)}
+                  aria-expanded={showSystem}
+                  className="flex items-center gap-1.5 py-2 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <ChevronDown
+                    className={cn(
+                      'size-3.5 shrink-0 transition-transform duration-200',
+                      showSystem && 'rotate-180',
+                    )}
+                    aria-hidden
+                  />
+                  {systemCategories.length} categoria
+                  {systemCategories.length > 1 ? 's' : ''} do sistema
+                </button>
+
+                {showSystem &&
+                  systemCategories.map((category, i) => (
+                    <MotionRow key={category.id} index={i}>
+                      <CategoryRow
+                        category={category}
+                        onEdit={(c) => { setEditCategory(c); setSheetOpen(true) }}
+                        onDelete={setDeleteTarget}
+                      />
+                    </MotionRow>
+                  ))}
+              </div>
+            )}
           </div>
         )}
       </div>

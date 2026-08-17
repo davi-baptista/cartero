@@ -83,6 +83,7 @@ export interface Subscription {
   id: string
   userId: string
   bankId: string
+  /** Sempre a categoria de sistema "Assinatura" — não é escolhida pelo usuário. */
   categoryId: string
   title: string
   type: TransactionType

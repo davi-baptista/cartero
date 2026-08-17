@@ -26,10 +26,6 @@ export class UpdateSubscriptionDto {
   bankId?: string;
 
   @IsOptional()
-  @IsUUID()
-  categoryId?: string;
-
-  @IsOptional()
   @IsEnum(TransactionType)
   type?: TransactionType;
 

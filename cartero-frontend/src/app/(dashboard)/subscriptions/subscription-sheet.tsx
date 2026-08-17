@@ -26,7 +26,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { getBanks } from '@/services/banks.service'
-import { getCategories } from '@/services/categories.service'
 import { previewSubscription } from '@/services/subscriptions.service'
 import { formatCurrency, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
 import type { Subscription } from '@/types'
@@ -35,7 +34,6 @@ import { TransactionType } from '@/types'
 const schema = z.object({
   title: z.string().min(1, 'Título obrigatório'),
   bankId: z.string().min(1, 'Banco obrigatório'),
-  categoryId: z.string().min(1, 'Categoria obrigatória'),
   type: z.enum(TransactionType),
   amount: z.number({ message: 'Valor inválido' }).positive('Valor deve ser positivo'),
   description: z.string().optional(),
@@ -105,7 +103,6 @@ export function SubscriptionSheet({
     defaultValues: {
       title: '',
       bankId: '',
-      categoryId: '',
       type: TransactionType.CREDIT_CARD,
       amount: 0,
       dayOfMonth: 1,
@@ -114,10 +111,8 @@ export function SubscriptionSheet({
   })
 
   const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: getBanks })
-  const { data: categories = [] } = useQuery({ queryKey: ['categories'], queryFn: getCategories })
 
   const selectableBanks = banks.filter((b) => !b.isSystem)
-  const selectableCategories = categories.filter((c) => !c.isSystem)
 
   const bankId = useWatch({ control, name: 'bankId' })
   const dayOfMonth = useWatch({ control, name: 'dayOfMonth' })
@@ -140,7 +135,6 @@ export function SubscriptionSheet({
       reset({
         title: editSubscription.title,
         bankId: editSubscription.bankId,
-        categoryId: editSubscription.categoryId,
         type: editSubscription.type,
         amount: Number(editSubscription.amount),
         description: editSubscription.description ?? '',
@@ -151,7 +145,6 @@ export function SubscriptionSheet({
       reset({
         title: '',
         bankId: '',
-        categoryId: '',
         type: TransactionType.CREDIT_CARD,
         amount: 0,
         description: '',
@@ -257,31 +250,6 @@ export function SubscriptionSheet({
             />
             {errors.bankId && (
               <p className="text-xs text-destructive">{errors.bankId.message}</p>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label>Categoria</Label>
-            <Controller
-              control={control}
-              name="categoryId"
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger aria-label="Categoria">
-                    <SelectValue placeholder="Selecione">
-                      {selectableCategories.find((c) => c.id === field.value)?.name}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false}>
-                    {selectableCategories.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-            {errors.categoryId && (
-              <p className="text-xs text-destructive">{errors.categoryId.message}</p>
             )}
           </div>
 

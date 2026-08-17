@@ -9,7 +9,6 @@ export async function getSubscriptions(): Promise<Subscription[]> {
 export interface CreateSubscriptionPayload {
   title: string
   bankId: string
-  categoryId: string
   type: TransactionType
   amount: number
   description?: string

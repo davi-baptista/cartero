@@ -188,10 +188,10 @@ export default function SubscriptionsPage() {
   async function handleSubmit(data: SubscriptionFormData) {
     if (editTarget) {
       // `startedAt` fica de fora: é imutável, e o backend o ignora de todo modo.
-      const { title, bankId, categoryId, type, amount, description, dayOfMonth } = data
+      const { title, bankId, type, amount, description, dayOfMonth } = data
       await updateMut.mutateAsync({
         id: editTarget.id,
-        payload: { title, bankId, categoryId, type, amount, description, dayOfMonth },
+        payload: { title, bankId, type, amount, description, dayOfMonth },
       })
     } else {
       await createMut.mutateAsync(data)
