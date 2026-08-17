@@ -11,8 +11,8 @@ import {
   HandCoins,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
-import { addMonths, currentPeriod, useMonthPeriod } from '@/components/month-nav'
-import { getBudget } from '@/services/budget.service'
+import { currentPeriod, useMonthPeriod } from '@/components/month-nav'
+import { getBudget, getBudgetFocus } from '@/services/budget.service'
 import { formatCurrency } from '@/lib/formatters'
 import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
@@ -46,31 +46,35 @@ export default function BudgetPage() {
   // O mês é contexto do app, controlado pela barra superior.
   const { period, setPeriod } = useMonthPeriod()
   const { month, year } = period
-  const autoAdvanced = useRef(false)
+  const focusApplied = useRef(false)
 
   const { data: budget, isLoading } = useQuery({
     queryKey: ['budget', { month, year }],
     queryFn: () => getBudget({ month, year }),
   })
 
+  // O backend resolve em uma consulta qual mês exige atenção — olhando para
+  // trás (atrasos) e para frente (próxima pendência).
+  // Sob o prefixo `budget` de propósito: pagar uma fatura muda qual mês
+  // exige atenção, e as invalidações existentes já usam essa chave.
+  const { data: focus } = useQuery({
+    queryKey: ['budget', 'focus'],
+    queryFn: getBudgetFocus,
+  })
+
   useEffect(() => {
-    if (
-      isLoading ||
-      !budget ||
-      autoAdvanced.current ||
-      year !== initialPeriod.year ||
-      month !== initialPeriod.month
-    ) {
+    if (!focus || focusApplied.current) return
+    // Só reposiciona na chegada: depois disso o mês é do usuário, e trocá-lo
+    // enquanto ele navega seria tirar o controle da mão dele.
+    if (year !== initialPeriod.year || month !== initialPeriod.month) {
+      focusApplied.current = true
       return
     }
-
-    // Só adianta o mês quando não sobrou nada a pagar — faturas, pagamentos
-    // diretos e dívidas incluídos.
-    if (budget.totalToPay > 0 && budget.totalPending === 0) {
-      autoAdvanced.current = true
-      window.setTimeout(() => setPeriod(addMonths(period, 1)), 0)
+    focusApplied.current = true
+    if (focus.month !== month || focus.year !== year) {
+      window.setTimeout(() => setPeriod(focus), 0)
     }
-  }, [budget, initialPeriod.month, initialPeriod.year, isLoading, month, year, period, setPeriod])
+  }, [focus, initialPeriod.month, initialPeriod.year, month, year, setPeriod])
 
   const allInvoices = budget?.invoices ?? []
 

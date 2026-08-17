@@ -115,4 +115,74 @@ export class BudgetService {
       invoices,
     };
   }
+
+  /**
+   * Mês que o orçamento deve abrir: o mais antigo que ainda tem algo a pagar.
+   *
+   * Procura 12 meses para trás — uma fatura esquecida há mais de um ano
+   * raramente é algo a resolver hoje — e, quando nada está pendente no
+   * passado, segue para frente até achar o próximo mês com pendência. Se
+   * estiver tudo quitado, devolve o mês corrente.
+   */
+  async getFocusPeriod(userId: string, now: Date = new Date()) {
+    const currentYear = now.getUTCFullYear();
+    const currentMonth = now.getUTCMonth() + 1;
+
+    const windowStart = new Date(Date.UTC(currentYear, currentMonth - 13, 1));
+    const windowEnd = new Date(Date.UTC(currentYear + 1, currentMonth, 1));
+
+    // Só o que ainda exige desembolso: faturas não pagas e dívidas em aberto.
+    // Pagamentos diretos já aconteceram por definição, então não contam.
+    const [invoices, debts] = await Promise.all([
+      this.prisma.invoice.findMany({
+        where: {
+          userId,
+          status: { not: 'PAID' },
+          totalAmount: { gt: 0 },
+          OR: [
+            { year: { gt: windowStart.getUTCFullYear() } },
+            {
+              year: windowStart.getUTCFullYear(),
+              month: { gte: windowStart.getUTCMonth() + 1 },
+            },
+          ],
+        },
+        select: { month: true, year: true },
+      }),
+      this.prisma.debt.findMany({
+        where: {
+          userId,
+          isPaid: false,
+          dueDate: { gte: windowStart, lt: windowEnd },
+        },
+        select: { dueDate: true },
+      }),
+    ]);
+
+    const periods = [
+      ...invoices.map((invoice) => ({
+        year: invoice.year,
+        month: invoice.month,
+      })),
+      ...debts.map((debt) => ({
+        year: debt.dueDate.getUTCFullYear(),
+        month: debt.dueDate.getUTCMonth() + 1,
+      })),
+    ];
+
+    if (periods.length === 0) {
+      return { month: currentMonth, year: currentYear };
+    }
+
+    // O mais antigo pendente: atraso tem prioridade sobre o que vem à frente.
+    return periods.reduce((oldest, period) =>
+      period.year !== oldest.year
+        ? period.year < oldest.year
+          ? period
+          : oldest
+        : period.month < oldest.month
+          ? period
+          : oldest,
+    );
+  }
 }

@@ -27,3 +27,9 @@ export async function getBudget(params: { month: number; year: number }): Promis
   const { data } = await api.get<BudgetSummary>('/budget', { params })
   return data
 }
+
+/** Mês que o orçamento deve abrir: o mais antigo com algo ainda a pagar. */
+export async function getBudgetFocus(): Promise<{ month: number; year: number }> {
+  const { data } = await api.get<{ month: number; year: number }>('/budget/focus')
+  return data
+}

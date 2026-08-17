@@ -10,6 +10,12 @@ import { GetBudgetDto } from './dto/get-budget.dto';
 export class BudgetController {
   constructor(private budgetService: BudgetService) {}
 
+  /** Declarado antes de `@Get()` para não ser capturado por ele. */
+  @Get('focus')
+  getFocus(@CurrentUser() user: User) {
+    return this.budgetService.getFocusPeriod(user.id);
+  }
+
   @Get()
   findOne(@CurrentUser() user: User, @Query() filters: GetBudgetDto) {
     return this.budgetService.getBudget(user.id, filters.month, filters.year);
