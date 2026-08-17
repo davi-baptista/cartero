@@ -1,11 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Subscription, TransactionType } from '@prisma/client';
+import { Bank, Subscription, TransactionType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { EntityValidationService } from 'src/common/entity-validation.service';
-import { findOrCreateInvoiceForPeriod } from 'src/common/helpers/invoice.helper';
+import {
+  findOrCreateInvoice,
+  getInvoicePeriodForDate,
+} from 'src/common/helpers/invoice.helper';
 import {
   chargeDateForCycle,
-  Cycle,
   formatCycle,
   pendingCycles,
 } from 'src/common/helpers/subscription.helper';
@@ -126,12 +128,13 @@ export class SubscriptionsService {
     const plan: GenerationPlanItem[] = [];
 
     for (const cycle of cycles) {
+      const date = chargeDateForCycle(cycle, dayOfMonth);
       const paid =
         type === TransactionType.CREDIT_CARD &&
-        (await this.isInvoicePaid(userId, bank.id, cycle));
+        (await this.isInvoicePaid(userId, bank, date));
       plan.push({
         cycle: formatCycle(cycle),
-        date: chargeDateForCycle(cycle, dayOfMonth),
+        date,
         skipped: paid,
         skipReason: paid ? 'invoice-paid' : undefined,
       });
@@ -173,13 +176,21 @@ export class SubscriptionsService {
     return { subscriptions: subscriptions.length, created };
   }
 
+  /** A fatura vem da data da cobrança, não do ciclo — ver `runForSubscription`. */
   private async isInvoicePaid(
     userId: string,
-    bankId: string,
-    cycle: Cycle,
+    bank: Pick<Bank, 'id' | 'invoiceDueDate' | 'invoiceDueDaysAfterClose'>,
+    chargeDate: Date,
   ): Promise<boolean> {
+    const { year, month } = getInvoicePeriodForDate(
+      {
+        invoiceDueDate: bank.invoiceDueDate,
+        invoiceDueDaysAfterClose: bank.invoiceDueDaysAfterClose,
+      },
+      chargeDate,
+    );
     const invoice = await this.prisma.invoice.findFirst({
-      where: { userId, bankId, year: cycle.year, month: cycle.month },
+      where: { userId, bankId: bank.id, year, month },
       select: { status: true },
     });
     return invoice?.status === 'PAID';
@@ -217,19 +228,22 @@ export class SubscriptionsService {
           let invoiceId: string | undefined;
 
           if (subscription.type === TransactionType.CREDIT_CARD) {
-            // A fatura vem do CICLO, não da data. Uma assinatura no dia 31
-            // com fechamento antes disso cairia sempre na fatura seguinte,
-            // fazendo dois lançamentos caírem na mesma fatura.
-            const invoice = await findOrCreateInvoiceForPeriod(
+            // A fatura sai da DATA da cobrança, igual a qualquer compra: o
+            // ciclo é o mês em que a assinatura cobra, e a fatura leva o mês
+            // do vencimento — uma cobrança no fim de julho pertence à fatura
+            // de agosto. Usar o ciclo como período apontava para a fatura
+            // errada, geralmente uma anterior já paga.
+            //
+            // Isso não reabre o risco do dia 31: a idempotência vem de
+            // `lastGeneratedFor`, que é por ciclo, então dois ciclos nunca
+            // geram dois lançamentos no mesmo período.
+            const invoice = await findOrCreateInvoice(
               tx,
               subscription.userId,
               bank.id,
-              {
-                invoiceDueDate: bank.invoiceDueDate,
-                invoiceDueDaysAfterClose: bank.invoiceDueDaysAfterClose,
-              },
-              cycle.year,
-              cycle.month,
+              bank.invoiceDueDate,
+              bank.invoiceDueDaysAfterClose,
+              date,
             );
 
             if (invoice.status === 'PAID') {
