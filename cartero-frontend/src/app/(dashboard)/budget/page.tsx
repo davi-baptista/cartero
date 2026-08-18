@@ -30,6 +30,16 @@ const STATUS_CONFIG: Record<InvoiceStatus, { label: string; className: string }>
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Mesmo vocabulário visual do badge de fatura, aplicado a dívidas. */
+const DEBT_STATUS_CONFIG: Record<
+  'PAID' | 'OVERDUE' | 'PENDING',
+  { label: string; className: string }
+> = {
+  PAID: { label: 'Paga', className: 'bg-paid/15 text-paid' },
+  OVERDUE: { label: 'Vencida', className: 'bg-destructive/15 text-destructive' },
+  PENDING: { label: 'A pagar', className: 'bg-amber-500/15 text-amber-400' },
+}
+
 function debtsStatus(paidCount: number, totalCount: number): { label: string; className: string } {
   if (paidCount === totalCount) {
     return { label: totalCount > 1 ? 'Todas pagas' : 'Paga', className: 'bg-paid/15 text-paid' }
@@ -104,7 +114,8 @@ export default function BudgetPage() {
 
   const debtBreakdown = budget?.debtBreakdown ?? []
 
-  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
+  const monthKey = `${year}-${String(month).padStart(2, '0')}`
+  const monthStart = `${monthKey}-01`
   const monthEnd = formatDateValue(new Date(year, month, 0))
 
   const balance = salary != null ? salary - summary.totalToPay : null
@@ -378,11 +389,12 @@ export default function BudgetPage() {
             {debtBreakdown.map((item) => (
               <Link
                 key={`${item.kind}-${item.id ?? item.name}`}
-                // Pessoas não lê `?highlight=`; Dívidas já filtra por pessoa,
-                // que é onde o valor da linha pode ser conferido.
+                // Pessoa abre o extrato dela já no mês visto aqui — é lá que
+                // dívida e recebível aparecem lado a lado, explicando o
+                // valor compensado desta linha.
                 href={
                   item.kind === 'person' && item.id
-                    ? `/debts?endDate=${monthEnd}&personId=${item.id}`
+                    ? `/persons?personId=${item.id}&period=${monthKey}`
                     : `/debts?endDate=${monthEnd}`
                 }
                 className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30"
@@ -395,9 +407,19 @@ export default function BudgetPage() {
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
-                    {item.name}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
+                      {item.name}
+                    </span>
+                    <span
+                      className={cn(
+                        'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
+                        DEBT_STATUS_CONFIG[item.status].className,
+                      )}
+                    >
+                      {DEBT_STATUS_CONFIG[item.status].label}
+                    </span>
+                  </div>
                   {item.offset > 0 && (
                     <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                       já descontado{' '}

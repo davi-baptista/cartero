@@ -32,6 +32,8 @@ export interface BudgetSummary {
     amount: number
     offset: number
     isPaid: boolean
+    /** Numa pessoa com várias dívidas, atraso domina o status. */
+    status: 'PAID' | 'OVERDUE' | 'PENDING'
   }>
 }
 

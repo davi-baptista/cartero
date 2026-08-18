@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
@@ -23,7 +24,13 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { MonthNav, monthBounds, currentPeriod, type MonthPeriod } from '@/components/month-nav'
+import {
+  MonthNav,
+  monthBounds,
+  currentPeriod,
+  periodFromDate,
+  type MonthPeriod,
+} from '@/components/month-nav'
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
 import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dialog'
 import { InstallmentScopeDialog } from '../transactions/installment-scope-dialog'
@@ -119,16 +126,21 @@ function StatementSheet({
   person,
   open,
   onClose,
+  initialPeriod,
 }: {
   person: Person | null
   open: boolean
   onClose: () => void
+  /** Mês pedido pela URL; sem ele o extrato abre no mês corrente. */
+  initialPeriod?: MonthPeriod
 }) {
   const qc = useQueryClient()
   const { user } = useAuth()
 
   // Mês próprio do extrato — independente do mês global das outras telas.
-  const [period, setPeriod] = useState<MonthPeriod>(currentPeriod)
+  const [period, setPeriod] = useState<MonthPeriod>(
+    () => initialPeriod ?? currentPeriod(),
+  )
   const { startDate, endDate } = monthBounds(period)
   const [markPaidDebt, setMarkPaidDebt] = useState<Debt | null>(null)
   const [markReceivedReceivable, setMarkReceivedReceivable] = useState<Receivable | null>(null)
@@ -157,10 +169,11 @@ function StatementSheet({
     receivable?: Receivable
   } | null>(null)
 
-  // Cada pessoa abre no mês corrente, não no mês da pessoa anterior.
+  // Cada pessoa abre no mês corrente — ou no que a URL pediu, quando a
+  // navegação veio do orçamento — e não no mês da pessoa anterior.
   useEffect(() => {
-    if (person) setPeriod(currentPeriod())
-  }, [person?.id])
+    if (person) setPeriod(initialPeriod ?? currentPeriod())
+  }, [person?.id, initialPeriod])
 
   const { data, isLoading } = useQuery({
     queryKey: ['person-statement', person?.id, startDate, endDate],
@@ -1031,16 +1044,37 @@ function PersonFormSheet({
 
 export default function PersonsPage() {
   const qc = useQueryClient()
+  const searchParams = useSearchParams()
+  const personIdParam = searchParams.get('personId')
+  const periodParam = searchParams.get('period')
 
   const [formOpen, setFormOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Person | null>(null)
   const [statementPerson, setStatementPerson] = useState<Person | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Person | null>(null)
+  const openedFromUrl = useRef(false)
+
+  // `?period=YYYY-MM`. Memoizado porque vira dependência de efeito no sheet.
+  const urlPeriod = useMemo(() => {
+    if (!periodParam) return undefined
+    return periodFromDate(`${periodParam}-01`)
+  }, [periodParam])
 
   const { data: persons = [], isLoading } = useQuery({
     queryKey: ['persons'],
     queryFn: getPersons,
   })
+
+  // Abre o extrato já na pessoa e no mês que a navegação pediu — usado pelo
+  // card de dívidas do orçamento. Só na chegada: depois o controle é do
+  // usuário, e reabrir o sheet a cada render seria prendê-lo ali.
+  useEffect(() => {
+    if (openedFromUrl.current || !personIdParam || persons.length === 0) return
+    const target = persons.find((p) => p.id === personIdParam)
+    if (!target) return
+    openedFromUrl.current = true
+    setStatementPerson(target)
+  }, [personIdParam, persons])
 
   const createMut = useMutation({
     mutationFn: ({ name, phone }: { name: string; phone: string }) =>
@@ -1230,6 +1264,7 @@ export default function PersonsPage() {
         person={statementPerson}
         open={statementPerson !== null}
         onClose={() => setStatementPerson(null)}
+        initialPeriod={urlPeriod}
       />
 
       {/* Delete confirm */}

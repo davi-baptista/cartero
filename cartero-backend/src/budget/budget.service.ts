@@ -12,6 +12,9 @@ const DIRECT_PAYMENT_TYPES: TransactionType[] = [
   TransactionType.BOLETO,
 ];
 
+/** Dívida não tem status próprio: sai de `isPaid` + `dueDate`. */
+type DebtStatus = 'PAID' | 'OVERDUE' | 'PENDING';
+
 @Injectable()
 export class BudgetService {
   constructor(private prisma: PrismaService) {}
@@ -54,6 +57,7 @@ export class BudgetService {
             amount: true,
             isPaid: true,
             title: true,
+            dueDate: true,
             personId: true,
             person: { select: { id: true, name: true } },
           },
@@ -154,11 +158,17 @@ export class BudgetService {
       amount: unknown;
       isPaid: boolean;
       title: string;
+      dueDate: Date;
       personId: string | null;
       person: { id: string; name: string } | null;
     }>,
     personReceivables: Array<{ amount: unknown; personId: string | null }>,
+    now: Date = new Date(),
   ) {
+    // Comparação por dia: uma dívida que vence hoje ainda não está vencida.
+    const today = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
     const receivableByPerson = new Map<string, number>();
     for (const receivable of personReceivables) {
       if (!receivable.personId) continue;
@@ -171,7 +181,13 @@ export class BudgetService {
 
     const byPerson = new Map<
       string,
-      { name: string; gross: number; count: number; allPaid: boolean }
+      {
+        name: string;
+        gross: number;
+        count: number;
+        allPaid: boolean;
+        anyOverdue: boolean;
+      }
     >();
     const standalone: Array<{
       kind: 'debt';
@@ -180,7 +196,11 @@ export class BudgetService {
       amount: number;
       offset: number;
       isPaid: boolean;
+      status: DebtStatus;
     }> = [];
+
+    const statusOf = (debt: { isPaid: boolean; dueDate: Date }): DebtStatus =>
+      debt.isPaid ? 'PAID' : debt.dueDate < today ? 'OVERDUE' : 'PENDING';
 
     for (const debt of debts) {
       if (debt.personId && debt.person) {
@@ -189,10 +209,12 @@ export class BudgetService {
           gross: 0,
           count: 0,
           allPaid: true,
+          anyOverdue: false,
         };
         entry.gross += Number(debt.amount);
         entry.count += 1;
         if (!debt.isPaid) entry.allPaid = false;
+        if (statusOf(debt) === 'OVERDUE') entry.anyOverdue = true;
         byPerson.set(debt.personId, entry);
       } else {
         standalone.push({
@@ -202,6 +224,7 @@ export class BudgetService {
           amount: Number(debt.amount),
           offset: 0,
           isPaid: debt.isPaid,
+          status: statusOf(debt),
         });
       }
     }
@@ -219,6 +242,13 @@ export class BudgetService {
           amount: entry.gross - offset,
           offset,
           isPaid: entry.allPaid,
+          // Atraso domina: uma pessoa com várias dívidas, uma delas vencida,
+          // precisa aparecer como vencida mesmo que as outras estejam em dia.
+          status: (entry.allPaid
+            ? 'PAID'
+            : entry.anyOverdue
+              ? 'OVERDUE'
+              : 'PENDING') as DebtStatus,
         };
       })
       .filter((entry) => entry.amount > 0);
