@@ -70,9 +70,32 @@ function useNearestInvoice(bank: Bank): NearestInvoiceInfo | null {
   today.setHours(0, 0, 0, 0)
 
   const nonEmpty = invoices.filter((i) => Number(i.totalAmount) > 0)
-  const overdue = nonEmpty.find((i) => i.status === InvoiceStatus.OVERDUE)
-  const closed = nonEmpty.find((i) => i.status === InvoiceStatus.CLOSED)
-  const open = nonEmpty.find((i) => i.status === InvoiceStatus.OPEN)
+
+  // A API não garante ordem — com parcelamentos gerando faturas OPEN em
+  // vários meses futuros, `.find()` podia pegar qualquer uma delas em vez da
+  // mais próxima. Escolher pelo menor vencimento/fechamento entre as
+  // candidatas do mesmo status resolve isso independente da ordem recebida.
+  const earliestBy = <T extends { year: number; month: number }>(
+    list: T[],
+    dateOf: (item: T) => Date,
+  ): T | undefined =>
+    list.reduce<T | undefined>(
+      (best, item) => (!best || dateOf(item) < dateOf(best) ? item : best),
+      undefined,
+    )
+
+  const overdue = earliestBy(
+    nonEmpty.filter((i) => i.status === InvoiceStatus.OVERDUE),
+    (i) => getInvoiceDueDate(i.year, i.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose),
+  )
+  const closed = earliestBy(
+    nonEmpty.filter((i) => i.status === InvoiceStatus.CLOSED),
+    (i) => getInvoiceDueDate(i.year, i.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose),
+  )
+  const open = earliestBy(
+    nonEmpty.filter((i) => i.status === InvoiceStatus.OPEN),
+    (i) => getInvoiceCloseDate(i.year, i.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose),
+  )
 
   if (overdue) {
     const due = getInvoiceDueDate(overdue.year, overdue.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
