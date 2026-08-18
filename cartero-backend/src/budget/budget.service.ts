@@ -253,7 +253,17 @@ export class BudgetService {
       })
       .filter((entry) => entry.amount > 0);
 
-    return [...people, ...standalone].sort((a, b) => b.amount - a.amount);
+    // Urgência primeiro — vencida, a pagar, paga — e valor como desempate.
+    // Quem já foi resolvido não precisa disputar o topo da lista.
+    const urgency: Record<DebtStatus, number> = {
+      OVERDUE: 0,
+      PENDING: 1,
+      PAID: 2,
+    };
+
+    return [...people, ...standalone].sort(
+      (a, b) => urgency[a.status] - urgency[b.status] || b.amount - a.amount,
+    );
   }
 
   /**

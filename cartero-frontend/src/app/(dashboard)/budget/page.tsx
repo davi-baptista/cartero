@@ -30,24 +30,38 @@ const STATUS_CONFIG: Record<InvoiceStatus, { label: string; className: string }>
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Mesmo vocabulário visual do badge de fatura, aplicado a dívidas. */
-const DEBT_STATUS_CONFIG: Record<
-  'PAID' | 'OVERDUE' | 'PENDING',
-  { label: string; className: string }
-> = {
-  PAID: { label: 'Paga', className: 'bg-paid/15 text-paid' },
-  OVERDUE: { label: 'Vencida', className: 'bg-destructive/15 text-destructive' },
-  PENDING: { label: 'A pagar', className: 'bg-amber-500/15 text-amber-400' },
-}
+type DebtStatus = 'PAID' | 'OVERDUE' | 'PENDING'
 
-function debtsStatus(paidCount: number, totalCount: number): { label: string; className: string } {
-  if (paidCount === totalCount) {
-    return { label: totalCount > 1 ? 'Todas pagas' : 'Paga', className: 'bg-paid/15 text-paid' }
-  }
-  if (paidCount === 0) {
-    return { label: totalCount > 1 ? 'Nenhuma paga' : 'Não paga', className: 'bg-amber-500/15 text-amber-400' }
-  }
-  return { label: `${paidCount}/${totalCount} pagas`, className: 'bg-primary/15 text-primary' }
+/**
+ * Mesmo vocabulário visual do card de fatura, aplicado a dívidas: o badge e
+ * o ícone compartilham a cor, e `order` define a prioridade de leitura —
+ * o que exige ação aparece antes do que já está resolvido.
+ */
+const DEBT_STATUS_CONFIG: Record<
+  DebtStatus,
+  { label: string; className: string; iconBg: string; iconColor: string; order: number }
+> = {
+  OVERDUE: {
+    label: 'Vencida',
+    className: 'bg-destructive/15 text-destructive',
+    iconBg: 'bg-destructive/10',
+    iconColor: 'text-destructive',
+    order: 0,
+  },
+  PENDING: {
+    label: 'A pagar',
+    className: 'bg-amber-500/15 text-amber-400',
+    iconBg: 'bg-amber-500/10',
+    iconColor: 'text-amber-400',
+    order: 1,
+  },
+  PAID: {
+    label: 'Paga',
+    className: 'bg-paid/15 text-paid',
+    iconBg: 'bg-paid/10',
+    iconColor: 'text-paid',
+    order: 2,
+  },
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -362,27 +376,10 @@ export default function BudgetPage() {
         <div>
           <div className="mb-3 flex items-baseline justify-between gap-2">
             <h2 className="text-[15px] font-semibold tracking-tight">Dívidas</h2>
-            <div className="flex items-center gap-2">
-              {(() => {
-                const { label, className } = debtsStatus(
-                  summary.paidDebtsCount,
-                  debtBreakdown.length,
-                )
-                return (
-                  <span
-                    className={cn(
-                      'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
-                      className,
-                    )}
-                  >
-                    {label}
-                  </span>
-                )
-              })()}
-              <span className="text-[13px] font-semibold tabular-nums tracking-[-0.01em]">
-                {formatCurrency(summary.totalDebts)}
-              </span>
-            </div>
+            {/* Sem badge agregado: cada linha já mostra o próprio status. */}
+            <span className="text-[13px] font-semibold tabular-nums tracking-[-0.01em]">
+              {formatCurrency(summary.totalDebts)}
+            </span>
           </div>
 
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
@@ -399,11 +396,22 @@ export default function BudgetPage() {
                 }
                 className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30"
               >
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
+                <div
+                  className={cn(
+                    'flex size-8 shrink-0 items-center justify-center rounded-lg',
+                    DEBT_STATUS_CONFIG[item.status].iconBg,
+                  )}
+                >
                   {item.kind === 'person' ? (
-                    <User className="size-4 text-muted-foreground" aria-hidden />
+                    <User
+                      className={cn('size-4', DEBT_STATUS_CONFIG[item.status].iconColor)}
+                      aria-hidden
+                    />
                   ) : (
-                    <HandCoins className="size-4 text-muted-foreground" aria-hidden />
+                    <HandCoins
+                      className={cn('size-4', DEBT_STATUS_CONFIG[item.status].iconColor)}
+                      aria-hidden
+                    />
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
