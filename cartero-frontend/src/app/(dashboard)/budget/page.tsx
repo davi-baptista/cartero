@@ -39,20 +39,32 @@ type DebtStatus = 'PAID' | 'OVERDUE' | 'PENDING'
  */
 const DEBT_STATUS_CONFIG: Record<
   DebtStatus,
-  { label: string; className: string; iconBg: string; iconColor: string; order: number }
+  {
+    label: string
+    className: string
+    iconBg: string
+    iconColor: string
+    /** Vazio deixa o valor neutro — como na fatura aberta. */
+    amountColor: string
+    order: number
+  }
 > = {
   OVERDUE: {
     label: 'Vencida',
     className: 'bg-destructive/15 text-destructive',
     iconBg: 'bg-destructive/10',
     iconColor: 'text-destructive',
+    amountColor: 'text-destructive',
     order: 0,
   },
+  // Azul como a fatura "Aberta": o âmbar é reservado para o que já fechou e
+  // está esperando pagamento, não para o que ainda nem venceu.
   PENDING: {
     label: 'A pagar',
-    className: 'bg-amber-500/15 text-amber-400',
-    iconBg: 'bg-amber-500/10',
-    iconColor: 'text-amber-400',
+    className: 'bg-primary/15 text-primary',
+    iconBg: 'bg-primary/10',
+    iconColor: 'text-primary',
+    amountColor: '',
     order: 1,
   },
   PAID: {
@@ -60,6 +72,7 @@ const DEBT_STATUS_CONFIG: Record<
     className: 'bg-paid/15 text-paid',
     iconBg: 'bg-paid/10',
     iconColor: 'text-paid',
+    amountColor: 'text-paid',
     order: 2,
   },
 }
@@ -374,13 +387,14 @@ export default function BudgetPage() {
           avulsa. O que a pessoa te deve já está abatido do valor dela. */}
       {!isLoading && debtBreakdown.length > 0 && (
         <div>
-          <div className="mb-3 flex items-baseline justify-between gap-2">
-            <h2 className="text-[15px] font-semibold tracking-tight">Dívidas</h2>
-            {/* Sem badge agregado: cada linha já mostra o próprio status. */}
-            <span className="text-[13px] font-semibold tabular-nums tracking-[-0.01em]">
-              {formatCurrency(summary.totalDebts)}
+          {/* Mesmo padrão do cabeçalho de Faturas: o valor entra no título,
+              em cinza. Sem badge agregado — cada linha já tem o seu. */}
+          <h2 className="mb-3 text-[15px] font-semibold tracking-tight">
+            Dívidas
+            <span className="ml-1.5 font-normal text-muted-foreground">
+              · {formatCurrency(summary.totalDebts)}
             </span>
-          </div>
+          </h2>
 
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
             {debtBreakdown.map((item) => (
@@ -436,7 +450,12 @@ export default function BudgetPage() {
                     </p>
                   )}
                 </div>
-                <span className="shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]">
+                <span
+                  className={cn(
+                    'shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]',
+                    DEBT_STATUS_CONFIG[item.status].amountColor,
+                  )}
+                >
                   {formatCurrency(item.amount)}
                 </span>
                 <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary/60" aria-hidden />
