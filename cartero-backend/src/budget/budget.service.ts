@@ -23,35 +23,53 @@ export class BudgetService {
     const monthStart = new Date(Date.UTC(year, month - 1, 1));
     const monthEnd = new Date(Date.UTC(year, month, 1));
 
-    const [user, invoices, directPayments, debts] = await Promise.all([
-      this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { salary: true },
-      }),
-      this.prisma.invoice.findMany({
-        where: { userId, month, year },
-        include: { bank: true },
-      }),
-      this.prisma.transaction.findMany({
-        where: {
-          userId,
-          type: { in: DIRECT_PAYMENT_TYPES },
-          isRefund: false,
-          date: { gte: monthStart, lt: monthEnd },
-          // Transação-espelho de "Dívida paga" já é contada via totalDebts —
-          // incluí-la aqui também duplicaria o valor no total do mês.
-          paymentDebt: null,
-        },
-        select: { amount: true },
-      }),
-      this.prisma.debt.findMany({
-        where: {
-          userId,
-          dueDate: { gte: monthStart, lt: monthEnd },
-        },
-        select: { amount: true, isPaid: true },
-      }),
-    ]);
+    const [user, invoices, directPayments, debts, personReceivables] =
+      await Promise.all([
+        this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { salary: true },
+        }),
+        this.prisma.invoice.findMany({
+          where: { userId, month, year },
+          include: { bank: true },
+        }),
+        this.prisma.transaction.findMany({
+          where: {
+            userId,
+            type: { in: DIRECT_PAYMENT_TYPES },
+            isRefund: false,
+            date: { gte: monthStart, lt: monthEnd },
+            // Transação-espelho de "Dívida paga" já é contada via totalDebts —
+            // incluí-la aqui também duplicaria o valor no total do mês.
+            paymentDebt: null,
+          },
+          select: { amount: true },
+        }),
+        this.prisma.debt.findMany({
+          where: {
+            userId,
+            dueDate: { gte: monthStart, lt: monthEnd },
+          },
+          select: {
+            amount: true,
+            isPaid: true,
+            title: true,
+            personId: true,
+            person: { select: { id: true, name: true } },
+          },
+        }),
+        // Recebíveis vinculados a pessoa compensam as dívidas com a mesma
+        // pessoa: se você deve 15 e ela te deve 10, só saem 5 do seu bolso.
+        this.prisma.receivable.findMany({
+          where: {
+            userId,
+            personId: { not: null },
+            isPaid: false,
+            dueDate: { gte: monthStart, lt: monthEnd },
+          },
+          select: { amount: true, personId: true },
+        }),
+      ]);
 
     const totalInvoices = invoices.reduce(
       (sum, inv) => sum + Number(inv.totalAmount),
@@ -80,7 +98,11 @@ export class BudgetService {
       (sum, tx) => sum + Number(tx.amount),
       0,
     );
-    const totalDebts = debts.reduce((sum, debt) => sum + Number(debt.amount), 0);
+    const debtBreakdown = this.buildDebtBreakdown(debts, personReceivables);
+    const totalDebts = debtBreakdown.reduce(
+      (sum, item) => sum + item.amount,
+      0,
+    );
 
     // Faturas e dívidas já quitadas continuam somando: o número representa o
     // custo real do mês, não só o que ainda falta desembolsar.
@@ -89,10 +111,12 @@ export class BudgetService {
     const paidInvoices = invoices
       .filter((inv) => inv.status === 'PAID')
       .reduce((sum, inv) => sum + Number(inv.totalAmount), 0);
-    const paidDebts = debts
-      .filter((debt) => debt.isPaid)
-      .reduce((sum, debt) => sum + Number(debt.amount), 0);
-    const paidDebtsCount = debts.filter((debt) => debt.isPaid).length;
+    // Sobre o valor já compensado: usar o bruto aqui faria "pago" superar o
+    // total quando um recebível abate parte da dívida.
+    const paidDebts = debtBreakdown
+      .filter((item) => item.isPaid)
+      .reduce((sum, item) => sum + item.amount, 0);
+    const paidDebtsCount = debtBreakdown.filter((item) => item.isPaid).length;
 
     // Pagamentos diretos já aconteceram por definição — a transação só existe
     // porque o dinheiro saiu.
@@ -113,7 +137,93 @@ export class BudgetService {
       totalPaid,
       totalPending: totalToPay - totalPaid,
       invoices,
+      debtBreakdown,
     };
+  }
+
+  /**
+   * Dívidas do mês, linha a linha: uma entrada por pessoa (com o saldo já
+   * compensado pelo que ela te deve) e uma por dívida sem pessoa vinculada.
+   *
+   * Quem te deve mais do que você deve sai da lista — saldo a favor não é
+   * gasto, e mostrá-lo como valor negativo reduziria o total do mês por algo
+   * que ainda nem entrou.
+   */
+  private buildDebtBreakdown(
+    debts: Array<{
+      amount: unknown;
+      isPaid: boolean;
+      title: string;
+      personId: string | null;
+      person: { id: string; name: string } | null;
+    }>,
+    personReceivables: Array<{ amount: unknown; personId: string | null }>,
+  ) {
+    const receivableByPerson = new Map<string, number>();
+    for (const receivable of personReceivables) {
+      if (!receivable.personId) continue;
+      receivableByPerson.set(
+        receivable.personId,
+        (receivableByPerson.get(receivable.personId) ?? 0) +
+          Number(receivable.amount),
+      );
+    }
+
+    const byPerson = new Map<
+      string,
+      { name: string; gross: number; count: number; allPaid: boolean }
+    >();
+    const standalone: Array<{
+      kind: 'debt';
+      id: string | null;
+      name: string;
+      amount: number;
+      offset: number;
+      isPaid: boolean;
+    }> = [];
+
+    for (const debt of debts) {
+      if (debt.personId && debt.person) {
+        const entry = byPerson.get(debt.personId) ?? {
+          name: debt.person.name,
+          gross: 0,
+          count: 0,
+          allPaid: true,
+        };
+        entry.gross += Number(debt.amount);
+        entry.count += 1;
+        if (!debt.isPaid) entry.allPaid = false;
+        byPerson.set(debt.personId, entry);
+      } else {
+        standalone.push({
+          kind: 'debt',
+          id: null,
+          name: debt.title,
+          amount: Number(debt.amount),
+          offset: 0,
+          isPaid: debt.isPaid,
+        });
+      }
+    }
+
+    const people = [...byPerson.entries()]
+      .map(([personId, entry]) => {
+        const offset = Math.min(
+          receivableByPerson.get(personId) ?? 0,
+          entry.gross,
+        );
+        return {
+          kind: 'person' as const,
+          id: personId,
+          name: entry.name,
+          amount: entry.gross - offset,
+          offset,
+          isPaid: entry.allPaid,
+        };
+      })
+      .filter((entry) => entry.amount > 0);
+
+    return [...people, ...standalone].sort((a, b) => b.amount - a.amount);
   }
 
   /**

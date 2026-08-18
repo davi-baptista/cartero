@@ -21,6 +21,18 @@ export interface BudgetSummary {
   totalPaid: number
   totalPending: number
   invoices: Invoice[]
+  /**
+   * Dívidas do mês, linha a linha. Entradas de pessoa já vêm com o saldo
+   * compensado pelo que ela te deve — `offset` é o quanto foi abatido.
+   */
+  debtBreakdown: Array<{
+    kind: 'person' | 'debt'
+    id: string | null
+    name: string
+    amount: number
+    offset: number
+    isPaid: boolean
+  }>
 }
 
 export async function getBudget(params: { month: number; year: number }): Promise<BudgetSummary> {

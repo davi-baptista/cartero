@@ -300,7 +300,10 @@ export default function DebtsPage() {
   const endDateParam = searchParams.get('endDate')
 
   const [tab, setTab] = useState<TabFilter>('pending')
-  const [personFilter, setPersonFilter] = useState<string | undefined>(undefined)
+  // Pré-aplicado quando a navegação vem do card de dívidas do orçamento.
+  const [personFilter, setPersonFilter] = useState<string | undefined>(
+    () => searchParams.get('personId') ?? undefined,
+  )
 
   // O mês vem da barra superior; um `endDate` na URL (vindo da visão geral)
   // alinha o mês global àquele período uma única vez.

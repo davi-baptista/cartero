@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Wallet,
   HandCoins,
+  User,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { currentPeriod, useMonthPeriod } from '@/components/month-nav'
@@ -100,6 +101,8 @@ export default function BudgetPage() {
     }),
     [budget],
   )
+
+  const debtBreakdown = budget?.debtBreakdown ?? []
 
   const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
   const monthEnd = formatDateValue(new Date(year, month, 0))
@@ -312,7 +315,7 @@ export default function BudgetPage() {
       </div>
 
       {/* Outros gastos do mês */}
-      {!isLoading && (summary.totalDirectPayments > 0 || summary.totalDebts > 0) && (
+      {!isLoading && summary.totalDirectPayments > 0 && (
         <div>
           <h2 className="mb-3 text-[15px] font-semibold tracking-tight">Outros gastos do mês</h2>
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
@@ -338,40 +341,77 @@ export default function BudgetPage() {
                 <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary/60" aria-hidden />
               </Link>
             )}
-            {summary.totalDebts > 0 && (
+          </div>
+        </div>
+      )}
+
+      {/* Dívidas — seção própria, com uma linha por pessoa e por dívida
+          avulsa. O que a pessoa te deve já está abatido do valor dela. */}
+      {!isLoading && debtBreakdown.length > 0 && (
+        <div>
+          <div className="mb-3 flex items-baseline justify-between gap-2">
+            <h2 className="text-[15px] font-semibold tracking-tight">Dívidas</h2>
+            <div className="flex items-center gap-2">
+              {(() => {
+                const { label, className } = debtsStatus(
+                  summary.paidDebtsCount,
+                  debtBreakdown.length,
+                )
+                return (
+                  <span
+                    className={cn(
+                      'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
+                      className,
+                    )}
+                  >
+                    {label}
+                  </span>
+                )
+              })()}
+              <span className="text-[13px] font-semibold tabular-nums tracking-[-0.01em]">
+                {formatCurrency(summary.totalDebts)}
+              </span>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
+            {debtBreakdown.map((item) => (
               <Link
-                href={`/debts?endDate=${monthEnd}`}
+                key={`${item.kind}-${item.id ?? item.name}`}
+                // Pessoas não lê `?highlight=`; Dívidas já filtra por pessoa,
+                // que é onde o valor da linha pode ser conferido.
+                href={
+                  item.kind === 'person' && item.id
+                    ? `/debts?endDate=${monthEnd}&personId=${item.id}`
+                    : `/debts?endDate=${monthEnd}`
+                }
                 className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30"
               >
                 <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
-                  <HandCoins className="size-4 text-muted-foreground" aria-hidden />
+                  {item.kind === 'person' ? (
+                    <User className="size-4 text-muted-foreground" aria-hidden />
+                  ) : (
+                    <HandCoins className="size-4 text-muted-foreground" aria-hidden />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
-                      Dívidas com vencimento no mês
-                    </span>
-                    {(() => {
-                      const { label, className } = debtsStatus(summary.paidDebtsCount, summary.debtsCount)
-                      return (
-                        <span
-                          className={cn(
-                            'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
-                            className,
-                          )}
-                        >
-                          {label}
-                        </span>
-                      )
-                    })()}
-                  </div>
+                  <span className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
+                    {item.name}
+                  </span>
+                  {item.offset > 0 && (
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                      já descontado{' '}
+                      <span className="text-receivable">{formatCurrency(item.offset)}</span>{' '}
+                      que {item.name} te deve
+                    </p>
+                  )}
                 </div>
                 <span className="shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]">
-                  {formatCurrency(summary.totalDebts)}
+                  {formatCurrency(item.amount)}
                 </span>
                 <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary/60" aria-hidden />
               </Link>
-            )}
+            ))}
           </div>
         </div>
       )}
