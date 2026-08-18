@@ -719,6 +719,13 @@ function InvoiceDetailSheet({
   const monthYear = invoice ? capitalize(formatMonthYear(invoice.month, invoice.year)) : ''
   const total = invoice ? Number(invoice.totalAmount) : 0
   const txCount = invoice?.transactions?.length ?? 0
+  // Reembolsável: parte do total que já tem dono (pessoa vinculada) — o
+  // resto é o que efetivamente sai do seu bolso.
+  const reimbursableTotal = (invoice?.transactions ?? []).reduce(
+    (sum, tx) => sum + (tx.personId ? Number(tx.amount) : 0),
+    0,
+  )
+  const ownTotal = total - reimbursableTotal
   const installmentNumber = (tx: Transaction) => {
     const match = tx.title.match(/\s(\d+)\/\d+$/)
     return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER
@@ -780,6 +787,12 @@ function InvoiceDetailSheet({
                 )}>
                   {formatCurrency(total)}
                 </p>
+                {reimbursableTotal > 0 && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    <span className="text-foreground/80">{formatCurrency(ownTotal)}</span> seu ·{' '}
+                    <span className="text-receivable">{formatCurrency(reimbursableTotal)}</span> de outros
+                  </p>
+                )}
               </div>
               {canMarkPaid && (
                 <Button
