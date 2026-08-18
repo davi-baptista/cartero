@@ -12,6 +12,7 @@ import {
   User,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { StatusListRow, type StatusRowTone } from '@/components/ui/status-list-row'
 import { currentPeriod, useMonthPeriod } from '@/components/month-nav'
 import { getBudget, getBudgetFocus } from '@/services/budget.service'
 import { formatCurrency } from '@/lib/formatters'
@@ -37,42 +38,33 @@ type DebtStatus = 'PAID' | 'OVERDUE' | 'PENDING'
  * o ícone compartilham a cor, e `order` define a prioridade de leitura —
  * o que exige ação aparece antes do que já está resolvido.
  */
+/**
+ * Só o que é específico de dívida (rótulo, badge, ordem). A cor do ícone e do
+ * valor vem do `tone`, resolvido pelo mesmo `StatusListRow` que a fatura usa
+ * — assim os dois nunca voltam a divergir na paleta.
+ */
 const DEBT_STATUS_CONFIG: Record<
   DebtStatus,
-  {
-    label: string
-    className: string
-    iconBg: string
-    iconColor: string
-    /** Vazio deixa o valor neutro — como na fatura aberta. */
-    amountColor: string
-    order: number
-  }
+  { label: string; className: string; tone: StatusRowTone; order: number }
 > = {
   OVERDUE: {
     label: 'Vencida',
     className: 'bg-destructive/15 text-destructive',
-    iconBg: 'bg-destructive/10',
-    iconColor: 'text-destructive',
-    amountColor: 'text-destructive',
+    tone: 'negative',
     order: 0,
   },
-  // Azul como a fatura "Aberta": o âmbar é reservado para o que já fechou e
+  // Neutro como a fatura "Aberta": o âmbar é reservado para o que já fechou e
   // está esperando pagamento, não para o que ainda nem venceu.
   PENDING: {
     label: 'A pagar',
     className: 'bg-primary/15 text-primary',
-    iconBg: 'bg-primary/10',
-    iconColor: 'text-primary',
-    amountColor: '',
+    tone: 'neutral',
     order: 1,
   },
   PAID: {
     label: 'Paga',
     className: 'bg-paid/15 text-paid',
-    iconBg: 'bg-paid/10',
-    iconColor: 'text-paid',
-    amountColor: 'text-paid',
+    tone: 'positive',
     order: 2,
   },
 }
@@ -299,53 +291,22 @@ export default function BudgetPage() {
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
             {invoices.map((inv) => {
               const { label, className } = STATUS_CONFIG[inv.status]
-              const isPaid = inv.status === InvoiceStatus.PAID
-              const isOverdue = inv.status === InvoiceStatus.OVERDUE
+              const tone: StatusRowTone =
+                inv.status === InvoiceStatus.PAID
+                  ? 'positive'
+                  : inv.status === InvoiceStatus.OVERDUE
+                    ? 'negative'
+                    : 'neutral'
               return (
-                <Link
+                <StatusListRow
                   key={inv.id}
                   href={`/banks/${inv.bankId}/invoices?invoiceId=${inv.id}`}
-                  className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30"
-                >
-                  <div
-                    className={cn(
-                      'flex size-8 shrink-0 items-center justify-center rounded-lg',
-                      isPaid ? 'bg-paid/10' : isOverdue ? 'bg-destructive/10' : 'bg-muted/40',
-                    )}
-                  >
-                    <CreditCard
-                      className={cn(
-                        'size-4',
-                        isPaid ? 'text-paid' : isOverdue ? 'text-destructive' : 'text-muted-foreground',
-                      )}
-                      aria-hidden
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
-                        {inv.bank?.name ?? 'Banco'}
-                      </span>
-                      <span
-                        className={cn(
-                          'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
-                          className,
-                        )}
-                      >
-                        {label}
-                      </span>
-                    </div>
-                  </div>
-                  <span
-                    className={cn(
-                      'shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]',
-                      isPaid ? 'text-paid' : isOverdue ? 'text-destructive' : '',
-                    )}
-                  >
-                    {formatCurrency(Number(inv.totalAmount))}
-                  </span>
-                  <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary/60" aria-hidden />
-                </Link>
+                  icon={CreditCard}
+                  tone={tone}
+                  title={inv.bank?.name ?? 'Banco'}
+                  badge={{ label, className }}
+                  amount={Number(inv.totalAmount)}
+                />
               )
             })}
           </div>
@@ -397,70 +358,36 @@ export default function BudgetPage() {
           </h2>
 
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
-            {debtBreakdown.map((item) => (
-              <Link
-                key={`${item.kind}-${item.id ?? item.name}`}
-                // Pessoa abre o extrato dela já no mês visto aqui — é lá que
-                // dívida e recebível aparecem lado a lado, explicando o
-                // valor compensado desta linha.
-                href={
-                  item.kind === 'person' && item.id
-                    ? `/persons?personId=${item.id}&period=${monthKey}`
-                    : `/debts?endDate=${monthEnd}`
-                }
-                className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30"
-              >
-                <div
-                  className={cn(
-                    'flex size-8 shrink-0 items-center justify-center rounded-lg',
-                    DEBT_STATUS_CONFIG[item.status].iconBg,
-                  )}
-                >
-                  {item.kind === 'person' ? (
-                    <User
-                      className={cn('size-4', DEBT_STATUS_CONFIG[item.status].iconColor)}
-                      aria-hidden
-                    />
-                  ) : (
-                    <HandCoins
-                      className={cn('size-4', DEBT_STATUS_CONFIG[item.status].iconColor)}
-                      aria-hidden
-                    />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
-                      {item.name}
-                    </span>
-                    <span
-                      className={cn(
-                        'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
-                        DEBT_STATUS_CONFIG[item.status].className,
-                      )}
-                    >
-                      {DEBT_STATUS_CONFIG[item.status].label}
-                    </span>
-                  </div>
-                  {item.offset > 0 && (
-                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                      já descontado{' '}
-                      <span className="text-receivable">{formatCurrency(item.offset)}</span>{' '}
-                      que {item.name} te deve
-                    </p>
-                  )}
-                </div>
-                <span
-                  className={cn(
-                    'shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]',
-                    DEBT_STATUS_CONFIG[item.status].amountColor,
-                  )}
-                >
-                  {formatCurrency(item.amount)}
-                </span>
-                <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary/60" aria-hidden />
-              </Link>
-            ))}
+            {debtBreakdown.map((item) => {
+              const { label, className, tone } = DEBT_STATUS_CONFIG[item.status]
+              return (
+                <StatusListRow
+                  key={`${item.kind}-${item.id ?? item.name}`}
+                  // Pessoa abre o extrato dela já no mês visto aqui — é lá que
+                  // dívida e recebível aparecem lado a lado, explicando o
+                  // valor compensado desta linha.
+                  href={
+                    item.kind === 'person' && item.id
+                      ? `/persons?personId=${item.id}&period=${monthKey}`
+                      : `/debts?endDate=${monthEnd}`
+                  }
+                  icon={item.kind === 'person' ? User : HandCoins}
+                  tone={tone}
+                  title={item.name}
+                  badge={{ label, className }}
+                  subtitle={
+                    item.offset > 0 && (
+                      <>
+                        já descontado{' '}
+                        <span className="text-receivable">{formatCurrency(item.offset)}</span>{' '}
+                        que {item.name} te deve
+                      </>
+                    )
+                  }
+                  amount={item.amount}
+                />
+              )
+            })}
           </div>
         </div>
       )}
