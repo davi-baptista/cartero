@@ -313,37 +313,6 @@ export default function BudgetPage() {
         )}
       </div>
 
-      {/* Outros gastos do mês */}
-      {!isLoading && summary.totalDirectPayments > 0 && (
-        <div>
-          <h2 className="mb-3 text-[15px] font-semibold tracking-tight">Outros gastos do mês</h2>
-          <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
-            {summary.totalDirectPayments > 0 && (
-              <Link
-                href={`/transactions?startDate=${monthStart}&endDate=${monthEnd}&group=direct`}
-                className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30"
-              >
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
-                  <Wallet className="size-4 text-muted-foreground" aria-hidden />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <span className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
-                    Débito, PIX e boleto
-                  </span>
-                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                    Ver no extrato
-                  </p>
-                </div>
-                <span className="shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]">
-                  {formatCurrency(summary.totalDirectPayments)}
-                </span>
-                <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary/60" aria-hidden />
-              </Link>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Dívidas — seção própria, com uma linha por pessoa e por dívida
           avulsa. O que a pessoa te deve já está abatido do valor dela. */}
       {!isLoading && debtBreakdown.length > 0 && (
@@ -388,6 +357,37 @@ export default function BudgetPage() {
                 />
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Outros gastos do mês */}
+      {!isLoading && summary.totalDirectPayments > 0 && (
+        <div>
+          <h2 className="mb-3 text-[15px] font-semibold tracking-tight">Outros gastos do mês</h2>
+          <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
+            {summary.totalDirectPayments > 0 && (
+              <Link
+                href={`/transactions?startDate=${monthStart}&endDate=${monthEnd}&group=direct`}
+                className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30"
+              >
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
+                  <Wallet className="size-4 text-muted-foreground" aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
+                    Débito, PIX e boleto
+                  </span>
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                    Ver no extrato
+                  </p>
+                </div>
+                <span className="shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]">
+                  {formatCurrency(summary.totalDirectPayments)}
+                </span>
+                <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary/60" aria-hidden />
+              </Link>
+            )}
           </div>
         </div>
       )}
