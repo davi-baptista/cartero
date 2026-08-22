@@ -10,6 +10,7 @@ import { currentPeriod, useMonthPeriod } from '@/components/month-nav'
 import { getBudget, getBudgetFocus } from '@/services/budget.service'
 import { upsertSalary } from '@/services/salary.service'
 import { SalaryDialog } from './salary-dialog'
+import { SalaryHistorySheet } from './salary-history-sheet'
 import { formatCurrency, formatMonthYear, formatDate } from '@/lib/formatters'
 import { Button } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
@@ -120,6 +121,7 @@ export default function BudgetPage() {
 
   const qc = useQueryClient()
   const [salaryDialogOpen, setSalaryDialogOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   /**
    * Salva a renda a partir do mês selecionado.
@@ -138,6 +140,10 @@ export default function BudgetPage() {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['budget'] }),
         qc.invalidateQueries({ queryKey: ['me'] }),
+        // A renda vigente exibida no Perfil também muda.
+        qc.invalidateQueries({ queryKey: ['salary'] }),
+        // E o histórico ganha (ou atualiza) a entrada desta competência.
+        qc.invalidateQueries({ queryKey: ['salary-history'] }),
       ])
       setSalaryDialogOpen(false)
       toast.success(`Renda definida a partir de ${formatMonthYear(month, year)}`)
@@ -424,6 +430,22 @@ export default function BudgetPage() {
                 )}
               </div>
             )}
+
+            {/*
+              Acesso discreto ao histórico, para corrigir uma competência
+              cadastrada errada. Fica fora dos três ramos acima porque vale nos
+              três — inclusive com renda desconhecida no mês exibido, já que
+              pode existir entrada em outro mês.
+            */}
+            <div className="border-t border-border/60 pt-3">
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(true)}
+                className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                Histórico salarial
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -555,11 +577,7 @@ export default function BudgetPage() {
                 <Link
                   key={person.personId}
                   href={`/persons?personId=${person.personId}&period=${monthKey}`}
-                  aria-label={settlementAriaLabel(
-                    person,
-                    formatCurrency,
-                    formatMonthYear(month, year),
-                  )}
+                  aria-label={settlementAriaLabel(person, formatCurrency)}
                   className="group flex flex-col gap-1.5 px-4 py-3.5 transition-colors hover:bg-muted/30 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
                 >
                   <div className="min-w-0">
@@ -569,32 +587,11 @@ export default function BudgetPage() {
                     </p>
 
                     {/*
-                      Contexto do ORÇAMENTO — obrigação da competência, mesmo
-                      já paga. Sem esta linha, uma dívida quitada sumiria da
-                      tela enquanto continua somando em `totalToPay`, e o total
-                      deixaria de fechar com o que está visível.
-                    */}
-                    {context && (
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        <span className="text-muted-foreground/70">
-                          No orçamento de {formatMonthYear(month, year)}
-                        </span>
-                        <span className="mx-1.5 text-muted-foreground/40" aria-hidden>
-                          ·
-                        </span>
-                        <span className="font-medium text-foreground/80">
-                          {context}
-                        </span>
-                      </p>
-                    )}
-
-                    {/*
-                      Composição do que está EM ABERTO. Some quando o item é
-                      quitado — antes esta linha vinha do universo histórico e
-                      seguia exibindo "A pagar R$ 200" depois da quitação.
+                      Composição do que está EM ABERTO — a informação primária.
+                      Some quando o item é quitado.
                     */}
                     {composition.length > 0 && (
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      <p className="mt-1 text-[11px] text-muted-foreground">
                         {composition.map((part, index) => (
                           <span key={part.side}>
                             {index > 0 && (
@@ -618,6 +615,21 @@ export default function BudgetPage() {
                             </span>
                           </span>
                         ))}
+                      </p>
+                    )}
+
+                    {/*
+                      Contexto histórico — SÓ a parcela já quitada que ainda
+                      compõe `totalToPay`. Sem ela, uma dívida paga sumiria da
+                      tela enquanto segue somando no total, e o orçamento
+                      deixaria de fechar com as linhas visíveis.
+
+                      Quando nada foi quitado, esta linha não aparece: repetiria
+                      o mesmo número já exibido logo acima em "A pagar".
+                    */}
+                    {context && (
+                      <p className="mt-0.5 text-[11px] text-muted-foreground/70">
+                        {context}
                       </p>
                     )}
 
@@ -793,6 +805,8 @@ export default function BudgetPage() {
           </div>
         </div>
       )}
+
+      <SalaryHistorySheet open={historyOpen} onOpenChange={setHistoryOpen} />
 
       <SalaryDialog
         open={salaryDialogOpen}

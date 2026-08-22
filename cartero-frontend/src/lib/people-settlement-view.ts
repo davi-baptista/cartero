@@ -107,21 +107,42 @@ export function openPriorLabel(
 }
 
 /**
- * Contexto do orçamento — a obrigação da competência que compõe `totalToPay`.
+ * A parte da obrigação do orçamento que JÁ FOI QUITADA.
  *
- * `null` quando a pessoa não tem dívida no orçamento do mês: nesse caso ela
- * está na lista apenas por ter acerto em aberto (item 12), e uma linha
- * "R$ 0 em dívidas" não informaria nada.
+ * `budget.debtTotal` conta a obrigação inteira da competência (inclusive o que
+ * já foi pago, porque continua compondo `totalToPay`); `open.debtTotal` conta
+ * só o que resta. A diferença é exatamente o que foi quitado — e é a única
+ * parcela que "Em aberto" não consegue mostrar sozinha.
+ */
+function settledRemainder(person: PersonSettlement): number {
+  return person.budget.debtTotal - person.open.debtTotal
+}
+
+/**
+ * Contexto histórico do orçamento — só quando ACRESCENTA informação.
  *
- * Quando existe, aparece MESMO já paga — é justamente o que impede o total do
- * orçamento de deixar de fechar com as linhas visíveis (item 10).
+ * A versão anterior exibia sempre que `budget.debtTotal > 0`, e com uma dívida
+ * totalmente em aberto isso repetia o mesmo número duas vezes na mesma linha:
+ *
+ *     No orçamento de setembro 2026 · R$ 330 em dívidas
+ *     A pagar R$ 330
+ *
+ * Agora a linha só aparece quando existe diferença entre os dois universos, e
+ * mostra apenas a diferença:
+ *
+ *   · 330 no orçamento, 330 em aberto  → nada (não há o que acrescentar)
+ *   · 330 no orçamento, 0 em aberto    → "R$ 330,00 já quitados…"
+ *   · 500 no orçamento, 300 em aberto  → "R$ 200,00 já quitados…" (não 500)
+ *
+ * Sem repetir a competência: ela já está no título da seção.
  */
 export function budgetContextLabel(
   person: PersonSettlement,
   formatCurrency: (value: number) => string,
 ): string | null {
-  if (person.budget.debtTotal <= EPSILON) return null
-  return `${formatCurrency(person.budget.debtTotal)} em dívidas`
+  const settled = settledRemainder(person)
+  if (settled <= EPSILON) return null
+  return `${formatCurrency(settled)} já quitados ainda compõem o orçamento`
 }
 
 /**
@@ -134,12 +155,11 @@ export function budgetContextLabel(
 export function settlementAriaLabel(
   person: PersonSettlement,
   formatCurrency: (value: number) => string,
-  monthLabel: string,
 ): string {
   const parts = [person.personName]
 
   const context = budgetContextLabel(person, formatCurrency)
-  if (context) parts.push(`no orçamento de ${monthLabel}, ${context}`)
+  if (context) parts.push(context)
 
   const composition = openCompositionParts(person)
   if (composition.length > 0) {

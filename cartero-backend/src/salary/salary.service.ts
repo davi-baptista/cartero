@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
@@ -61,6 +61,80 @@ export class SalaryService {
       amount: Number(entry.amount),
       effectiveFrom: competence,
       /** A renda que passa a valer HOJE depois desta alteração. */
+      currentSalary: await this.resolve(userId, currentCompetence()),
+    };
+  }
+
+  /**
+   * Histórico real, do mais recente para o mais antigo.
+   *
+   * Devolve SOMENTE as entradas cadastradas. Meses sem entrada são resolvidos
+   * por herança e não existem como registro — materializá-los aqui criaria a
+   * ilusão de que cada mês tem um valor próprio, e a edição de um deles
+   * passaria a significar algo que o modelo não suporta.
+   */
+  async list(userId: string) {
+    const entries = await this.prisma.salaryHistory.findMany({
+      where: { userId },
+      orderBy: [{ year: 'desc' }, { month: 'desc' }],
+      select: { id: true, year: true, month: true, amount: true },
+    });
+
+    return entries.map((entry) => ({
+      id: entry.id,
+      year: entry.year,
+      month: entry.month,
+      amount: Number(entry.amount),
+    }));
+  }
+
+  /**
+   * Corrige o VALOR de uma competência já cadastrada.
+   *
+   * Separado do `upsert` de propósito: aqui a ausência é erro, não convite a
+   * criar. Editar "janeiro" com um mês digitado errado deve falhar em vez de
+   * cadastrar silenciosamente uma competência nova que ninguém pediu — e que
+   * mudaria a renda resolvida de todos os meses seguintes.
+   *
+   * A competência em si é imutável nesta operação: transformar janeiro em
+   * fevereiro é outra intenção (mover uma alteração no tempo), com outros
+   * efeitos sobre a herança, e não é o que "corrigir o valor" significa.
+   */
+  async updateAmount(
+    userId: string,
+    competence: SalaryCompetence,
+    amount: number,
+  ) {
+    /*
+      `updateMany` com `userId` no `where` resolve ownership e existência numa
+      só ida ao banco: sem a linha do dono, `count` é 0 e nada foi tocado.
+
+      Um `findFirst` seguido de `update` por id abriria janela entre a checagem
+      e a escrita, além de uma segunda consulta.
+    */
+    const { count } = await this.prisma.salaryHistory.updateMany({
+      where: {
+        userId,
+        year: competence.year,
+        month: competence.month,
+      },
+      data: { amount },
+    });
+
+    if (count === 0) {
+      throw new NotFoundException({
+        code: 'SALARY_ENTRY_NOT_FOUND',
+        message: 'Não existe registro de renda para esta competência.',
+      });
+    }
+
+    await this.syncCurrentSalaryCache(userId);
+
+    return {
+      year: competence.year,
+      month: competence.month,
+      amount,
+      /** A renda que passa a valer HOJE depois da correção. */
       currentSalary: await this.resolve(userId, currentCompetence()),
     };
   }

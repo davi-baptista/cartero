@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { useAuth } from '@/providers/auth-provider'
 import { updateMe } from '@/services/users.service'
 import { getSalary, upsertSalary } from '@/services/salary.service'
+import { SalaryHistorySheet } from '../budget/salary-history-sheet'
 import { getPublicKey, subscribePush, unsubscribePush } from '@/services/notifications.service'
 import { enablePushNotifications, disablePushNotifications, getExistingPushSubscription } from '@/lib/push'
 import { formatCurrency } from '@/lib/formatters'
@@ -86,6 +87,7 @@ export default function ProfilePage() {
     dispara render em cascata e faz o campo piscar o valor antigo).
   */
   const [salaryDraft, setSalaryDraft] = useState<number | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   /** Valor exibido: o rascunho, ou a renda que vale hoje. */
   const salary = salaryDraft ?? resolvedSalary?.amount ?? 0
@@ -164,6 +166,8 @@ export default function ProfilePage() {
       }
       void qc.invalidateQueries({ queryKey: ['budget'] })
       void qc.invalidateQueries({ queryKey: ['salary'] })
+      // Esta ação cria/atualiza a entrada do mês corrente no histórico.
+      void qc.invalidateQueries({ queryKey: ['salary-history'] })
       // Volta a seguir o resolver em vez do rascunho já salvo.
       setSalaryDraft(null)
       toast.success('Renda atualizada')
@@ -340,6 +344,19 @@ export default function ProfilePage() {
                 Nenhuma renda registrada ainda.
               </p>
             )}
+
+            {/*
+              Acesso ao histórico também aqui: "cadastrei janeiro errado" é uma
+              correção de perfil tanto quanto de orçamento, e obrigar o usuário
+              a descobrir a outra tela para isso seria arbitrário.
+            */}
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              className="mt-1 text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              Histórico salarial
+            </button>
           </Field>
         </SectionCard>
 
@@ -487,6 +504,8 @@ export default function ProfilePage() {
 
         <MaintenanceMode />
       </div>
+
+      <SalaryHistorySheet open={historyOpen} onOpenChange={setHistoryOpen} />
     </div>
   )
 }

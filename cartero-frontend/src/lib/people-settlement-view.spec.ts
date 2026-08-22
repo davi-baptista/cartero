@@ -177,52 +177,102 @@ describe('openPriorLabel', () => {
   })
 })
 
-describe('budgetContextLabel', () => {
-  it('mostra a obrigação do mês mesmo já paga', () => {
-    /*
-      Item 10: sem esta linha, uma dívida quitada sumiria da tela enquanto
-      continua somando em `totalToPay` — e o total deixaria de fechar com as
-      linhas visíveis.
-    */
+describe('budgetContextLabel — só o que acrescenta informação', () => {
+  /*
+    A linha de contexto repetia o número que já aparecia em "A pagar":
+
+        No orçamento de setembro 2026 · R$ 330 em dívidas
+        A pagar R$ 330
+
+    Agora ela mostra apenas a DIFERENÇA entre os dois universos — a parcela
+    já quitada, que é a única coisa que "Em aberto" não consegue dizer.
+  */
+  it('caso 1: dívida totalmente em aberto não gera contexto', () => {
+    const totalmenteAberta = person({
+      budget: { debtDueInMonth: 330, debtTotal: 330 },
+      open: { debtInMonth: 330, debtTotal: 330, net: -330, itemCount: 1 },
+    })
+    expect(budgetContextLabel(totalmenteAberta, brl)).toBeNull()
+  })
+
+  it('caso 2: dívida totalmente quitada mostra o valor inteiro', () => {
     const quitada = person({
-      budget: { debtDueInMonth: 200, debtTotal: 200 },
+      budget: { debtDueInMonth: 330, debtTotal: 330 },
       open: { itemCount: 0 },
     })
-    expect(budgetContextLabel(quitada, brl)).toContain('em dívidas')
+    const label = budgetContextLabel(quitada, brl)
+    expect(label).toContain('330')
+    expect(label).toContain('já quitados')
+    expect(label).toContain('compõem o orçamento')
   })
 
-  it('sem dívida no orçamento não há linha de contexto', () => {
-    // Item 12: pessoa presente apenas por acerto em aberto.
-    const soAberto = person({
-      open: { receivableTotal: 300, net: 300, itemCount: 1 },
+  it('caso 3: parcialmente quitada mostra só a diferença', () => {
+    /*
+      500 no orçamento, 300 em aberto → 200 quitados.
+      Repetir os 500 inteiros duplicaria os 300 que já aparecem em "A pagar".
+    */
+    const parcial = person({
+      budget: { debtDueInMonth: 500, debtTotal: 500 },
+      open: { debtInMonth: 300, debtTotal: 300, net: -300, itemCount: 1 },
     })
-    expect(budgetContextLabel(soAberto, brl)).toBeNull()
+    const label = budgetContextLabel(parcial, brl)
+    expect(label).toContain('200')
+    expect(label).not.toContain('500')
+    expect(label).not.toContain('300')
   })
 
-  it('inclui o carry histórico no contexto', () => {
-    const comCarry = person({
+  it('caso 4: sem dívida nenhuma não há linha', () => {
+    expect(budgetContextLabel(person({}), brl)).toBeNull()
+  })
+
+  it('caso 5: pessoa só com recebível não ganha linha artificial', () => {
+    // O caso do Jeoge: recebível aberto, nenhuma dívida em nenhum universo.
+    const soRecebivel = person({
+      budget: { receivableDueInMonth: 780.28 },
+      open: { receivableTotal: 780.28, net: 780.28, itemCount: 1 },
+    })
+    expect(budgetContextLabel(soRecebivel, brl)).toBeNull()
+  })
+
+  it('o carry histórico quitado também conta como diferença', () => {
+    /*
+      A parcela quitada pode vir do carry anterior, não só do mês. O cálculo é
+      sobre `debtTotal` justamente para não precisar distinguir a origem.
+    */
+    const carryQuitado = person({
       budget: { debtDueInMonth: 250, priorDebtCarry: 100, debtTotal: 350 },
+      open: { debtInMonth: 250, debtTotal: 250, net: -250, itemCount: 1 },
     })
-    expect(budgetContextLabel(comCarry, brl)).toContain('350')
+    expect(budgetContextLabel(carryQuitado, brl)).toContain('100')
+  })
+
+  it('não repete a competência — ela já está no título da seção', () => {
+    const quitada = person({
+      budget: { debtTotal: 330 },
+      open: { itemCount: 0 },
+    })
+    expect(budgetContextLabel(quitada, brl)).not.toMatch(/orçamento de \w+ \d{4}/)
   })
 })
 
 describe('settlementAriaLabel', () => {
-  it('nomeia os dois universos separadamente', () => {
+  it('descreve a composição em aberto sem depender de cor', () => {
     const label = settlementAriaLabel(
       person({
         budget: { debtDueInMonth: 200, debtTotal: 200 },
         open: { receivableTotal: 200, debtTotal: 200, net: 0, itemCount: 2 },
       }),
       brl,
-      'agosto de 2026',
     )
 
-    expect(label).toContain('no orçamento de agosto de 2026')
     expect(label).toContain('em aberto')
-    // Sem depender de cor nem de posição para saber qual número é qual.
     expect(label).toContain('a receber')
     expect(label).toContain('a pagar')
+    /*
+      Nada foi quitado, então o rótulo não repete o valor do orçamento — o
+      leitor de tela ouviria "200" duas vezes sem distinção de universo.
+    */
+    expect(label).not.toContain('já quitados')
   })
 
   it('depois da quitação diz nada em aberto, sem perder o contexto', () => {
@@ -232,13 +282,21 @@ describe('settlementAriaLabel', () => {
         open: { itemCount: 0 },
       }),
       brl,
-      'agosto de 2026',
     )
 
     expect(label).toContain('nada em aberto')
-    expect(label).toContain('em dívidas')
+    // O contexto que reconcilia o total continua audível.
+    expect(label).toContain('já quitados')
     // Não pode sugerir pendência viva.
     expect(label).not.toMatch(/em aberto, R\$/)
+  })
+
+  it('não repete a competência — já está no título da seção', () => {
+    const label = settlementAriaLabel(
+      person({ budget: { debtTotal: 330 }, open: { itemCount: 0 } }),
+      brl,
+    )
+    expect(label).not.toContain('orçamento de')
   })
 })
 
