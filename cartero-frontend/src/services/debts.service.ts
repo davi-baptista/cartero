@@ -39,6 +39,8 @@ export async function updateDebt(
     isPaid: boolean
     paymentBankId: string
     paymentType: TransactionType
+    /** Data em que o pagamento aconteceu — grava `paidAt` e a transação. */
+    paymentDate: string
   }>,
   scope?: InstallmentScope,
 ): Promise<Debt | Debt[]> {

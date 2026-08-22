@@ -4,19 +4,7 @@ import { useState, useMemo, useEffect, useRef, memo } from 'react'
 import { AnimatePresence, motion, animate } from 'motion/react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import {
-  Plus,
-  Pencil,
-  Trash2,
-  Check,
-  Undo2,
-  HandCoins,
-  BellOff,
-  Search,
-  MoreVertical,
-  X,
-  Repeat2,
-} from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, Undo2, HandCoins, BellOff, Search, MoreVertical, X, Repeat2, TriangleAlert, RotateCcw, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { monthBounds, periodFromDate, useMonthPeriod } from '@/components/month-nav'
@@ -58,47 +46,14 @@ import {
 import { useSearchParams } from 'next/navigation'
 import { getPersons } from '@/services/persons.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
-import { formatDateValue } from '@/lib/date'
+import { isOverdue, overdueCountLabel } from '@/lib/settlement-status'
+import { SettlementStatusDot } from '@/components/settlement-status-dot'
 import { cn } from '@/lib/utils'
 import type { Debt, TransactionType } from '@/types'
 import { InstallmentScope } from '@/types'
 import { useAuth } from '@/providers/auth-provider'
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function isOverdue(debt: Debt): boolean {
-  if (debt.isPaid) return false
-  const today = formatDateValue()
-  return debt.dueDate < today
-}
-
 // ─── Sub-components ──────────────────────────────────────────────────────────
-
-function StatusDot({ debt }: { debt: Debt }) {
-  if (debt.isPaid)
-    return (
-      <>
-        <span className="size-2.5 rounded-full bg-receivable shrink-0" aria-hidden="true" />
-        <span className="sr-only">Pago</span>
-      </>
-    )
-  if (isOverdue(debt))
-    return (
-      <>
-        <span className="relative flex size-2.5 shrink-0 items-center justify-center" aria-hidden="true">
-          <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/50 opacity-75" />
-          <span className="size-2.5 rounded-full bg-destructive" />
-        </span>
-        <span className="sr-only">Vencido</span>
-      </>
-    )
-  return (
-    <>
-      <span className="size-2.5 rounded-full bg-pending shrink-0" aria-hidden="true" />
-      <span className="sr-only">Pendente</span>
-    </>
-  )
-}
 
 const DebtRow = memo(function DebtRow({
   debt,
@@ -148,7 +103,7 @@ const DebtRow = memo(function DebtRow({
         ) : (
           <>
             <span className="block group-hover/dot:hidden">
-              <StatusDot debt={debt} />
+              <SettlementStatusDot item={debt} domain="debt" />
             </span>
             <span className="hidden group-hover/dot:block text-muted-foreground">
               <Check className="size-3.5" />
@@ -201,7 +156,7 @@ const DebtRow = memo(function DebtRow({
         </span>
         {overdue ? (
           <span className="inline-flex items-center rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-medium text-destructive">
-            Vencido {formatDate(debt.dueDate)}
+            Em atraso · {formatDate(debt.dueDate)}
           </span>
         ) : (
           <span className="text-xs text-muted-foreground">{formatDate(debt.dueDate)}</span>
@@ -336,7 +291,14 @@ export default function DebtsPage() {
   // Sem `startDate` na query: o backend devolve tudo até o fim do mês
   // selecionado, e o recorte por mês acontece no cliente — assim dívidas
   // vencidas de meses anteriores continuam visíveis em qualquer mês.
-  const { data: allDebts, isLoading } = useQuery({
+  const {
+    data: allDebts,
+    isLoading,
+    isError,
+    isSuccess,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ['debts', personFilter, endDate],
     queryFn: () => getDebts({
       personId: personFilter,
@@ -358,6 +320,13 @@ export default function DebtsPage() {
     mutationFn: createDebt,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['debts'] })
+      /*
+        Criar dívida move o Orçamento: entra em `debts.total` e `totalToPay`, e
+        — quando tem pessoa — na linha dela em "Acertos com pessoas". Só
+        `['debts']` era invalidado, então o card ficava desatualizado até a
+        próxima navegação. `update` e `delete` já faziam certo.
+      */
+      qc.invalidateQueries({ queryKey: ['budget'] })
       setSheetOpen(false)
       toast.success('Dívida criada')
     },
@@ -482,9 +451,19 @@ export default function DebtsPage() {
     }
   }
 
-  function handleMarkPaidConfirm(payload: { paymentBankId?: string; paymentType?: TransactionType }) {
+  function handleMarkPaidConfirm(payload: {
+    paymentBankId?: string
+    paymentType?: TransactionType
+    /*
+      A data vinha do diálogo e era descartada aqui — o tipo não a declarava,
+      então ela nem chegava à API. O usuário escolhia quando pagou e o sistema
+      gravava hoje.
+    */
+    paymentDate?: string
+  }) {
     if (!markPaidTarget) return
     if (!payload.paymentBankId || !payload.paymentType) return
+    // `payload` já inclui `paymentDate` — o spread a repassa.
     updateMut.mutate({
       id: markPaidTarget.id,
       payload: { isPaid: true, ...payload },
@@ -558,7 +537,7 @@ export default function DebtsPage() {
             </span>
             {summary.overdueCount > 0 && (
               <span className="ml-2 text-xs font-medium text-destructive">
-                · {summary.overdueCount} vencida{summary.overdueCount > 1 ? 's' : ''}
+                · {overdueCountLabel(summary.overdueCount, 'debt')}
               </span>
             )}
           </p>
@@ -647,7 +626,43 @@ export default function DebtsPage() {
               <RowSkeleton key={i} />
             ))}
           </div>
-        ) : filtered.length === 0 ? (
+        ) : isError ? (
+          /*
+            Erro é estado próprio, não lista vazia.
+            Com a API fora do ar, `isLoading` vira false e os dados ficam
+            undefined — a tela dizia "Nenhuma dívida pendente", afirmando ao usuário que ele
+            não tem dívidas quando o servidor apenas não respondeu.
+          */
+          <div
+            role="alert"
+            className="flex flex-col items-center justify-center py-16 text-center"
+          >
+            <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-destructive/10">
+              <TriangleAlert className="size-6 text-destructive/70" aria-hidden />
+            </div>
+            <p className="text-sm font-medium">
+              Não foi possível carregar suas dívidas
+            </p>
+            <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+              Verifique sua conexão e tente novamente. Seus dados continuam
+              salvos.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-5 gap-1.5"
+              disabled={isFetching}
+              onClick={() => void refetch()}
+            >
+              {isFetching ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              ) : (
+                <RotateCcw className="size-3.5" aria-hidden />
+              )}
+              {isFetching ? 'Carregando…' : 'Tentar novamente'}
+            </Button>
+          </div>
+        ) : isSuccess && filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="mb-3 flex size-12 items-center justify-center rounded-xl bg-muted/50">
               <HandCoins className="size-5 text-muted-foreground" />
@@ -709,6 +724,7 @@ export default function DebtsPage() {
       <InstallmentScopeDialog
         open={scopeDialog !== null}
         mode={scopeDialog?.mode ?? 'delete'}
+        isPending={scopeDialog?.mode === 'delete' ? deleteMut.isPending : updateMut.isPending}
         onConfirm={handleScopeConfirm}
         onCancel={() => setScopeDialog(null)}
         linkedWarning={Boolean(scopeDialog?.debt.paymentTransactionId)}
@@ -719,6 +735,7 @@ export default function DebtsPage() {
         open={markPaidTarget !== null}
         kind="debt"
         createTransaction={user?.createExpenseOnDebtPaid ?? false}
+        isPending={updateMut.isPending}
         onConfirm={handleMarkPaidConfirm}
         onCancel={() => setMarkPaidTarget(null)}
       />
@@ -727,6 +744,7 @@ export default function DebtsPage() {
       <UnmarkPaidWarningDialog
         open={unmarkPaidTarget !== null}
         kind="debt"
+        isPending={updateMut.isPending}
         onConfirm={handleUnmarkPaidConfirm}
         onCancel={() => setUnmarkPaidTarget(null)}
       />
@@ -735,6 +753,7 @@ export default function DebtsPage() {
       <DeleteLinkedWarningDialog
         open={linkedWarningTarget !== null}
         kind="debt"
+        isPending={deleteMut.isPending}
         onConfirm={handleLinkedWarningConfirm}
         onDeleteOnly={handleLinkedWarningDeleteOnly}
         onCancel={() => setLinkedWarningTarget(null)}

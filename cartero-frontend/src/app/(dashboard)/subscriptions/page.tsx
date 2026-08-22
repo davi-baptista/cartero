@@ -1,19 +1,14 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Repeat, Pause, Play, MoreVertical } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { QueryError } from '@/components/ui/query-error'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { apiErrorMessage } from '@/lib/api-error'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,7 +23,7 @@ import {
   updateSubscription,
   deleteSubscription,
 } from '@/services/subscriptions.service'
-import { formatCurrency, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
+import { formatCurrency, formatDate, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 import type { Subscription } from '@/types'
 
@@ -67,15 +62,46 @@ function SubscriptionRow({
             </span>
           )}
         </div>
+        {/*
+          Duas linhas com papéis distintos: primeiro o que a cobrança É (forma,
+          banco, categoria), depois QUANDO acontece. Tudo numa linha só deixava
+          o metadado mais consequente — a próxima cobrança — perdido no meio de
+          texto do mesmo peso.
+        */}
         <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] text-muted-foreground">
-          <span className="shrink-0">Todo dia {subscription.dayOfMonth}</span>
-          <span aria-hidden>·</span>
           <span className="shrink-0">{TRANSACTION_TYPE_LABELS[subscription.type]}</span>
           {subscription.bank && (
             <>
               <span aria-hidden>·</span>
               <span className="truncate">{subscription.bank.name}</span>
             </>
+          )}
+          {subscription.category && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="truncate">{subscription.category.name}</span>
+            </>
+          )}
+        </div>
+
+        {/*
+          `nextCharge` vem do BACKEND, calculada pela mesma regra que decide a
+          geração. Pausada não mostra data: inventar uma seria mentir sobre o
+          estado — e esta era a informação que faltava para alguém notar que a
+          geração havia parado.
+        */}
+        <div className="text-[11px] text-muted-foreground/80">
+          {inactive ? (
+            <span>Sem cobranças enquanto estiver pausada</span>
+          ) : subscription.nextCharge ? (
+            <span>
+              Próxima cobrança{' '}
+              <span className="text-foreground/80">
+                {formatDate(subscription.nextCharge)}
+              </span>
+            </span>
+          ) : (
+            <span>Todo dia {subscription.dayOfMonth}</span>
           )}
         </div>
       </div>
@@ -127,7 +153,13 @@ export default function SubscriptionsPage() {
   const [editTarget, setEditTarget] = useState<Subscription | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Subscription | null>(null)
 
-  const { data: subscriptions = [], isLoading } = useQuery({
+  const {
+    data: subscriptions = [],
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ['subscriptions'],
     queryFn: getSubscriptions,
   })
@@ -135,34 +167,124 @@ export default function SubscriptionsPage() {
   /** Mutações em assinatura geram transações — o resto do app precisa saber. */
   function invalidateAll() {
     qc.invalidateQueries({ queryKey: ['subscriptions'] })
+    // Compromissos deriva das assinaturas ativas e ficava com dados velhos
+    // ao navegar entre as duas telas.
+    qc.invalidateQueries({ queryKey: ['commitments'] })
     qc.invalidateQueries({ queryKey: ['transactions'] })
     qc.invalidateQueries({ queryKey: ['invoices'] })
     qc.invalidateQueries({ queryKey: ['bank-invoices'] })
     qc.invalidateQueries({ queryKey: ['budget'] })
   }
 
+  /**
+   * Chave da tentativa de criação em curso.
+   *
+   * A mesma chave precisa sobreviver a um retry do MESMO submit — falha de
+   * rede, resposta perdida, novo clique depois de um erro recuperável. Gerar
+   * uma UUID por requisição anularia a idempotência: cada retry pareceria uma
+   * tentativa nova e criaria outra assinatura.
+   *
+   * É zerada no sucesso, para que o próximo cadastro seja outra tentativa.
+   */
+  const creationKeyRef = useRef<string | null>(null)
+
+  function currentCreationKey(): string {
+    creationKeyRef.current ??= crypto.randomUUID()
+    return creationKeyRef.current
+  }
+
+  // Fechar o drawer é responsabilidade da página, como nos demais: assim um
+  // erro mantém o formulário aberto com o que foi digitado.
   const createMut = useMutation({
     mutationFn: createSubscription,
     onSuccess: (result) => {
       invalidateAll()
-      const criadas = result.generated?.filter((g) => !g.skipped).length ?? 0
+      setSheetOpen(false)
+      // Criação confirmada: a próxima tentativa é outra tentativa, e precisa
+      // de uma chave nova. Sem isto, um segundo cadastro reusaria a chave e o
+      // backend devolveria a assinatura anterior.
+      creationKeyRef.current = null
+
+      const { generated, skipped, failed, failures } = result.generation
+
+      /**
+       * Falha parcial: o cadastro existe, alguns lançamentos não.
+       *
+       * Um toast vermelho de "erro ao criar" seria falso — a assinatura está
+       * lá. E a distinção entre `failed` e `skipped` importa: o primeiro será
+       * tentado de novo na próxima execução, o segundo foi descartado de
+       * propósito e não volta.
+       */
+      if (failed > 0) {
+        const reason = failures[0]?.reason
+        toast.warning(
+          `Assinatura criada, mas ${failed === 1 ? '1 cobrança não pôde ser gerada' : `${failed} cobranças não puderam ser geradas`}. Será tentado novamente.${reason ? ` (${reason})` : ''}`,
+        )
+        return
+      }
+
+      /**
+       * `skipped` entra na mensagem porque o silêncio confundia: uma criação
+       * retroativa cujos ciclos caíram todos em faturas já pagas mostrava
+       * apenas "Assinatura criada", sem explicar por que nada foi lançado.
+       *
+       * A pluralização compara com 1, e não com "> 1": o padrão anterior
+       * produzia "0 cobrança" justamente no caso em que tudo foi pulado.
+       */
+      const parts: string[] = []
+      if (generated > 0) {
+        parts.push(
+          `${generated} ${generated === 1 ? 'lançamento gerado' : 'lançamentos gerados'}`,
+        )
+      }
+      if (skipped > 0) {
+        // "Pulado" e não "pendente": fatura paga descarta o ciclo em
+        // definitivo, e prometer nova tentativa seria enganoso.
+        parts.push(
+          `${skipped} ${skipped === 1 ? 'pulado' : 'pulados'} (fatura já paga)`,
+        )
+      }
+
       toast.success(
-        criadas > 0
-          ? `Assinatura criada — ${criadas} lançamento${criadas > 1 ? 's' : ''} gerado${criadas > 1 ? 's' : ''}`
-          : 'Assinatura criada',
+        result.alreadyExisted
+          ? 'Assinatura já havia sido criada'
+          : parts.length > 0
+            ? `Assinatura criada — ${parts.join(' · ')}`
+            : 'Assinatura criada',
       )
     },
-    onError: () => toast.error('Erro ao criar assinatura — verifique sua conexão e tente novamente'),
+    onError: (error) =>
+      toast.error(
+        apiErrorMessage(error, 'Erro ao criar assinatura — verifique sua conexão e tente novamente'),
+      ),
   })
 
   const updateMut = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof updateSubscription>[1] }) =>
       updateSubscription(id, payload),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       invalidateAll()
-      toast.success('Assinatura atualizada')
+      setSheetOpen(false)
+      setEditTarget(null)
+      /**
+       * O toast nomeia o que mudou.
+       *
+       * "Assinatura atualizada" não dizia se ela ficou ativa ou pausada — e o
+       * estado alternado é a única informação que importa quando a ação foi um
+       * toggle. Edição de campos segue com a mensagem genérica.
+       */
+      if (variables.payload.isActive === true) {
+        toast.success('Assinatura reativada')
+      } else if (variables.payload.isActive === false) {
+        toast.success(
+          'Assinatura pausada — os lançamentos já criados permanecem',
+        )
+      } else {
+        toast.success('Assinatura atualizada')
+      }
     },
-    onError: () => toast.error('Erro ao atualizar assinatura'),
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, 'Erro ao atualizar assinatura')),
   })
 
   const deleteMut = useMutation({
@@ -172,7 +294,8 @@ export default function SubscriptionsPage() {
       setDeleteTarget(null)
       toast.success('Assinatura excluída')
     },
-    onError: () => toast.error('Erro ao excluir assinatura'),
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, 'Erro ao excluir assinatura')),
   })
 
   const monthlyTotal = useMemo(
@@ -188,13 +311,24 @@ export default function SubscriptionsPage() {
   async function handleSubmit(data: SubscriptionFormData) {
     if (editTarget) {
       // `startedAt` fica de fora: é imutável, e o backend o ignora de todo modo.
-      const { title, bankId, type, amount, description, dayOfMonth } = data
+      const { title, bankId, categoryId, type, amount, description, dayOfMonth } =
+        data
       await updateMut.mutateAsync({
         id: editTarget.id,
-        payload: { title, bankId, type, amount, description, dayOfMonth },
+        payload: {
+          title,
+          bankId,
+          categoryId,
+          type,
+          amount,
+          description,
+          dayOfMonth,
+        },
       })
     } else {
-      await createMut.mutateAsync(data)
+      // A chave acompanha a tentativa: um retry do mesmo submit reusa a mesma
+      // e o backend devolve a assinatura já criada em vez de duplicá-la.
+      await createMut.mutateAsync({ ...data, creationKey: currentCreationKey() })
     }
   }
 
@@ -228,7 +362,14 @@ export default function SubscriptionsPage() {
       </div>
 
       {/* List */}
-      {isLoading ? (
+      {/* Falha de API não pode parecer "nenhuma assinatura". */}
+      {isError ? (
+        <QueryError
+          message="Não foi possível carregar as assinaturas"
+          isFetching={isFetching}
+          onRetry={() => void refetch()}
+        />
+      ) : isLoading ? (
         <div>
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3 border-b border-border/60 py-3.5">
@@ -280,28 +421,22 @@ export default function SubscriptionsPage() {
         onSubmit={handleSubmit}
       />
 
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Excluir assinatura</DialogTitle>
-            <DialogDescription>
-              {deleteTarget?.title} deixa de gerar novos lançamentos. Os que já
-              foram criados continuam no extrato.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              Cancelar
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
-            >
-              Excluir
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* A descrição já era precisa sobre o efeito real (os lançamentos
+          existentes permanecem) — preservada como está. */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Excluir assinatura"
+        description={
+          <>
+            <strong className="text-foreground">{deleteTarget?.title}</strong> deixa
+            de gerar novos lançamentos. Os que já foram criados continuam no
+            extrato.
+          </>
+        }
+        isPending={deleteMut.isPending}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+      />
     </div>
   )
 }

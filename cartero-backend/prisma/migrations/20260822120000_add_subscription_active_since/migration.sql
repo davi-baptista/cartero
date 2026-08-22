@@ -1,0 +1,33 @@
+-- Marco de geração da ativação atual da assinatura.
+--
+-- ─── Por quê ──────────────────────────────────────────────────────────────
+-- `isActive + startedAt + lastGeneratedFor` não distinguiam dois casos que
+-- exigem tratamento oposto:
+--
+--   1. mês pendente porque o cron ficou fora do ar  → deve ser gerado
+--   2. mês em que a assinatura estava pausada       → NÃO deve ser gerado
+--
+-- Sem essa distinção, reativar depois de três meses de pausa gerava as três
+-- cobranças de uma vez — como se a pausa fosse apenas o cron desligado.
+--
+-- `startedAt` não pode servir para isso: ele significa "assinando desde" e
+-- sobrescrevê-lo a cada reativação apagaria a origem da assinatura.
+--
+-- ─── Backfill: deliberadamente NULL ───────────────────────────────────────
+-- `NULL` significa "sem restrição além de `startedAt`" — exatamente o
+-- comportamento anterior a esta coluna.
+--
+-- Assinaturas ATIVAS: continuam gerando idêntico ao que geravam antes. É o
+-- requisito do item 10, e sai de graça com o default nulo.
+--
+-- Assinaturas PAUSADAS: não existe registro de QUANDO foram pausadas. O
+-- schema não guarda isso e nenhum outro dado permite inferir. Preencher
+-- `activeSince` aqui exigiria inventar uma data.
+--
+-- A escolha conservadora é deixar nulo e gravar o marco na PRIMEIRA
+-- reativação após esta migration. A consequência, que fica documentada: uma
+-- assinatura pausada ANTES desta migration, ao ser reativada, terá o marco
+-- fixado no momento da reativação — e portanto também não fará catch-up. O
+-- resultado prático coincide com a política nova; o que não temos é o
+-- histórico de que ela esteve pausada.
+ALTER TABLE "Subscription" ADD COLUMN "activeSince" TEXT;

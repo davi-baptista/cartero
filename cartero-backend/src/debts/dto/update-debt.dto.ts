@@ -55,4 +55,17 @@ export class UpdateDebtDto {
   @IsOptional()
   @IsEnum(TransactionType)
   paymentType?: TransactionType;
+
+  /**
+   * Data em que a dívida foi paga de fato.
+   *
+   * Faltava aqui. O `MarkAsPaidDialog` é compartilhado com Recebíveis e sempre
+   * pediu a data, mas sem o campo no DTO o `ValidationPipe` (`whitelist: true`)
+   * a descartava em silêncio e o serviço gravava `new Date()`. Quem registrasse
+   * hoje um pagamento feito na semana passada via a data de hoje — e o mesmo
+   * diálogo respeitava a escolha quando o item era uma cobrança.
+   */
+  @IsOptional()
+  @IsDateString()
+  paymentDate?: string;
 }

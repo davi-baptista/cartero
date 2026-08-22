@@ -1,5 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import {
+  buildInvoiceKey,
+  forecastInvoiceLookups,
+  forecastSubscriptionOccurrences,
+  type ForecastableSubscription,
+  type ForecastOccurrence,
+  type KnownInvoice,
+} from './subscription-forecast.helper';
 
 /** Uma compra parcelada ainda em aberto. */
 export interface ActiveInstallment {
@@ -36,6 +44,12 @@ export class CommitmentsService {
       }),
     ]);
 
+    /**
+     * Custo recorrente mensal.
+     *
+     * Continua sendo a soma das ativas — é a leitura de "quanto por mês", não
+     * uma projeção. A projeção real, mês a mês, está em `forecast`.
+     */
     const monthlySubscriptions = subscriptions.reduce(
       (sum, s) => sum + Number(s.amount),
       0,
@@ -47,17 +61,34 @@ export class CommitmentsService {
     const own = installments.filter((item) => !item.personName);
     const others = installments.filter((item) => item.personName);
 
+    const { months, nextOccurrences } = await this.getForecast(userId);
+
     return {
       installments: own,
       othersInstallments: others,
       subscriptions,
+      /**
+       * Próxima cobrança de cada assinatura, com a data REAL da ocorrência.
+       *
+       * A tela mostrava só a regra ("todo dia 12"), então uma assinatura no dia
+       * 31 exibia um dia que fevereiro não tem. Vem do backend porque a regra
+       * é a mesma da geração — replicá-la no cliente criaria divergência.
+       */
+      subscriptionOccurrences: nextOccurrences.map((occurrence) => ({
+        subscriptionId: occurrence.subscriptionId,
+        amount: occurrence.amount,
+        chargeDate: occurrence.chargeDate,
+        financialPeriod: occurrence.financialPeriod,
+        invoiceStatus: occurrence.invoiceStatus,
+        blocked: occurrence.blocked,
+      })),
       totals: {
         installmentsRemaining: own.reduce((sum, i) => sum + i.remaining, 0),
         othersRemaining: others.reduce((sum, i) => sum + i.remaining, 0),
         monthlySubscriptions,
       },
       /** Custo fixo projetado para os próximos meses. */
-      forecast: await this.getForecast(userId, monthlySubscriptions),
+      forecast: months,
     };
   }
 
@@ -141,20 +172,41 @@ export class CommitmentsService {
   }
 
   /**
-   * Custo fixo dos próximos 6 meses: parcelas já contratadas mais o valor
-   * recorrente das assinaturas.
+   * Custo fixo dos próximos meses — parcelas já contratadas e assinaturas.
+   *
+   * ─── O que mudou ─────────────────────────────────────────────────────────
+   *
+   * A versão anterior aplicava a soma das assinaturas ativas IGUAL nos seis
+   * meses, ignorando `dayOfMonth`, `startedAt`, `activeSince`,
+   * `lastGeneratedFor` e a competência da fatura. O número não correspondia a
+   * nada que o sistema fosse gerar: uma assinatura criada ontem já aparecia
+   * cobrando em todos os meses, uma pausada continuava somando, e uma cobrança
+   * de cartão feita depois do fechamento inflava o mês errado.
+   *
+   * Agora a projeção vem de `forecastSubscriptionOccurrences`, que usa as
+   * mesmas regras da geração real — a primeira ocorrência coincide com o
+   * `nextCharge` que a tela de assinaturas mostra.
+   *
+   * ─── Consultas ───────────────────────────────────────────────────────────
+   *
+   * Três, independente de quantas assinaturas existam: bancos, faturas do
+   * período (uma consulta agregada por todas as competências alcançadas) e
+   * parcelas da janela. Sem N+1.
    */
-  private async getForecast(userId: string, monthlySubscriptions: number) {
+  private async getForecast(userId: string, horizonMonths = 6) {
     const now = new Date();
+
     const months: Array<{
       month: number;
       year: number;
       installments: number;
       subscriptions: number;
       total: number;
+      /** Ocorrências suprimidas — não somam, mas explicam a ausência. */
+      blocked: number;
     }> = [];
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < horizonMonths; i++) {
       const d = new Date(
         Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + i, 1),
       );
@@ -162,24 +214,143 @@ export class CommitmentsService {
         month: d.getUTCMonth() + 1,
         year: d.getUTCFullYear(),
         installments: 0,
-        subscriptions: monthlySubscriptions,
-        total: monthlySubscriptions,
+        subscriptions: 0,
+        total: 0,
+        blocked: 0,
       });
     }
 
     const first = months[0];
     const last = months[months.length - 1];
 
+    const [banks, activeSubscriptions] = await Promise.all([
+      this.prisma.bank.findMany({
+        where: { userId },
+        select: {
+          id: true,
+          isArchived: true,
+          invoiceDueDate: true,
+          invoiceDueDaysAfterClose: true,
+        },
+      }),
+      this.prisma.subscription.findMany({
+        where: { userId, isActive: true },
+        orderBy: { dayOfMonth: 'asc' },
+      }),
+    ]);
+
+    const schedules = new Map(
+      banks.map((bank) => [
+        bank.id,
+        {
+          invoiceDueDate: bank.invoiceDueDate,
+          invoiceDueDaysAfterClose: bank.invoiceDueDaysAfterClose,
+        },
+      ]),
+    );
+    const archivedBankIds = new Set(
+      banks.filter((bank) => bank.isArchived).map((bank) => bank.id),
+    );
+
+    const forecastable: ForecastableSubscription[] = activeSubscriptions.map(
+      (subscription) => ({
+        id: subscription.id,
+        title: subscription.title,
+        amount: Number(subscription.amount),
+        type: subscription.type,
+        dayOfMonth: subscription.dayOfMonth,
+        startedAt: subscription.startedAt,
+        activeSince: subscription.activeSince,
+        lastGeneratedFor: subscription.lastGeneratedFor,
+        isActive: subscription.isActive,
+        bankId: subscription.bankId,
+      }),
+    );
+
+    /**
+     * Faturas existentes das competências que a projeção vai tocar.
+     *
+     * As competências são calculadas ANTES da consulta, para buscar todas de
+     * uma vez. Sem isso seria uma query por ocorrência — e uma assinatura de
+     * cartão gera seis por horizonte.
+     */
+    const lookups = forecastInvoiceLookups(
+      forecastable,
+      schedules,
+      horizonMonths,
+      now,
+    );
+
+    const knownInvoices = new Map<string, KnownInvoice>();
+    if (lookups.length > 0) {
+      const rows = await this.prisma.invoice.findMany({
+        where: {
+          userId,
+          OR: lookups.map(({ bankId, year, month }) => ({
+            bankId,
+            year,
+            month,
+          })),
+        },
+        select: {
+          bankId: true,
+          year: true,
+          month: true,
+          status: true,
+          dueDate: true,
+        },
+      });
+
+      for (const row of rows) {
+        knownInvoices.set(
+          buildInvoiceKey(row.bankId, row.year, row.month),
+          row,
+        );
+      }
+    }
+
+    const occurrences = forecastSubscriptionOccurrences({
+      subscriptions: forecastable,
+      schedules,
+      invoices: knownInvoices,
+      archivedBankIds,
+      horizonMonths,
+      today: now,
+    });
+
+    for (const occurrence of occurrences) {
+      const slot = months.find(
+        (m) =>
+          m.month === occurrence.financialPeriod.month &&
+          m.year === occurrence.financialPeriod.year,
+      );
+      if (!slot) continue;
+
+      // Bloqueada não soma: a geração real não vai criar esse lançamento, e
+      // contabilizá-lo prometeria um gasto que não acontece.
+      if (occurrence.blocked) {
+        slot.blocked += 1;
+        continue;
+      }
+
+      slot.subscriptions += occurrence.amount;
+      slot.total += occurrence.amount;
+    }
+
+    /**
+     * Parcelas futuras — Transactions que já existem.
+     *
+     * Nada é reprojetado: usa o `amount` persistido de cada parcela e a fatura
+     * real. Terceiros ficam de fora (`personId: null`) porque o valor volta
+     * como recebível e não é custo pessoal.
+     */
     const rows = await this.prisma.transaction.findMany({
       where: {
         userId,
         type: 'CREDIT_CARD',
         isRefund: false,
         title: { contains: '/' },
-        // Compras em nome de terceiros voltam como recebível — a projeção
-        // mostra só o que sai do bolso.
         personId: null,
-        // Janela do primeiro ao último mês da projeção.
         invoice: {
           AND: [
             {
@@ -214,6 +385,34 @@ export class CommitmentsService {
       slot.total += Number(tx.amount);
     }
 
-    return months;
+    return {
+      months,
+      /** Próxima cobrança de cada assinatura, com data real. */
+      nextOccurrences: this.buildSubscriptionOccurrences(occurrences),
+    };
+  }
+
+  /**
+   * Próximas cobranças de assinatura, para a lista da tela.
+   *
+   * Devolve a OCORRÊNCIA concreta — data real com clamp aplicado — e não a
+   * regra ("todo dia 12"). A tela mostrava só a regra, então uma assinatura no
+   * dia 31 exibia um dia que fevereiro não tem.
+   */
+  private buildSubscriptionOccurrences(
+    occurrences: ForecastOccurrence[],
+  ): ForecastOccurrence[] {
+    // Uma por assinatura: a próxima. O resto do horizonte já está nos totais
+    // mensais, e repetir seis linhas por assinatura afogaria a lista.
+    const seen = new Set<string>();
+    const next: ForecastOccurrence[] = [];
+
+    for (const occurrence of occurrences) {
+      if (seen.has(occurrence.subscriptionId)) continue;
+      seen.add(occurrence.subscriptionId);
+      next.push(occurrence);
+    }
+
+    return next;
   }
 }

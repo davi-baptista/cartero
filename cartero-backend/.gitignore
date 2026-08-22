@@ -5,3 +5,6 @@ node_modules
 /generated/prisma
 
 /generated/prisma
+
+# Relatórios de cobertura de testes
+/coverage

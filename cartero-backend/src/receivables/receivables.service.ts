@@ -1,11 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Prisma, Receivable, TransactionType } from '@prisma/client';
+import { Prisma, Receivable } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
+import { findOrCreateSystemReceivableBank } from 'src/common/helpers/invoice.helper';
 import {
-  findOrCreateInvoice,
-  findOrCreateSystemReceivableBank,
-} from 'src/common/helpers/invoice.helper';
+  createReceivablePaymentTransaction,
+  removeSettlementTransaction,
+} from 'src/common/helpers/settlement.core';
 import { parseDateFilterEnd, parseDateFilterStart, parseDateOnly } from 'src/common/helpers/date-only.helper';
 import {
   RECEIVABLE_RECEIVED_CATEGORY_NAME,
@@ -13,6 +14,11 @@ import {
   SYSTEM_CATEGORY_ICON,
 } from 'src/common/constants/system-categories';
 import { PrismaService } from 'src/prisma/prisma.service';
+import {
+  assertAutomaticReceivableNotDeleted,
+  assertNotAutomaticReceivable,
+  assertReceivableNotReceived,
+} from 'src/common/helpers/settlement.guard';
 import { CreateReceivableDto } from './dto/create-receivable.dto';
 import { UpdateReceivableDto } from './dto/update-receivable.dto';
 import { FindReceivablesDto } from './dto/find-receivables.dto';
@@ -116,6 +122,20 @@ export class ReceivablesService {
     );
     const normalizedScope = this.normalizeScope(scope);
 
+    /**
+     * Duas guardas antes de qualquer escrita.
+     *
+     * A auditoria encontrou este método sem nenhuma: um `PATCH { amount }`
+     * passava tanto numa cobrança já recebida (divergindo da transação de
+     * recebimento) quanto numa cobrança automática (divergindo da compra, e
+     * sendo depois sobrescrito por `syncLinkedReceivable` sem aviso).
+     *
+     * As duas só disparam quando um fato FINANCEIRO muda — descrição continua
+     * editável nos dois casos.
+     */
+    assertReceivableNotReceived(existing, dto, existing);
+    assertNotAutomaticReceivable(existing, dto, existing);
+
     let debtorName = dto.debtorName;
     if (dto.personId) {
       const person = await this.entityValidationService.validatePerson(
@@ -205,70 +225,37 @@ export class ReceivablesService {
                 RECEIVABLE_RECEIVED_CATEGORY_COLOR,
               );
 
-            let invoiceId: string | null = null;
-            if (paymentType === TransactionType.CREDIT_CARD && paymentBank) {
-              const invoice = await findOrCreateInvoice(
-                tx,
+            /*
+              Mesmo núcleo que o settle de Pessoa usa. O `type` da transação é
+              sempre INCOME lá dentro — `paymentType` só decide se o valor
+              entra numa fatura.
+
+              A fatura só é considerada quando o usuário escolheu um banco
+              próprio; no banco de sistema não existe fatura a alimentar.
+            */
+            paymentTransactionId = await createReceivablePaymentTransaction(
+              tx,
+              {
                 userId,
-                paymentBank.id,
-                paymentBank.invoiceDueDate,
-                paymentBank.invoiceDueDaysAfterClose,
+                receivable,
                 paidAt,
-              );
-              invoiceId = invoice.id;
-            }
-
-            const paymentTransaction = await tx.transaction.create({
-              data: {
-                userId,
-                bankId: receivableBank!.id,
-                categoryId: category.id,
-                invoiceId,
-                title: receivable.title,
-                type: TransactionType.INCOME, // forced regardless of paymentType
-                amount: receivable.amount,
-                date: paidAt,
+                bank: receivableBank!,
+                paymentType: paymentBank ? (paymentType ?? null) : null,
+                category,
               },
-            });
-
-            if (invoiceId) {
-              await tx.invoice.update({
-                where: { id: invoiceId, userId },
-                data: { totalAmount: { increment: receivable.amount } },
-              });
-            }
-
-            paymentTransactionId = paymentTransaction.id;
+            );
           } else if (paidAt === null && receivable.paymentTransactionId) {
-            const paymentTransaction = await tx.transaction.findUnique({
-              where: { id: receivable.paymentTransactionId, userId },
-            });
-
+            // Zera o vínculo antes do delete — o FK é `ON DELETE SET NULL`.
             await tx.receivable.update({
               where: { id: receivable.id, userId },
               data: { paymentTransactionId: null },
             });
 
-            if (paymentTransaction) {
-              await tx.transaction.delete({
-                where: { id: paymentTransaction.id, userId },
-              });
-
-              if (paymentTransaction.invoiceId) {
-                const invoice = await tx.invoice.update({
-                  where: { id: paymentTransaction.invoiceId, userId },
-                  data: {
-                    totalAmount: { decrement: paymentTransaction.amount },
-                  },
-                });
-
-                if (Number(invoice.totalAmount) === 0) {
-                  await tx.invoice.delete({
-                    where: { id: invoice.id, userId },
-                  });
-                }
-              }
-            }
+            await removeSettlementTransaction(
+              tx,
+              userId,
+              receivable.paymentTransactionId,
+            );
 
             paymentTransactionId = null;
           }
@@ -311,6 +298,17 @@ export class ReceivablesService {
       id,
       userId,
     );
+
+    /**
+     * Cobrança automática não é excluída por aqui.
+     *
+     * O código apagava a Transaction DE ORIGEM junto (cascata invertida: o
+     * filho removendo o pai), e o caminho oposto — excluir a transação com a
+     * cobrança recebida — era bloqueado. A mesma inconsistência era alcançável
+     * pelo lado desprotegido.
+     */
+    assertAutomaticReceivableNotDeleted(existing);
+
     const normalizedScope = this.normalizeScope(scope);
 
     return await this.prisma.$transaction(

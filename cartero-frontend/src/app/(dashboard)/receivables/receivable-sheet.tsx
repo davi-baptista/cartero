@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useForm, useWatch, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { AlertCircle, Check, Loader2, Plus, X } from 'lucide-react'
+import { AlertCircle, ArrowUpRight, Check, Loader2, Plus, X } from 'lucide-react'
+import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Sheet,
@@ -72,6 +73,43 @@ export function ReceivableSheet({
   onSubmit,
 }: ReceivableSheetProps) {
   const isEditing = editTarget !== null
+
+  /**
+   * Cobrança derivada de uma compra: os fatos financeiros vêm dela.
+   *
+   * O backend recusa alterá-los aqui (`AUTOMATIC_RECEIVABLE_MANAGED_BY_
+   * TRANSACTION`); desabilitar os campos evita que o usuário digite algo que
+   * será recusado no save.
+   */
+  const isAutomatic = Boolean(editTarget?.transactionId)
+
+  /** Já recebida: os fatos financeiros estão comprovados por uma transação. */
+  const isSettled = Boolean(editTarget?.isPaid)
+
+  /** Bloqueia valor, contraparte e datas — não o texto. */
+  const financialLocked = isAutomatic || isSettled
+
+  /**
+   * Link para a compra que originou a cobrança.
+   *
+   * `occurredAt` é a data do lançamento; filtrar o dia inteiro chega na
+   * transação sem precisar de um parâmetro de deep-link que a página de
+   * transações ainda não tem.
+   */
+  const purchaseHref = (() => {
+    if (!isAutomatic) return null
+    const day = editTarget?.occurredAt?.slice(0, 10)
+    const transactionId = editTarget?.transactionId
+    if (!day || !transactionId) return null
+
+    /*
+      A data posiciona o extrato no mês certo; o `highlight` encontra a linha.
+
+      Só a data abria a página filtrada e deixava o usuário procurando — pior
+      quando a compra é parcelada e a parcela está dentro de um grupo fechado.
+    */
+    return `/transactions?startDate=${day}&endDate=${day}&highlight=${transactionId}`
+  })()
   const [debtorMode, setDebtorMode] = useState<DebtorMode>('manual')
   const [showInlineCreate, setShowInlineCreate] = useState(false)
   const [newPersonName, setNewPersonName] = useState('')
@@ -191,12 +229,61 @@ export function ReceivableSheet({
           </SheetDescription>
         </SheetHeader>
 
-        {editTarget?.transactionId && (
-          <div className="mx-6 mt-4 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
-            <AlertCircle className="size-3.5 shrink-0 mt-0.5 text-amber-500" aria-hidden />
+        {/*
+          Origem automática: a compra é a fonte de verdade.
+
+          O texto anterior dizia que as alterações "não afetam a transação
+          original" — verdade, mas omitia o essencial: elas eram DESCARTADAS
+          na próxima edição da compra, sem aviso. Agora os campos financeiros
+          são desabilitados e o texto aponta o caminho certo.
+        */}
+        {isAutomatic && (
+          <div className="mx-6 mt-4 flex items-start gap-2 rounded-lg border border-pending/25 bg-pending/5 px-3 py-2.5">
+            <AlertCircle
+              className="mt-0.5 size-3.5 shrink-0 text-pending"
+              aria-hidden
+            />
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">
+                Gerada automaticamente por uma compra. Valor, pessoa e
+                vencimento vêm dela — para corrigi-los, edite a compra de
+                origem.
+              </p>
+              {/*
+                Atalho para a compra.
+
+                Dizer "edite a compra de origem" sem dar o caminho obrigava o
+                usuário a procurar a transação à mão no extrato. O link filtra
+                o dia do lançamento, que é o que a página de transações
+                aceita por URL.
+              */}
+              {purchaseHref && (
+                <Link
+                  href={purchaseHref}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-2 hover:underline"
+                >
+                  Ver a compra
+                  <ArrowUpRight className="size-3" aria-hidden />
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/*
+          Já recebida: fato concluído.
+          Existe uma transação de recebimento com este valor; alterá-lo aqui
+          deixaria as duas coisas divergentes para sempre.
+        */}
+        {isSettled && !isAutomatic && (
+          <div className="mx-6 mt-4 flex items-start gap-2 rounded-lg border border-paid/25 bg-paid/5 px-3 py-2.5">
+            <AlertCircle
+              className="mt-0.5 size-3.5 shrink-0 text-paid"
+              aria-hidden
+            />
             <p className="text-xs text-muted-foreground">
-              Esta cobrança foi criada automaticamente a partir de uma transação. Alterações
-              feitas aqui (valor, título, etc) não afetam a transação original.
+              Cobrança já recebida. Para alterar valor, pessoa ou vencimento,
+              desfaça o recebimento primeiro.
             </p>
           </div>
         )}
@@ -217,11 +304,17 @@ export function ReceivableSheet({
                   key={mode}
                   type="button"
                   onClick={() => handleModeChange(mode)}
+                  disabled={financialLocked}
+                  aria-pressed={debtorMode === mode}
                   className={cn(
                     'rounded-full border px-3 py-0.5 text-xs font-medium transition-colors',
                     debtorMode === mode
                       ? 'border-transparent bg-primary/15 text-primary'
-                      : 'border-border bg-transparent text-muted-foreground hover:border-muted-foreground/30 hover:text-foreground',
+                      : 'border-border bg-transparent text-muted-foreground',
+                    financialLocked
+                      ? 'cursor-not-allowed opacity-50'
+                      : debtorMode !== mode &&
+                          'hover:border-muted-foreground/30 hover:text-foreground',
                   )}
                 >
                   {mode === 'manual' ? 'Digitar nome' : 'Pessoa cadastrada'}
@@ -235,6 +328,7 @@ export function ReceivableSheet({
                 id="debtorName"
                 placeholder="Ex: Maria, Empresa Y..."
                 aria-invalid={!!errors.debtorName}
+                disabled={financialLocked}
                 {...register('debtorName')}
               />
             ) : (
@@ -246,7 +340,7 @@ export function ReceivableSheet({
                     <Select
                       value={field.value ?? ''}
                       onValueChange={(v) => field.onChange(v || undefined)}
-                      disabled={personsLoading}
+                      disabled={personsLoading || financialLocked}
                     >
                       <SelectTrigger className="w-full" aria-label="Selecionar pessoa">
                         <SelectValue placeholder={personsLoading ? 'Carregando...' : 'Selecionar pessoa'}>
@@ -354,6 +448,7 @@ export function ReceivableSheet({
                   value={field.value}
                   onChange={field.onChange}
                   aria-invalid={!!errors.amount}
+                  disabled={financialLocked}
                 />
               )}
             />
@@ -374,6 +469,7 @@ export function ReceivableSheet({
                     value={field.value}
                     onChange={field.onChange}
                     placeholder="Selecionar data"
+                    disabled={financialLocked}
                   />
                 )}
               />
@@ -392,7 +488,7 @@ export function ReceivableSheet({
                     value={field.value}
                     onChange={field.onChange}
                     placeholder="Selecionar data"
-                    disabled={!!editTarget?.parentId}
+                    disabled={financialLocked || !!editTarget?.parentId}
                   />
                 )}
               />

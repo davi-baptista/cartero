@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { SubscriptionsService } from './subscriptions.service';
 import { SubscriptionsController } from './subscriptions.controller';
 import { CommonModule } from 'src/common/common.module';
-import { CronSecretGuard } from 'src/notifications/cron-secret.guard';
+import { CronSecretGuard } from 'src/auth/cron-secret.guard';
 
 @Module({
   imports: [CommonModule],

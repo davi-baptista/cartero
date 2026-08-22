@@ -15,7 +15,8 @@
 
 | Entidade | Campos relevantes |
 |---|---|
-| User | id, email, password (bcrypt), name, salary? |
+| User | id, email, password (bcrypt), name, **salary?** (cache do mês corrente — fonte é SalaryHistory) |
+| SalaryHistory | id, user_id, amount, **month** (1-12), **year**, `@@unique([userId, year, month])` |
 | Bank | id, user_id, name, invoice_close_date (1-31), invoice_due_date (1-31) |
 | Category | id, user_id, name, color? (hex), icon? (nome do ícone lucide), **is_system** (default false) |
 | Transaction | id, user_id, bank_id, category_id, invoice_id?, parent_id?, person_id?, type (INCOME\|CREDIT_CARD\|DEBIT_CARD\|PIX\|BOLETO), title, amount, description?, date |
@@ -50,9 +51,10 @@
 - Só aparecem no extrato geral quando `isPaid = true`
 
 **Persons:**
-- Entidade de referência; `person_id` é opcional em debts e receivables
-- `netBalance = totalReceivables - totalDebts` (pendentes vinculados à pessoa)
-- Negativo = você deve mais; positivo = te devem mais
+- Entidade de referência; `person_id` é opcional em debts e receivables (contraparte por nome livre continua válida)
+- **O consolidado é ALL-TIME** — ver seção "Consolidado de Pessoas" abaixo
+- `netBalance = receivablePending - debtPending`, ambos somando TODAS as pendências (sem recorte de mês)
+- Negativo = você deve mais; positivo = te devem mais. **Saldo zero ≠ quitado**
 
 **Alertas (ao abrir o app):**
 1. Faturas com `due_date = hoje` e `status != PAID`
@@ -64,13 +66,15 @@
 GET /transactions?startDate=&endDate=&bankId=&categoryId=&type=
 GET /debts?personId=
 GET /receivables?personId=
-GET /persons/:id/statement?startDate=&endDate=
+GET /persons/:id/statement?startDate=&endDate=   → o intervalo recorta APENAS period/history (por paidAt); summary e pending são all-time
 GET /invoices/:id          → retorna invoice com transactions incluídas (inclui category e person de cada transaction)
 PATCH /invoices/:id        → usado para marcar PAID
 DELETE|PATCH /transactions/:id?scope=ONE|NEXT|ALL
 DELETE|PATCH /debts/:id?scope=ONE|NEXT|ALL       → PATCH com isPaid:true exige paymentBankId + paymentType
 DELETE|PATCH /receivables/:id?scope=ONE|NEXT|ALL → idem
-GET /budget?month=&year=  → salary, totalInvoices, totalReimbursable, netAmount, invoices[]
+GET /budget?month=&year=  → salary (do PERÍODO), salaryKnown, salaryEffectiveFrom, remaining, committedPct, debts{dueInMonth,priorCarry,total,priorCarryItems}, receivables{dueInMonth,count} (informativo), totalInvoices, totalReimbursable, netAmount, invoices[]
+GET /salary?year=&month=   → { known, amount, effectiveFrom } — resolve a renda da competência
+PUT /salary                → { amount, month, year } — upsert idempotente da competência
 GET /health                → keepalive público (sem auth), retorna { status: 'ok' }, não toca no banco
 GET /alerts                → ⏳ pendente
 GET /statement             → ⏳ pendente
@@ -94,10 +98,14 @@ GET /statement             → ⏳ pendente
 
 ## Categorias de sistema (`Category.isSystem`)
 
-- Duas categorias são **auto-criadas pelo backend** na primeira vez que são necessárias, via `EntityValidationService.findOrCreateSystemCategory` (busca por `isSystem: true` + nome, cria se não existir):
+- **Três** categorias são auto-criadas pelo backend na primeira vez que são necessárias, via `EntityValidationService.findOrCreateSystemCategory` (busca **apenas por nome** — a unicidade é `(userId, name)`, então filtrar por `isSystem` faria o create seguinte violar a constraint):
   - **"Dívida paga"** — cor `#65a30d` (verde-oliva, puxado pro vermelho/amarelo)
   - **"Receita recebida"** — cor `#22c55e` (verde vívido)
-  - Ambas usam ícone `"Lock"` (via `SYSTEM_CATEGORY_ICON` em `common/constants/system-categories.ts`), que existe só em um mapa separado (`SYSTEM_ICON_MAP` em `lib/category-icons.ts`) — **nunca aparece no seletor de ícones normal** (`CATEGORY_ICON_GROUPS`), só é resolvido para exibição
+  - **"Assinatura"** — cor `#8b5cf6` (violeta) — default dos lançamentos gerados por Subscription quando nenhuma categoria é escolhida
+  - Todas usam ícone `"Lock"` (via `SYSTEM_CATEGORY_ICON` em `common/constants/system-categories.ts`), que existe só em um mapa separado (`SYSTEM_ICON_MAP` em `lib/category-icons.ts`) — **nunca aparece no seletor de ícones normal** (`CATEGORY_ICON_GROUPS`), só é resolvido para exibição
+- **Categoria manual homônima NÃO é promovida**: se o usuário já tem uma categoria chamada "Assinatura" com `isSystem: false`, ela é **reutilizada como está** — `isSystem`, ícone e cor dele permanecem. A versão anterior a convertia em categoria de sistema como efeito colateral de criar uma assinatura, e ela deixava de ser editável e excluível sem caminho de volta pela UI
+- **Categorias já marcadas como `isSystem` são preservadas**: não há como distinguir uma criada assim de uma adotada indevidamente antes da correção, então nenhuma despromoção automática é tentada
+- 5 call sites: pagar dívida (`DebtsService.update`), receber recebível (`ReceivablesService.update`), criar/editar assinatura (`SubscriptionsService.resolveCategory`) e os dois ramos do settle de pessoa (`PersonsService.settle`)
 - **Nunca selecionáveis manualmente**: excluídas do Select de categoria no formulário de transação (`transaction-sheet.tsx`, via `selectableCategories = categories.filter(c => !c.isSystem)`); ainda aparecem corretamente se já atribuídas a uma transação existente
 - **Protegidas no backend**: `CategoriesService.create()`/`update()` rejeitam (400) os nomes reservados (`SYSTEM_CATEGORY_NAMES`); `update()`/`remove()` bloqueiam (403) qualquer categoria com `isSystem: true`
 - **Protegidas no frontend**: página `/categories` esconde os botões de editar/excluir para linhas de sistema e mostra badge "Sistema"
@@ -210,7 +218,6 @@ Se qualquer um desses três parâmetros estiver presente na URL, o filtro padrã
 - `PATCH /banks/:id` → recalcular status das faturas ao alterar `invoiceCloseDate`/`invoiceDueDate` (ver TODO.md)
 - `PATCH /transactions/:id` → re-atribuir invoice ao alterar `date` (ver TODO.md)
 - `POST /invoices/sync` → endpoint protegido por `x-cron-secret` que executa sync de status das faturas + envia e-mail de alerta com faturas/dívidas vencidas ou vencendo hoje; chamado 1x/dia pelo cron-job.org
-- Histórico de salário (`SalaryHistory`) para cálculo retroativo preciso em `/budget`
 - **Notificações — avaliar canais alternativos ao e-mail:**
   - Push notification via Web Push (VAPID keys + Service Worker no frontend) — aparece mesmo com app fechado
   - WhatsApp via API de bot (ex: Twilio, Z-API, Evolution API)
@@ -218,6 +225,37 @@ Se qualquer um desses três parâmetros estiver presente na URL, o filtro padrã
 
 ### Infra
 - `GET /health` configurado no cron-job.org para pingar a cada 10 min e manter o Render (free tier) acordado
+
+### Endpoints de cron (executor externo)
+
+Ambos autenticam pelo **mesmo** `CRON_SECRET`, via header `x-cron-secret` com o
+valor **cru** — não é `Authorization: Bearer`. Não existe prefixo `/api`: o
+backend não usa `setGlobalPrefix`, então o path é literal. O host é o do
+**backend** (Render), nunca o do frontend.
+
+| Rotina | Método | Path | Header | Sucesso | Falha |
+|---|---|---|---|---|---|
+| Geração de assinaturas | `POST` | `/subscriptions/run-all` | `x-cron-secret` | `201` quando `failed = 0` | `500` quando `failed > 0`; `401` se o segredo não conferir |
+| Alerta de vencimentos | `POST` | `/notifications/run` | `x-cron-secret` | `2xx` | `401` se o segredo não conferir |
+
+- **`skipped` não é falha**: fatura já paga é decisão do domínio e mantém a resposta em sucesso. Só `failed > 0` produz não-2xx
+- O `500` de falha parcial **não reverte** nada — os ciclos confirmados permanecem. O retry provocado pelo status é seguro: `lastGeneratedFor` usa update condicional e a criação usa `creationKey`
+- Corpo do `500`: `{ code: 'SUBSCRIPTION_GENERATION_PARTIAL_FAILURE', summary }` com `generated`/`skipped`/`failed`/`failures[]` sanitizados (sem stack, sem erro cru do Prisma)
+- `CRON_SECRET` é validado no boot e **recusa string vazia ou só espaços** — antes a aplicação subia e o guard rejeitava 100% das chamadas com 401, sem indicar a causa
+- `CronSecretGuard` vive em `src/auth/` (ao lado de `JwtAuthGuard`); antes estava em `notifications/` e era importado por `subscriptions/`, uma dependência invertida
+
+### Executores da geração de assinaturas
+
+Dois, ambos idempotentes; a proteção de concorrência impede duplicidade.
+
+| Executor | Gatilho | Origem no log |
+|---|---|---|
+| Cron externo (primário) | `POST /subscriptions/run-all`, 1x/dia | `external-cron` |
+| Runner do dashboard (recuperação) | mount do layout autenticado | `dashboard` |
+
+`AppScheduler` **não** gera assinaturas — sua única rotina é `syncInvoiceStatus`
+(transição de `InvoiceStatus`), no bootstrap e à meia-noite. **Não há execução
+duplicada de Subscription.**
 
 ### Frontend ✅ Completo
 - Auth (login/registro com auto-login após cadastro)
@@ -312,10 +350,37 @@ Marcar uma Dívida como paga ou um Receivable como recebido agora gera automatic
 - Confirmado → deleta a transação vinculada (e decrementa/remove a invoice se era CREDIT_CARD), zera `paymentTransactionId`
 
 **Excluir Dívida/Receivable diretamente** (não desmarcar, apagar o registro):
-- Cascade-deleta a transação de pagamento vinculada também, com `DeleteLinkedWarningDialog` (componente compartilhado, prop `kind: 'debt' | 'receivable'`) avisando antes — mesmo padrão da feature de reembolsáveis
+- `DeleteLinkedWarningDialog` (compartilhado, props `kind: 'debt' | 'receivable'` e `link: 'payment' | 'purchase'`) oferece **escolha explícita**: "Manter a transação" (padrão, botão primário) ou "Excluir as duas". O padrão preserva porque a transação é o registro do dinheiro que se moveu de fato — junto com a data original, é o dado que ninguém reconstrói depois
+- A escolha viaja como `?preserveTransaction=true` para `DELETE /debts/:id` e `DELETE /receivables/:id`
 - Receivable com **ambos** `transactionId` e `paymentTransactionId` → delete cascateia os dois, cada um via seu próprio FK (nunca colidem, são transações diferentes criadas por fluxos diferentes)
 
 **Edição da transação gerada:** não sincroniza de volta para a Dívida/Receivable (mesma independência da feature de reembolsáveis).
+
+### Integridade de quitação (Fase 8A)
+
+Guardas centralizadas em `common/helpers/settlement.guard.ts` — a mesma fonte para os dois domínios, porque a auditoria encontrou proteção cuidadosa num sentido e nenhuma no inverso.
+
+| Situação | Código | Bloqueia | Libera |
+|---|---|---|---|
+| Dívida paga | `PAID_DEBT_EDIT_BLOCKED` | valor, contraparte, datas | título, descrição, `isPaid: false` |
+| Cobrança recebida | `PAID_RECEIVABLE_EDIT_BLOCKED` | idem | idem |
+| Cobrança automática (`transactionId`) | `AUTOMATIC_RECEIVABLE_MANAGED_BY_TRANSACTION` | edição financeira **e** delete direto | título, descrição |
+| Transação que é comprovante | `PAYMENT_TRANSACTION_LINKED` | `amount`, `date`, `bankId`, `type`, `isRefund`, `personId` | título, descrição, categoria |
+
+- A condição é **`changesSettlementFacts` (comparação de valor), não `isPaid`** — se a guarda disparasse pelo simples estado de pago, `{ isPaid: false }` seria recusado e o registro ficaria preso: incorrigível porque está pago, e não reabrível porque a guarda recusa. `settlement-unmark.spec.ts` existe só para vigiar essa propriedade
+- **Não existe o invariante `isPaid = true` → `paymentTransactionId != null`.** Com `createExpenseOnDebtPaid` desligado, pagar não gera transação — e isso é escolha legítima do usuário
+- `GET /banks` já exclui `isSystem`, mas o banco de sistema chega ao frontend **embutido** nos registros (`transaction.bank`). `lib/bank-display.ts` (`bankDisplayName` / `isSelectableBank`) resolve o rótulo para "Não informado" e o mantém fora dos seletores — o nome técnico `__system_receivables__` nunca aparece
+- `NotificationsService` passou a respeitar `Debt.isAlertEnabled`: o campo era gravável, tinha switch rotulado no formulário e sino cortado na linha, mas **nenhum leitor o consultava** — desligar o alerta não desligava nada
+
+### Apresentação de status (Dívidas e A Receber)
+
+- `lib/settlement-status.ts` é a fonte única: `settlementStatus` deriva de `isPaid` + `dueDate` (comparação por string ISO, nunca `Date` — evita o off-by-one em fuso negativo). **Sem enum persistido**: o status muda de valor sozinho à meia-noite
+- `components/settlement-status-dot.tsx` substitui as duas cópias byte a byte de `StatusDot`
+- Vocabulário: **"Em atraso"** — nunca "Vencido", "Vencida" ou "Atrasada". Os contadores das duas páginas usavam palavras diferentes para o mesmo estado; agora saem de `overdueCountLabel`
+- Pendente usa `text-pending` (âmbar). Recebível pendente **não** usa verde só por ser dinheiro entrando — verde é conclusão
+- As duas páginas distinguem `loading` / `error` / `success-empty` / `success-data`; o vazio exige `isSuccess`, e o erro tem `role="alert"` com botão de retry. Antes, API fora do ar exibia "Nenhuma dívida pendente"
+
+**Formulário de cobrança automática:** campos financeiros desabilitados, com link "Ver a compra" (`/transactions?startDate=&endDate=` no dia do `occurredAt`). O aviso anterior dizia que as alterações "não afetam a transação original" — verdade, mas omitia que eram descartadas por `syncLinkedReceivable` sem avisar.
 
 **Parcelamento:** cada parcela marcada como paga/recebida gera sua própria transação (a lógica roda dentro do loop de scope já existente — funciona corretamente mesmo em teoria com `scope=ALL`, embora a UI hoje só dispare o toggle com `scope=ONE`).
 
@@ -345,6 +410,350 @@ model Receivable {
 
 ---
 
+## Testes do frontend (Fase 10) ✅
+
+`npm test` no `cartero-frontend` roda **Vitest** sobre lógica pura — 103 testes
+em 5 arquivos. Sem jsdom, sem Testing Library, sem `@vitejs/plugin-react`: o que
+precisa de proteção são as funções que decidem valores financeiros, e todas são
+puras. (O `plugin-react` também conflita com a árvore de babel do shadcn.)
+
+| Arquivo | Protege |
+|---|---|
+| `money-semantics.spec.ts` | movimentado / sua parte / de outras pessoas, estornos, reconciliação de categorias |
+| `calendar-events.spec.ts` | competência, direção, status, dedupe, ordenação, dia civil |
+| `person-statement.spec.ts` | mensagem de WhatsApp, saldo zero ≠ quitação, normalização de telefone |
+| `settlement-status.spec.ts` | status derivado e vocabulário oficial |
+| `financial-matrix.spec.ts` | coerência CRUZADA entre as superfícies |
+
+`financial-matrix.spec.ts` é o que faltava: cada spec de módulo protegia uma
+superfície, e nenhum garantia que elas concordassem. Ele fixa o cenário canônico
+(fatura R$ 1.000 = R$ 700 próprios + R$ 300 da Eva) e afirma que **nenhuma
+superfície devolve R$ 400** — o número que aparece quando o recebível desconta
+duas vezes.
+
+## Calendário financeiro (Fase 9D) ✅
+
+### A pergunta
+
+> "Quais fatos financeiros têm uma data relevante neste mês?"
+
+Cada evento fica no mês da **sua própria data** — nunca é movido para o mês visível. `lib/calendar-events.ts` é puro (sem fetch), o que permitirá testá-lo na Fase 10.
+
+| Evento | Fonte | Data | Valor |
+|---|---|---|---|
+| `invoice-due` | Invoice | `dueDate` persistida | **bruto** + decomposição |
+| `debt` | Debt | `dueDate` | valor da dívida |
+| `receivable` | Receivable | `dueDate` (já sincronizada) | valor da cobrança |
+| `expense` / `income` / `refund` | Transaction | `date` | valor da transação |
+
+**`CREDIT_CARD` não gera evento individual.** Crédito é representado pelo vencimento da fatura; incluir a compra criaria dois eventos para o mesmo dinheiro — um no dia da compra, outro quando a fatura vence. A compra continua no Extrato. Crédito sem `invoiceId` (legado) simplesmente não gera evento — nenhuma data é inventada.
+
+### Overdue anterior NÃO reaparece — decisão de produto
+
+Uma dívida vencida em 15/06 e ainda aberta pertence ao calendário de **junho**. Mover a data para agosto mentiria sobre quando o fato aconteceu. "Atenção agora" é a superfície que garante a permanência visual do que está em atraso — as duas respondem perguntas diferentes.
+
+### Fatura: bruto com decomposição
+
+O valor primário é o **bruto** — é o que o banco cobra no vencimento. Quando há terceiros, uma linha secundária diz "R$ 700 seus · R$ 300 de outras pessoas"; sem terceiros ela é omitida (densidade).
+
+Isso explica por que o mesmo mês mostra R$ 1.000 no calendário e R$ 700 em "Seus gastos por categoria" — e **não** há compensação: um recebível de R$ 300 no mesmo dia coexiste com a fatura de R$ 1.000, sem abatê-la.
+
+O breakdown é um `Map` por `invoiceId` construído **uma vez**, fora do laço — nenhuma query por fatura.
+
+### Cor = direção, não status
+
+`out` (destructive) · `in` (receivable) · `neutral` (pending).
+
+A versão anterior pintava recebível pendente de verde, o mesmo token de "recebido": dinheiro que talvez entre lido como dinheiro que entrou. Status e direção são conceitos distintos — uma saída já paga continua sendo saída.
+
+Tipo e status aparecem em **texto** (`Fatura · Em atraso`), então a informação não depende de cor. Vocabulário oficial: "Em atraso", nunca "Vencida".
+
+### Fatos concluídos permanecem
+
+Fatura paga, dívida paga e cobrança recebida continuam no calendário do mês em que venceram, com status `Paga` / `Pago` / `Recebido` — o calendário é registro de fatos, não lista de pendências.
+
+Uma cobrança com vencimento 10/08 recebida em 20/08 gera **dois** eventos legítimos: o vencimento (dia 10) e a entrada real (dia 20). O mesmo vale para dívida paga com transação-espelho. Não é duplicidade — o calendário não soma eventos num total.
+
+### Sem total diário
+
+Auditado: não existia e não foi criado. Somar vencimento de fatura (bruto), dívida, recebível e movimentações num único número misturaria universos incompatíveis.
+
+### Detalhes
+
+- Identidade estável `<kind>:<id>` — antes a key era o índice do array, que impedia detectar a mesma entidade entrando duas vezes
+- Ordem no dia: fatura → dívida → recebível → saída → estorno → receita, com título como desempate. Antes era a ordem incidental dos arrays
+- Linhas são `Link` (teclado + menu de contexto), com `aria-label` completo: tipo, título, valor, status e decomposição
+- Navegação: fatura → `/banks/:id/invoices`; dívida/cobrança → `?highlight=`; transação → o deep-link do Extrato da Fase 8B, sem um segundo mecanismo
+- Dia civil por string ISO (`formatDateValue`), não `new Date().getDate()`
+- `key={ano-mês}` remonta a seção ao trocar de mês, no lugar do efeito que chamava `setState`
+- Erro **parcial**: o que carregou continua visível com aviso "Alguns eventos não puderam ser carregados" e retry. O vazio só aparece quando todas as fontes tiveram sucesso
+- **Zero requests novas** — reusa a resposta de `/transactions?invoicePeriod=true` que já alimenta as categorias
+
+## Visão Geral — semântica dos widgets (Fase 9C) ✅
+
+### Os três widgets
+
+A Visão Geral **não tem cards de Receitas/Gastos/Saldo** — a auditoria da Fase 9C confirmou que eles nunca existiram. Criar um card de renda planejada aqui é explicitamente fora de escopo: `SalaryHistory` é planejamento, `Transaction INCOME` é receita realizada.
+
+| Widget | Pergunta | Fonte | Recorte |
+|---|---|---|---|
+| Seus gastos por categoria | "quanto EU gastei nesta competência?" | `GET /transactions?invoicePeriod=true` | competência da fatura (crédito) / data (débito, PIX, boleto) |
+| Atenção agora | "o que exige minha atenção AGORA?" | `GET /invoices`, `/debts`, `/receivables` sem filtro | janela móvel de 7 dias a partir de hoje, **independente do mês selecionado** |
+| Calendário | "o que acontece neste mês?" | as mesmas listas já carregadas | mês exibido |
+
+`invoicePeriod=true` casa por `invoice: { year, month }` — a relação **real e persistida**, nunca derivada do Bank (o que a Fase 6B corrigiu). O ramo alternativo usa `invoiceId: null` + `date`, e é esse `null` que impede uma compra de crédito casar nos dois ramos.
+
+### Categorias reconciliam com o total
+
+`sum(categoryRows.amount) === ownExpenseTotal`, e o total agora aparece no cabeçalho para a reconciliação ser verificável.
+
+- Só `isOwnExpense` (sem `personId`) — compras de terceiros ficam fora
+- Estornos abatem a própria categoria (`expenseSignedAmount`), nunca inflam receita
+- **Categoria com estorno maior que o gasto CONTINUA na lista.** Antes era descartada por `amount > 0`: com R$ 300 em Restaurantes, R$ 350 de estorno e R$ 200 em Mercado, a tela exibia R$ 200 enquanto o gasto real era R$ 150. Sumir com a linha escondia justamente o fato interessante
+- Linha negativa: barra vazia, valor em `text-receivable`, percentual `—`. O denominador do percentual usa só as categorias positivas — a soma líquida poderia ser zero e produzir `Infinity`
+- Compra de terceiro tem benefício **uma única vez**: reduz a sua parte da fatura, e o recebível automático correspondente não reduz de novo (1000 bruto − 300 de Eva = 700, nunca 400)
+
+### Atenção agora
+
+- Deriva de `new Date()` e das listas **não filtradas** — navegar de agosto para julho não muda o universo. Microcopy "Independente do mês selecionado" existe porque o seletor fica logo acima
+- Itens em atraso de meses anteriores continuam visíveis; resolvidos (Debt paga, Receivable recebido, Invoice PAID) não entram
+- Faturas: `OVERDUE` sempre; `OPEN` se fecha em ≤7 dias (com fallback para `dueDate` quando o fechamento passou e o cron não rodou); `CLOSED` se vence em ≤7 dias
+- Não reutiliza `priorCarry` do Budget: aquele é snapshot de planejamento de um mês, este é estado atual
+
+### Estados por widget
+
+Cada widget tem query independente, então o erro é **localizado**: categorias podem falhar enquanto o painel de atenção carrega. `WidgetError` com `refetch` (nunca `window.location.reload()`).
+
+Antes não havia `isError` em nenhuma query — uma falha de API renderizava "Sem gastos no período", o app afirmando que o usuário não gastou nada quando apenas não conseguiu saber.
+
+### O que a Visão Geral NÃO faz
+
+- Não inclui `Debt` nas métricas financeiras (só Transactions/Invoices) — o Budget é a superfície de obrigação
+- Não projeta futuro: nem `SalaryHistory`, nem Subscription não gerada, nem Receivable hipotético. Compromissos é a superfície de projeção
+- Recebível pendente **não** é receita realizada; só a `paymentTransaction` INCOME é
+
+## Semântica do Orçamento (Fase 9B) ✅
+
+### O que a tela responde
+
+> "Quanto da minha renda está comprometido por obrigações e gastos atribuídos a este mês?"
+
+Visão de **planejamento mensal**. Não é saldo bancário, extrato, consolidado all-time da pessoa nem encontro de contas.
+
+### Fim da compensação Debt × Receivable
+
+A versão anterior calculava `debt - min(receivable, debt)` por pessoa. Com R$ 500 dos dois lados o orçamento mostrava **R$ 0** de dívida — e o `.filter(amount > 0)` fazia a pessoa **desaparecer da lista**, então a obrigação sumia da tela, não só do total.
+
+O Cartero não faz encontro de contas: quitar liquida cada item pelo próprio valor. Recebível é dinheiro **esperado**, não pagamento realizado.
+
+- Recebíveis **nunca** reduzem `debt`, `totalDebts`, `totalToPay` ou `committedPct`
+- Aparecem como informação (`receivables.dueInMonth`), com a microcopy "não abate o valor acima"
+- **Sem saldo líquido nesta superfície**, deliberadamente — reintroduziria a ambiguidade
+- O subtítulo "já descontado R$ X que <pessoa> te deve" foi removido das linhas
+
+### Composição das dívidas
+
+| Campo | Regra |
+|---|---|
+| `debts.dueInMonth` | `dueDate` dentro do mês |
+| `debts.priorCarry` | `dueDate < monthStart` **E** (`paidAt` nulo **OU** `paidAt >= monthStart`) |
+| `debts.total` | `dueInMonth + priorCarry` |
+
+**A condição temporal usa `paidAt`, não `isPaid`.** Reconstruir agosto com o estado de hoje diria que uma dívida paga em setembro já estava resolvida em agosto — e ela não estava.
+
+| Dívida vence jun, paga em… | jul | ago | set |
+|---|---|---|---|
+| nunca | carry | carry | carry |
+| julho | carry | — | — |
+| agosto | carry | carry | — |
+
+- A repetição entre meses é **intencional**: a mesma obrigação atravessando snapshots mensais, não despesa nova. A seção "Pendências anteriores" existe para deixar isso claro
+- O vencimento **original** é preservado — nunca reescrito como se fosse deste mês
+- `isPaid: true` com `paidAt: null` (legado) é tratado como **ainda aberta**: sem saber quando foi paga, não inventamos data. Exibir a mais é recuperável; sumir com uma obrigação não é
+- **Dívida futura fica fora** do mês atual — decisão de produto, não bug
+
+### Equação final
+
+```
+totalToPay = netAmount + totalDirectPayments + debts.total
+netAmount  = invoice.totalAmount - thirdPartyAmount   (sua parte; fatura bruta preservada)
+```
+
+Recebíveis não entram. Duas duplicidades de sinal oposto são barradas por teste:
+
+1. **Compra de terceiro** reduz a sua parte da fatura; o recebível automático correspondente **não** reduz de novo (fatura 1000 com 300 de Eva → 700, nunca 400)
+2. **Dívida paga** com transação-espelho: `paymentDebt: null` exclui a transação dos pagamentos diretos (500, nunca 1000). Com `createExpenseOnDebtPaid = false` a obrigação existe igualmente — ela não depende da transação
+
+### UI
+
+- Aviso discreto no total quando há carry: "Inclui R$ X de pendências anteriores"
+- Seção "Pendências anteriores" só renderiza quando existe algo (sem "— R$ 0")
+- O cabeçalho de "Dívidas" usa `dueInMonth`, não `total`: as linhas listadas são as do mês, e precisam fechar com o título
+- `DEBT_STATUS_CONFIG.OVERDUE` passou de "Vencida" para **"Em atraso"** — esta tela tinha ficado fora da padronização da Fase 8A
+
+### Rollover da renda (hardening da 9A)
+
+`User.salary` ficava **obsoleto na virada do mês sem nenhuma escrita**: com histórico ago=5000 e out=5500, ao entrar outubro o cache continuava 5000 e o Perfil exibia um valor que já não valia. O Perfil agora resolve a competência atual via `GET /salary`; `User.salary` não é fonte de verdade para nenhuma decisão ou apresentação temporal.
+
+O backfill da migration passou a derivar a competência de `CURRENT_TIMESTAMP AT TIME ZONE 'America/Fortaleza'` em vez de uma data fixa. Uma data fixa era determinística mas passaria a mentir se o deploy escorregasse — gravaria o salário de outubro como se valesse desde agosto.
+
+## Renda mensal com histórico — `SalaryHistory` (Fase 9A) ✅
+
+### O problema
+
+`User.salary` guardava só o valor ATUAL, e o Orçamento o usava para calcular **qualquer** mês. Registrar um aumento em agosto reescrevia a sobra e o percentual comprometido de janeiro — um mês encerrado mudava sozinho, sem nenhum fato novo sobre ele.
+
+### Modelo
+
+`SalaryHistory` com competência **inteira** (`month` + `year`), seguindo o precedente de `Invoice`. Guardar `DateTime` exigiria normalizar o dia em toda escrita e comparação, com risco de virada de fuso em cada ponto (o app é America/Fortaleza, UTC-3).
+
+Cada linha é uma **alteração** que vale a partir da competência e segue valendo até a próxima — o usuário não recadastra o mesmo valor todo mês.
+
+- `@@unique([userId, year, month])` — uma competência, um valor; é o que torna o upsert idempotente
+- **Não** representa receita real (`Transaction` INCOME). É referência de planejamento; alterar a renda não gera lançamento
+
+### Resolver
+
+`common/helpers/salary.helper.ts` → `resolveSalaryForMonth` é a fonte única. A query é `year < pedido OR (year = pedido AND month <= pedido)`: um `month <= 8` solto pegaria agosto de qualquer ano.
+
+| Situação | Resultado |
+|---|---|
+| Nenhuma entrada | `known: false`, `amount: null` |
+| Mês da entrada | resolve o valor |
+| Mês posterior | carry-forward (inclusive atravessando o ano) |
+| Mês ANTERIOR à primeira entrada | `known: false` |
+| `amount: 0` | `known: true`, `amount: 0` |
+
+**`known: false` ≠ `amount: 0`.** Zero é renda legítima (alguém entre empregos); desconhecido é ausência de informação. A tela diz "Renda não registrada para <mês>" em vez de "R$ 0,00", que afirmaria um fato falso.
+
+### Backfill conservador
+
+A migration cria baseline em **ago/2026** (data FIXA, não `CURRENT_DATE`) para quem tem `User.salary` não-nulo. Sabemos o valor atual, **não desde quando ele vale** — afirmar que valia "desde a criação da conta" inventaria fatos, e quem teve aumento em maio veria a renda nova aplicada a março. Meses anteriores resolvem como desconhecidos.
+
+`CURRENT_DATE` foi evitado de propósito: aplicar em 31/08 às 23h de Fortaleza gravaria setembro (UTC já virou), deixando agosto sem baseline. O id usa `md5(...)::uuid` em vez de `gen_random_uuid()`, que é built-in só do Postgres 13 em diante.
+
+### Papel de `User.salary`
+
+Cache de leitura da renda de HOJE, para telas sem mês (perfil, cabeçalhos). **Recalculado pelo resolver**, não copiado do valor gravado:
+
+- alteração no mês corrente → sincroniza
+- alteração retroativa → **não** toca (corrigir o passado não muda a renda de hoje)
+- alteração futura → **não** antecipa (o perfil exibiria um valor que ainda não vale)
+
+`salary` foi **removido de `UpdateUserDto`**: escrevê-lo direto gravava o cache sem criar a entrada correspondente, e o resolver passava a discordar do perfil. Removido em vez de ignorado — com `whitelist: true` o campo seria descartado em silêncio e um cliente antigo acharia que salvou.
+
+### Contrato do Budget
+
+`GET /budget` devolve `salary` (do período), `salaryKnown`, `salaryEffectiveFrom`, `remaining` e `committedPct`.
+
+- **Renda desconhecida** → `remaining: null` e `committedPct: null`. Calcular `0 - totalToPay` afirmaria uma capacidade financeira que ninguém informou
+- **Renda zero** → `remaining` existe (`0 - totalToPay`), `committedPct` é `null`: não há percentual de zero, e devolver 0% ou 100% seria aproximação inventada
+- As **despesas continuam sendo calculadas** sem renda: não saber a renda não impede saber quanto se deve
+- Nada mais mudou no Orçamento — a única variável desta fase é a origem da renda
+
+### UX
+
+- Orçamento: "Definir renda" quando desconhecida; o diálogo diz **"Válido a partir de <mês>. Meses anteriores não são alterados"**
+- Perfil: o campo passou a se chamar **"Renda mensal"** e significa "a partir do mês atual"; o usuário não precisa entender o histórico para uma alteração simples
+- Não existe tela de timeline salarial — o histórico existe para os cálculos, não para ser administrado
+- Invalidação: `budget` inteiro (uma entrada muda a renda derivada de todos os meses seguintes) + `me` (o cache pode ter mudado)
+
+## Consolidado de Pessoas (Fase 8B) ✅
+
+### O consolidado é ALL-TIME
+
+`GET /persons/:id/statement` filtrava dívidas e cobranças por `dueDate` dentro do mês do seletor e rotulava o resultado **"te deve no total"**. Uma dívida vencida em junho e ainda aberta desaparecia do extrato de agosto — e `POST /persons/:id/settle` recebia os mesmos limites, então "Quitar pendências" deixava as pendências antigas abertas enquanto o toast dizia "N itens quitados".
+
+| Campo | Fórmula | Recorte |
+|---|---|---|
+| `receivablePending` | soma de TODOS os Receivables com `isPaid: false` | nenhum |
+| `debtPending` | soma de TODAS as Debts com `isPaid: false` | nenhum |
+| `netBalance` | `receivablePending - debtPending` | nenhum |
+| `pending{Receivables,Debts}Count` | contagem das mesmas | nenhum |
+| `history` | itens com `isPaid: true` | **`paidAt` no mês** |
+
+- **O seletor de mês governa só o histórico.** Filtro por `paidAt`, não `dueDate`: uma dívida de junho paga em agosto pertence ao histórico de agosto
+- Fonte central: `common/helpers/person-consolidated.ts` (`buildPersonSummary`) — o mesmo objeto alimenta drawer, PDF, WhatsApp e settle, que antes tinham quatro cálculos independentes
+- `isFullySettled` olha as **contagens**, nunca `netBalance === 0`: R$ 500 dos dois lados dá saldo zero com duas obrigações abertas
+- 4 queries paralelas, sem N+1
+
+### Contrato do endpoint (Fase 8C)
+
+`GET /persons/:id/statement` devolve os dois universos com **nomes distintos**. Os espelhos `totalDebts`, `totalReceivables`, `netBalance`, `debts` e `receivables` foram **removidos**: significavam "do mês" antes da Fase 8B e "all-time" depois — o mesmo nome, dois universos, sem como o consumidor saber qual estava rodando.
+
+```
+summary   → situação ATUAL, all-time (receivablePending, debtPending, netBalance, counts, isFullySettled)
+pending   → { debts, receivables } — as pendências que o summary soma, all-time
+period    → { appliedRange, scopedBy: 'paidAt', settledDebts, settledReceivables,
+              settledDebtTotal, settledReceivableTotal }
+```
+
+- `period.appliedRange` devolve o recorte que valeu (`null` quando não houve filtro) — sem ele o consumidor não distingue "nada quitado em agosto" de "nenhum filtro enviado"
+- `period.scopedBy` é `paidAt`, **nunca `dueDate`**: uma dívida vencida em maio e paga em agosto pertence ao histórico de agosto
+- A remoção dos espelhos é deliberadamente uma **quebra de tipo** no frontend: quem tentar ler um deles falha no typecheck em vez de receber o número do outro universo
+- Endpoint **interno** (um único frontend, sem integração externa documentada) — por isso a limpeza foi feita sem período de depreciação
+
+### Orçamento e Visão Geral são independentes
+
+Auditados na Fase 8C: **nenhum dos dois consome `PersonStatement`**, então a Fase 8B não os alterou.
+
+| Superfície | Fonte | Recorte |
+|---|---|---|
+| Orçamento | `debt`/`receivable` direto no Prisma | `dueDate` dentro do mês |
+| Overview — "Atenção agora" | `GET /debts`, `GET /receivables` (sem filtro) | janela móvel de 7 dias, **inclui atraso anterior** |
+| Overview — Calendário | as mesmas listas, já carregadas | mês exibido, no cliente |
+| Overview — Gastos por categoria | `GET /transactions` | mês do seletor |
+| Person drawer / settle / WhatsApp | `summary` / `pending` | all-time |
+| Person histórico / PDF (seção período) | `period` | `paidAt` no mês |
+
+- `GET /debts` e `GET /receivables` **sem parâmetros devolvem tudo** — a Visão Geral depende disso, porque seus widgets têm recortes diferentes entre si. Se esses endpoints passassem a recortar por mês, o painel de atenção perderia em silêncio os itens em atraso, que são a informação mais urgente da tela
+- `budget-temporality.spec.ts` e `debts-query-scope.spec.ts` fixam esses contratos com duplos que **honram o filtro de data**, para falhar se o `where` for removido — e não apenas se a aritmética mudar
+
+### "Quitar pendências"
+
+- Marca individualmente **todas** as pendências abertas — reconsultadas dentro do `$transaction`, sem `startDate`/`endDate` (removidos do `SettlePersonDto`)
+- **Não** existe compensação: R$ 800 a receber e R$ 300 a pagar geram 4 lançamentos pelos valores íntegros, nunca um de R$ 500
+- **Atômico** (all-or-nothing): falha no meio não deixa item quitado. Diferente da geração de Subscription, onde granularidade parcial é desejada
+- **Idempotente** pelo estado: o `isPaid: false` da reconsulta faz o retry encontrar conjunto vazio
+- Respeita `createExpenseOnDebtPaid` / `createIncomeOnReceivablePaid`; o diálogo só promete lançamento quando a preferência realmente vai gerar um
+- Cobrança automática é **recebida normalmente** — a proteção da Fase 8A é contra editar/excluir a compra de origem, não contra receber
+- Rótulo do botão: **"Quitar pendências"** (era "Quitar tudo"). Disponível sempre que houver pendência, inclusive com saldo zero
+
+### Núcleo compartilhado de quitação
+
+`common/helpers/settlement.core.ts` — `PersonsService.settle` reimplementava ~110 linhas de `DebtsService.update`/`ReceivablesService.update` e **não chamava nenhuma guarda da Fase 8A**. As duas cópias já haviam divergido:
+
+- **`paidAt`**: `DebtsService.update` ignorava `dto.paymentDate` e usava `new Date()`. O campo **não existia** em `UpdateDebtDto`, então o `ValidationPipe` (`whitelist: true`) descartava em silêncio a data que o `MarkAsPaidDialog` coletava — e o frontend nem a tipava. Corrigido nos três níveis; a mesma data vai para `paidAt` e para a transação
+- `createDebtPaymentTransaction` / `createReceivablePaymentTransaction` / `removeSettlementTransaction` são a fonte única de categoria, banco, fatura e vínculo
+
+### WhatsApp e PDF
+
+- `lib/person-statement.ts` é a fonte única de texto. `balanceDirection` tem **quatro** estados: `receive`, `pay`, `settled` e **`offset`** (saldo zero com pendências)
+- A mensagem dizia **"Estamos quites nesse período — nada pendente!"** com saldo zero — falso com R$ 500 pendentes de cada lado. Agora só `settled` autoriza linguagem de quitação
+- Nunca reduz a relação ao líquido: expõe a composição, porque "você me deve R$ 300" afirmaria um encontro de contas que o app não fez
+- Saldo negativo não usa linguagem de cobrança — o usuário é quem deve
+- **Telefone**: `normalizeWhatsAppPhone` devolve `null` para número inválido e o link não é aberto. O prefixo é decidido pelo **comprimento** (10-11 dígitos = nacional; 12-13 = já com `55`), não por `startsWith('55')` — o **DDD 55 existe** (Santa Maria/RS), e a versão anterior rejeitava `(55) 99999-9999`, um número válido
+- PDF imprime **"SITUAÇÃO ATUAL"** com a composição (A receber / A pagar / nº de pendências) e uma seção separada `QUITADO — <período>`. Antes mostrava só o saldo num card grande, sem composição, com label dizendo "no total". Recebe o `summary` pronto — não recalcula
+
+### Deep link "Ver a compra"
+
+- `?highlight=<transactionId>` no Extrato (`lib/use-highlight.ts`): posiciona o mês pela data, rola até a linha e aplica destaque **temporário** (2,6s) — permanente seria lido como status do lançamento
+- Grupo de parcelas **abre expandido** quando o alvo está escondido, via `parentId ?? id` (metadado estrutural, não a regex de título)
+- Apenas navegação: a query segue filtrada por ownership; id inexistente não destaca nada e não quebra a página
+
+### Delete e rename de Person
+
+- FK `personId` é `ON DELETE SET NULL` em Debt, Receivable e Transaction; `creditorName`/`debtorName` guardam o nome na criação → os registros **sobrevivem e continuam legíveis**
+- Por isso a exclusão é permitida **mesmo com pendências**: encerra o cadastro do contato, não os compromissos. A cópia do diálogo diz exatamente isso
+- Rename **não** propaga para os snapshots — seria reescrever histórico textual. O cabeçalho do drawer usa o nome atual
+
+### Estados e UX
+
+- Drawer e lista distinguem `loading` / `error` / `success-empty` / `success-data`, com `role="alert"` e retry. Antes, API fora do ar exibia "Nenhuma pessoa cadastrada"
+- Pendências ordenadas por vencimento (em atraso primeiro); histórico por `paidAt` desc
+- Cobrança automática recebe badge discreto "Compra no cartão" e a linha linka para a compra
+- `PersonFormSheet`: `sm:max-w-md` + `overflow-y-auto` no form + footer `shrink-0` — sem isso o botão de salvar saía da tela em notebook
+
 ## Feature: Orçamento Mensal — página `/budget` (✅ Implementado)
 
 ### Lógica implementada
@@ -364,5 +773,5 @@ model Receivable {
 - Paid/pending exibidos lado a lado como detalhamento informativo (não como projetado/realizado separados no saldo principal)
 - Sem salário cadastrado → aviso com link para `/profile`
 
-### Pendente
-- Histórico de salário (`SalaryHistory { id, user_id, amount, effective_from }`) para que alterar o salário atual não afete retroativamente a projeção de meses passados — hoje `user.salary` é usado para todos os meses
+### Renda temporal ✅ (Fase 9A)
+Ver seção "Renda mensal com histórico" abaixo.

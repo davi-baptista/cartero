@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useForm, Controller, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -26,14 +26,18 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { getBanks } from '@/services/banks.service'
+import { getCategories } from '@/services/categories.service'
 import { previewSubscription } from '@/services/subscriptions.service'
 import { formatCurrency, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
-import type { Subscription } from '@/types'
+import type { Category, Subscription } from '@/types'
 import { TransactionType } from '@/types'
 
 const schema = z.object({
   title: z.string().min(1, 'Título obrigatório'),
   bankId: z.string().min(1, 'Banco obrigatório'),
+  // Opcional: sem escolha, o backend usa a categoria de sistema
+  // "Assinatura" e o cadastro segue rápido.
+  categoryId: z.string().optional(),
   type: z.enum(TransactionType),
   amount: z.number({ message: 'Valor inválido' }).positive('Valor deve ser positivo'),
   description: z.string().optional(),
@@ -83,6 +87,21 @@ interface SubscriptionSheetProps {
   onSubmit: (data: SubscriptionFormData) => Promise<void>
 }
 
+/**
+ * Nome da categoria escolhida.
+ *
+ * Busca na lista COMPLETA, não na filtrada: uma assinatura antiga pode estar
+ * na categoria de sistema "Assinatura", e ela precisa aparecer como valor
+ * atual mesmo estando fora das opções selecionáveis.
+ */
+function categoryLabel(
+  categoryId: string | undefined,
+  categories: Category[],
+): string | undefined {
+  if (!categoryId) return undefined
+  return categories.find((c) => c.id === categoryId)?.name
+}
+
 export function SubscriptionSheet({
   open,
   onOpenChange,
@@ -90,19 +109,19 @@ export function SubscriptionSheet({
   onSubmit,
 }: SubscriptionSheetProps) {
   const isEdit = !!editSubscription
-  const [submitting, setSubmitting] = useState(false)
 
   const {
     register,
     handleSubmit,
     control,
     reset,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<SubscriptionFormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       title: '',
       bankId: '',
+      categoryId: undefined,
       type: TransactionType.CREDIT_CARD,
       amount: 0,
       dayOfMonth: 1,
@@ -110,9 +129,28 @@ export function SubscriptionSheet({
     },
   })
 
-  const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: getBanks })
+  const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: () => getBanks() })
+  const { data: categories = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: getCategories,
+  })
 
-  const selectableBanks = banks.filter((b) => !b.isSystem)
+  /**
+   * `getBanks()` já devolve só os ativos, e o interno de recebíveis é
+   * descartado aqui. Um banco arquivado não pode receber assinatura — a
+   * reativação e a troca são recusadas pelo backend.
+   */
+  const selectableBanks = banks.filter((b) => !b.isSystem && !b.isArchived)
+
+  /**
+   * Categorias de sistema ficam fora do seletor.
+   *
+   * "Assinatura" é o default quando nada é escolhido, mas oferecê-la na lista
+   * sugeriria que ela é uma opção como as outras — e as demais ("Dívida paga",
+   * "Receita recebida") pertencem a fluxos que não são este. A categoria atual
+   * de uma assinatura em edição continua aparecendo, mesmo sendo de sistema.
+   */
+  const selectableCategories = categories.filter((c) => !c.isSystem)
 
   const bankId = useWatch({ control, name: 'bankId' })
   const dayOfMonth = useWatch({ control, name: 'dayOfMonth' })
@@ -135,6 +173,7 @@ export function SubscriptionSheet({
       reset({
         title: editSubscription.title,
         bankId: editSubscription.bankId,
+        categoryId: editSubscription.categoryId,
         type: editSubscription.type,
         amount: Number(editSubscription.amount),
         description: editSubscription.description ?? '',
@@ -145,6 +184,7 @@ export function SubscriptionSheet({
       reset({
         title: '',
         bankId: '',
+        categoryId: undefined,
         type: TransactionType.CREDIT_CARD,
         amount: 0,
         description: '',
@@ -154,14 +194,11 @@ export function SubscriptionSheet({
     }
   }, [open, editSubscription, reset])
 
+  // Quem fecha o drawer é a página, no `onSuccess` da mutação — igual aos
+  // demais. Fechar aqui escondia o formulário mesmo quando o salvamento
+  // falhava, e o usuário perdia o que havia digitado.
   async function submit(data: SubscriptionFormData) {
-    setSubmitting(true)
-    try {
-      await onSubmit(data)
-      onOpenChange(false)
-    } finally {
-      setSubmitting(false)
-    }
+    await onSubmit(data)
   }
 
   const willCreate = preview.filter((p) => !p.skipped)
@@ -170,8 +207,8 @@ export function SubscriptionSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="flex w-full flex-col sm:max-w-md">
-        <SheetHeader>
+      <SheetContent side="right" className="flex w-full flex-col sm:max-w-md" showCloseButton>
+        <SheetHeader className="px-6 pt-6 pb-0">
           <SheetTitle>{isEdit ? 'Editar assinatura' : 'Nova assinatura'}</SheetTitle>
           <SheetDescription>
             {isEdit
@@ -180,15 +217,29 @@ export function SubscriptionSheet({
           </SheetDescription>
         </SheetHeader>
 
+        {/* O footer fica fora do form e se liga por `form="subscription-form"`,
+            como nos demais drawers: assim ele não rola junto com os campos e
+            continua alcançável em formulários longos. */}
         <form
+          id="subscription-form"
           onSubmit={handleSubmit(submit)}
-          className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4"
+          className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5"
         >
+          {/* `aria-invalid` + `aria-describedby` ligam o campo à sua mensagem
+              de erro, como nos demais formulários. */}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="title">Nome</Label>
-            <Input id="title" placeholder="Netflix" {...register('title')} />
+            <Input
+              id="title"
+              placeholder="Netflix"
+              aria-invalid={Boolean(errors.title)}
+              aria-describedby={errors.title ? 'subscription-title-error' : undefined}
+              {...register('title')}
+            />
             {errors.title && (
-              <p className="text-xs text-destructive">{errors.title.message}</p>
+              <p id="subscription-title-error" className="text-xs text-destructive">
+                {errors.title.message}
+              </p>
             )}
           </div>
 
@@ -198,11 +249,19 @@ export function SubscriptionSheet({
               control={control}
               name="amount"
               render={({ field }) => (
-                <CurrencyInput id="amount" value={field.value} onChange={field.onChange} />
+                <CurrencyInput
+                  id="amount"
+                  value={field.value}
+                  onChange={field.onChange}
+                  aria-invalid={Boolean(errors.amount)}
+                  aria-describedby={errors.amount ? 'subscription-amount-error' : undefined}
+                />
               )}
             />
             {errors.amount && (
-              <p className="text-xs text-destructive">{errors.amount.message}</p>
+              <p id="subscription-amount-error" className="text-xs text-destructive">
+                {errors.amount.message}
+              </p>
             )}
           </div>
 
@@ -229,13 +288,24 @@ export function SubscriptionSheet({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label>Banco</Label>
+            <Label htmlFor="bankId">Banco</Label>
             <Controller
               control={control}
               name="bankId"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger aria-label="Banco">
+                  {/* Mesmo padrão de `title` e `amount`: sem `aria-invalid` e
+                      `aria-describedby` um leitor de tela anunciava "Banco,
+                      botão" sem indício de erro, e este é o único Select do
+                      formulário com validação que produz mensagem visível. */}
+                  <SelectTrigger
+                    id="bankId"
+                    aria-label="Banco"
+                    aria-invalid={Boolean(errors.bankId)}
+                    aria-describedby={
+                      errors.bankId ? 'subscription-bank-error' : undefined
+                    }
+                  >
                     <SelectValue placeholder="Selecione">
                       {selectableBanks.find((b) => b.id === field.value)?.name}
                     </SelectValue>
@@ -249,8 +319,50 @@ export function SubscriptionSheet({
               )}
             />
             {errors.bankId && (
-              <p className="text-xs text-destructive">{errors.bankId.message}</p>
+              <p
+                id="subscription-bank-error"
+                className="text-xs text-destructive"
+              >
+                {errors.bankId.message}
+              </p>
             )}
+          </div>
+
+          {/*
+            Categoria dos lançamentos gerados.
+            Vazio significa "usar a de sistema" — não é um estado inválido, e o
+            texto de apoio diz isso para o campo não parecer incompleto.
+          */}
+          <div className="flex flex-col gap-1.5">
+            <Label>Categoria</Label>
+            <Controller
+              control={control}
+              name="categoryId"
+              render={({ field }) => (
+                <Select
+                  value={field.value ?? ''}
+                  onValueChange={field.onChange}
+                >
+                  <SelectTrigger aria-label="Categoria">
+                    <SelectValue placeholder="Assinatura (padrão)">
+                      {categoryLabel(field.value, categories)}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    {selectableCategories.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {isEdit
+                ? 'Vale dos próximos lançamentos em diante; os já criados mantêm a categoria que tinham.'
+                : 'Sem escolher, os lançamentos entram em "Assinatura".'}
+            </p>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -344,14 +456,21 @@ export function SubscriptionSheet({
             <Label htmlFor="description">Descrição (opcional)</Label>
             <Input id="description" {...register('description')} />
           </div>
-
-          <SheetFooter className="mt-auto px-0">
-            <Button type="submit" disabled={submitting} className="w-full">
-              {submitting && <Loader2 className="size-4 animate-spin" />}
-              {isEdit ? 'Salvar' : 'Criar assinatura'}
-            </Button>
-          </SheetFooter>
         </form>
+
+        <SheetFooter className="px-6 pb-6 pt-0">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isSubmitting}
+          >
+            Cancelar
+          </Button>
+          <Button type="submit" form="subscription-form" disabled={isSubmitting}>
+            {isSubmitting && <Loader2 className="size-4 animate-spin" />}
+            {isEdit ? 'Salvar alterações' : 'Criar assinatura'}
+          </Button>
+        </SheetFooter>
       </SheetContent>
     </Sheet>
   )

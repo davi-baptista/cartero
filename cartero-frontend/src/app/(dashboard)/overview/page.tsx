@@ -1,19 +1,11 @@
 'use client'
 
-import { useState, useMemo, useEffect, memo, type ReactNode } from 'react'
+import { useState, useMemo, memo, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import type { LucideIcon } from 'lucide-react'
-import {
-  ShoppingBag,
-  CreditCard,
-  HandCoins,
-  Wallet,
-  ArrowRight,
-  CheckCircle2,
-  ExternalLink,
-} from 'lucide-react'
+import { ShoppingBag, CreditCard, HandCoins, Wallet, ArrowRight, CheckCircle2, ExternalLink, TriangleAlert, RotateCcw, Loader2 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useMonthPeriod } from '@/components/month-nav'
 import { getTransactions } from '@/services/transactions.service'
@@ -21,12 +13,32 @@ import { getInvoices } from '@/services/invoices.service'
 import { getBanks } from '@/services/banks.service'
 import { getDebts } from '@/services/debts.service'
 import { getReceivables } from '@/services/receivables.service'
-import { formatCurrency, formatMonthYear, isExpense } from '@/lib/formatters'
+import { formatCurrency, formatMonthYear } from '@/lib/formatters'
+import { bankDisplayName } from '@/lib/bank-display'
+import {
+  expenseSignedAmount,
+  isOwnExpense,
+  isRefundTransaction,
+} from '@/lib/money-semantics'
 import { formatDateValue, parseDateOnly } from '@/lib/date'
-import { getInvoiceCloseDate, getInvoiceDueDate } from '@/lib/invoice-dates'
+import { parseInvoiceDate } from '@/lib/invoice-dates'
 import { resolveCategoryIcon } from '@/lib/category-icons'
+import { invoiceStatusConfig } from '@/lib/invoice-status'
+import {
+  civilDaysUntil,
+  formatCloseTiming,
+  formatDueTiming,
+  formatDueTimingFromISO,
+} from '@/lib/invoice-timing'
 import { cn } from '@/lib/utils'
-import type { Invoice, Debt, Receivable, Bank } from '@/types'
+import {
+  buildCalendarEvents,
+  CAL_KIND_LABEL,
+  type CalEvent,
+  type CalEventDirection,
+} from '@/lib/calendar-events'
+import { Button } from '@/components/ui/button'
+import type { Invoice, Debt, Receivable, Bank, Transaction } from '@/types'
 import { InvoiceStatus } from '@/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -35,12 +47,8 @@ const EASE_OUT_EXPO = [0.16, 1, 0.3, 1] as const
 const ATTENTION_LIMIT = 3
 const ATTENTION_DAYS_WINDOW = 7
 
-const INVOICE_STATUS_CONFIG: Record<InvoiceStatus, { label: string; className: string }> = {
-  [InvoiceStatus.OPEN]: { label: 'Aberta', className: 'bg-primary/15 text-primary' },
-  [InvoiceStatus.CLOSED]: { label: 'Fechada', className: 'bg-amber-500/15 text-amber-400' },
-  [InvoiceStatus.OVERDUE]: { label: 'Vencida', className: 'bg-destructive/15 text-destructive' },
-  [InvoiceStatus.PAID]: { label: 'Paga', className: 'bg-paid/15 text-paid' },
-}
+// Rótulo e cor de status vêm de `@/lib/invoice-status` — este mapa era uma
+// cópia byte a byte do que existia em `budget` e em `banks/[id]/invoices`.
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -60,12 +68,9 @@ function diffDaysFromToday(dateString: string): number {
   return Math.round((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
+/** Dívidas e recebíveis guardam a data como string ISO. */
 function formatDueDate(dateString: string): string {
-  const diff = diffDaysFromToday(dateString)
-  if (diff < 0) return `Venceu há ${Math.abs(diff)}d`
-  if (diff === 0) return 'Vence hoje'
-  if (diff === 1) return 'Vence amanhã'
-  return `Vence em ${diff} dias`
+  return formatDueTimingFromISO(dateString)
 }
 
 type DueUrgency = 'overdue' | 'urgent' | 'soon' | 'normal'
@@ -78,7 +83,7 @@ function getDueUrgency(dateString: string): DueUrgency {
 
 const DUE_URGENCY_CLASS: Record<DueUrgency, string> = {
   overdue: 'text-destructive',
-  urgent: 'text-amber-400',
+  urgent: 'text-pending',
   soon: 'text-primary',
   normal: 'text-muted-foreground',
 }
@@ -95,24 +100,80 @@ function computeInvoiceDue(
   const isOpen = invoice.status === InvoiceStatus.OPEN
 
   if (isOpen) {
-    const close = getInvoiceCloseDate(invoice.year, invoice.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
-    close.setHours(0, 0, 0, 0)
-    const closeDiff = Math.round((close.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    // Data congelada da fatura, não recalculada pelo cartão.
+    const close = parseInvoiceDate(invoice.closeDate)
+    const closeDiff = civilDaysUntil(close, today)
     if (closeDiff >= 0) {
-      if (closeDiff === 0) return { text: 'Fecha hoje', urgency: 'overdue', diffDays: closeDiff }
-      if (closeDiff === 1) return { text: 'Fecha amanhã', urgency: 'urgent', diffDays: closeDiff }
-      return { text: `Fecha em ${closeDiff} dias`, urgency: closeDiff <= 2 ? 'urgent' : 'soon', diffDays: closeDiff }
+      // A urgência aqui é própria deste painel (fechar hoje é tratado como
+      // crítico, porque depois disso a fatura já não aceita ajuste fácil); só
+      // o TEXTO passou a vir do helper compartilhado.
+      return {
+        text: formatCloseTiming(close, today),
+        urgency:
+          closeDiff === 0 ? 'overdue' : closeDiff <= 2 ? 'urgent' : 'soon',
+        diffDays: closeDiff,
+      }
     }
-    // Close date already passed but status still OPEN (cron lag) — fall through to due date
+    // Fechamento já passou mas o status ainda é OPEN (cron atrasado) — segue
+    // para o vencimento, senão a linha não explicaria por que está ali.
   }
 
-  const due = getInvoiceDueDate(invoice.year, invoice.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
-  due.setHours(0, 0, 0, 0)
-  const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-  if (diffDays < 0) return { text: `Venceu há ${-diffDays}d`, urgency: 'overdue', diffDays }
-  if (diffDays === 0) return { text: 'Vence hoje', urgency: 'overdue', diffDays }
-  if (diffDays === 1) return { text: 'Vence amanhã', urgency: 'urgent', diffDays }
-  return { text: `Vence em ${diffDays} dias`, urgency: 'urgent', diffDays }
+  const due = parseInvoiceDate(invoice.dueDate)
+  const diffDays = civilDaysUntil(due, today)
+  return {
+    text: formatDueTiming(due, today),
+    urgency: diffDays <= 0 ? 'overdue' : 'urgent',
+    diffDays,
+  }
+}
+
+/**
+ * Erro de carregamento de um widget.
+ *
+ * Existe porque os widgets da Visão Geral têm queries INDEPENDENTES: se as
+ * categorias falham e o painel de atenção carrega, o certo é errar só ali. A
+ * alternativa — um estado de erro global — apagaria informação que chegou bem.
+ *
+ * Sem isso, uma falha de API renderizava "Sem gastos no período": o app
+ * afirmando que o usuário não gastou nada quando apenas não conseguiu saber.
+ */
+function WidgetError({
+  message,
+  isFetching,
+  onRetry,
+}: {
+  message: string
+  isFetching: boolean
+  onRetry: () => void
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex flex-col items-center justify-center py-12 text-center"
+    >
+      <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-destructive/10">
+        <TriangleAlert className="size-5 text-destructive/70" aria-hidden />
+      </div>
+      <p className="text-sm font-medium">{message}</p>
+      <p className="mt-1 max-w-[26ch] text-xs text-muted-foreground">
+        Verifique sua conexão e tente novamente.
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-4 gap-1.5"
+        disabled={isFetching}
+        onClick={onRetry}
+      >
+        {isFetching ? (
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+        ) : (
+          <RotateCcw className="size-3.5" aria-hidden />
+        )}
+        {isFetching ? 'Carregando…' : 'Tentar novamente'}
+      </Button>
+    </div>
+  )
 }
 
 // ─── Category breakdown ───────────────────────────────────────────────────────
@@ -137,6 +198,15 @@ const CategoryBar = memo(function CategoryBar({
 }: CategoryRowData & { index: number; href: string }) {
   const { Icon } = resolveCategoryIcon(icon)
   const barColor = color ?? 'oklch(0.640 0.210 272)'
+
+  /*
+    Categoria líquida negativa: os estornos do período passaram do gasto.
+
+    A barra fica vazia (`pct` já vem 0) e o valor usa o token de recebido —
+    voltou dinheiro. Sem isso a linha exibiria "-R$ 50" com a cor de despesa,
+    lendo como um gasto negativo.
+  */
+  const isNetRefund = amount < 0
 
   return (
     <Link
@@ -170,12 +240,17 @@ const CategoryBar = memo(function CategoryBar({
         />
       </div>
 
-      <span className="w-[6.5rem] shrink-0 text-right text-sm tabular-nums tracking-[-0.01em]">
+      <span
+        className={cn(
+          'w-[6.5rem] shrink-0 text-right text-sm tabular-nums tracking-[-0.01em]',
+          isNetRefund && 'text-receivable',
+        )}
+      >
         {formatCurrency(amount)}
       </span>
 
       <span className="w-9 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
-        {pct.toFixed(0)}%
+        {isNetRefund ? '—' : `${pct.toFixed(0)}%`}
       </span>
 
       <ExternalLink className="size-3 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground/50" aria-hidden />
@@ -185,18 +260,42 @@ const CategoryBar = memo(function CategoryBar({
 
 function CategoryBreakdown({
   rows,
+  total,
   isLoading,
+  isError,
+  isFetching,
+  onRetry,
   startDate,
   endDate,
 }: {
   rows: CategoryRowData[]
+  /** Soma das linhas — por construção igual ao gasto próprio do período. */
+  total: number
   isLoading: boolean
+  isError: boolean
+  isFetching: boolean
+  onRetry: () => void
   startDate: string
   endDate: string
 }) {
   return (
-    <section aria-label="Gastos por categoria">
-      <h2 className="mb-4 text-[15px] font-semibold tracking-tight">Gastos por categoria</h2>
+    <section aria-label="Seus gastos por categoria">
+      {/* "Seus" porque o total exclui compras feitas para outras pessoas. */}
+      <h2 className="text-[15px] font-semibold tracking-tight">
+        Seus gastos por categoria
+        {/*
+          O total fica no cabeçalho para a reconciliação ser visível: a soma
+          das linhas é exatamente este número.
+        */}
+        {!isLoading && !isError && rows.length > 0 && (
+          <span className="ml-1.5 font-normal text-muted-foreground">
+            · {formatCurrency(total)}
+          </span>
+        )}
+      </h2>
+      <p className="mb-4 mt-0.5 text-[11px] text-muted-foreground">
+        Sem as compras de outras pessoas
+      </p>
 
       {isLoading ? (
         <div>
@@ -210,6 +309,12 @@ function CategoryBreakdown({
             </div>
           ))}
         </div>
+      ) : isError ? (
+        <WidgetError
+          message="Não foi possível carregar seus gastos"
+          isFetching={isFetching}
+          onRetry={onRetry}
+        />
       ) : rows.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-muted/40">
@@ -239,7 +344,7 @@ function CategoryBreakdown({
 // ─── Attention panel ──────────────────────────────────────────────────────────
 
 function InvoiceBadge({ status }: { status: InvoiceStatus }) {
-  const { label, className } = INVOICE_STATUS_CONFIG[status]
+  const { label, className } = invoiceStatusConfig(status)
   return (
     <span
       className={cn(
@@ -279,7 +384,7 @@ function InvoiceAttentionRow({ invoice, banks }: { invoice: Invoice; banks: Bank
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
-            {bank?.name ?? 'Banco'}
+            {bankDisplayName(bank, 'Banco')}
           </span>
           <InvoiceBadge status={invoice.status} />
         </div>
@@ -399,6 +504,9 @@ function AttentionPanel({
   receivables,
   receivablesTotal,
   isLoading,
+  isError,
+  isFetching,
+  onRetry,
   windowStr,
 }: {
   invoices: Invoice[]
@@ -408,13 +516,24 @@ function AttentionPanel({
   receivables: Receivable[]
   receivablesTotal: number
   isLoading: boolean
+  isError: boolean
+  isFetching: boolean
+  onRetry: () => void
   windowStr: string
 }) {
   const allEmpty = invoices.length === 0 && debts.length === 0 && receivables.length === 0
 
   return (
     <section aria-label="Itens que requerem atenção" className="lg:border-l lg:border-border/60 lg:pl-8">
-      <h2 className="mb-4 text-[15px] font-semibold tracking-tight">Atenção agora</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Atenção agora</h2>
+      {/*
+        Este painel responde ao PRESENTE, não ao mês selecionado acima —
+        navegar para julho não muda o que exige atenção hoje. A microcopy
+        existe porque o seletor de mês fica logo acima e sugeriria o contrário.
+      */}
+      <p className="mb-4 mt-0.5 text-[11px] text-muted-foreground">
+        Independente do mês selecionado
+      </p>
 
       {isLoading ? (
         <div className="space-y-5">
@@ -434,6 +553,12 @@ function AttentionPanel({
             </div>
           ))}
         </div>
+      ) : isError ? (
+        <WidgetError
+          message="Não foi possível carregar as pendências"
+          isFetching={isFetching}
+          onRetry={onRetry}
+        />
       ) : allEmpty ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-receivable/10">
@@ -487,85 +612,36 @@ function AttentionPanel({
 
 // ─── Calendar section ────────────────────────────────────────────────────────
 
-type CalEventKind = 'debt' | 'receivable' | 'invoice-due'
-
-interface CalEvent {
-  kind: CalEventKind
-  title: string
-  amount: number
-  urgent: boolean
+/**
+ * Cor do ponto/valor por DIREÇÃO do dinheiro, não por status.
+ *
+ * São conceitos distintos e a versão anterior os confundia: recebível pendente
+ * usava o verde de "recebido", então dinheiro que TALVEZ entre era pintado como
+ * dinheiro que entrou. E uma saída já paga continua sendo saída — status
+ * concluído não a torna positiva.
+ */
+const CAL_DIRECTION_DOT: Record<CalEventDirection, string> = {
+  out: 'bg-destructive',
+  in: 'bg-receivable',
+  // Pendente: atenção, não conclusão.
+  neutral: 'bg-pending',
 }
 
-const CAL_DOT: Record<CalEventKind, string> = {
-  'debt': 'bg-destructive',
-  'receivable': 'bg-receivable',
-  'invoice-due': 'bg-amber-400',
+const CAL_DIRECTION_AMOUNT: Record<CalEventDirection, string> = {
+  out: 'text-destructive',
+  in: 'text-receivable',
+  neutral: 'text-pending',
 }
 
-const CAL_LABEL: Record<CalEventKind, string> = {
-  'debt': 'Dívida',
-  'receivable': 'A receber',
-  'invoice-due': 'Fatura vence',
-}
-
-const CAL_AMOUNT_CLASS: Record<CalEventKind, string> = {
-  'debt': 'text-destructive',
-  'receivable': 'text-receivable',
-  'invoice-due': 'text-amber-400',
+/** Sinal explícito por direção, seguindo a convenção global. */
+function signedLabel(event: CalEvent): string {
+  const value = formatCurrency(event.amount)
+  if (event.direction === 'in') return `+${value}`
+  if (event.direction === 'out') return `-${value}`
+  return value
 }
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
-
-function buildCalEvents(
-  year: number,
-  month: number,
-  debts: Debt[],
-  receivables: Receivable[],
-  invoices: Invoice[],
-  banks: Bank[],
-): Map<number, CalEvent[]> {
-  const map = new Map<number, CalEvent[]>()
-
-  function push(day: number, ev: CalEvent) {
-    if (day < 1) return
-    const list = map.get(day) ?? []
-    list.push(ev)
-    map.set(day, list)
-  }
-
-  const todayStr = formatDateValue()
-
-  for (const d of debts) {
-    if (d.isPaid) continue
-    const parts = d.dueDate.slice(0, 10).split('-').map(Number)
-    if (parts[0] !== year || parts[1] !== month) continue
-    push(parts[2], { kind: 'debt', title: d.title, amount: Number(d.amount), urgent: d.dueDate.slice(0, 10) <= todayStr })
-  }
-
-  for (const r of receivables) {
-    if (r.isPaid) continue
-    const parts = r.dueDate.slice(0, 10).split('-').map(Number)
-    if (parts[0] !== year || parts[1] !== month) continue
-    push(parts[2], { kind: 'receivable', title: r.title, amount: Number(r.amount), urgent: r.dueDate.slice(0, 10) <= todayStr })
-  }
-
-  for (const inv of invoices) {
-    if (inv.status === InvoiceStatus.PAID) continue
-    if (Number(inv.totalAmount) === 0) continue
-    const bank = banks.find((b) => b.id === inv.bankId)
-    if (!bank) continue
-    const due = getInvoiceDueDate(inv.year, inv.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
-    if (due.getFullYear() !== year || due.getMonth() + 1 !== month) continue
-    push(due.getDate(), {
-      kind: 'invoice-due',
-      title: bank.name,
-      amount: Number(inv.totalAmount),
-      urgent: inv.status === InvoiceStatus.OVERDUE,
-    })
-  }
-
-  return map
-}
 
 function CalendarSection({
   year,
@@ -573,26 +649,63 @@ function CalendarSection({
   debts,
   receivables,
   invoices,
+  transactions,
   banks,
+  isLoading,
+  isError,
+  isFetching,
+  onRetry,
 }: {
   year: number
   month: number
   debts: Debt[]
   receivables: Receivable[]
   invoices: Invoice[]
+  /** Movimentações diretas do mês — o calendário antes ignorava todas. */
+  transactions: Transaction[]
   banks: Bank[]
+  isLoading: boolean
+  /** Alguma fonte falhou: o mês está incompleto. */
+  isError: boolean
+  isFetching: boolean
+  onRetry: () => void
 }) {
   const [selectedDay, setSelectedDay] = useState<number | null>(null)
 
-  useEffect(() => { setSelectedDay(null) }, [year, month])
+  /*
+    "Hoje" vem de `formatDateValue()`, o mesmo helper de dia civil que as
+    outras telas usam.
 
-  const today = new Date()
-  const isCurrentMonth = today.getFullYear() === year && today.getMonth() + 1 === month
-  const todayDay = isCurrentMonth ? today.getDate() : -1
+    `new Date().getDate()` funciona no browser (fuso local do usuário), mas
+    fazia esta lógica depender de onde o código roda — e a comparação por
+    string ISO é a convenção já adotada em `settlement-status.ts` para o
+    mesmo problema.
+  */
+  const todayStr = formatDateValue()
+  const [todayYear, todayMonth, todayDate] = todayStr
+    .split('-')
+    .map(Number)
+  const isCurrentMonth = todayYear === year && todayMonth === month
+  const todayDay = isCurrentMonth ? todayDate : -1
+
+  /** Nome por id: evita `banks.find()` dentro do laço de faturas. */
+  const bankNames = useMemo(
+    () => new Map(banks.map((bank) => [bank.id, bank.name])),
+    [banks],
+  )
 
   const eventsByDay = useMemo(
-    () => buildCalEvents(year, month, debts, receivables, invoices, banks),
-    [year, month, debts, receivables, invoices, banks],
+    () =>
+      buildCalendarEvents({
+        year,
+        month,
+        debts,
+        receivables,
+        invoices,
+        transactions,
+        bankNames,
+      }),
+    [year, month, debts, receivables, invoices, transactions, bankNames],
   )
 
   const firstDOW = new Date(year, month - 1, 1).getDay()
@@ -607,7 +720,60 @@ function CalendarSection({
 
   return (
     <section aria-label="Calendário financeiro do mês">
-      <h2 className="mb-3 text-[15px] font-semibold tracking-tight">Calendário</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Calendário</h2>
+      {/*
+        Diz o que o calendário É, porque agora ele reúne dois tipos de fato:
+        vencimentos (fatura, dívida, cobrança) e movimentações já ocorridas.
+      */}
+      <p className="mb-3 mt-0.5 text-[11px] text-muted-foreground">
+        Vencimentos e movimentações com data neste mês
+      </p>
+
+      {/*
+        Enquanto qualquer fonte carrega, o grid fica em skeleton.
+
+        Renderizar o calendário parcial faria "nenhum evento" piscar em dias
+        que na verdade têm eventos ainda em trânsito.
+      */}
+      {isLoading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-6 w-full rounded-lg" />
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-10 w-full rounded-lg" />
+          ))}
+        </div>
+      ) : (
+        <>
+      {/*
+        Erro parcial: o que carregou continua visível, com aviso de que falta
+        coisa. Esconder tudo perderia informação boa; não avisar afirmaria que
+        os eventos ausentes não existem.
+      */}
+      {isError && (
+        <div
+          role="alert"
+          className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-pending/25 bg-pending/5 px-3 py-2"
+        >
+          <TriangleAlert className="size-3.5 shrink-0 text-pending" aria-hidden />
+          <p className="flex-1 text-xs text-muted-foreground">
+            Alguns eventos não puderam ser carregados.
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 text-xs"
+            disabled={isFetching}
+            onClick={onRetry}
+          >
+            {isFetching ? (
+              <Loader2 className="size-3 animate-spin" aria-hidden />
+            ) : (
+              <RotateCcw className="size-3" aria-hidden />
+            )}
+            Tentar novamente
+          </Button>
+        </div>
+      )}
 
       {/* Weekday headers */}
       <div className="grid grid-cols-7 border-b border-border pb-1">
@@ -627,7 +793,9 @@ function CalendarSection({
           const isToday = day === todayDay
           const isSelected = day === selectedDay
           const isPast = isCurrentMonth && day < todayDay
-          const kinds = [...new Set(events.map((e) => e.kind))]
+          const directions = [
+            ...new Set(events.map((e: CalEvent) => e.direction)),
+          ]
           const hasEvents = events.length > 0
 
           return (
@@ -652,8 +820,15 @@ function CalendarSection({
                 {day}
               </span>
               <div className="flex min-h-[6px] items-center gap-0.5">
-                {kinds.slice(0, 3).map((kind) => (
-                  <span key={kind} className={cn('size-1.5 rounded-full', CAL_DOT[kind])} aria-hidden />
+                {directions.slice(0, 3).map((direction) => (
+                  <span
+                    key={direction}
+                    className={cn(
+                      'size-1.5 rounded-full',
+                      CAL_DIRECTION_DOT[direction],
+                    )}
+                    aria-hidden
+                  />
                 ))}
               </div>
             </button>
@@ -667,33 +842,97 @@ function CalendarSection({
           <p className="border-b border-border px-4 py-2 text-[11px] font-medium text-muted-foreground">
             Dia {selectedDay}
           </p>
-          {selectedEvents.map((ev, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
+          {selectedEvents.map((ev: CalEvent) => (
+            /*
+              Link, não `div onClick`: navegação por teclado e menu de contexto
+              vêm de graça. A key é a identidade do evento — o índice do array
+              mudava de significado a cada reordenação.
+            */
+            <Link
+              key={ev.id}
+              href={ev.href}
+              /*
+                O leitor de tela recebe tipo, título, valor e status numa frase
+                só. Sem isso, a distinção entre "Pendente" e "Recebido"
+                dependia exclusivamente da cor do ponto.
+              */
+              aria-label={`${CAL_KIND_LABEL[ev.kind]}: ${ev.title}, ${signedLabel(ev)}, ${ev.status}${
+                ev.detail ? `. ${ev.detail}` : ''
+              }`}
+              className="group flex items-center gap-3 border-b border-border px-4 py-3 transition-colors last:border-b-0 hover:bg-muted/30"
             >
-              <span className={cn('size-2 shrink-0 rounded-full', CAL_DOT[ev.kind])} aria-hidden />
+              <span
+                className={cn(
+                  'size-2 shrink-0 rounded-full',
+                  CAL_DIRECTION_DOT[ev.direction],
+                )}
+                aria-hidden
+              />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-medium leading-snug">{ev.title}</p>
-                <p className="text-[11px] text-muted-foreground">{CAL_LABEL[ev.kind]}</p>
+                <p className="truncate text-[13px] font-medium leading-snug transition-colors group-hover:text-primary">
+                  {ev.title}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {/* Tipo e status em TEXTO: a cor é reforço, não a informação. */}
+                  {CAL_KIND_LABEL[ev.kind]} · {ev.status}
+                </p>
+                {/*
+                  Decomposição da fatura fora do hover: em mobile e por teclado
+                  o tooltip não existe, e este número explica por que o card de
+                  categorias mostra outro valor.
+                */}
+                {ev.detail && (
+                  <p className="mt-0.5 text-[11px] text-muted-foreground/70">
+                    {ev.detail}
+                  </p>
+                )}
               </div>
-              <span className={cn('shrink-0 text-[13px] font-semibold tabular-nums', CAL_AMOUNT_CLASS[ev.kind])}>
-                {formatCurrency(ev.amount)}
+              <span
+                className={cn(
+                  'shrink-0 text-[13px] font-semibold tabular-nums',
+                  CAL_DIRECTION_AMOUNT[ev.direction],
+                )}
+              >
+                {signedLabel(ev)}
               </span>
-            </div>
+            </Link>
           ))}
         </div>
       )}
 
-      {/* Legend */}
+      {/*
+        Vazio só quando TODAS as fontes tiveram sucesso: sem isso, uma falha
+        seria indistinguível de um mês sem eventos.
+      */}
+      {!isError && eventsByDay.size === 0 && (
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          Nenhum evento financeiro neste mês.
+        </p>
+      )}
+
+      {/* Legenda: direção do dinheiro, que é o que as cores codificam. */}
       <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5">
-        {(Object.entries(CAL_LABEL) as [CalEventKind, string][]).map(([kind, label]) => (
-          <div key={kind} className="flex items-center gap-1.5">
-            <span className={cn('size-2 shrink-0 rounded-full', CAL_DOT[kind])} aria-hidden />
+        {(
+          [
+            ['out', 'Saída / vencimento'],
+            ['in', 'Entrada'],
+            ['neutral', 'Pendente'],
+          ] as [CalEventDirection, string][]
+        ).map(([direction, label]) => (
+          <div key={direction} className="flex items-center gap-1.5">
+            <span
+              className={cn(
+                'size-2 shrink-0 rounded-full',
+                CAL_DIRECTION_DOT[direction],
+              )}
+              aria-hidden
+            />
             <span className="text-[11px] text-muted-foreground">{label}</span>
           </div>
         ))}
       </div>
+        </>
+      )}
     </section>
   )
 }
@@ -708,46 +947,108 @@ export default function OverviewPage() {
   const { startDate, endDate } = useMemo(() => monthRange(year, month), [year, month])
 
   // ── Queries ──
-  const { data: transactions, isLoading: txLoading } = useQuery({
+  const {
+    data: transactions,
+    isLoading: txLoading,
+    isError: txError,
+    isFetching: txFetching,
+    refetch: refetchTx,
+  } = useQuery({
     queryKey: ['transactions', { startDate, endDate, invoicePeriod: true }],
     queryFn: () => getTransactions({ startDate, endDate, invoicePeriod: true }),
   })
 
-  const { data: invoices = [], isLoading: invLoading } = useQuery({
+  const {
+    data: invoices = [],
+    isLoading: invLoading,
+    isError: invError,
+    isFetching: invFetching,
+    refetch: refetchInvoices,
+  } = useQuery({
     queryKey: ['invoices'],
     queryFn: () => getInvoices(),
   })
 
   const { data: banks = [] } = useQuery({
     queryKey: ['banks'],
-    queryFn: getBanks,
+    queryFn: () => getBanks(),
   })
 
-  const { data: debts = [], isLoading: debtLoading } = useQuery({
+  const {
+    data: debts = [],
+    isLoading: debtLoading,
+    isError: debtError,
+    isFetching: debtFetching,
+    refetch: refetchDebts,
+  } = useQuery({
     queryKey: ['debts'],
     queryFn: () => getDebts(),
   })
 
-  const { data: receivables = [], isLoading: recLoading } = useQuery({
+  const {
+    data: receivables = [],
+    isLoading: recLoading,
+    isError: recError,
+    isFetching: recFetching,
+    refetch: refetchReceivables,
+  } = useQuery({
     queryKey: ['receivables'],
     queryFn: () => getReceivables(),
   })
 
   const attentionLoading = invLoading || debtLoading || recLoading
+  /*
+    O painel junta três fontes: se qualquer uma falhar, o conjunto está
+    incompleto e mostrar o resto como se fosse tudo seria enganoso.
+  */
+  const attentionError = invError || debtError || recError
+  const attentionFetching = invFetching || debtFetching || recFetching
+
+  /*
+    O calendário depende de quatro fontes. Se qualquer uma falhar, o mês está
+    INCOMPLETO — e mostrar o resto sem avisar afirmaria que não há eventos
+    daquele tipo.
+  */
+  const calendarLoading = txLoading || invLoading || debtLoading || recLoading
+  const calendarError = txError || invError || debtError || recError
+  const calendarFetching =
+    txFetching || invFetching || debtFetching || recFetching
+
+  function retryCalendar() {
+    void refetchTx()
+    void refetchInvoices()
+    void refetchDebts()
+    void refetchReceivables()
+  }
+
+  function retryAttention() {
+    void refetchInvoices()
+    void refetchDebts()
+    void refetchReceivables()
+  }
 
   // ── Derived data ──
+  // Aqui a pergunta é "quanto EU gastei", não "o que passou pelo cartão":
+  // compras feitas para outra pessoa voltam como A Receber e não são custo do
+  // usuário. Estornos abatem a própria categoria, em vez de sumir do total —
+  // mesma regra já usada no detalhe da fatura.
   const categoryRows = useMemo((): CategoryRowData[] => {
     if (!transactions) return []
-    const expenseTxs = transactions.filter((t) => isExpense(t.type, t.isRefund))
+    // Saídas próprias mais os estornos próprios: o estorno precisa entrar para
+    // poder abater a categoria (o filtro de saída sozinho o excluiria).
+    const ownExpenses = transactions.filter(
+      (t) => !t.personId && (isOwnExpense(t) || isRefundTransaction(t)),
+    )
     const grouped = new Map<string, { amount: number; name: string; color?: string; icon?: string }>()
 
-    for (const tx of expenseTxs) {
+    for (const tx of ownExpenses) {
+      const signed = expenseSignedAmount(tx)
       const existing = grouped.get(tx.categoryId)
       if (existing) {
-        existing.amount += tx.amount
+        existing.amount += signed
       } else {
         grouped.set(tx.categoryId, {
-          amount: tx.amount,
+          amount: signed,
           name: tx.category?.name ?? 'Sem categoria',
           color: tx.category?.color,
           icon: tx.category?.icon,
@@ -755,19 +1056,57 @@ export default function OverviewPage() {
       }
     }
 
-    const total = Array.from(grouped.values()).reduce((s, v) => s + v.amount, 0)
+    /*
+      Categoria com estorno maior que o gasto CONTINUA na lista.
 
-    return Array.from(grouped.entries())
+      Antes ela era descartada por `amount > 0`, e a soma das linhas exibidas
+      deixava de fechar com o total de gastos próprios: com R$ 300 em
+      Restaurantes, R$ 350 de estorno e R$ 200 em Mercado, a tela mostrava
+      R$ 200 enquanto o gasto real do mês era R$ 150. Sumir com a linha
+      esconde justamente o fato interessante — o estorno que passou do gasto.
+
+      O que precisa ser tratado é a BARRA, que não aceita largura negativa.
+    */
+    const entries = Array.from(grouped.entries()).filter(
+      ([, value]) => value.amount !== 0,
+    )
+
+    /*
+      Denominador do percentual: só as categorias positivas.
+
+      Usar a soma líquida (que pode ser zero ou negativa) produziria
+      Infinity/NaN e barras absurdas. Uma categoria negativa não tem
+      "percentual do gasto" — ela devolveu dinheiro.
+    */
+    const positiveTotal = entries.reduce(
+      (sum, [, value]) => (value.amount > 0 ? sum + value.amount : sum),
+      0,
+    )
+
+    return entries
       .map(([categoryId, { amount, name, color, icon }]) => ({
         categoryId,
         name,
         color,
         icon,
         amount,
-        pct: total > 0 ? (amount / total) * 100 : 0,
+        pct:
+          amount > 0 && positiveTotal > 0 ? (amount / positiveTotal) * 100 : 0,
       }))
       .sort((a, b) => b.amount - a.amount)
   }, [transactions])
+
+  /**
+   * Total de gastos próprios do período — a mesma base das categorias.
+   *
+   * Existe para a tela poder AFIRMAR a reconciliação em vez de deixar o
+   * usuário somar linhas: por construção,
+   * `sum(categoryRows.amount) === ownExpenseTotal`.
+   */
+  const ownExpenseTotal = useMemo(
+    () => categoryRows.reduce((sum, row) => sum + row.amount, 0),
+    [categoryRows],
+  )
 
   // Invoices: OVERDUE always; OPEN if close date ≤7 days; CLOSED if due date ≤7 days
   const attentionInvoices = useMemo(() => {
@@ -782,13 +1121,13 @@ export default function OverviewPage() {
         const bank = banks.find((b) => b.id === inv.bankId)
         if (!bank) return false
         if (inv.status === InvoiceStatus.OPEN) {
-          const close = getInvoiceCloseDate(inv.year, inv.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
+          const close = parseInvoiceDate(inv.closeDate)
           close.setHours(0, 0, 0, 0)
           const closeDiff = Math.round((close.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
           if (closeDiff >= 0) return closeDiff <= ATTENTION_DAYS_WINDOW
           // Close date passed but still OPEN (cron lag) — check due date
         }
-        const due = getInvoiceDueDate(inv.year, inv.month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)
+        const due = parseInvoiceDate(inv.dueDate)
         due.setHours(0, 0, 0, 0)
         const diffDays = Math.round((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
         return diffDays <= ATTENTION_DAYS_WINDOW
@@ -832,12 +1171,26 @@ export default function OverviewPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Visão Geral</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">Resumo do seu mês financeiro</p>
+        {/* O recorte é a competência da fatura, não a data da compra: uma
+            compra depois do fechamento pesa no mês da fatura que a recebeu.
+            Por isso este mês pode divergir do mesmo mês no Extrato. */}
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          O que pesa no mês, pela fatura em que cada gasto caiu
+        </p>
       </div>
 
       {/* Main grid */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[3fr_2fr]">
-        <CategoryBreakdown rows={categoryRows} isLoading={txLoading} startDate={startDate} endDate={endDate} />
+        <CategoryBreakdown
+          rows={categoryRows}
+          total={ownExpenseTotal}
+          isLoading={txLoading}
+          isError={txError}
+          isFetching={txFetching}
+          onRetry={() => void refetchTx()}
+          startDate={startDate}
+          endDate={endDate}
+        />
 
         {/* Mobile separator */}
         <div className="border-t border-border lg:hidden" aria-hidden />
@@ -850,19 +1203,38 @@ export default function OverviewPage() {
           receivables={pendingReceivables}
           receivablesTotal={pendingReceivablesAll.length}
           isLoading={attentionLoading}
+          isError={attentionError}
+          isFetching={attentionFetching}
+          onRetry={retryAttention}
           windowStr={windowStr}
         />
       </div>
 
       {/* Calendar */}
       <div className="border-t border-border pt-6">
+        {/*
+          `key` por competência: trocar de mês remonta a seção e zera o dia
+          selecionado, sem um efeito chamando `setState` (que dispara render em
+          cascata e mantinha o painel do dia anterior aberto por um frame).
+        */}
         <CalendarSection
+          key={`${year}-${month}`}
           year={year}
           month={month}
           debts={debts}
           receivables={receivables}
           invoices={invoices}
+          /*
+            Reusa a MESMA resposta que alimenta as categorias — nenhuma request
+            nova. A query já traz crédito pela competência da fatura e os
+            diretos pela data, que é exatamente o que o calendário precisa.
+          */
+          transactions={transactions ?? []}
           banks={banks}
+          isLoading={calendarLoading}
+          isError={calendarError}
+          isFetching={calendarFetching}
+          onRetry={retryCalendar}
         />
       </div>
     </div>

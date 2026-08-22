@@ -27,13 +27,26 @@ import {
 } from '@/components/ui/select'
 import { DatePicker } from '@/components/ui/date-picker'
 import { TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
+import {
+  KIND_LABELS,
+  PAYMENT_METHODS,
+  clearIncompatibleFields,
+  kindOf,
+  methodOf,
+  type PaymentMethod,
+  type TransactionKind,
+} from '@/lib/transaction-kind'
+import { useDebouncedValue } from '@/lib/use-debounced-value'
+import { TransactionPreviewPanel } from './transaction-preview-panel'
 import { cn } from '@/lib/utils'
+import { bankDisplayName, isSelectableBank } from '@/lib/bank-display'
 import { formatDateValue } from '@/lib/date'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { getBanks, createBank } from '@/services/banks.service'
 import { getCategories, createCategory } from '@/services/categories.service'
 import { getPersons, createPerson } from '@/services/persons.service'
-import type { Transaction, InstallmentScope, Bank, Category, Person } from '@/types'
+import { previewTransaction } from '@/services/transactions.service'
+import type { Transaction, Bank, Category, Person } from '@/types'
 import { TransactionType } from '@/types'
 
 const transactionTypeValues = [
@@ -71,8 +84,12 @@ interface TransactionSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   editTarget: Transaction | null
-  editScope: InstallmentScope | null
-  onSubmit: (data: TransactionFormData, scope: InstallmentScope | null) => Promise<void>
+  /**
+   * O escopo saiu daqui: em parcelamento ele é escolhido depois do submit, no
+   * diálogo que projeta o impacto de cada opção. O formulário só entrega as
+   * alterações.
+   */
+  onSubmit: (data: TransactionFormData) => Promise<void>
   /**
    * Valores iniciais ao criar. Usado quando o contexto já determina parte do
    * lançamento — dentro de uma fatura, o banco e o tipo são conhecidos.
@@ -88,7 +105,6 @@ export function TransactionSheet({
   open,
   onOpenChange,
   editTarget,
-  editScope,
   onSubmit,
   createDefaults,
 }: TransactionSheetProps) {
@@ -100,7 +116,7 @@ export function TransactionSheet({
   const qc = useQueryClient()
 
   // ── Queries ──
-  const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: getBanks })
+  const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: () => getBanks() })
   const { data: categories = [] } = useQuery({ queryKey: ['categories'], queryFn: getCategories })
   const { data: persons = [] } = useQuery({ queryKey: ['persons'], queryFn: getPersons })
 
@@ -163,6 +179,12 @@ export function TransactionSheet({
   }
 
   // ── Inline person create ──
+  /**
+   * Se a compra é para outra pessoa. Fica em estado local, não no formulário:
+   * é uma decisão de interface, e o que vai ao backend é só `personId`.
+   * Ao editar, começa ligado quando a transação já tem pessoa.
+   */
+  const [forOtherPerson, setForOtherPerson] = useState(false)
   const [showPersonCreate, setShowPersonCreate] = useState(false)
   const [newPersonName, setNewPersonName] = useState('')
   const personNameRef = useRef<HTMLInputElement>(null)
@@ -219,6 +241,131 @@ export function TransactionSheet({
   const selectedCategoryId = useWatch({ control, name: 'categoryId' })
   const selectedPersonId = useWatch({ control, name: 'personId' })
   const selectedIsRefund = useWatch({ control, name: 'isRefund' })
+  const selectedAmount = useWatch({ control, name: 'amount' })
+  const selectedInstallments = useWatch({ control, name: 'installments' })
+
+  // Quantas parcelas o backend vai gerar. Abaixo de 2 a compra é à vista.
+  const installmentCount =
+    selectedType === TransactionType.CREDIT_CARD && !selectedIsRefund
+      ? Number(selectedInstallments) || 1
+      : 1
+
+  const selectedKind = kindOf(selectedType ?? TransactionType.PIX)
+  const selectedDate = useWatch({ control, name: 'date' })
+
+  /**
+   * Prévia vinda do servidor: rateio, competência e vencimentos.
+   *
+   * Só é pedida quando há dados suficientes e a operação tem consequência
+   * automática — uma compra no crédito. PIX, débito, boleto e receita não
+   * geram fatura nem cobrança, então a prévia só repetiria o formulário.
+   *
+   * O debounce evita uma requisição por tecla; a `queryKey` carrega todos os
+   * campos que afetam o resultado, então o React Query descarta respostas de
+   * entradas antigas e não há race condition.
+   */
+  const previewInput = useDebouncedValue(
+    {
+      bankId: selectedBankId ?? '',
+      title: 'Lançamento',
+      type: selectedType,
+      amount: Number(selectedAmount) || 0,
+      date: selectedDate ?? '',
+      installments: installmentCount > 1 ? installmentCount : undefined,
+      isRefund: selectedIsRefund || undefined,
+      personId: selectedPersonId || undefined,
+    },
+    350,
+  )
+
+  const previewEnabled =
+    open &&
+    !isEditing &&
+    previewInput.type === TransactionType.CREDIT_CARD &&
+    Boolean(previewInput.bankId) &&
+    Boolean(previewInput.date) &&
+    previewInput.amount > 0
+
+  const {
+    data: preview,
+    isFetching: previewLoading,
+    isError: previewFailed,
+  } = useQuery({
+    queryKey: ['transaction-preview', previewInput],
+    queryFn: () => previewTransaction(previewInput),
+    enabled: previewEnabled,
+    // Mantém a prévia anterior visível durante o recálculo, evitando flicker.
+    placeholderData: (previous) => previous,
+    retry: false,
+  })
+
+  /**
+   * Trocar natureza ou forma descarta o que o novo tipo não aceita.
+   *
+   * A política é descartar, nunca guardar para restaurar: valor financeiro
+   * escondido que reaparece depois é imprevisível, e o backend recusaria o
+   * payload de qualquer forma.
+   */
+  function applyType(type: TransactionType) {
+    setValue('type', type, { shouldValidate: true })
+    const cleaned = clearIncompatibleFields(
+      {
+        installments: selectedInstallments as number | undefined,
+        personId: selectedPersonId,
+        isRefund: selectedIsRefund,
+      },
+      type,
+    )
+    setValue('installments', cleaned.installments)
+    setValue('personId', cleaned.personId)
+    setValue('isRefund', cleaned.isRefund ?? false)
+    if (cleaned.personId === undefined) setShowPersonCreate(false)
+  }
+
+  function handleKindChange(kind: TransactionKind) {
+    // Voltando para gasto, retoma a última forma escolhida; a primeira vez
+    // cai em crédito, que é o caminho mais comum no Cartero.
+    applyType(
+      kind === 'income'
+        ? TransactionType.INCOME
+        : (methodOf(selectedType) ?? TransactionType.CREDIT_CARD),
+    )
+  }
+
+  function handleMethodChange(method: PaymentMethod) {
+    applyType(method)
+  }
+
+  /** Estorno não parcela e não tem pessoa — o serviço ignora ambos. */
+  function handleRefundToggle(next: boolean) {
+    setValue('isRefund', next)
+    if (next) {
+      setValue('installments', undefined)
+      setValue('personId', undefined)
+      setForOtherPerson(false)
+      setShowPersonCreate(false)
+    }
+  }
+
+  function handleForOtherPersonToggle(next: boolean) {
+    setForOtherPerson(next)
+    if (!next) {
+      setValue('personId', undefined)
+      setShowPersonCreate(false)
+    }
+  }
+
+  /** Parcelado quando há uma quantidade de parcelas definida. */
+  const isParcelado = installmentCount > 1
+
+  /**
+   * Alternar à vista/parcelado mexe só na quantidade — o valor informado
+   * continua sendo o total da compra. Voltar para parcelado recomeça em 2,
+   * sem restaurar a quantidade anterior (mesma política de descartar estado).
+   */
+  function handlePaymentModeChange(parcelado: boolean) {
+    setValue('installments', parcelado ? 2 : undefined, { shouldValidate: true })
+  }
 
   useEffect(() => {
     if (selectedType !== TransactionType.CREDIT_CARD && selectedIsRefund) {
@@ -235,6 +382,9 @@ export function TransactionSheet({
       setNewBank({ name: '', dueDate: '', daysAfterClose: '7' })
       setNewCategoryName('')
       setNewPersonName('')
+      // O toggle de "compra para outra pessoa" acompanha o estado real da
+      // transação ao abrir para edição.
+      setForOtherPerson(Boolean(editTarget?.personId))
       if (editTarget) {
         reset({
           bankId: editTarget.bankId,
@@ -277,7 +427,9 @@ export function TransactionSheet({
     if (submittingRef.current) return
     submittingRef.current = true
     try {
-      await onSubmit(data, editScope)
+      // Rede de segurança: mesmo que algum campo incompatível tenha escapado
+      // dos handlers, o payload sai coerente com o tipo escolhido.
+      await onSubmit({ ...data, ...clearIncompatibleFields(data, data.type) })
       // On success: keep ref=true — sheet will close, ref resets on next open
     } catch (err) {
       submittingRef.current = false // On error: allow retry
@@ -285,7 +437,34 @@ export function TransactionSheet({
     }
   }
 
-  const selectedBank = banks.find((b) => b.id === selectedBankId)
+  /**
+   * Opções de banco: os ativos, mais o banco atual se ele estiver arquivado.
+   *
+   * `getBanks()` devolve só os ativos — correto para um lançamento novo. Mas ao
+   * editar uma transação de um cartão encerrado, o valor atual não estaria na
+   * lista e o Select apareceria vazio, como se o campo tivesse sido apagado.
+   *
+   * O banco vem de `editTarget.bank`, que a transação já carrega — sem consulta
+   * extra. Ele é marcado como "Arquivado" e o backend continua recusando
+   * qualquer OUTRO registro que tente apontar para ele.
+   */
+  const bankOptions = (() => {
+    const current = editTarget?.bank
+
+    /*
+      O banco de sistema (`__system_receivables__`) fica FORA da lista.
+
+      `GET /banks` já o exclui, mas ele chega aqui embutido na transação, e a
+      reinclusão acima o tratava como um arquivado qualquer — colocando seu
+      nome técnico no seletor e permitindo apontar novos lançamentos para um
+      banco que o usuário nunca criou.
+    */
+    if (!current || !isSelectableBank(current)) return banks
+    if (banks.some((bank) => bank.id === current.id)) return banks
+    return [...banks, current as Bank]
+  })()
+
+  const selectedBank = bankOptions.find((b) => b.id === selectedBankId)
   const selectedCategory = categories.find((c) => c.id === selectedCategoryId)
   const selectedPerson = persons.find((p) => p.id === selectedPersonId)
   const selectableCategories = categories.filter((c) => !c.isSystem)
@@ -305,33 +484,60 @@ export function TransactionSheet({
           onSubmit={handleSubmit(handleFormSubmit)}
           className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5"
         >
-          {/* Type */}
+          {/* Natureza — "o que aconteceu". O tipo persistido é derivado desta
+              escolha mais a forma, logo abaixo. */}
           <div className="space-y-1.5">
-            <Label>Tipo</Label>
-            <Controller
-              control={control}
-              name="type"
-              render={({ field }) => (
-                <Select value={field.value ?? ''} onValueChange={field.onChange}>
-                  <SelectTrigger className="w-full" aria-invalid={!!errors.type}>
-                    <span data-slot="select-value" className="flex flex-1 items-center text-left text-sm">
-                      {field.value
-                        ? TRANSACTION_TYPE_LABELS[field.value as TransactionType]
-                        : <span className="text-muted-foreground">Selecione o tipo</span>}
-                    </span>
-                  </SelectTrigger>
-                  <SelectContent side="bottom" alignItemWithTrigger={false}>
-                    {Object.values(TransactionType).map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {TRANSACTION_TYPE_LABELS[t]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
+            <Label>O que aconteceu?</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {(['expense', 'income'] as const).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  aria-pressed={selectedKind === kind}
+                  onClick={() => handleKindChange(kind)}
+                  className={cn(
+                    'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                    selectedKind === kind
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border text-muted-foreground hover:bg-muted/50',
+                  )}
+                >
+                  {KIND_LABELS[kind]}
+                </button>
+              ))}
+            </div>
             {errors.type && <p className="text-xs text-destructive">{errors.type.message}</p>}
-            {selectedType === TransactionType.CREDIT_CARD && (
+          </div>
+
+          {/* Forma de pagamento — só existe para gasto. Receita é persistida
+              como INCOME e o schema não separa a forma de recebimento. */}
+          {selectedKind === 'expense' && (
+            <div className="space-y-1.5">
+              <Label>Forma de pagamento</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {PAYMENT_METHODS.map((method) => (
+                  <button
+                    key={method}
+                    type="button"
+                    aria-pressed={selectedType === method}
+                    onClick={() => handleMethodChange(method)}
+                    className={cn(
+                      'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                      selectedType === method
+                        ? 'border-primary bg-primary/10 text-foreground'
+                        : 'border-border text-muted-foreground hover:bg-muted/50',
+                    )}
+                  >
+                    {TRANSACTION_TYPE_LABELS[method]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Estorno — só no crédito. Reduz a fatura em vez de somar. */}
+          {selectedType === TransactionType.CREDIT_CARD && (
+            <div className="space-y-1.5">
               <Controller
                 control={control}
                 name="isRefund"
@@ -340,43 +546,22 @@ export function TransactionSheet({
                     type="button"
                     role="switch"
                     aria-checked={Boolean(field.value)}
-                    onClick={() => field.onChange(!field.value)}
+                    onClick={() => handleRefundToggle(!field.value)}
                     className="flex w-fit items-center gap-2 rounded-md py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground"
                   >
                     <span className={cn('flex size-4 items-center justify-center rounded border transition-colors', field.value ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/50 bg-transparent')}>
                       {field.value && <Check className="size-3" />}
                     </span>
-                    <span className="text-xs font-medium">Transformar em reembolso</span>
+                    <span className="text-xs font-medium">Registrar como estorno</span>
                   </button>
                 )}
               />
-            )}
-          </div>
-
-          {false && selectedType === TransactionType.CREDIT_CARD && (
-            <Controller
-              control={control}
-              name="isRefund"
-              render={({ field }) => (
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={Boolean(field.value)}
-                  onClick={() => field.onChange(!field.value)}
-                  className="flex w-fit items-center gap-2 rounded-md py-1 text-left text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  <span>
-                    <span className="block text-xs font-medium">Reembolso na fatura</span>
-                    <span className="sr-only">
-                      Abate este valor do total do cartão de crédito
-                    </span>
-                  </span>
-                  <span className={cn('flex size-4 items-center justify-center rounded border transition-colors', field.value ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/50 bg-transparent')}>
-                    {field.value && <Check className="size-3" />}
-                  </span>
-                </button>
+              {selectedIsRefund && (
+                <p className="text-xs text-muted-foreground">
+                  Reduz o total da fatura. Não é receita e não gera cobrança.
+                </p>
               )}
-            />
+            </div>
           )}
 
           {/* Title */}
@@ -396,7 +581,12 @@ export function TransactionSheet({
 
           {/* Amount */}
           <div className="space-y-1.5">
-            <Label htmlFor="amount">Valor (R$)</Label>
+            {/* Em compras parceladas, o valor informado é o TOTAL — o backend
+                divide entre as parcelas. O rótulo diz isso para não deixar
+                dúvida entre total e valor da parcela. */}
+            <Label htmlFor="amount">
+              {installmentCount > 1 ? 'Valor total (R$)' : 'Valor (R$)'}
+            </Label>
             <Controller
               control={control}
               name="amount"
@@ -443,15 +633,31 @@ export function TransactionSheet({
                 render={({ field }) => (
                   <Select value={field.value ?? ''} onValueChange={field.onChange}>
                     <SelectTrigger className="w-full" aria-invalid={!!errors.bankId}>
-                      <span data-slot="select-value" className="flex flex-1 items-center text-left text-sm">
-                        {selectedBank
-                          ? selectedBank.name
-                          : <span className="text-muted-foreground">Selecione o banco</span>}
+                      <span data-slot="select-value" className="flex flex-1 items-center gap-1.5 text-left text-sm">
+                        {selectedBank ? (
+                          <>
+                            {bankDisplayName(selectedBank)}
+                            {selectedBank.isArchived && (
+                              <span className="text-xs text-muted-foreground">
+                                — Arquivado
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">Selecione o banco</span>
+                        )}
                       </span>
                     </SelectTrigger>
                     <SelectContent side="bottom" alignItemWithTrigger={false}>
-                      {banks.map((b) => (
-                        <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                      {bankOptions.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>
+                          {bankDisplayName(b)}
+                          {b.isArchived && (
+                            <span className="text-xs text-muted-foreground">
+                              — Arquivado
+                            </span>
+                          )}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -633,29 +839,75 @@ export function TransactionSheet({
             {errors.categoryId && <p className="text-xs text-destructive">{errors.categoryId.message}</p>}
           </div>
 
-          {/* Installments — only for CREDIT_CARD + create */}
+          {/* Pagamento — só no crédito, e nunca em estorno (que é sempre um
+              único lançamento). A escolha explícita substitui a convenção
+              implícita do campo vazio significando "à vista". */}
           {selectedType === TransactionType.CREDIT_CARD && !isEditing && !selectedIsRefund && (
             <div className="space-y-1.5">
-              <Label htmlFor="installments">Parcelas (opcional)</Label>
-              <Input
-                id="installments"
-                type="number"
-                min={2}
-                max={64}
-                placeholder="Deixe em branco para à vista"
-                aria-invalid={!!errors.installments}
-                {...register('installments')}
-              />
-              {errors.installments && (
-                <p className="text-xs text-destructive">{errors.installments.message}</p>
+              <Label>Pagamento</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {([false, true] as const).map((parcelado) => (
+                  <button
+                    key={String(parcelado)}
+                    type="button"
+                    aria-pressed={isParcelado === parcelado}
+                    onClick={() => handlePaymentModeChange(parcelado)}
+                    className={cn(
+                      'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                      isParcelado === parcelado
+                        ? 'border-primary bg-primary/10 text-foreground'
+                        : 'border-border text-muted-foreground hover:bg-muted/50',
+                    )}
+                  >
+                    {parcelado ? 'Parcelado' : 'À vista'}
+                  </button>
+                ))}
+              </div>
+
+              {isParcelado && (
+                <div className="space-y-1.5 pt-1">
+                  <Label htmlFor="installments">Número de parcelas</Label>
+                  <Input
+                    id="installments"
+                    type="number"
+                    min={2}
+                    max={64}
+                    aria-invalid={!!errors.installments}
+                    {...register('installments')}
+                  />
+                  {errors.installments && (
+                    <p className="text-xs text-destructive">{errors.installments.message}</p>
+                  )}
+                </div>
               )}
             </div>
           )}
 
-          {/* Person — only for CREDIT_CARD */}
-          {selectedType === TransactionType.CREDIT_CARD && (
+          {/* Compra para outra pessoa — só no crédito, e nunca em estorno.
+              O toggle nomeia a função antes de mostrar uma lista de nomes:
+              "Pessoa (opcional)" exigia deduzir para que servia. */}
+          {selectedType === TransactionType.CREDIT_CARD && !selectedIsRefund && (
             <div className="space-y-1.5">
-              <Label>Pessoa (opcional)</Label>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={forOtherPerson}
+                onClick={() => handleForOtherPersonToggle(!forOtherPerson)}
+                className="flex w-fit items-center gap-2 rounded-md py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <span
+                  className={cn(
+                    'flex size-4 items-center justify-center rounded border transition-colors',
+                    forOtherPerson
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-muted-foreground/50 bg-transparent',
+                  )}
+                >
+                  {forOtherPerson && <Check className="size-3" />}
+                </span>
+                <span className="text-xs font-medium">Compra para outra pessoa</span>
+              </button>
+              {forOtherPerson && (
               <div className="space-y-2">
                 <Controller
                   control={control}
@@ -728,10 +980,17 @@ export function TransactionSheet({
                     Nova pessoa
                   </button>
                 )}
+                {/* A microcopy genérica ("gera automaticamente uma cobrança")
+                    dá lugar ao valor e vencimento reais no painel de prévia,
+                    assim que a pessoa é escolhida. */}
+                {!selectedPersonId && (
+                  <p className="text-xs text-muted-foreground">
+                    A pessoa fica responsável pelo valor, e uma cobrança é
+                    criada em A Receber.
+                  </p>
+                )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Vincule esta transação a uma pessoa para gerar automaticamente uma cobrança de &quot;A Receber&quot;.
-              </p>
+              )}
             </div>
           )}
 
@@ -744,6 +1003,13 @@ export function TransactionSheet({
               {...register('description')}
             />
           </div>
+
+          {/* Consequências automáticas — só aparece quando há o que explicar. */}
+          <TransactionPreviewPanel
+            preview={previewEnabled ? preview : undefined}
+            isLoading={previewEnabled && previewLoading}
+            isError={previewEnabled && previewFailed}
+          />
         </form>
 
         <SheetFooter className="px-6 pb-6 pt-0">

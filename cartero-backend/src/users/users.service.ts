@@ -21,13 +21,18 @@ export class UsersService {
   }
 
   async update(id: string, dto: UpdateUserDto) {
-    const data = dto.password
-      ? { ...dto, password: await hash(dto.password, 10) }
-      : { ...dto };
-
+    // Campos explícitos: `email` e `id` não estão no DTO e não podem passar a
+    // estar por acidente — espalhar o corpo da requisição aqui permitiria
+    // trocar a identidade da conta.
     const user = await this.prisma.user.update({
       where: { id },
-      data,
+      data: {
+        name: dto.name,
+        createIncomeOnReceivablePaid: dto.createIncomeOnReceivablePaid,
+        createExpenseOnDebtPaid: dto.createExpenseOnDebtPaid,
+        notifyDaysBefore: dto.notifyDaysBefore,
+        password: dto.password ? await hash(dto.password, 10) : undefined,
+      },
     });
 
     const { password: _pwd, ...UserWithoutPassword } = user;

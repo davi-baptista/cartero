@@ -6,27 +6,12 @@ import Link from 'next/link'
 import { useParams, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import {
-  ArrowLeft,
-  ChevronRight,
-  ChevronDown,
-  CreditCard,
-  Wallet,
-  Receipt,
-  FileText,
-  TrendingUp,
-  CheckCircle2,
-  Loader2,
-  Undo2,
-  Plus,
-  Pencil,
-  Trash2,
-  MoreVertical,
-} from 'lucide-react'
+import { ArrowLeft, ChevronRight, ChevronDown, CreditCard, Wallet, Receipt, FileText, TrendingUp, CheckCircle2, Loader2, Undo2, Plus, Pencil, Trash2, MoreVertical, Archive, ArchiveRestore, Users } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { motion } from 'motion/react'
 import { Button } from '@/components/ui/button'
+import { QueryError } from '@/components/ui/query-error'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Sheet,
@@ -55,7 +40,10 @@ import {
   createTransaction,
   updateTransaction,
   deleteTransaction,
+  type PreviewUpdatePayload,
 } from '@/services/transactions.service'
+import { belongsToSeries } from '@/lib/installment-series'
+import { API_ERROR_CODES, apiErrorMessage, isApiErrorCode } from '@/lib/api-error'
 import { isAxiosError } from 'axios'
 import {
   getBankInvoices,
@@ -63,15 +51,26 @@ import {
   updateInvoiceStatus,
   reopenInvoice,
 } from '@/services/invoices.service'
-import { getBank } from '@/services/banks.service'
+import { getBank, restoreBank } from '@/services/banks.service'
 import {
   formatCurrency,
   formatMonthYear,
   isExpense,
 } from '@/lib/formatters'
+import {
+  filterByCompositionKey,
+  invoiceBreakdown,
+  invoiceComposition,
+} from '@/lib/invoice-composition'
 import { parseDateOnly, formatDateValue } from '@/lib/date'
-import { getInvoiceCloseDate, getInvoiceDueDate } from '@/lib/invoice-dates'
+import { getInvoiceCloseDate, parseInvoiceDate } from '@/lib/invoice-dates'
 import { resolveCategoryIcon } from '@/lib/category-icons'
+import {
+  INVOICE_STATUS_COLOR,
+  INVOICE_STATUS_LABEL,
+  INVOICE_STATUS_SORT_ORDER,
+  invoiceStatusConfig,
+} from '@/lib/invoice-status'
 import type { Invoice, Bank, Transaction } from '@/types'
 import { InvoiceStatus, TransactionType, InstallmentScope } from '@/types'
 import type { LucideIcon } from 'lucide-react'
@@ -79,41 +78,17 @@ import { cn } from '@/lib/utils'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STATUS_CONFIG: Record<InvoiceStatus, { label: string; className: string }> = {
-  [InvoiceStatus.OPEN]: {
-    label: 'Aberta',
-    className: 'bg-primary/15 text-primary',
-  },
-  [InvoiceStatus.CLOSED]: {
-    label: 'Fechada',
-    className: 'bg-amber-500/15 text-amber-400',
-  },
-  [InvoiceStatus.OVERDUE]: {
-    label: 'Vencida',
-    className: 'bg-destructive/15 text-destructive',
-  },
-  [InvoiceStatus.PAID]: {
-    label: 'Paga',
-    className: 'bg-paid/15 text-paid',
-  },
-}
-
-// Status color primitives used for row highlight and sheet header tint
-const STATUS_COLOR: Record<InvoiceStatus, string> = {
-  [InvoiceStatus.OPEN]: 'var(--primary)',
-  [InvoiceStatus.CLOSED]: 'oklch(0.750 0.150 80)', // no token for amber
-  [InvoiceStatus.OVERDUE]: 'var(--destructive)',
-  [InvoiceStatus.PAID]: 'var(--color-income)',
-}
-
+// Rótulo, cor e ordem de status vêm de `@/lib/invoice-status`. Este arquivo
+// mantinha a terceira cópia do mapa, mais um `oklch` de âmbar fixo cujo
+// comentário afirmava não existir token — quando `--pending` já era esse token.
 
 function statusRowBg(status: InvoiceStatus): React.CSSProperties {
-  const c = STATUS_COLOR[status]
+  const c = INVOICE_STATUS_COLOR[status]
   return { backgroundColor: `color-mix(in oklch, ${c} 7%, transparent)` }
 }
 
 function statusHeaderStyle(status: InvoiceStatus): React.CSSProperties {
-  const c = STATUS_COLOR[status]
+  const c = INVOICE_STATUS_COLOR[status]
   return { backgroundColor: `color-mix(in oklch, ${c} 10%, transparent)` }
 }
 
@@ -132,13 +107,6 @@ const TYPE_ICON: Record<TransactionType, LucideIcon> = {
   [TransactionType.BOLETO]: FileText,
 }
 
-const STATUS_SORT_ORDER: Record<InvoiceStatus, number> = {
-  [InvoiceStatus.OVERDUE]: 0,
-  [InvoiceStatus.CLOSED]: 1,
-  [InvoiceStatus.OPEN]: 2,
-  [InvoiceStatus.PAID]: 3,
-}
-
 const ACTIVE_VISIBLE = 3
 const PAID_VISIBLE = 1
 
@@ -148,12 +116,23 @@ function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
-function calcCloseDate(bank: Bank, month: number, year: number): string {
-  return format(getInvoiceCloseDate(year, month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose), "dd 'de' MMMM", { locale: ptBR })
+/**
+ * Datas de uma fatura REAL, direto do que ela guarda.
+ *
+ * Antes eram derivadas de `bank.invoiceDueDate` + intervalo, o que fazia as
+ * datas de uma fatura paga mudarem quando o cartão era reconfigurado. Agora a
+ * fatura é a fonte de verdade e o banco não participa.
+ */
+function calcCloseDate(invoice: Invoice): string {
+  return format(parseInvoiceDate(invoice.closeDate), "dd 'de' MMMM", {
+    locale: ptBR,
+  })
 }
 
-function calcDueDate(bank: Bank, month: number, year: number): string {
-  return format(getInvoiceDueDate(year, month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose), "dd 'de' MMMM", { locale: ptBR })
+function calcDueDate(invoice: Invoice): string {
+  return format(parseInvoiceDate(invoice.dueDate), "dd 'de' MMMM", {
+    locale: ptBR,
+  })
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -183,7 +162,7 @@ function ExpandButton({
 }
 
 function StatusBadge({ status }: { status: InvoiceStatus }) {
-  const { label, className } = STATUS_CONFIG[status]
+  const { label, className } = invoiceStatusConfig(status)
   return (
     <span
       className={cn(
@@ -216,7 +195,7 @@ function InvoiceRow({
     <button
       onClick={onClick}
       aria-pressed={isSelected}
-      aria-label={`${monthYear} — ${STATUS_CONFIG[invoice.status].label}${isAtual ? ' — Atual' : ''}`}
+      aria-label={`${monthYear} — ${INVOICE_STATUS_LABEL[invoice.status]}${isAtual ? ' — Atual' : ''}`}
       className="group flex w-full items-center gap-4 px-2 py-4 text-left transition-colors hover:bg-muted/30"
       style={isSelected ? statusRowBg(invoice.status) : undefined}
     >
@@ -233,9 +212,9 @@ function InvoiceRow({
         </div>
         {bank && (
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-            <span className="shrink-0">Fecha {calcCloseDate(bank, invoice.month, invoice.year)}</span>
+            <span className="shrink-0">Fecha {calcCloseDate(invoice)}</span>
             <span aria-hidden className="shrink-0 text-muted-foreground/40">·</span>
-            <span className="shrink-0">Vence {calcDueDate(bank, invoice.month, invoice.year)}</span>
+            <span className="shrink-0">Vence {calcDueDate(invoice)}</span>
           </div>
         )}
       </div>
@@ -307,7 +286,9 @@ function TxRow({
             <span aria-hidden className="text-muted-foreground/40">·</span>
           )}
           {tx.person && (
-            <span className="truncate shrink-0">{tx.person.name}</span>
+            <span className="truncate shrink-0 text-receivable">
+              a receber de {tx.person.name}
+            </span>
           )}
         </div>
       </div>
@@ -368,50 +349,41 @@ interface CategorySlice {
   icon: string | null
   amount: number
   pct: number
+  /** `true` no bucket virtual "De outras pessoas". */
+  isThirdParty: boolean
 }
 
 /**
- * Gastos por categoria da fatura. Estornos abatem a própria categoria — sem
- * isso um reembolso inflaria o gasto em vez de reduzi-lo.
+ * Fatias da COMPOSIÇÃO da fatura.
+ *
+ * Agrupa por categoria própria, e joga toda transação com pessoa vinculada num
+ * bucket virtual "De outras pessoas" — ver `invoice-composition.ts`.
+ *
+ * Antes agrupava tudo pela Category persistida, então uma fatura com R$ 96,50
+ * de lazer próprio e um jantar de R$ 240 da Mariana exibia "Lazer R$ 336,50",
+ * sugerindo que os R$ 240 eram gasto pessoal de lazer. A responsabilidade
+ * econômica é uma dimensão separada da categoria, e o bucket a torna visível
+ * sem tocar na Category do banco.
  */
 function buildCategorySlices(
   transactions: Transaction[] | undefined,
   expanded = false,
 ): { slices: CategorySlice[]; hiddenCount: number } {
-  if (!transactions?.length) return { slices: [], hiddenCount: 0 }
-
-  const totals = new Map<string, { name: string; color: string | null; icon: string | null; amount: number }>()
-
-  for (const tx of transactions) {
-    if (tx.type === TransactionType.INCOME) continue
-    const key = tx.categoryId ?? 'sem-categoria'
-    const entry = totals.get(key) ?? {
-      name: tx.category?.name ?? 'Sem categoria',
-      color: tx.category?.color ?? null,
-      icon: tx.category?.icon ?? null,
-      amount: 0,
-    }
-    entry.amount += tx.isRefund ? -Number(tx.amount) : Number(tx.amount)
-    totals.set(key, entry)
-  }
-
-  // Uma categoria que ficou negativa ou zerada não é "gasto" — some do gráfico.
-  const ranked = [...totals.entries()]
-    .map(([key, value]) => ({ key, ...value }))
-    .filter((entry) => entry.amount > 0)
-    .sort((a, b) => b.amount - a.amount)
-
+  const ranked = invoiceComposition(transactions ?? [])
   if (ranked.length === 0) return { slices: [], hiddenCount: 0 }
 
   const hiddenCount = Math.max(0, ranked.length - CATEGORY_CHART_LIMIT)
   const visible = expanded ? [...ranked] : ranked.slice(0, CATEGORY_CHART_LIMIT)
 
-  // Proporção relativa à maior fatia: a barra compara categorias entre si,
-  // não contra o total da fatura. A escala vem sempre do ranking inteiro,
-  // para as barras não mudarem de tamanho ao expandir.
+  // Proporção relativa à maior fatia: a barra compara linhas entre si, não
+  // contra o total da fatura. A escala vem do ranking inteiro, para as barras
+  // não mudarem de tamanho ao expandir.
   const max = ranked[0].amount
   return {
-    slices: visible.map((entry) => ({ ...entry, pct: (entry.amount / max) * 100 })),
+    slices: visible.map((entry) => ({
+      ...entry,
+      pct: (entry.amount / max) * 100,
+    })),
     hiddenCount,
   }
 }
@@ -434,12 +406,12 @@ function CategoryChart({
 
   return (
     <section
-      aria-label="Gastos por categoria nesta fatura"
+      aria-label="Composição da fatura"
       className="border-t border-border px-6 py-4"
     >
       <div className="mb-3 flex items-baseline justify-between gap-2">
         <h3 className="text-[11px] font-medium text-muted-foreground">
-          Maiores gastos por categoria
+          Composição da fatura
         </h3>
         {selectedCategory && (
           <button
@@ -453,8 +425,17 @@ function CategoryChart({
       </div>
       <div className="flex flex-col gap-1">
         {slices.map((slice, i) => {
-          const { Icon } = resolveCategoryIcon(slice.icon)
-          const color = slice.color ?? 'oklch(0.640 0.210 272)'
+          /*
+            O bucket de terceiros não é uma Category: usa ícone de pessoas e o
+            token `receivable`, o mesmo de "de outras pessoas" no cabeçalho.
+            O nome da linha já diz o que é — a cor é reforço, não a informação.
+          */
+          const { Icon } = slice.isThirdParty
+            ? { Icon: Users }
+            : resolveCategoryIcon(slice.icon)
+          const color = slice.isThirdParty
+            ? 'var(--receivable)'
+            : (slice.color ?? 'oklch(0.640 0.210 272)')
           const active = selectedCategory === slice.key
           return (
             <button
@@ -532,10 +513,14 @@ function InvoiceDetailSheet({
   const [reopenConfirm, setReopenConfirm] = useState(false)
   const [txSheetOpen, setTxSheetOpen] = useState(false)
   const [editTx, setEditTx] = useState<Transaction | null>(null)
-  const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
   const [scopeDialog, setScopeDialog] = useState<{
     tx: Transaction
     mode: 'edit' | 'delete'
+  } | null>(null)
+  /** Alterações preenchidas, aguardando a escolha de escopo. */
+  const [pendingEdit, setPendingEdit] = useState<{
+    tx: Transaction
+    payload: Parameters<typeof updateTransaction>[1]
   } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null)
   /**
@@ -615,13 +600,27 @@ function InvoiceDetailSheet({
     }) => updateTransaction(id, payload, scope),
     onSuccess: () => {
       invalidateAfterTxChange()
+      // O save pode partir do formulário ou do diálogo de escopo; fechar os
+      // dois aqui evita deixar um deles aberto sobre a lista já atualizada.
+      setTxSheetOpen(false)
+      setEditTx(null)
+      setScopeDialog(null)
+      setPendingEdit(null)
       toast.success('Transação atualizada')
     },
-    onError: (error) => {
-      const message = isAxiosError(error)
-        ? (error.response?.data as { message?: string })?.message
-        : undefined
-      toast.error(message ?? 'Erro ao atualizar transação')
+    onError: (error, variables) => {
+      // A confirmação de fatura fechada é pedida no diálogo; aqui só resta a
+      // corrida (a fatura fechou entre a prévia e o save).
+      if (
+        isApiErrorCode(error, API_ERROR_CODES.CLOSED_INVOICE_REASSIGNMENT) &&
+        !variables.payload.confirmReopenClosedInvoice
+      ) {
+        toast.error('A fatura foi fechada enquanto você editava. Revise e salve novamente.')
+        setScopeDialog(null)
+        setPendingEdit(null)
+        return
+      }
+      toast.error(apiErrorMessage(error, 'Erro ao atualizar transação'))
     },
   })
 
@@ -667,65 +666,87 @@ function InvoiceDetailSheet({
     }
   }, [invoice])
 
+  /**
+   * Editar abre o formulário direto, como na página de transações.
+   *
+   * O escopo passou para depois do submit: só com as alterações em mãos o
+   * diálogo consegue dizer quantas parcelas cada opção atinge e em quanto.
+   */
   function handleEditTx(tx: Transaction) {
-    // Parcela de uma série: o usuário escolhe se altera uma, as próximas ou todas.
-    if (tx.parentId || /\s\d+\/\d+$/.test(tx.title)) {
-      setScopeDialog({ tx, mode: 'edit' })
-      return
-    }
     setEditTx(tx)
-    setEditScope(null)
     setTxSheetOpen(true)
   }
 
   function handleDeleteTx(tx: Transaction) {
-    if (tx.parentId || /\s\d+\/\d+$/.test(tx.title)) {
+    if (belongsToSeries(tx)) {
       setScopeDialog({ tx, mode: 'delete' })
       return
     }
     setDeleteTarget(tx)
   }
 
-  function handleScopeConfirm(scope: InstallmentScope) {
+  function handleScopeConfirm(
+    scope: InstallmentScope,
+    confirmClosedInvoice: boolean,
+  ) {
     if (!scopeDialog) return
     const { tx, mode } = scopeDialog
+
     if (mode === 'delete') {
       deleteTxMut.mutate({ id: tx.id, scope })
       return
     }
-    setEditTx(tx)
-    setEditScope(scope)
-    setScopeDialog(null)
-    setTxSheetOpen(true)
+
+    if (!pendingEdit) return
+    updateTxMut.mutate({
+      id: pendingEdit.tx.id,
+      payload: confirmClosedInvoice
+        ? { ...pendingEdit.payload, confirmReopenClosedInvoice: true }
+        : pendingEdit.payload,
+      scope,
+    })
   }
 
-  async function handleTxSubmit(
-    data: TransactionFormData,
-    scope: InstallmentScope | null,
-  ) {
-    if (editTx) {
-      await updateTxMut.mutateAsync({
-        id: editTx.id,
-        payload: data,
-        scope: scope ?? undefined,
-      })
-    } else {
+  async function handleTxSubmit(data: TransactionFormData) {
+    if (!editTx) {
       await createTxMut.mutateAsync(data)
+      setTxSheetOpen(false)
+      return
     }
+
+    // Parcelamento: escopo e impacto são resolvidos no diálogo.
+    if (belongsToSeries(editTx)) {
+      setPendingEdit({ tx: editTx, payload: data })
+      setScopeDialog({ tx: editTx, mode: 'edit' })
+      setTxSheetOpen(false)
+      return
+    }
+
+    await updateTxMut.mutateAsync({ id: editTx.id, payload: data })
     setTxSheetOpen(false)
     setEditTx(null)
-    setEditScope(null)
   }
   const monthYear = invoice ? capitalize(formatMonthYear(invoice.month, invoice.year)) : ''
   const total = invoice ? Number(invoice.totalAmount) : 0
   const txCount = invoice?.transactions?.length ?? 0
-  // Reembolsável: parte do total que já tem dono (pessoa vinculada) — o
-  // resto é o que efetivamente sai do seu bolso.
-  const reimbursableTotal = (invoice?.transactions ?? []).reduce(
-    (sum, tx) => sum + (tx.personId ? Number(tx.amount) : 0),
-    0,
+  // Parte do total que já tem dono (pessoa vinculada) — o resto é o que
+  // efetivamente sai do seu bolso.
+  //
+  // A soma passa pelo vocabulário central para respeitar estornos: antes ela
+  // somava `amount` de toda transação com pessoa, então o estorno de uma
+  // compra de terceiro AUMENTAVA "de outras pessoas" e reduzia "sua parte" —
+  // o inverso do correto.
+  /*
+    `own` é derivado de `gross - others`, não somado em paralelo.
+
+    O cabeçalho exibia "R$ NaN sua parte": a API serializa `Decimal` como
+    string, e a soma concatenava texto. A conversão agora acontece na borda
+    (`invoices.service.ts`), e o helper ainda normaliza defensivamente.
+  */
+  const { own: ownTotal, others: reimbursableTotal } = invoiceBreakdown(
+    invoice?.totalAmount ?? 0,
+    invoice?.transactions ?? [],
   )
-  const ownTotal = total - reimbursableTotal
   const installmentNumber = (tx: Transaction) => {
     const match = tx.title.match(/\s(\d+)\/\d+$/)
     return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER
@@ -738,10 +759,12 @@ function InvoiceDetailSheet({
   const txs =
     invoice?.transactions
       ?.slice()
-      .filter(
-        (tx) =>
-          !selectedCategory || (tx.categoryId ?? 'sem-categoria') === selectedCategory,
-      )
+      /*
+        O filtro segue a MESMA regra do agrupamento: o bucket mostra quem tem
+        pessoa; uma categoria mostra só as próprias. Filtrar por categoria e
+        incluir a transação de terceiro contradiria a composição acima.
+      */
+      .filter((tx) => filterByCompositionKey([tx], selectedCategory).length > 0)
       .sort(
         (a, b) =>
           parseDateOnly(b.date).getTime() - parseDateOnly(a.date).getTime() ||
@@ -789,8 +812,8 @@ function InvoiceDetailSheet({
                 </p>
                 {reimbursableTotal > 0 && (
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    <span className="text-foreground/80">{formatCurrency(ownTotal)}</span> seu ·{' '}
-                    <span className="text-receivable">{formatCurrency(reimbursableTotal)}</span> de outros
+                    <span className="text-foreground/80">{formatCurrency(ownTotal)}</span> sua parte ·{' '}
+                    <span className="text-receivable">{formatCurrency(reimbursableTotal)}</span> de outras pessoas
                   </p>
                 )}
               </div>
@@ -851,7 +874,6 @@ function InvoiceDetailSheet({
                       className="mt-4"
                       onClick={() => {
                         setEditTx(null)
-                        setEditScope(null)
                         setTxSheetOpen(true)
                       }}
                     >
@@ -879,8 +901,7 @@ function InvoiceDetailSheet({
                         className="h-7 gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
                         onClick={() => {
                           setEditTx(null)
-                          setEditScope(null)
-                          setTxSheetOpen(true)
+                            setTxSheetOpen(true)
                         }}
                       >
                         <Plus className="size-3.5" />
@@ -936,22 +957,39 @@ function InvoiceDetailSheet({
         open={txSheetOpen}
         onOpenChange={(open) => {
           setTxSheetOpen(open)
-          if (!open) {
-            setEditTx(null)
-            setEditScope(null)
-          }
+          if (!open) setEditTx(null)
         }}
         editTarget={editTx}
-        editScope={editScope}
         onSubmit={handleTxSubmit}
         createDefaults={createDefaults}
       />
 
+      {/* `siblings` são as transações desta fatura. Como cada parcela cai numa
+          fatura diferente, a série chega quase sempre incompleta — o diálogo
+          detecta isso e apresenta os números como piso, não como total. Na
+          edição o impacto exato vem da prévia do servidor. */}
       <InstallmentScopeDialog
+        // Remonta por operação — escopo inicial limpo sem efeito de reset.
+        key={scopeDialog ? `${scopeDialog.mode}:${scopeDialog.tx.id}` : 'none'}
         open={scopeDialog !== null}
         mode={scopeDialog?.mode ?? 'delete'}
+        transaction={scopeDialog?.tx ?? null}
+        siblings={invoice?.transactions ?? []}
+        pendingChanges={
+          scopeDialog?.mode === 'edit' && pendingEdit
+            ? (pendingEdit.payload as PreviewUpdatePayload)
+            : null
+        }
+        isPending={
+          scopeDialog?.mode === 'delete'
+            ? deleteTxMut.isPending
+            : updateTxMut.isPending
+        }
         onConfirm={handleScopeConfirm}
-        onCancel={() => setScopeDialog(null)}
+        onCancel={() => {
+          setScopeDialog(null)
+          setPendingEdit(null)
+        }}
         linkedWarning={Boolean(scopeDialog?.tx.personId)}
       />
 
@@ -988,6 +1026,7 @@ function InvoiceDetailSheet({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function BankInvoicesPage() {
+  const qc = useQueryClient()
   const params = useParams()
   const bankId = params.id as string
   const searchParams = useSearchParams()
@@ -1003,7 +1042,32 @@ export default function BankInvoicesPage() {
     queryFn: () => getBank(bankId),
   })
 
-  const { data: invoices, isLoading } = useQuery({
+  /**
+   * Restaurar daqui: quem chega numa fatura de um cartão encerrado e decide
+   * voltar a usá-lo não deveria ter de navegar até a lista de bancos.
+   *
+   * Invalida `['banks']` inteiro — o prefixo cobre a lista de ativos, a de
+   * arquivados e os selects de lançamento.
+   */
+  const restoreMut = useMutation({
+    mutationFn: restoreBank,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['banks'] })
+      qc.invalidateQueries({ queryKey: ['bank', bankId] })
+      toast.success('Banco restaurado')
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, 'Erro ao restaurar banco')),
+  })
+
+
+  const {
+    data: invoices,
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ['bank-invoices', bankId],
     queryFn: () => getBankInvoices(bankId),
   })
@@ -1020,7 +1084,7 @@ export default function BankInvoicesPage() {
     const activeInvoices = filtered
       .filter((i) => i.status === InvoiceStatus.CLOSED || i.status === InvoiceStatus.OPEN)
       .sort((a, b) => {
-        const sd = STATUS_SORT_ORDER[a.status] - STATUS_SORT_ORDER[b.status]
+        const sd = INVOICE_STATUS_SORT_ORDER[a.status] - INVOICE_STATUS_SORT_ORDER[b.status]
         if (sd !== 0) return sd
         return a.year !== b.year ? a.year - b.year : a.month - b.month
       })
@@ -1054,6 +1118,14 @@ export default function BankInvoicesPage() {
   const activeHidden = Math.max(0, activeInvoices.length - ACTIVE_VISIBLE)
   const paidHidden = Math.max(0, paidInvoices.length - PAID_VISIBLE)
 
+  /**
+   * A fatura da competência corrente — a que recebe uma compra feita hoje.
+   *
+   * Uso PROSPECTIVO legítimo: a pergunta é "qual competência estaria aberta
+   * agora", que depende da configuração vigente do cartão e não das datas de
+   * nenhuma fatura em particular. As datas exibidas de cada fatura continuam
+   * vindo dela própria.
+   */
   function isAtual(inv: Invoice): boolean {
     if (inv.status !== InvoiceStatus.OPEN || !bank) return false
     const now = new Date()
@@ -1082,22 +1154,62 @@ export default function BankInvoicesPage() {
         >
           <ArrowLeft className="size-4" />
         </Link>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {bank ? bank.name : <Skeleton className="inline-block h-7 w-32" />}
-          </h1>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {bank ? bank.name : <Skeleton className="inline-block h-7 w-32" />}
+            </h1>
+            {/* Discreto: a tela continua sendo sobre as faturas, e um banco
+                arquivado ainda pode ter a última delas em aberto. */}
+            {bank?.isArchived && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                <Archive className="size-3" aria-hidden />
+                Arquivado
+              </span>
+            )}
+          </div>
           {bank ? (
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Vence dia {bank.invoiceDueDate} · intervalo de {bank.invoiceDueDaysAfterClose ?? 7} dias
+              Vence dia {bank.invoiceDueDate} · fecha {bank.invoiceDueDaysAfterClose ?? 7} dias antes
             </p>
           ) : (
             <Skeleton className="mt-1.5 h-4 w-40" />
           )}
+          {bank?.isArchived && (
+            <p className="mt-1 text-xs text-muted-foreground/70">
+              Não aparece em novos lançamentos. As faturas continuam
+              acompanhando os prazos normalmente.
+            </p>
+          )}
         </div>
+
+        {bank?.isArchived && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0 gap-1.5"
+            disabled={restoreMut.isPending}
+            onClick={() => restoreMut.mutate(bank.id)}
+          >
+            {restoreMut.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+            ) : (
+              <ArchiveRestore className="size-3.5" aria-hidden />
+            )}
+            Restaurar
+          </Button>
+        )}
       </div>
 
       {/* Invoice sections */}
-      {isLoading ? (
+      {/* Falha de API não pode virar "Nenhuma fatura encontrada". */}
+      {isError ? (
+        <QueryError
+          message="Não foi possível carregar as faturas"
+          isFetching={isFetching}
+          onRetry={() => void refetch()}
+        />
+      ) : isLoading ? (
         <div className="border-t border-border">
           {Array.from({ length: 5 }).map((_, i) => (
             <div
@@ -1127,10 +1239,15 @@ export default function BankInvoicesPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-6">
-          {/* ── Vencidas ───────────────────────────────────────────────── */}
+          {/* ── Em atraso ──────────────────────────────────────────────── */}
           {overdueInvoices.length > 0 && (
             <div>
-              <p className="mb-2 text-[11px] font-medium text-destructive/90">Vencidas</p>
+              {/*
+                "Em atraso" é o vocabulário oficial desde a Fase 6A. Esta
+                seção tinha ficado fora da padronização e ainda dizia
+                "Vencidas" — a mesma palavra que os badges já não usam.
+              */}
+              <p className="mb-2 text-[11px] font-medium text-destructive/90">Em atraso</p>
               <div className="border-t border-border">
                 {overdueInvoices.map((invoice, i) => (
                   <MotionRow key={invoice.id} index={i}>
@@ -1146,10 +1263,10 @@ export default function BankInvoicesPage() {
             </div>
           )}
 
-          {/* ── Ativas ─────────────────────────────────────────────────── */}
+          {/* ── Em aberto (fechadas e abertas; vencidas têm seção própria) ── */}
           {activeInvoices.length > 0 && (
             <div>
-              <p className="mb-2 text-[11px] font-medium text-muted-foreground/70">Ativas</p>
+              <p className="mb-2 text-[11px] font-medium text-muted-foreground/70">Faturas em aberto</p>
               <div className="border-t border-border">
                 {activeInvoices.slice(0, ACTIVE_VISIBLE).map((invoice, i) => (
                   <MotionRow key={invoice.id} index={i}>

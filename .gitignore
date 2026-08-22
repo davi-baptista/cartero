@@ -5,3 +5,9 @@ node_modules
 /generated/prisma
 dist
 build
+
+# Build do Next na raiz (o .gitignore do frontend só cobre o subdiretório).
+.next
+
+# Relatórios de auditoria gerados — artefato de análise, não código-fonte.
+auditoria-*.html

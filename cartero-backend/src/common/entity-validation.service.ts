@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -18,7 +22,23 @@ export class EntityValidationService {
     return transaction;
   }
 
-  async validateBank(bankId: string, userId: string) {
+  /**
+   * Banco do usuário, recusando por padrão contas arquivadas.
+   *
+   * O padrão é o caso perigoso — criar movimentação — porque um fluxo novo que
+   * esqueça de checar `isArchived` falha fechado, não aberto. Os poucos
+   * caminhos que só LEEM a configuração de fatura (restaurar o banco, derivar
+   * o vencimento de uma transação que já existe) pedem `allowArchived` de
+   * forma explícita, e a exceção fica visível na chamada.
+   *
+   * Não substitui as guardas de PAID/CLOSED/recebível pago: arquivamento diz
+   * "não use para movimento novo", não "este registro está congelado".
+   */
+  async validateBank(
+    bankId: string,
+    userId: string,
+    options: { allowArchived?: boolean } = {},
+  ) {
     const bank = await this.prisma.bank.findUnique({
       where: {
         id: bankId,
@@ -28,6 +48,13 @@ export class EntityValidationService {
 
     if (!bank) {
       throw new NotFoundException('Banco não encontrado');
+    }
+
+    if (bank.isArchived && !options.allowArchived) {
+      throw new ConflictException({
+        message: `${bank.name} está arquivado e não aceita novos lançamentos. Restaure o banco para voltar a usá-lo.`,
+        code: 'BANK_ARCHIVED',
+      });
     }
 
     return bank;
@@ -108,6 +135,35 @@ export class EntityValidationService {
     return person;
   }
 
+  /**
+   * A categoria de sistema com este nome, criando-a se ainda não existir.
+   *
+   * Usada por cinco fluxos que precisam classificar um lançamento automático:
+   * "Dívida paga" (pagar dívida e settle de pessoa), "Receita recebida"
+   * (receber recebível e settle) e "Assinatura" (criar/editar assinatura).
+   *
+   * ─── Categoria própria com nome homônimo ─────────────────────────────────
+   *
+   * A busca é só por nome porque a unicidade é `(userId, name)`: filtrar por
+   * `isSystem` deixaria passar uma categoria que o usuário já criou com esse
+   * nome, e o create seguinte violaria a constraint.
+   *
+   * Encontrando uma categoria PRÓPRIA homônima, ela é REUTILIZADA como está —
+   * sem promoção. A versão anterior a convertia em categoria de sistema
+   * (`isSystem: true`, com ícone e cor sobrescritos), e isso era um efeito
+   * colateral que ninguém pediu: bastava criar uma assinatura para uma
+   * categoria chamada "Assinatura" deixar de ser editável e excluível, sem
+   * caminho de volta pela interface.
+   *
+   * Reutilizar sem promover atende os dois lados. Os lançamentos automáticos
+   * ficam classificados no lugar que o usuário já escolheu para eles, e a
+   * categoria continua sendo dele — editável, renomeável, excluível quando
+   * não estiver em uso.
+   *
+   * Categorias que JÁ estão marcadas como sistema permanecem como estão. Não
+   * há como saber se foram criadas assim ou adotadas indevidamente antes desta
+   * correção, e sem essa evidência despromover seria adivinhar.
+   */
   async findOrCreateSystemCategory(
     tx: Prisma.TransactionClient,
     userId: string,
@@ -115,20 +171,11 @@ export class EntityValidationService {
     icon: string,
     color: string,
   ) {
-    // A busca é só por nome porque a unicidade é `(userId, name)`: filtrar
-    // por `isSystem` deixaria passar uma categoria que o usuário já criou
-    // com esse nome, e o create seguinte violaria a constraint.
     const existing = await tx.category.findFirst({ where: { userId, name } });
 
-    if (existing) {
-      // Uma categoria própria com nome reservado é adotada pelo sistema —
-      // os lançamentos que já a usam continuam válidos.
-      if (existing.isSystem) return existing;
-      return tx.category.update({
-        where: { id: existing.id },
-        data: { isSystem: true, icon, color },
-      });
-    }
+    // Serve tanto para a de sistema quanto para uma própria homônima: em
+    // nenhum dos dois casos algo é alterado.
+    if (existing) return existing;
 
     return tx.category.create({
       data: { userId, name, icon, color, isSystem: true },

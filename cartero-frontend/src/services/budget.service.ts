@@ -1,36 +1,159 @@
 import { api } from '@/lib/api'
 import type { Invoice } from '@/types'
 
+/**
+ * Fatura do orçamento: o servidor sempre resolve `reimbursable` e `ownAmount`
+ * neste endpoint, então eles são obrigatórios aqui.
+ */
+export type BudgetInvoice = Invoice &
+  Required<Pick<Invoice, 'reimbursable' | 'ownAmount'>>
+
 export interface BudgetSummary {
   month: number
   year: number
+  /**
+   * Renda DO PERÍODO consultado, resolvida pelo histórico.
+   *
+   * `null` quando desconhecida. Antes vinha de `User.salary` — o valor atual —
+   * então alterar a renda hoje reescrevia a sobra de meses já encerrados.
+   */
   salary: number | null
+  /**
+   * `false` quando não há entrada aplicável ao mês.
+   *
+   * Diferente de `salary: 0`, que é renda conhecida e igual a zero. A tela
+   * precisa distinguir: "R$ 0,00" para um mês desconhecido é um fato falso.
+   */
+  salaryKnown: boolean
+  /** Competência da entrada que forneceu o valor. */
+  salaryEffectiveFrom: { year: number; month: number } | null
+  /** Sobra estimada. `null` quando a renda é desconhecida. */
+  remaining: number | null
+  /** Percentual comprometido. `null` quando desconhecida OU zero. */
+  committedPct: number | null
   totalInvoices: number
   totalReimbursable: number
   netAmount: number
   /** Débito, PIX e boleto lançados dentro do mês. */
   totalDirectPayments: number
-  /** Dívidas com vencimento dentro do mês. */
+  /**
+   * Composição das dívidas do mês.
+   *
+   * `totalDebts` sozinho não dizia de onde vinha o número — e antes vinha de
+   * um valor já compensado por recebíveis.
+   */
+  debts: {
+    /** Vencimento dentro do mês selecionado. */
+    dueInMonth: number
+    /**
+     * Dívidas vencidas ANTES do mês e ainda abertas quando ele começou.
+     *
+     * Não são despesas novas: é a mesma obrigação atravessando snapshots
+     * mensais enquanto não é resolvida.
+     */
+    priorCarry: number
+    /** `dueInMonth + priorCarry`. */
+    total: number
+    priorCarryItems: Array<{
+      title: string
+      amount: number
+      /** Vencimento ORIGINAL — nunca reescrito como se fosse deste mês. */
+      dueDate: string
+      personId: string | null
+      personName: string | null
+      /** Se já havia sido paga dentro do mês consultado. */
+      paidInMonth: boolean
+    }>
+  }
+  /** Espelho de `debts.total`. */
   totalDebts: number
   /** Quantidade de dívidas com vencimento dentro do mês. */
   debtsCount: number
+  priorCarryCount: number
   /** Quantas dessas dívidas já estão pagas. */
   paidDebtsCount: number
-  /** Custo real do mês: faturas + pagamentos diretos + dívidas. */
+  /**
+   * Consolidação por pessoa — camada de APRESENTAÇÃO, em DOIS universos.
+   *
+   * Eles respondem perguntas diferentes e nunca devem ser somados entre si:
+   *
+   *   `budget` → "o que dessa pessoa pertenceu ao orçamento desta
+   *              competência?". Temporal, reconstruído por `paidAt`. Inclui
+   *              item já quitado, porque ele continuou sendo obrigação daquele
+   *              mês. É o que permite a tela fechar com `debts.total` e
+   *              `totalToPay`.
+   *
+   *   `open`   → "quanto ainda falta acertar com essa pessoa?". Estado atual
+   *              (`isPaid: false`). Zera no instante em que o item é quitado.
+   *
+   * A versão anterior tinha um universo só, construído sobre `paidAt` e
+   * apresentado como pendência. Isso produzia dois erros de leitura: um
+   * recebível já recebido aparecia como "R$ 300 a receber de períodos
+   * anteriores", e uma dívida já paga seguia como "A pagar R$ 200".
+   *
+   * **Nada aqui alimenta `totalToPay`, `remaining` ou `committedPct`.**
+   */
+  peopleSettlements: Array<{
+    personId: string
+    personName: string
+    /** Contexto do orçamento — pode incluir item já quitado. */
+    budget: {
+      receivableDueInMonth: number
+      debtDueInMonth: number
+      priorDebtCarry: number
+      /** `debtDueInMonth + priorDebtCarry`. */
+      debtTotal: number
+      automaticReceivable: number
+    }
+    /** Em aberto AGORA — o que ainda falta acertar. */
+    open: {
+      receivableInMonth: number
+      debtInMonth: number
+      priorReceivable: number
+      priorDebt: number
+      receivableTotal: number
+      debtTotal: number
+      /** `receivableTotal - debtTotal`. Informativo, sem compensação. */
+      net: number
+      /** `priorReceivable - priorDebt`. Zero = nada trazido de antes. */
+      priorNet: number
+      /**
+       * Itens abertos.
+       *
+       * Saldo zero não é quitação: R$ 200 de cada lado dá `net: 0` com dois
+       * itens em aberto. É esta contagem que autoriza dizer "Nada em aberto".
+       */
+      itemCount: number
+      automaticReceivable: number
+    }
+  }>
+  /**
+   * A Receber no mês — INFORMATIVO.
+   *
+   * Não entra em `totalToPay`. Recebível é dinheiro esperado, não pagamento
+   * já feito de uma dívida: subtraí-lo seria afirmar uma compensação que o
+   * Cartero não executa ao quitar.
+   */
+  receivables: {
+    dueInMonth: number
+    count: number
+  }
+  /** `netAmount + totalDirectPayments + debts.total`. Sem recebíveis. */
   totalToPay: number
   totalPaid: number
   totalPending: number
-  invoices: Invoice[]
+  invoices: BudgetInvoice[]
   /**
-   * Dívidas do mês, linha a linha. Entradas de pessoa já vêm com o saldo
-   * compensado pelo que ela te deve — `offset` é o quanto foi abatido.
+   * Dívidas do mês, linha a linha.
+   *
+   * `offset` foi REMOVIDO: não existe compensação a expor. O `amount` de uma
+   * pessoa é o valor íntegro das dívidas dela.
    */
   debtBreakdown: Array<{
     kind: 'person' | 'debt'
     id: string | null
     name: string
     amount: number
-    offset: number
     isPaid: boolean
     /** Numa pessoa com várias dívidas, atraso domina o status. */
     status: 'PAID' | 'OVERDUE' | 'PENDING'

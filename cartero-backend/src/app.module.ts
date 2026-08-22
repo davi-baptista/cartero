@@ -15,6 +15,7 @@ import { DebtsModule } from './debts/debts.module';
 import { ReceivablesModule } from './receivables/receivables.module';
 import { PersonsModule } from './persons/persons.module';
 import { BudgetModule } from './budget/budget.module';
+import { SalaryModule } from './salary/salary.module';
 import { HealthModule } from './health/health.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
@@ -38,6 +39,7 @@ import { CommitmentsModule } from './commitments/commitments.module';
     ReceivablesModule,
     PersonsModule,
     BudgetModule,
+    SalaryModule,
     HealthModule,
     NotificationsModule,
     SubscriptionsModule,

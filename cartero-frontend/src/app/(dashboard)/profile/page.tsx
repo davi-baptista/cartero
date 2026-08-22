@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useState, useEffect, useMemo } from 'react'
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,7 @@ import { CurrencyInput } from '@/components/ui/currency-input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/providers/auth-provider'
 import { updateMe } from '@/services/users.service'
+import { getSalary, upsertSalary } from '@/services/salary.service'
 import { getPublicKey, subscribePush, unsubscribePush } from '@/services/notifications.service'
 import { enablePushNotifications, disablePushNotifications, getExistingPushSubscription } from '@/lib/push'
 import { formatCurrency } from '@/lib/formatters'
@@ -57,11 +58,37 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 export default function ProfilePage() {
   const { user, updateUser } = useAuth()
+  const qc = useQueryClient()
 
   const [name, setName] = useState(user?.name ?? '')
-  const [salary, setSalary] = useState(
-    user?.salary != null ? Number(user.salary) : 0,
-  )
+  /*
+    A renda ATUAL é resolvida pela competência corrente, não lida de
+    `User.salary`.
+
+    O cache só é reescrito quando alguma ação do usuário afeta o mês corrente.
+    Com histórico ago=5000 e out=5500, ao virar outubro nenhuma escrita
+    acontece: o cache continuaria 5000 e esta tela mostraria um valor que já
+    não vale. O resolver não tem esse problema — ele responde pela data.
+  */
+  const currentMonth = useMemo(() => {
+    const now = new Date()
+    return { year: now.getFullYear(), month: now.getMonth() + 1 }
+  }, [])
+
+  const { data: resolvedSalary, isLoading: salaryLoading } = useQuery({
+    queryKey: ['salary', currentMonth.year, currentMonth.month],
+    queryFn: () => getSalary(currentMonth.year, currentMonth.month),
+  })
+
+  /*
+    `null` = o usuário ainda não digitou nada; o campo mostra a renda
+    resolvida. Derivar em render evita o `setState` dentro de efeito (que
+    dispara render em cascata e faz o campo piscar o valor antigo).
+  */
+  const [salaryDraft, setSalaryDraft] = useState<number | null>(null)
+
+  /** Valor exibido: o rascunho, ou a renda que vale hoje. */
+  const salary = salaryDraft ?? resolvedSalary?.amount ?? 0
   const [createIncomeOnReceivablePaid, setCreateIncomeOnReceivablePaid] = useState(
     user?.createIncomeOnReceivablePaid ?? false,
   )
@@ -88,7 +115,7 @@ export default function ProfilePage() {
   useEffect(() => {
     if (user) {
       setName(user.name)
-      setSalary(user.salary != null ? Number(user.salary) : 0)
+
       setCreateIncomeOnReceivablePaid(user.createIncomeOnReceivablePaid ?? false)
       setCreateExpenseOnDebtPaid(user.createExpenseOnDebtPaid ?? false)
       setNotifyDaysBefore(user.notifyDaysBefore ?? 3)
@@ -105,13 +132,43 @@ export default function ProfilePage() {
     onError: () => toast.error('Não foi possível atualizar o nome'),
   })
 
+  /**
+   * Salvar aqui significa "esta é minha renda a partir deste mês".
+   *
+   * Antes gravava `User.salary` direto, e o Orçamento usava esse valor para
+   * calcular QUALQUER mês — então corrigir a renda hoje reescrevia a sobra de
+   * meses já encerrados. Agora a alteração cria/atualiza a entrada do mês
+   * corrente no histórico, e os meses anteriores ficam intactos.
+   *
+   * O usuário não precisa entender o histórico para fazer uma alteração
+   * simples: o formulário continua sendo um campo e um botão.
+   */
   const salaryMut = useMutation({
-    mutationFn: () => updateMe({ salary }),
-    onSuccess: (updated) => {
-      updateUser(updated)
-      toast.success('Salário atualizado')
+    mutationFn: () => {
+      const now = new Date()
+      return upsertSalary({
+        amount: salary,
+        month: now.getMonth() + 1,
+        year: now.getFullYear(),
+      })
     },
-    onError: () => toast.error('Não foi possível atualizar o salário'),
+    onSuccess: (result) => {
+      // `User.salary` é sincronizado no backend quando a alteração afeta o mês
+      // corrente — que é sempre o caso aqui.
+      // Merge: `updateUser` espera o usuário completo, e só a renda mudou.
+      if (user) {
+        updateUser({
+          ...user,
+          salary: result.currentSalary.amount ?? undefined,
+        })
+      }
+      void qc.invalidateQueries({ queryKey: ['budget'] })
+      void qc.invalidateQueries({ queryKey: ['salary'] })
+      // Volta a seguir o resolver em vez do rascunho já salvo.
+      setSalaryDraft(null)
+      toast.success('Renda atualizada')
+    },
+    onError: () => toast.error('Não foi possível atualizar a renda'),
   })
 
   const notifyDaysMut = useMutation({
@@ -178,7 +235,7 @@ export default function ProfilePage() {
 
   if (!user) return null
 
-  const currentSalary = user.salary != null ? Number(user.salary) : null
+  const currentSalary = resolvedSalary?.amount ?? null
   const salaryUnchanged = salary === (currentSalary ?? 0)
   const preferencesUnchanged =
     createIncomeOnReceivablePaid === (user.createIncomeOnReceivablePaid ?? false) &&
@@ -241,32 +298,46 @@ export default function ProfilePage() {
 
         {/* Salário */}
         <SectionCard
-          title="Salário"
-          description="Usado para calcular o saldo disponível na página de orçamento"
+          title="Renda mensal"
+          description="Vale a partir do mês atual. Para registrar a renda de um mês anterior, use a página de Orçamento"
           footer={
             <Button
               size="sm"
               onClick={() => salaryMut.mutate()}
-              disabled={salaryMut.isPending || salaryUnchanged}
+              disabled={salaryMut.isPending || salaryUnchanged || salaryLoading}
             >
               {salaryMut.isPending ? 'Salvando…' : 'Salvar'}
             </Button>
           }
         >
-          <Field label="Salário mensal">
+          <Field label="Renda mensal">
             <div className="flex">
               <span className="flex h-8 items-center rounded-l-lg border border-r-0 border-input bg-muted/40 px-3 text-sm text-muted-foreground select-none">
                 R$
               </span>
               <CurrencyInput
                 value={salary}
-                onChange={setSalary}
+                onChange={setSalaryDraft}
+                disabled={salaryLoading}
                 className="h-8 rounded-l-none text-sm"
               />
             </div>
-            {currentSalary != null && (
+            {/*
+              Enquanto carrega, o campo fica desabilitado: mostrar R$ 0,00
+              editável convidaria o usuário a salvar um valor que ele não
+              digitou, sobrescrevendo a renda real.
+            */}
+            {salaryLoading ? (
+              <p className="text-[11px] text-muted-foreground/60">
+                Carregando…
+              </p>
+            ) : currentSalary != null ? (
               <p className="text-[11px] text-muted-foreground/60">
                 Atual: {formatCurrency(currentSalary)}
+              </p>
+            ) : (
+              <p className="text-[11px] text-muted-foreground/60">
+                Nenhuma renda registrada ainda.
               </p>
             )}
           </Field>

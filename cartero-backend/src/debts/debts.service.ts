@@ -2,7 +2,10 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma, Debt, TransactionType } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
-import { findOrCreateInvoice } from 'src/common/helpers/invoice.helper';
+import {
+  createDebtPaymentTransaction,
+  removeSettlementTransaction,
+} from 'src/common/helpers/settlement.core';
 import { parseDateFilterEnd, parseDateFilterStart, parseDateOnly } from 'src/common/helpers/date-only.helper';
 import {
   DEBT_PAID_CATEGORY_NAME,
@@ -10,6 +13,7 @@ import {
   SYSTEM_CATEGORY_ICON,
 } from 'src/common/constants/system-categories';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { assertDebtNotPaid } from 'src/common/helpers/settlement.guard';
 import { CreateDebtDto } from 'src/debts/dto/create-debt.dto';
 import { UpdateDebtDto } from 'src/debts/dto/update-debt.dto';
 import { FindDebtsDto } from './dto/find-debts.dto';
@@ -109,6 +113,17 @@ export class DebtsService {
     );
     const normalizedScope = this.normalizeScope(scope);
 
+    /**
+     * Dívida paga é fato concluído.
+     *
+     * Alterar o valor de uma dívida paga deixava o comprovante apontando para
+     * outro número — a dívida dizia R$ 100, a transação dizia R$ 500. A saída
+     * é desfazer o pagamento, corrigir e marcar de novo.
+     *
+     * Só fatos financeiros são barrados; título e descrição continuam livres.
+     */
+    assertDebtNotPaid(existing, dto, existing);
+
     let creditorName = dto.creditorName;
     if (dto.personId) {
       const person = await this.entityValidationService.validatePerson(
@@ -146,7 +161,19 @@ export class DebtsService {
         )
       : null;
 
-    const { paymentBankId, paymentType, ...debtDto } = dto;
+    /*
+      Instruções de pagamento não são colunas da dívida.
+
+      `paymentBankId`, `paymentDate` e `paymentType` dizem COMO registrar o
+      pagamento; deixá-los no objeto de update faria o Prisma tentar gravá-los
+      como campos de Debt. O banco resolvido vive em `paymentBank` e a data em
+      `paidAt`.
+    */
+    const { paymentType } = dto;
+    const debtDto = { ...dto };
+    delete debtDto.paymentBankId;
+    delete debtDto.paymentDate;
+    delete debtDto.paymentType;
     const {
       title: _title,
       dueDate: _dueDate,
@@ -182,9 +209,19 @@ export class DebtsService {
         const updatedDebts: Debt[] = [];
 
         for (const debt of debtsToUpdate) {
+          /*
+            A data escolhida no diálogo vale para os dois lados.
+
+            Antes era `new Date()` fixo: a dívida registrava hoje e o
+            comprovante também, ignorando o campo que o usuário preencheu.
+            O caminho de Recebíveis já respeitava `paymentDate`, então a mesma
+            ação tinha duas datas dependendo do domínio.
+          */
           const paidAt =
             dto.isPaid === true && !debt.isPaid
-              ? new Date()
+              ? dto.paymentDate
+                ? parseDateOnly(dto.paymentDate)
+                : new Date()
               : dto.isPaid === false && debt.isPaid
                 ? null
                 : undefined;
@@ -206,70 +243,29 @@ export class DebtsService {
                 DEBT_PAID_CATEGORY_COLOR,
               );
 
-            let invoiceId: string | null = null;
-            if (paymentType === TransactionType.CREDIT_CARD) {
-              const invoice = await findOrCreateInvoice(
-                tx,
-                userId,
-                paymentBankId as string,
-                paymentBank!.invoiceDueDate,
-                paymentBank!.invoiceDueDaysAfterClose,
-                paidAt,
-              );
-              invoiceId = invoice.id;
-            }
-
-            const paymentTransaction = await tx.transaction.create({
-              data: {
-                userId,
-                bankId: paymentBankId as string,
-                categoryId: category.id,
-                invoiceId,
-                title: debt.title,
-                type: paymentType as TransactionType,
-                amount: debt.amount,
-                date: paidAt,
-              },
+            // Mesmo núcleo que o settle de Pessoa usa: o lote não pode ter
+            // regra financeira diferente só por ser em lote.
+            paymentTransactionId = await createDebtPaymentTransaction(tx, {
+              userId,
+              debt,
+              paidAt,
+              bank: paymentBank!,
+              paymentType: paymentType as TransactionType,
+              category,
             });
-
-            if (invoiceId) {
-              await tx.invoice.update({
-                where: { id: invoiceId, userId },
-                data: { totalAmount: { increment: debt.amount } },
-              });
-            }
-
-            paymentTransactionId = paymentTransaction.id;
           } else if (paidAt === null && debt.paymentTransactionId) {
-            const paymentTransaction = await tx.transaction.findUnique({
-              where: { id: debt.paymentTransactionId, userId },
-            });
-
+            // Zera o vínculo ANTES do delete: o FK é `ON DELETE SET NULL`, e
+            // apagar primeiro faria o banco limpar a referência sozinho.
             await tx.debt.update({
               where: { id: debt.id, userId },
               data: { paymentTransactionId: null },
             });
 
-            if (paymentTransaction) {
-              await tx.transaction.delete({
-                where: { id: paymentTransaction.id, userId },
-              });
-
-              if (paymentTransaction.invoiceId) {
-                const invoice = await tx.invoice.update({
-                  where: { id: paymentTransaction.invoiceId, userId },
-                  data: {
-                    totalAmount: { decrement: paymentTransaction.amount },
-                  },
-                });
-
-                if (Number(invoice.totalAmount) === 0) {
-                  await tx.invoice.delete({
-                    where: { id: invoice.id, userId },
-                  });
-                }
-              }
-            }
+            await removeSettlementTransaction(
+              tx,
+              userId,
+              debt.paymentTransactionId,
+            );
 
             paymentTransactionId = null;
           }

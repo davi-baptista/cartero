@@ -32,4 +32,21 @@ export default tseslint.config(
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
+  {
+    // Testes e fixtures montam duplos de Prisma e payloads propositalmente
+    // fora do tipo — é o próprio objeto do teste. As regras de type-safety
+    // aqui só produziriam ruído sobre `as any` deliberado.
+    files: ['**/*.spec.ts', 'src/common/testing/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/unbound-method': 'off',
+      // Duplos do Prisma são `async` para espelhar a API real, mesmo quando
+      // devolvem um valor pronto sem aguardar nada.
+      '@typescript-eslint/require-await': 'off',
+    },
+  },
 );

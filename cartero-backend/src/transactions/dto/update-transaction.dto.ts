@@ -28,6 +28,13 @@ export class UpdateTransactionDto {
   @IsEnum(TransactionType)
   type?: TransactionType;
 
+  /**
+   * Valor de UMA parcela — aplicado a cada transação do escopo escolhido.
+   *
+   * Diferente de `CreateTransactionDto.amount`, que é o total da compra. A
+   * divergência é intencional e preserva a compatibilidade com séries já
+   * cadastradas; ver `TransactionsService.update`.
+   */
   @IsOptional()
   @IsNumber()
   @Min(0.01)

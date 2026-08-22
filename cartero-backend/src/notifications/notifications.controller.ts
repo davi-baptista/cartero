@@ -13,7 +13,7 @@ import type { User } from '@prisma/client';
 import { NotificationsService } from './notifications.service';
 import { SubscribeDto } from './dto/subscribe.dto';
 import { UnsubscribeDto } from './dto/unsubscribe.dto';
-import { CronSecretGuard } from './cron-secret.guard';
+import { CronSecretGuard } from 'src/auth/cron-secret.guard';
 
 @Controller('notifications')
 export class NotificationsController {

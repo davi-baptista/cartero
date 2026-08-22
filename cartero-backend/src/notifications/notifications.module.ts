@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { NotificationsController } from './notifications.controller';
-import { CronSecretGuard } from './cron-secret.guard';
+import { CronSecretGuard } from 'src/auth/cron-secret.guard';
 
 @Module({
   providers: [NotificationsService, CronSecretGuard],

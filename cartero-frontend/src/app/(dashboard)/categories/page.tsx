@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Tags, MoreVertical, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { QueryError } from '@/components/ui/query-error'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
@@ -13,17 +14,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { MotionRow } from '@/components/ui/motion-row'
 import { CategorySheet, type CategoryFormData } from './category-sheet'
 import { getCategories, createCategory, updateCategory, deleteCategory } from '@/services/categories.service'
+import { apiErrorMessage } from '@/lib/api-error'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import type { Category } from '@/types'
 
@@ -142,7 +137,13 @@ export default function CategoriesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null)
   const [showSystem, setShowSystem] = useState(false)
 
-  const { data: categories, isLoading } = useQuery({
+  const {
+    data: categories,
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ['categories'],
     queryFn: getCategories,
   })
@@ -186,8 +187,13 @@ export default function CategoriesPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['categories'] })
       toast.success('Categoria excluída')
+      setDeleteTarget(null)
     },
-    onError: () => toast.error('Erro ao excluir categoria'),
+    // Categoria em uso volta com CATEGORY_IN_USE e uma mensagem que já diz
+    // quantas transações a impedem — repassá-la é mais útil que "Erro ao
+    // excluir". O diálogo continua aberto para o usuário ler o motivo.
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, 'Erro ao excluir categoria')),
   })
 
   async function handleSheetSubmit(data: CategoryFormData) {
@@ -221,7 +227,17 @@ export default function CategoriesPage() {
 
       {/* Category list */}
       <div className="border-t border-border">
-        {isLoading ? (
+        {/*
+          Erro é estado próprio: sem isso a falha de API caía no ramo vazio e
+          dizia "Nenhuma categoria cadastrada".
+        */}
+        {isError ? (
+          <QueryError
+            message="Não foi possível carregar as categorias"
+            isFetching={isFetching}
+            onRetry={() => void refetch()}
+          />
+        ) : isLoading ? (
           <div>
             {Array.from({ length: 6 }).map((_, i) => (
               <RowSkeleton key={i} />
@@ -299,34 +315,24 @@ export default function CategoriesPage() {
       />
 
       {/* Delete confirm */}
-      <Dialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent showCloseButton={false} className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Excluir categoria</DialogTitle>
-            <DialogDescription>
-              Tem certeza que deseja excluir{' '}
-              <strong className="text-foreground">{deleteTarget?.name}</strong>? Esta ação não pode
-              ser desfeita.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              Cancelar
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (deleteTarget) {
-                  deleteMut.mutate(deleteTarget.id)
-                  setDeleteTarget(null)
-                }
-              }}
-            >
-              Excluir
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Excluir categoria"
+        description={
+          <>
+            Tem certeza que deseja excluir{' '}
+            <strong className="text-foreground">{deleteTarget?.name}</strong>? Esta
+            ação não pode ser desfeita.
+          </>
+        }
+        isPending={deleteMut.isPending}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          // O diálogo fica aberto até a resposta: uma categoria em uso é
+          // recusada, e o motivo precisa aparecer aqui, não numa tela vazia.
+          if (deleteTarget) deleteMut.mutate(deleteTarget.id)
+        }}
+      />
     </div>
   )
 }

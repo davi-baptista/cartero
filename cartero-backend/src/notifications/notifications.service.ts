@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as webpush from 'web-push';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { getInvoiceDueDateForPeriod } from 'src/common/helpers/invoice.helper';
 import { SubscribeDto } from './dto/subscribe.dto';
 import { UnsubscribeDto } from './dto/unsubscribe.dto';
 
@@ -111,6 +110,16 @@ export class NotificationsService {
         where: {
           userId,
           isPaid: false,
+          /*
+            `isAlertEnabled` é a escolha explícita do usuário.
+
+            O campo existe no schema, é gravável pelos dois DTOs, aparece como
+            um switch rotulado "Exibir alerta no dia do vencimento" e a linha
+            da dívida mostra um sino cortado quando está desligado — mas
+            nenhum leitor o consultava. Desligar o alerta não desligava nada:
+            o e-mail continuava saindo, e a interface afirmava o contrário.
+          */
+          isAlertEnabled: true,
           dueDate: { gte: todayStart, lt: windowEnd },
         },
       }),
@@ -140,11 +149,10 @@ export class NotificationsService {
     ];
 
     for (const invoice of invoices) {
-      const dueDate = getInvoiceDueDateForPeriod(
-        invoice.bank,
-        invoice.year,
-        invoice.month,
-      );
+      // Vencimento persistido. Recalcular pela configuração do banco fazia o
+      // alerta apontar para um dia diferente do que a fatura exibe, se o
+      // cartão tivesse sido reconfigurado — o banco aqui serve só pelo nome.
+      const dueDate = invoice.dueDate;
       if (dueDate >= todayStart && dueDate < windowEnd) {
         items.push({ label: `Fatura ${invoice.bank.name}`, dueDate });
       }

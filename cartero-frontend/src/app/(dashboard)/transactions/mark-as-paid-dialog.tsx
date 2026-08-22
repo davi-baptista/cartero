@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Loader2 } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { DatePicker } from '@/components/ui/date-picker'
@@ -38,16 +39,18 @@ interface MarkAsPaidDialogProps {
   open: boolean
   kind: 'debt' | 'receivable'
   createTransaction?: boolean
+  /** Bloqueia o botão enquanto a mutação está em andamento. */
+  isPending?: boolean
   onConfirm: (payload: { paymentBankId?: string; paymentType?: TransactionType; paymentDate?: string }) => void
   onCancel: () => void
 }
 
-export function MarkAsPaidDialog({ open, kind, createTransaction = true, onConfirm, onCancel }: MarkAsPaidDialogProps) {
+export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPending = false, onConfirm, onCancel }: MarkAsPaidDialogProps) {
   const [bankId, setBankId] = useState<string>('')
   const [type, setType] = useState<PaymentType | ''>('')
   const [paymentDate, setPaymentDate] = useState(todayDateValue())
 
-  const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: getBanks })
+  const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: () => getBanks() })
 
   useEffect(() => {
     if (!open) {
@@ -65,7 +68,7 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, onConfi
   const selectedBank = banks.find((b) => b.id === bankId)
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+    <Dialog open={open} onOpenChange={(o) => !o && !isPending && onCancel()}>
       <DialogContent showCloseButton={false} className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>
@@ -126,10 +129,12 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, onConfi
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onCancel}>Cancelar</Button>
+          <Button variant="outline" onClick={onCancel} disabled={isPending}>
+            Cancelar
+          </Button>
           <Button
-            disabled={!canConfirm}
-            onClick={() => canConfirm && onConfirm(
+            disabled={!canConfirm || isPending}
+            onClick={() => canConfirm && !isPending && onConfirm(
               !createTransaction
                 ? {}
                 : kind === 'receivable'
@@ -139,6 +144,7 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, onConfi
                 : {},
             )}
           >
+            {isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
             Confirmar
           </Button>
         </DialogFooter>

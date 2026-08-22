@@ -1,5 +1,3 @@
-const CACHE_NAME = 'cartero-shell-v1'
-
 self.addEventListener('install', () => {
   self.skipWaiting()
 })

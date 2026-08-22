@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf'
 import { formatCurrency, formatDate } from '@/lib/formatters'
-import type { Debt, Receivable } from '@/types'
+import type { Debt, PersonSummary, Receivable } from '@/types'
+import { balanceLabel, balanceSentence } from '@/lib/person-statement'
 
 // Light equivalents of the same semantic roles used across the app's dark theme.
 const COLOR_BACKGROUND: [number, number, number] = [255, 255, 255]
@@ -23,12 +24,29 @@ const SIZE_TITLE = 13
 const SIZE_BODY = 11.5
 const SIZE_LABEL = 9
 
+/**
+ * O PDF recebe o consolidado PRONTO — não recalcula nada.
+ *
+ * Antes ele recebia só `netBalance` e a lista de itens, e imprimia o saldo
+ * sozinho num card grande. Duas consequências: a composição (quanto a receber,
+ * quanto a pagar) não aparecia em lugar nenhum, e um saldo zerado com R$ 500
+ * pendentes de cada lado saía do documento como "+ R$ 0,00", indistinguível de
+ * uma relação sem pendência alguma.
+ *
+ * Recebendo o mesmo `summary` que o drawer exibe, os dois não podem divergir.
+ */
 interface StatementPdfInput {
   personName: string
+  /** Rótulo do mês escolhido — vale para a seção de histórico, não para o resumo. */
   periodLabel: string
-  netBalance: number
-  receivables: Receivable[]
-  debts: Debt[]
+  /** Situação atual: all-time. Alimenta o card "SITUAÇÃO ATUAL". */
+  summary: PersonSummary
+  /** Pendências abertas — all-time, como o `summary`. */
+  pendingReceivables: Receivable[]
+  pendingDebts: Debt[]
+  /** Quitados NO PERÍODO — o universo temporal, seção separada. */
+  settledReceivables: Receivable[]
+  settledDebts: Debt[]
 }
 
 async function loadAsDataUrl(path: string): Promise<string> {
@@ -159,6 +177,8 @@ function addRow(
   amount: number,
   color: [number, number, number],
   sign: '+' | '-',
+  /** "Compra no cartão", para cobranças geradas por uma transação. */
+  origin?: string,
 ) {
   doc.setFont('Inter', 'normal')
   doc.setFontSize(SIZE_BODY)
@@ -187,7 +207,8 @@ function addRow(
   doc.setFont('Inter', 'normal')
   doc.setFontSize(SIZE_LABEL)
   doc.setTextColor(...COLOR_MUTED)
-  doc.text(`Em ${occurredAt}`, x, y + 4.5)
+  // Origem sem id interno: o documento é financeiro, não técnico.
+  doc.text(origin ? `Em ${occurredAt} · ${origin}` : `Em ${occurredAt}`, x, y + 4.5)
 }
 
 export async function generateStatementPdf(input: StatementPdfInput): Promise<jsPDF> {
@@ -220,72 +241,154 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
   doc.text('Extrato de dívidas e cobranças', pageWidth - margin, y - 2.5, { align: 'right' })
   doc.text(input.periodLabel, pageWidth - margin, y + 2, { align: 'right' })
 
-  // Net balance card — Elevated Surface, one tonal step above the page background.
+  /*
+    Card de "Situação atual" — sempre all-time.
+
+    O rótulo diz explicitamente "Situação atual" porque o cabeçalho ao lado
+    mostra um período: sem essa distinção o leitor somaria as duas coisas e
+    entenderia que o saldo é do mês.
+  */
+  const { summary } = input
   const cardTop = y + 14
-  const cardHeight = 34
+  const cardHeight = 46
   doc.setFillColor(...COLOR_SURFACE)
   doc.roundedRect(margin, cardTop, contentWidth, cardHeight, 3, 3, 'F')
 
   let cardY = cardTop + 9
-  doc.setFont('Inter', 'normal')
+  doc.setFont('Inter', 'medium')
   doc.setFontSize(SIZE_LABEL)
   doc.setTextColor(...COLOR_MUTED)
-  doc.text(`Extrato de ${input.personName}`, margin + 8, cardY)
+  doc.text('SITUAÇÃO ATUAL', margin + 8, cardY)
 
   cardY += 11
-  const isPositive = input.netBalance >= 0
+  const netBalance = summary.netBalance
+  const positive = netBalance > 0.005
+  const negative = netBalance < -0.005
   doc.setFont('Inter', 'bold')
   doc.setFontSize(SIZE_HEADLINE)
-  doc.setTextColor(...(isPositive ? COLOR_RECEIVABLE : COLOR_DESTRUCTIVE))
+  doc.setTextColor(
+    ...(positive
+      ? COLOR_RECEIVABLE
+      : negative
+        ? COLOR_DESTRUCTIVE
+        : COLOR_INK),
+  )
+  const sign = positive ? '+ ' : negative ? '- ' : ''
   doc.text(
-    `${isPositive ? '+' : '-'} ${formatCurrency(Math.abs(input.netBalance))}`,
+    `${sign}${formatCurrency(Math.abs(netBalance))}`,
     margin + 8,
     cardY,
   )
 
-  cardY += 7
+  // Rótulo do saldo à direita do valor, da mesma fonte que o drawer usa.
   doc.setFont('Inter', 'normal')
   doc.setFontSize(SIZE_LABEL)
   doc.setTextColor(...COLOR_MUTED)
+  doc.text(balanceLabel(summary), pageWidth - margin - 8, cardY, {
+    align: 'right',
+  })
+
+  cardY += 7
+  doc.text(balanceSentence(summary, input.personName), margin + 8, cardY)
+
+  /*
+    Composição sempre impressa junto do saldo.
+
+    É o que impede o documento de afirmar por omissão que houve compensação
+    entre as obrigações: R$ 500 a receber e R$ 200 a pagar são dois fatos
+    separados que somam R$ 300 apenas como informação.
+  */
+  cardY += 8
+  doc.setFont('Inter', 'medium')
+  doc.setFontSize(SIZE_BODY - 1)
+  doc.setTextColor(...COLOR_RECEIVABLE)
   doc.text(
-    isPositive
-      ? `${input.personName} está te devendo esse valor no total`
-      : `Você está devendo esse valor para ${input.personName}`,
+    `A receber ${formatCurrency(summary.receivablePending)}`,
     margin + 8,
     cardY,
+  )
+  doc.setTextColor(...COLOR_DESTRUCTIVE)
+  doc.text(
+    `A pagar ${formatCurrency(summary.debtPending)}`,
+    margin + 58,
+    cardY,
+  )
+  doc.setFont('Inter', 'normal')
+  doc.setTextColor(...COLOR_MUTED)
+  doc.text(
+    `${summary.pendingReceivablesCount + summary.pendingDebtsCount} pendência(s)`,
+    pageWidth - margin - 8,
+    cardY,
+    { align: 'right' },
   )
 
   y = cardTop + cardHeight + 14
 
-  if (input.receivables.length > 0) {
+  function sectionTitle(label: string) {
     doc.setFont('Inter', 'medium')
     doc.setFontSize(SIZE_LABEL)
     doc.setTextColor(...COLOR_BRAND)
-    doc.text('A RECEBER', margin, y)
+    doc.text(label, margin, y)
     y += 3
     doc.setDrawColor(...COLOR_BORDER)
     doc.line(margin, y, pageWidth - margin, y)
     y += 8
+  }
 
-    for (const item of input.receivables) {
-      addRow(doc, margin, y, contentWidth, item.title, formatDate(item.occurredAt), Number(item.amount), COLOR_RECEIVABLE, '+')
+  if (input.pendingReceivables.length > 0) {
+    sectionTitle('A RECEBER — PENDENTE')
+    for (const item of input.pendingReceivables) {
+      addRow(
+        doc,
+        margin,
+        y,
+        contentWidth,
+        item.title,
+        formatDate(item.occurredAt),
+        Number(item.amount),
+        COLOR_RECEIVABLE,
+        '+',
+        item.transactionId ? 'Compra no cartão' : undefined,
+      )
       y += ROW_HEIGHT
     }
     y += 4
   }
 
-  if (input.debts.length > 0) {
-    doc.setFont('Inter', 'medium')
-    doc.setFontSize(SIZE_LABEL)
-    doc.setTextColor(...COLOR_BRAND)
-    doc.text('A PAGAR', margin, y)
-    y += 3
-    doc.setDrawColor(...COLOR_BORDER)
-    doc.line(margin, y, pageWidth - margin, y)
-    y += 8
-
-    for (const item of input.debts) {
+  if (input.pendingDebts.length > 0) {
+    sectionTitle('A PAGAR — PENDENTE')
+    for (const item of input.pendingDebts) {
       addRow(doc, margin, y, contentWidth, item.title, formatDate(item.occurredAt), Number(item.amount), COLOR_DESTRUCTIVE, '-')
+      y += ROW_HEIGHT
+    }
+    y += 4
+  }
+
+  /*
+    Histórico do período — a única seção que o seletor de mês governa.
+
+    Separada e rotulada com o período, para não ser lida como pendência.
+  */
+  const history = [
+    ...input.settledReceivables.map((item) => ({ item, kind: 'r' as const })),
+    ...input.settledDebts.map((item) => ({ item, kind: 'd' as const })),
+  ]
+
+  if (history.length > 0) {
+    sectionTitle(`QUITADO — ${input.periodLabel.toUpperCase()}`)
+    for (const { item, kind } of history) {
+      addRow(
+        doc,
+        margin,
+        y,
+        contentWidth,
+        item.title,
+        formatDate(item.occurredAt),
+        Number(item.amount),
+        COLOR_MUTED,
+        kind === 'r' ? '+' : '-',
+        kind === 'r' ? 'Recebido' : 'Pago',
+      )
       y += ROW_HEIGHT
     }
   }

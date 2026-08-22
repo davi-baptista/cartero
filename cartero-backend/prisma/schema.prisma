@@ -12,6 +12,15 @@ model User {
   email                        String    @unique
   password                     String
   name                         String
+  /// Renda aplicável HOJE — cache de leitura, não fonte de verdade.
+  ///
+  /// A fonte temporal é `SalaryHistory`. Este campo existe porque telas que
+  /// não têm mês (perfil, cabeçalhos) precisam de um valor sem resolver
+  /// competência, e removê-lo agora exigiria migration destrutiva.
+  ///
+  /// Sincronizado apenas quando a alteração afeta o mês CORRENTE. Editar um
+  /// mês passado ou futuro não o toca — senão uma correção retroativa
+  /// mudaria a renda exibida hoje.
   salary                       Decimal?
   createIncomeOnReceivablePaid Boolean   @default(false)
   createExpenseOnDebtPaid      Boolean   @default(false)
@@ -28,6 +37,45 @@ model User {
   people            Person[]
   pushSubscriptions PushSubscription[]
   subscriptions     Subscription[]
+  salaryHistory     SalaryHistory[]
+}
+
+/// Renda mensal recorrente ao longo do tempo.
+///
+/// Cada linha é uma ALTERAÇÃO que passa a valer a partir de uma competência e
+/// segue valendo até a próxima — o usuário não precisa recadastrar o mesmo
+/// valor todo mês.
+///
+/// Antes existia só `User.salary`, o valor atual, usado para calcular qualquer
+/// mês: mudar a renda hoje reescrevia retroativamente a sobra e o percentual
+/// comprometido de todo o histórico.
+///
+/// NÃO representa receita real (`Transaction` INCOME). É referência de
+/// planejamento; alterar a renda não gera lançamento.
+model SalaryHistory {
+  id     String @id @default(uuid())
+  userId String
+
+  /// Competência inteira, como em `Invoice`: sem ambiguidade de timezone.
+  ///
+  /// A granularidade é o mês — para o orçamento não importa que a mudança
+  /// tenha ocorrido no dia 17. Guardar `DateTime` exigiria normalizar o dia em
+  /// toda escrita e comparação, com risco de virada de fuso em cada ponto.
+  month Int
+  year  Int
+
+  amount Decimal
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  /// Uma competência, um valor. O upsert depende deste unique para ser
+  /// idempotente: definir "ago/2026 = 5000" duas vezes não cria duplicata.
+  @@unique([userId, year, month])
+  /// Resolver busca a última entrada `<=` competência pedida.
+  @@index([userId, year, month])
 }
 
 model PushSubscription {
@@ -46,6 +94,10 @@ model Bank {
   userId                   String
   name                     String
   isSystem                 Boolean  @default(false)
+  /// Conta encerrada: não aceita lançamentos novos, mas conserva todo o
+  /// histórico — faturas, parcelas futuras e transações seguem existindo e
+  /// evoluindo de status. Arquivar não é excluir; é reversível por `restore`.
+  isArchived               Boolean  @default(false)
   invoiceCloseDate         Int
   invoiceDueDate           Int
   invoiceDueDaysAfterClose Int      @default(7)
@@ -90,11 +142,40 @@ model Subscription {
   /// trás de forma permanente.
   dayOfMonth       Int
   /// Primeiro ciclo coberto, no formato "YYYY-MM". Imutável após a criação.
+  ///
+  /// Significa "assinando desde" — a origem da assinatura, informação de
+  /// produto. NÃO é reaproveitado como marco de geração: sobrescrevê-lo a cada
+  /// reativação apagaria esse significado.
   startedAt        String
+  /// Primeiro ciclo que a ATIVAÇÃO ATUAL pode gerar, "YYYY-MM".
+  ///
+  /// Existe porque `isActive + startedAt + lastGeneratedFor` não distinguem
+  /// dois casos que exigem tratamento oposto: um mês pendente porque o cron
+  /// ficou fora do ar (deve ser gerado) e um mês em que a assinatura estava
+  /// pausada (não deve). Sem este marco, reativar após três meses de pausa
+  /// gerava as três cobranças de uma vez.
+  ///
+  /// Nulo significa "sem restrição além de `startedAt`" — o estado de toda
+  /// assinatura anterior a esta coluna, e o de qualquer uma que nunca foi
+  /// pausada. É gravado ao REATIVAR, nunca ao criar.
+  activeSince      String?
   isActive         Boolean         @default(true)
   /// Último ciclo já gerado, "YYYY-MM". Trava de idempotência: sozinho diz
   /// quais ciclos ainda faltam, sem precisar varrer as transações.
   lastGeneratedFor String?
+  /// Chave da TENTATIVA de criação, gerada pelo cliente antes do POST.
+  ///
+  /// Existe porque a criação persiste a assinatura e só depois gera os
+  /// lançamentos: uma falha na geração devolvia erro ao cliente com a
+  /// assinatura já criada, e o retry natural produzia uma segunda.
+  ///
+  /// NÃO é chave natural de identidade — o usuário pode legitimamente ter
+  /// duas "Netflix", no mesmo banco, com o mesmo valor. É só a impressão
+  /// digital de uma tentativa de requisição.
+  ///
+  /// Nulo nos registros anteriores a este campo e em qualquer criação que não
+  /// envie a chave; o índice composto abaixo admite múltiplos nulos.
+  creationKey      String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @default(now())
 
@@ -103,6 +184,7 @@ model Subscription {
   category     Category      @relation(fields: [categoryId], references: [id])
   transactions Transaction[] @relation("SubscriptionLink")
 
+  @@unique([userId, creationKey])
   @@index([userId, isActive])
 }
 
@@ -143,6 +225,20 @@ model Invoice {
   year        Int
   status      InvoiceStatus
   totalAmount Decimal       @default(0)
+  /// Dia do fechamento desta fatura, congelado na criação.
+  ///
+  /// Antes era derivado da configuração ATUAL do banco a cada leitura, então
+  /// mudar o vencimento do cartão reescrevia as datas de todo o histórico —
+  /// uma fatura paga em agosto passava a exibir outro vencimento. Persistir
+  /// torna a data um fato da fatura, não uma função do banco.
+  ///
+  /// `DateTime` e não `@db.Date`: nenhum campo date-only do schema usa `Date`,
+  /// e `Receivable.dueDate` — que recebe cópias deste valor — é `DateTime`.
+  /// Tipos diferentes forçariam conversão implícita entre campos comparados
+  /// entre si. A âncora de 3h UTC é a mesma que `dateForDayUtc` já aplicava.
+  closeDate   DateTime
+  /// Vencimento desta fatura, congelado na criação. Ver `closeDate`.
+  dueDate     DateTime
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @default(now())
 

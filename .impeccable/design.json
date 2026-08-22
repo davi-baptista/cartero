@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-06-17T00:00:00Z",
+  "generatedAt": "2026-08-19T00:00:00.000Z",
   "title": "Design System: Cartero",
   "extensions": {
     "colorMeta": {
@@ -108,26 +108,185 @@
           "oklch(0.720 0.150 60)",
           "oklch(0.840 0.100 60)"
         ]
+      },
+      "surface-muted": {
+        "role": "neutral",
+        "displayName": "Elevated Graphite",
+        "canonical": "oklch(0.269 0 0)",
+        "tonalRamp": [
+          "oklch(0.150 0 0)",
+          "oklch(0.205 0 0)",
+          "oklch(0.269 0 0)",
+          "oklch(0.400 0 0)",
+          "oklch(0.556 0 0)",
+          "oklch(0.708 0 0)",
+          "oklch(0.850 0 0)",
+          "oklch(0.985 0 0)"
+        ]
+      },
+      "foreground": {
+        "role": "neutral",
+        "displayName": "Near White",
+        "canonical": "oklch(0.985 0 0)",
+        "tonalRamp": [
+          "oklch(0.150 0 0)",
+          "oklch(0.205 0 0)",
+          "oklch(0.269 0 0)",
+          "oklch(0.400 0 0)",
+          "oklch(0.556 0 0)",
+          "oklch(0.708 0 0)",
+          "oklch(0.850 0 0)",
+          "oklch(0.985 0 0)"
+        ]
+      },
+      "foreground-muted": {
+        "role": "neutral",
+        "displayName": "Muted Ash",
+        "canonical": "oklch(0.708 0 0)",
+        "tonalRamp": [
+          "oklch(0.150 0 0)",
+          "oklch(0.205 0 0)",
+          "oklch(0.269 0 0)",
+          "oklch(0.400 0 0)",
+          "oklch(0.556 0 0)",
+          "oklch(0.708 0 0)",
+          "oklch(0.850 0 0)",
+          "oklch(0.985 0 0)"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline White",
+        "canonical": "oklch(1 0 0 / 10%)",
+        "tonalRamp": [
+          "oklch(0.150 0 0)",
+          "oklch(0.205 0 0)",
+          "oklch(0.269 0 0)",
+          "oklch(0.400 0 0)",
+          "oklch(0.556 0 0)",
+          "oklch(0.708 0 0)",
+          "oklch(0.850 0 0)",
+          "oklch(0.985 0 0)"
+        ]
+      },
+      "input-bg": {
+        "role": "neutral",
+        "displayName": "Recessed Field",
+        "canonical": "oklch(1 0 0 / 5%)",
+        "tonalRamp": [
+          "oklch(0.150 0 0)",
+          "oklch(0.205 0 0)",
+          "oklch(0.269 0 0)",
+          "oklch(0.400 0 0)",
+          "oklch(0.556 0 0)",
+          "oklch(0.708 0 0)",
+          "oklch(0.850 0 0)",
+          "oklch(0.985 0 0)"
+        ]
+      },
+      "primary-foreground": {
+        "role": "primary",
+        "displayName": "Indigo Contrast",
+        "canonical": "oklch(0.985 0 0)",
+        "tonalRamp": [
+          "oklch(0.150 0 0)",
+          "oklch(0.205 0 0)",
+          "oklch(0.269 0 0)",
+          "oklch(0.400 0 0)",
+          "oklch(0.556 0 0)",
+          "oklch(0.708 0 0)",
+          "oklch(0.850 0 0)",
+          "oklch(0.985 0 0)"
+        ]
+      },
+      "receivable": {
+        "role": "tertiary",
+        "displayName": "Receivable Green",
+        "canonical": "oklch(0.600 0.150 145)",
+        "tonalRamp": [
+          "oklch(0.150 0.040 145)",
+          "oklch(0.240 0.070 145)",
+          "oklch(0.330 0.100 145)",
+          "oklch(0.420 0.130 145)",
+          "oklch(0.510 0.145 145)",
+          "oklch(0.600 0.150 145)",
+          "oklch(0.700 0.170 145)",
+          "oklch(0.850 0.090 145)"
+        ]
+      },
+      "pending": {
+        "role": "tertiary",
+        "displayName": "Pending Amber",
+        "canonical": "oklch(0.720 0.150 60)",
+        "tonalRamp": [
+          "oklch(0.150 0.040 60)",
+          "oklch(0.250 0.070 60)",
+          "oklch(0.350 0.100 60)",
+          "oklch(0.450 0.125 60)",
+          "oklch(0.550 0.140 60)",
+          "oklch(0.650 0.150 60)",
+          "oklch(0.720 0.150 60)",
+          "oklch(0.860 0.090 60)"
+        ]
       }
     },
     "typographyMeta": {
-      "headline": { "displayName": "Headline", "purpose": "Page titles only. One per screen. e.g. 'Transações', 'Bancos'." },
-      "title": { "displayName": "Title", "purpose": "Section headings, card titles, sheet titles." },
-      "body": { "displayName": "Body", "purpose": "List content, description text, form field values. Dominant size." },
-      "label": { "displayName": "Label", "purpose": "Form labels, table column headers, badge text, metadata." },
-      "mono": { "displayName": "Mono", "purpose": "Numeric amounts in data tables, invoice references, date strings needing column alignment." }
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page titles only. One per screen. e.g. 'Transações', 'Bancos'."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section headings, card titles, sheet titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "List content, description text, form field values. Dominant size."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Form labels, table column headers, badge text, metadata."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Numeric amounts in data tables, invoice references, date strings needing column alignment."
+      }
     },
     "shadows": [],
     "motion": [
-      { "name": "ease-state", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Default easing for state transitions (hover, focus, active). 150ms duration." },
-      { "name": "ease-enter", "value": "cubic-bezier(0, 0, 0.2, 1)", "purpose": "Panel/sheet entry. 200ms." },
-      { "name": "ease-exit", "value": "cubic-bezier(0.4, 0, 1, 1)", "purpose": "Panel/sheet exit. 150ms." }
+      {
+        "name": "ease-state",
+        "value": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Default easing for state transitions (hover, focus, active). 150ms duration."
+      },
+      {
+        "name": "ease-enter",
+        "value": "cubic-bezier(0, 0, 0.2, 1)",
+        "purpose": "Panel/sheet entry. 200ms."
+      },
+      {
+        "name": "ease-exit",
+        "value": "cubic-bezier(0.4, 0, 1, 1)",
+        "purpose": "Panel/sheet exit. 150ms."
+      }
     ],
     "breakpoints": [
-      { "name": "sm", "value": "640px" },
-      { "name": "md", "value": "768px" },
-      { "name": "lg", "value": "1024px" },
-      { "name": "xl", "value": "1280px" }
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      }
     ]
   },
   "components": [
@@ -191,11 +350,31 @@
       "Semantic color: income green, ledger red, confident indigo — each carries exactly one meaning"
     ],
     "rules": [
-      { "name": "The One Voice Rule", "body": "Confident Indigo appears on ≤10% of any given screen. Its rarity is the point — it marks the singular action or active state.", "section": "colors" },
-      { "name": "The No-Warm-Background Rule", "body": "Background is always pure neutral — oklch(0.145 0 0), no chroma. The indigo accent provides all identity; warming the background is the AI cream-and-beige trap.", "section": "colors" },
-      { "name": "The Amount Rule", "body": "Monetary amounts always render as R$ formatted. Positive in Income Green, negative in Ledger Red, neutral in Ledger White. Never raw decimal strings.", "section": "typography" },
-      { "name": "The Fixed Scale Rule", "body": "No clamp(), no fluid typography. Fixed rem values across breakpoints — this is a product UI at consistent viewport widths.", "section": "typography" },
-      { "name": "The Flat-By-Design Rule", "body": "No box-shadow anywhere. Depth is tonal, not shadow-based. If a surface needs to feel on top, lighten it by one tonal step.", "section": "elevation" }
+      {
+        "name": "The One Voice Rule",
+        "body": "Confident Indigo appears on ≤10% of any given screen. Its rarity is the point — it marks the singular action or active state.",
+        "section": "colors"
+      },
+      {
+        "name": "The No-Warm-Background Rule",
+        "body": "Background is always pure neutral — oklch(0.145 0 0), no chroma. The indigo accent provides all identity; warming the background is the AI cream-and-beige trap.",
+        "section": "colors"
+      },
+      {
+        "name": "The Amount Rule",
+        "body": "Monetary amounts always render as R$ formatted. Positive in Income Green, negative in Ledger Red, neutral in Ledger White. Never raw decimal strings.",
+        "section": "typography"
+      },
+      {
+        "name": "The Fixed Scale Rule",
+        "body": "No clamp(), no fluid typography. Fixed rem values across breakpoints — this is a product UI at consistent viewport widths.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-By-Design Rule",
+        "body": "No box-shadow anywhere. Depth is tonal, not shadow-based. If a surface needs to feel on top, lighten it by one tonal step.",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do use Confident Indigo exclusively for primary buttons, active navigation, and focus rings. Keep coverage below 10% per screen.",

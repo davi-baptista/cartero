@@ -76,6 +76,18 @@ export class CategoriesService {
     });
   }
 
+  /**
+   * Categoria em uso não é excluível.
+   *
+   * A FK de `Transaction.categoryId` é `ON DELETE RESTRICT` e o campo é
+   * obrigatório, então o banco já recusava a exclusão — mas com um erro cru do
+   * Prisma, que virava 500 e chegava ao usuário como "Erro ao excluir
+   * categoria", sem dizer o motivo. Aqui a recusa vira um conflito de domínio
+   * com a contagem do que impede, para a tela poder explicar.
+   *
+   * Assinaturas entram na verificação porque `Subscription.categoryId` também
+   * é obrigatório: apagar a categoria quebraria a regra recorrente.
+   */
   async remove(id: string, userId: string) {
     const existing = await this.entityValidationService.validateCategory(
       id,
@@ -88,10 +100,43 @@ export class CategoriesService {
       );
     }
 
+    const [transactions, subscriptions] = await Promise.all([
+      this.prisma.transaction.count({ where: { categoryId: id, userId } }),
+      this.prisma.subscription.count({ where: { categoryId: id, userId } }),
+    ]);
+
+    if (transactions > 0 || subscriptions > 0) {
+      throw new ConflictException({
+        message: this.buildInUseMessage(transactions, subscriptions),
+        code: 'CATEGORY_IN_USE',
+        details: { transactions, subscriptions },
+      });
+    }
+
     await this.prisma.category.delete({
       where: { id, userId },
     });
 
     return;
+  }
+
+  /** Menciona só o que de fato existe, no singular ou plural correto. */
+  private buildInUseMessage(
+    transactions: number,
+    subscriptions: number,
+  ): string {
+    const parts: string[] = [];
+    if (transactions > 0) {
+      parts.push(
+        transactions === 1 ? '1 transação' : `${transactions} transações`,
+      );
+    }
+    if (subscriptions > 0) {
+      parts.push(
+        subscriptions === 1 ? '1 assinatura' : `${subscriptions} assinaturas`,
+      );
+    }
+
+    return `Esta categoria está sendo usada em ${parts.join(' e ')} e não pode ser excluída.`;
   }
 }

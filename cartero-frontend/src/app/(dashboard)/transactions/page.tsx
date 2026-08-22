@@ -19,6 +19,7 @@ import {
   Repeat,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { QueryError } from '@/components/ui/query-error'
 import { Skeleton } from '@/components/ui/skeleton'
 import { monthBounds, periodFromDate, useMonthPeriod } from '@/components/month-nav'
 import { Input } from '@/components/ui/input'
@@ -35,11 +36,13 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
 } from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { MotionRow } from '@/components/ui/motion-row'
 import { TransactionSheet, type TransactionFormData } from './transaction-sheet'
 import { InstallmentScopeDialog } from './installment-scope-dialog'
+import type { PreviewUpdatePayload } from '@/services/transactions.service'
+import { belongsToSeries as belongsToInstallmentSeries } from '@/lib/installment-series'
 import {
   getTransactions,
   createTransaction,
@@ -48,10 +51,13 @@ import {
 } from '@/services/transactions.service'
 import { getBanks } from '@/services/banks.service'
 import { getCategories } from '@/services/categories.service'
-import { isAxiosError } from 'axios'
 import { formatCurrency, formatDate, isExpense, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
+import { bankDisplayName } from '@/lib/bank-display'
+import { breakdownExpenses, sumIncome } from '@/lib/money-semantics'
+import { API_ERROR_CODES, apiErrorMessage, apiErrorStatus, isApiErrorCode } from '@/lib/api-error'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { cn } from '@/lib/utils'
+import { useHighlight } from '@/lib/use-highlight'
 import type { Transaction } from '@/types'
 import { TransactionType, InstallmentScope } from '@/types'
 
@@ -86,12 +92,6 @@ function formatInvoicePeriod(invoice?: Transaction['invoice']) {
   return `${INVOICE_MONTHS[invoice.month - 1] ?? invoice.month}/${invoice.year}`
 }
 
-function isInstallmentChild(tx: Transaction): boolean {
-  const match = tx.title.match(/\s(\d+)\/\d+$/)
-  // The first installment is the purchase root, even for legacy rows that
-  // accidentally stored their own id in parentId.
-  return Boolean(tx.parentId && match && Number(match[1]) > 1)
-}
 
 /** Total de parcelas da compra, lido do sufixo "x/y" do título. */
 function getInstallmentCount(tx: Transaction): number | null {
@@ -126,9 +126,14 @@ function AmountDisplay({ amount, type, isRefund = false, size = 'md' }: { amount
 function TransactionRow({
   tx,
   onView,
+  isHighlighted,
+  highlightRef,
 }: {
   tx: Transaction
   onView: (tx: Transaction) => void
+  /** Alvo do `?highlight=` — recebe destaque temporário. */
+  isHighlighted?: boolean
+  highlightRef?: (node: HTMLElement | null) => void
 }) {
   const Icon = TYPE_ICON[tx.type]
   const visibleBank = tx.bank?.isSystem ? undefined : tx.bank
@@ -136,8 +141,18 @@ function TransactionRow({
   return (
     <button
       type="button"
+      ref={isHighlighted ? highlightRef : undefined}
       onClick={() => onView(tx)}
-      className="group flex w-full min-w-0 items-center gap-3 rounded-lg px-0 py-3.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4 sm:px-2 sm:py-4"
+      className={cn(
+        'group flex w-full min-w-0 items-center gap-3 rounded-lg px-0 py-3.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4 sm:px-2 sm:py-4',
+        /*
+          Destaque discreto e temporário.
+
+          Um anel permanente seria lido como status do lançamento; este apaga
+          sozinho depois de alguns segundos.
+        */
+        isHighlighted && 'bg-primary/10 ring-2 ring-primary/40',
+      )}
       aria-label={`Ver detalhes de ${tx.title}`}
     >
         {/* Type icon — green for income, neutral for all expenses */}
@@ -170,10 +185,14 @@ function TransactionRow({
                 </span>
               </>
             )}
+            {/* O nome sozinho era indistinguível do banco na mesma linha —
+                "Eva" e "Nubank" liam igual. O rótulo diz a relação. */}
             {tx.person && (
               <>
                 <span aria-hidden>·</span>
-                <span className="truncate">{tx.person.name}</span>
+                <span className="truncate text-receivable">
+                  a receber de {tx.person.name}
+                </span>
               </>
             )}
             {tx.subscriptionId && (
@@ -218,12 +237,28 @@ function InstallmentGroup({
   root,
   installments,
   onView,
+  highlightedId,
+  highlightRef,
 }: {
   root: Transaction
   installments: Transaction[]
   onView: (tx: Transaction) => void
+  highlightedId?: string | null
+  highlightRef?: (node: HTMLElement | null) => void
 }) {
-  const [showAll, setShowAll] = useState(false)
+  /*
+    Quando o destaque aponta para uma parcela escondida, o grupo já abre
+    expandido.
+
+    Destacar só o container deixaria o usuário olhando para a série sem ver a
+    parcela que ele pediu — o link aponta para uma parcela específica.
+  */
+  const highlightedIndex = highlightedId
+    ? installments.findIndex((tx) => tx.id === highlightedId)
+    : -1
+  const [showAll, setShowAll] = useState(
+    highlightedIndex >= VISIBLE_INSTALLMENTS,
+  )
   const Icon = TYPE_ICON[root.type]
   const visibleBank = root.bank?.isSystem ? undefined : root.bank
   const count = getInstallmentCount(root) ?? installments.length
@@ -263,7 +298,9 @@ function InstallmentGroup({
             {root.person && (
               <>
                 <span aria-hidden>·</span>
-                <span className="truncate">{root.person.name}</span>
+                <span className="truncate text-receivable">
+                  a receber de {root.person.name}
+                </span>
               </>
             )}
           </div>
@@ -331,23 +368,61 @@ function InstallmentRow({
 
 function TransactionDetailsDialog({
   transaction,
+  siblings,
   onOpenChange,
   onEdit,
   onDelete,
 }: {
   transaction: Transaction | null
+  /**
+   * Transações já carregadas na tela, usadas para somar a série de um
+   * parcelamento. Evita uma requisição só para mostrar o total.
+   */
+  siblings: Transaction[]
   onOpenChange: (open: boolean) => void
   onEdit: (tx: Transaction) => void
   onDelete: (tx: Transaction) => void
 }) {
   if (!transaction) return null
 
-  const expense = isExpense(transaction.type, transaction.isRefund)
   const categoryIcon = transaction.category
     ? resolveCategoryIcon(transaction.category.icon).Icon
     : null
   const CategoryIcon = categoryIcon
   const installment = Boolean(transaction.parentId) || /\s\d+\/\d+$/.test(transaction.title)
+
+  /**
+   * Posição na série e total da compra.
+   *
+   * A série é agrupada por `parentId ?? id` — metadado estrutural, não o
+   * título. A posição ainda vem do sufixo porque é o único lugar onde ela
+   * existe hoje; a substituição definitiva da regex é fase estrutural.
+   *
+   * O total é a SOMA das parcelas presentes, nunca valor × quantidade: séries
+   * podem ter centavos diferentes entre parcelas. Fica `null` quando a lista
+   * carregada não contém a série inteira, para não exibir um total parcial
+   * como se fosse o da compra.
+   */
+  const seriesInfo = (() => {
+    if (!installment) return null
+
+    const declared = transaction.title.match(/\s\d+\/(\d+)$/)
+    const count = declared ? Number(declared[1]) : null
+    const position = transaction.title.match(/\s(\d+)\/\d+$/)?.[1]
+    const rootId = transaction.parentId ?? transaction.id
+    const series = siblings.filter(
+      (tx) => (tx.parentId ?? tx.id) === rootId,
+    )
+
+    const complete = count !== null && series.length === count
+    return {
+      position: position ?? '?',
+      count: count ?? series.length,
+      total: complete
+        ? series.reduce((sum, tx) => sum + tx.amount, 0)
+        : null,
+    }
+  })()
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -360,17 +435,32 @@ function TransactionDetailsDialog({
         </DialogHeader>
 
         <div className="border-b border-border bg-muted/20 px-5 py-4">
+          {/* "Valor pago" não descrevia um estorno nem uma parcela; o rótulo
+              agora diz exatamente qual valor é este. */}
           <p className="text-xs font-medium text-muted-foreground">
-            {expense ? 'Valor pago' : 'Valor recebido'}
+            {installment ? 'Valor desta parcela' : 'Valor'}
           </p>
           <div className="mt-1">
             <AmountDisplay amount={transaction.amount} type={transaction.type} isRefund={transaction.isRefund} />
           </div>
+          {transaction.isRefund && (
+            <p className="mt-1 text-[11px] text-primary">
+              Estorno — reduz o total da fatura
+            </p>
+          )}
         </div>
 
         <dl className="divide-y divide-border px-5">
+          <DetailRow label="Natureza">
+            {transaction.type === TransactionType.INCOME ? 'Receita' : 'Gasto'}
+          </DetailRow>
+          {transaction.type !== TransactionType.INCOME && (
+            <DetailRow label="Forma de pagamento">
+              {TRANSACTION_TYPE_LABELS[transaction.type]}
+            </DetailRow>
+          )}
           <DetailRow label="Banco">
-            {transaction.bank?.isSystem ? 'Não informado' : transaction.bank?.name ?? 'Não informado'}
+            {bankDisplayName(transaction.bank)}
           </DetailRow>
           <DetailRow label="Categoria">
             <span className="flex min-w-0 items-center justify-end gap-1.5">
@@ -384,11 +474,33 @@ function TransactionDetailsDialog({
               <span className="truncate">{transaction.category?.name ?? 'Não informada'}</span>
             </span>
           </DetailRow>
+          {/* Relação explícita: "Eva" sozinho não dizia o que ela é nesta
+              compra. */}
           {transaction.person && (
-            <DetailRow label="Pessoa">{transaction.person.name}</DetailRow>
+            <DetailRow label="Cobrança">
+              <span className="text-receivable">
+                A receber de {transaction.person.name}
+              </span>
+            </DetailRow>
           )}
           {installment && (
-            <DetailRow label="Lançamento">Parcelado</DetailRow>
+            <DetailRow label="Parcelamento">
+              {seriesInfo
+                ? `Parcela ${seriesInfo.position} de ${seriesInfo.count}`
+                : 'Parcelado'}
+            </DetailRow>
+          )}
+          {/* Total da compra pela SOMA real das parcelas — nunca valor × N,
+              porque a série pode ter centavos diferentes entre parcelas. */}
+          {seriesInfo && seriesInfo.total !== null && (
+            <DetailRow label="Total da compra">
+              <span className="tabular-nums">
+                {formatCurrency(seriesInfo.total)}
+              </span>
+              <span className="ml-1 text-muted-foreground">
+                · {seriesInfo.count} parcelas
+              </span>
+            </DetailRow>
           )}
           {transaction.invoice && (
             <DetailRow label="Fatura">
@@ -494,6 +606,16 @@ export default function TransactionsPage() {
     if (next.month !== period.month || next.year !== period.year) setPeriod(next)
   }, [searchParams, period.month, period.year, setPeriod])
 
+  /*
+    `?highlight=<transactionId>` — chegada a partir de "Ver a compra".
+
+    Só navegação: a lista continua filtrada por ownership no backend, e um id
+    que não esteja nos dados carregados simplesmente não destaca nada.
+  */
+  const { highlightedId, highlightRef } = useHighlight(
+    searchParams.get('highlight'),
+  )
+
   const [filters, setFilters] = useState<Omit<FilterState, 'startDate' | 'endDate'>>(() => {
     const spCategory = searchParams.get('categoryId')
     const spType = searchParams.get('type')
@@ -520,15 +642,19 @@ export default function TransactionsPage() {
 
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editTx, setEditTx] = useState<Transaction | null>(null)
-  const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
   const [detailsTx, setDetailsTx] = useState<Transaction | null>(null)
 
   const [scopeDialog, setScopeDialog] = useState<{ tx: Transaction; mode: 'edit' | 'delete' } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null)
-  const [closedInvoiceConfirm, setClosedInvoiceConfirm] = useState<{
-    id: string
+  /**
+   * Alterações já preenchidas, aguardando a escolha de escopo.
+   *
+   * Guardadas aqui para que o diálogo possa pedir a prévia ao servidor com o
+   * payload exato que o save usará — projeção e gravação partem do mesmo dado.
+   */
+  const [pendingEdit, setPendingEdit] = useState<{
+    tx: Transaction
     payload: Parameters<typeof updateTransaction>[1]
-    scope?: InstallmentScope
   } | null>(null)
 
   const queryFilters = useMemo<FilterState>(
@@ -537,14 +663,20 @@ export default function TransactionsPage() {
   )
 
   // ── Queries ──
-  const { data: transactions, isLoading: txLoading } = useQuery({
+  const {
+    data: transactions,
+    isLoading: txLoading,
+    isError: txError,
+    isFetching: txFetching,
+    refetch: refetchTx,
+  } = useQuery({
     queryKey: ['transactions', queryFilters],
     queryFn: () => getTransactions(queryFilters),
   })
 
   const { data: banks = [] } = useQuery({
     queryKey: ['banks'],
-    queryFn: getBanks,
+    queryFn: () => getBanks(),
   })
 
   const { data: categories = [] } = useQuery({
@@ -576,26 +708,41 @@ export default function TransactionsPage() {
       qc.invalidateQueries({ queryKey: ['receivables'] })
       qc.invalidateQueries({ queryKey: ['invoices'] })
       qc.invalidateQueries({ queryKey: ['budget'] })
-      setClosedInvoiceConfirm(null)
       setSheetOpen(false)
       setEditTx(null)
-      setEditScope(null)
+      setScopeDialog(null)
+      setPendingEdit(null)
       toast.success('Transação atualizada')
     },
     onError: (err, variables) => {
-      if (
-        isAxiosError(err) &&
-        err.response?.status === 409 &&
-        err.response.data?.code === 'CLOSED_INVOICE_REASSIGNMENT'
-      ) {
-        setClosedInvoiceConfirm(variables)
+      /**
+       * A confirmação de fatura fechada normalmente já foi dada no diálogo de
+       * escopo, que a pede antes de salvar. Este caminho cobre a corrida: a
+       * fatura fechou entre a prévia e o save. Reenviar aqui com o aceite
+       * embutido resolve sem abrir um segundo diálogo sobre o primeiro.
+       */
+      if (isApiErrorCode(err, API_ERROR_CODES.CLOSED_INVOICE_REASSIGNMENT)) {
+        if (variables.payload.confirmReopenClosedInvoice) {
+          toast.error(
+            apiErrorMessage(err, 'A fatura foi fechada. Tente salvar novamente.'),
+          )
+          return
+        }
+        toast.error('A fatura foi fechada enquanto você editava. Revise e salve novamente.')
+        setScopeDialog(null)
+        setPendingEdit(null)
         return
       }
-      if (isAxiosError(err) && err.response?.status === 403) {
+      if (apiErrorStatus(err) === 403) {
         toast.error('Não é possível editar transações de faturas já pagas.')
-      } else {
-        toast.error('Não foi possível salvar as alterações. Tente novamente.')
+        return
       }
+      // As recusas de integridade (recebível já pago, por exemplo) vêm com
+      // mensagem própria explicando o que fazer — mostrá-la é mais útil que
+      // "Não foi possível salvar".
+      toast.error(
+        apiErrorMessage(err, 'Não foi possível salvar as alterações. Tente novamente.'),
+      )
     },
   })
 
@@ -608,13 +755,20 @@ export default function TransactionsPage() {
       qc.invalidateQueries({ queryKey: ['receivables'] })
       qc.invalidateQueries({ queryKey: ['invoices'] })
       qc.invalidateQueries({ queryKey: ['budget'] })
+      setDeleteTarget(null)
+      setScopeDialog(null)
       toast.success(
         variables.hasPerson
           ? 'Transação excluída — o recebível vinculado também foi removido'
           : 'Transação excluída',
       )
     },
-    onError: () => toast.error('Não foi possível excluir a transação. Tente novamente.'),
+    // Recusas como "esta transação registra o pagamento de uma dívida" trazem
+    // a instrução do que fazer; o genérico deixaria o usuário sem saída.
+    onError: (err) =>
+      toast.error(
+        apiErrorMessage(err, 'Não foi possível excluir a transação. Tente novamente.'),
+      ),
   })
 
   // ── Client-side search filter ──
@@ -680,60 +834,105 @@ export default function TransactionsPage() {
   }, [filteredTransactions])
 
   // ── Summary ──
+  // O Extrato responde "o que aconteceu": os Gastos são a movimentação bruta do
+  // período, incluindo compras feitas para outras pessoas — elas passaram pelo
+  // cartão de verdade. A decomposição em sua parte / de outras pessoas explica
+  // quanto daquilo é custo próprio, sem esconder a movimentação.
   const summary = useMemo(() => {
     const list = filteredTransactions ?? []
-    if (list.length === 0) return { receitas: 0, gastos: 0, saldo: 0 }
-    const receitas = list.filter((t) => !isExpense(t.type, t.isRefund)).reduce((s, t) => s + t.amount, 0)
-    const gastos = list.filter((t) => isExpense(t.type, t.isRefund)).reduce((s, t) => s + t.amount, 0)
-    return { receitas, gastos, saldo: receitas - gastos }
+    if (list.length === 0) {
+      return { receitas: 0, gastos: 0, suaParte: 0, deOutrasPessoas: 0, saldo: 0 }
+    }
+    const receitas = sumIncome(list)
+    const { movimentado, suaParte, deOutrasPessoas } = breakdownExpenses(list)
+    return {
+      receitas,
+      gastos: movimentado,
+      suaParte,
+      deOutrasPessoas,
+      saldo: receitas - movimentado,
+    }
   }, [filteredTransactions])
 
   // ── Handlers ──
+  /**
+   * Editar abre o formulário direto, mesmo em parcelamento.
+   *
+   * O escopo é decidido no submit, não antes: só com as alterações em mãos o
+   * diálogo consegue dizer o que cada escopo faria. Perguntar primeiro exigia
+   * escolher entre "esta" e "todas" sem saber o que estava mudando.
+   */
   function handleEdit(tx: Transaction) {
     setDetailsTx(null)
-    if (isInstallmentChild(tx)) {
-      setScopeDialog({ tx, mode: 'edit' })
-    } else {
-      setEditTx(tx)
-      setEditScope(null)
-      setSheetOpen(true)
-    }
+    setEditTx(tx)
+    setSheetOpen(true)
   }
 
   function handleDelete(tx: Transaction) {
     setDetailsTx(null)
-    if (isInstallmentChild(tx)) {
+    if (belongsToInstallmentSeries(tx)) {
       setScopeDialog({ tx, mode: 'delete' })
     } else {
       setDeleteTarget(tx)
     }
   }
 
-  function handleScopeConfirm(scope: InstallmentScope) {
-    if (!scopeDialog) return
-    if (scopeDialog.mode === 'delete') {
-      deleteMut.mutate({ id: scopeDialog.tx.id, scope, hasPerson: Boolean(scopeDialog.tx.personId) })
-    } else {
-      setEditScope(scope)
-      setEditTx(scopeDialog.tx)
-      setSheetOpen(true)
+  /** Monta o payload de update a partir do formulário. */
+  function buildUpdatePayload(tx: Transaction, data: TransactionFormData) {
+    const { installments, title, personId, ...rest } = data
+    void installments
+    // Em parcelamento o título é derivado da série ("Nome x/y"); o backend
+    // ignora alterações nele, e mandá-lo daria a impressão de que pegou.
+    const payload = tx.parentId ? rest : { ...rest, title }
+    return {
+      ...payload,
+      personId: data.type === TransactionType.CREDIT_CARD ? (personId ?? null) : null,
     }
-    setScopeDialog(null)
   }
 
-  async function handleSheetSubmit(data: TransactionFormData, scope: InstallmentScope | null) {
-    if (editTx) {
-      const { installments, title, personId, ...rest } = data
-      void installments
-      const payload = editTx.parentId ? rest : { ...rest, title }
-      const finalPayload = {
-        ...payload,
-        personId: data.type === TransactionType.CREDIT_CARD ? (personId ?? null) : null,
-      }
-      await updateMut.mutateAsync({ id: editTx.id, payload: finalPayload, scope: scope ?? undefined })
-    } else {
+  async function handleSheetSubmit(data: TransactionFormData) {
+    if (!editTx) {
       await createMut.mutateAsync(data)
+      return
     }
+
+    const payload = buildUpdatePayload(editTx, data)
+
+    // Parcelamento: o escopo e o impacto são resolvidos no diálogo, que já
+    // recebe as alterações pendentes para projetá-las.
+    if (belongsToInstallmentSeries(editTx)) {
+      setPendingEdit({ tx: editTx, payload })
+      setScopeDialog({ tx: editTx, mode: 'edit' })
+      setSheetOpen(false)
+      return
+    }
+
+    await updateMut.mutateAsync({ id: editTx.id, payload })
+  }
+
+  /** Confirmação do diálogo de escopo — para edição e exclusão. */
+  function handleScopeConfirm(scope: InstallmentScope, confirmClosedInvoice: boolean) {
+    if (!scopeDialog) return
+
+    if (scopeDialog.mode === 'delete') {
+      deleteMut.mutate({
+        id: scopeDialog.tx.id,
+        scope,
+        hasPerson: Boolean(scopeDialog.tx.personId),
+      })
+      return
+    }
+
+    if (!pendingEdit) return
+    updateMut.mutate({
+      id: pendingEdit.tx.id,
+      // O aceite da fatura fechada já foi dado no próprio diálogo; enviá-lo
+      // junto evita o segundo diálogo que antes surgia depois do erro.
+      payload: confirmClosedInvoice
+        ? { ...pendingEdit.payload, confirmReopenClosedInvoice: true }
+        : pendingEdit.payload,
+      scope,
+    })
   }
 
   function setTypeFilter(type: TransactionType | undefined) {
@@ -777,7 +976,7 @@ export default function TransactionsPage() {
             Histórico do que aconteceu, na data em que aconteceu
           </p>
         </div>
-        <Button onClick={() => { setEditTx(null); setEditScope(null); setSheetOpen(true) }}>
+        <Button onClick={() => { setEditTx(null); setSheetOpen(true) }}>
           <Plus className="size-4" />
           Nova transação
         </Button>
@@ -896,6 +1095,23 @@ export default function TransactionsPage() {
             <p className="mt-1 whitespace-nowrap text-[15px] font-semibold tabular-nums tracking-[-0.02em] text-destructive sm:text-base">
               {formatCurrency(summary.gastos)}
             </p>
+            {/* Só aparece quando há compra de outra pessoa no período: o valor
+                acima é a movimentação, e esta linha diz quanto dela é seu. */}
+            {summary.deOutrasPessoas > 0 && (
+              <p className="mt-1 text-[11px] leading-tight text-muted-foreground">
+                <span className="tabular-nums text-foreground/80">
+                  {formatCurrency(summary.suaParte)}
+                </span>{' '}
+                seus
+                <span className="mx-1 text-muted-foreground/40" aria-hidden>
+                  ·
+                </span>
+                <span className="tabular-nums text-receivable">
+                  {formatCurrency(summary.deOutrasPessoas)}
+                </span>{' '}
+                de outras pessoas
+              </p>
+            )}
           </div>
           <div className="col-span-2 min-w-0 rounded-xl bg-muted/30 px-3 py-3 sm:col-span-1 sm:rounded-2xl sm:px-4">
             <p className="text-xs font-medium text-muted-foreground">Saldo</p>
@@ -914,7 +1130,14 @@ export default function TransactionsPage() {
 
       {/* Transaction list */}
       <div className="border-t border-border">
-        {txLoading ? (
+        {/* Erro é estado próprio: sem isso a falha caía em "Nenhuma transação". */}
+        {txError ? (
+          <QueryError
+            message="Não foi possível carregar o extrato"
+            isFetching={txFetching}
+            onRetry={() => void refetchTx()}
+          />
+        ) : txLoading ? (
           <div>
             {Array.from({ length: 8 }).map((_, i) => <RowSkeleton key={i} />)}
           </div>
@@ -934,7 +1157,7 @@ export default function TransactionsPage() {
             {!hasActiveFilters(filters) && !search && !typeGroup && (
               <Button
                 className="mt-5"
-                onClick={() => { setEditTx(null); setEditScope(null); setSheetOpen(true) }}
+                onClick={() => { setEditTx(null); setSheetOpen(true) }}
               >
                 <Plus className="size-4" />
                 Nova transação
@@ -947,7 +1170,12 @@ export default function TransactionsPage() {
               if (item.kind === 'single') {
                 return (
                   <MotionRow key={item.tx.id} index={i}>
-                    <TransactionRow tx={item.tx} onView={setDetailsTx} />
+                    <TransactionRow
+                      tx={item.tx}
+                      onView={setDetailsTx}
+                      isHighlighted={item.tx.id === highlightedId}
+                      highlightRef={highlightRef}
+                    />
                   </MotionRow>
                 )
               }
@@ -962,6 +1190,8 @@ export default function TransactionsPage() {
                     root={root}
                     installments={installments}
                     onView={setDetailsTx}
+                    highlightedId={highlightedId}
+                    highlightRef={highlightRef}
                   />
                 </MotionRow>
               )
@@ -973,6 +1203,7 @@ export default function TransactionsPage() {
       {/* Sheets & Dialogs */}
       <TransactionDetailsDialog
         transaction={detailsTx}
+        siblings={transactions ?? []}
         onOpenChange={(open) => {
           if (!open) setDetailsTx(null)
         }}
@@ -984,77 +1215,72 @@ export default function TransactionsPage() {
         open={sheetOpen}
         onOpenChange={(open) => {
           setSheetOpen(open)
-          if (!open) { setEditTx(null); setEditScope(null) }
+          if (!open) setEditTx(null)
         }}
         editTarget={editTx}
-        editScope={editScope}
         onSubmit={handleSheetSubmit}
       />
 
+      {/* Escopo, impacto e confirmação num só lugar — inclusive o aceite de
+          fatura fechada, que antes era um diálogo separado abrindo por cima
+          deste depois do save falhar. */}
       <InstallmentScopeDialog
+        // Remonta por operação: o escopo volta a "Apenas esta" a cada abertura,
+        // sem um efeito de reset (que a regra `set-state-in-effect` proíbe, com
+        // razão — era estado derivado disfarçado de sincronização).
+        key={scopeDialog ? `${scopeDialog.mode}:${scopeDialog.tx.id}` : 'none'}
         open={scopeDialog !== null}
         mode={scopeDialog?.mode ?? 'delete'}
+        transaction={scopeDialog?.tx ?? null}
+        siblings={transactions ?? []}
+        pendingChanges={
+          scopeDialog?.mode === 'edit' && pendingEdit
+            ? (pendingEdit.payload as PreviewUpdatePayload)
+            : null
+        }
+        isPending={scopeDialog?.mode === 'delete' ? deleteMut.isPending : updateMut.isPending}
         onConfirm={handleScopeConfirm}
-        onCancel={() => setScopeDialog(null)}
+        onCancel={() => {
+          setScopeDialog(null)
+          setPendingEdit(null)
+        }}
         linkedWarning={Boolean(scopeDialog?.tx.personId)}
       />
 
-      <Dialog open={closedInvoiceConfirm !== null} onOpenChange={(o) => !o && setClosedInvoiceConfirm(null)}>
-        <DialogContent showCloseButton={false} className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Fatura já fechada</DialogTitle>
-            <DialogDescription>
-              Essa alteração vai mover parcelas para uma fatura que já está fechada. Deseja continuar?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setClosedInvoiceConfirm(null)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={() => {
-                if (closedInvoiceConfirm) {
-                  updateMut.mutate({
-                    ...closedInvoiceConfirm,
-                    payload: { ...closedInvoiceConfirm.payload, confirmReopenClosedInvoice: true },
-                  })
-                }
-              }}
-            >
-              Continuar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Simple delete confirm for non-parcelado */}
-      <Dialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent showCloseButton={false} className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Excluir transação</DialogTitle>
-            <DialogDescription>
-              Tem certeza que deseja excluir{' '}
-              <strong className="text-foreground">{deleteTarget?.title}</strong>? Esta ação não pode ser desfeita.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              Cancelar
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (deleteTarget) {
-                  deleteMut.mutate({ id: deleteTarget.id, hasPerson: Boolean(deleteTarget.personId) })
-                  setDeleteTarget(null)
-                }
-              }}
-            >
-              Excluir
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* O impacto real entra na confirmação: uma compra de terceiro leva a
+          cobrança junto, e o diálogo fica aberto até a resposta para que uma
+          recusa do servidor apareça no contexto da ação. */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Excluir transação"
+        description={
+          <>
+            Tem certeza que deseja excluir{' '}
+            <strong className="text-foreground">{deleteTarget?.title}</strong>?
+            Esta ação não pode ser desfeita.
+            {deleteTarget?.person && (
+              <span className="mt-2 block text-xs">
+                Também será removido o valor a receber de{' '}
+                <span className="text-receivable">
+                  {deleteTarget.person.name}
+                </span>
+                .
+              </span>
+            )}
+          </>
+        }
+        isPending={deleteMut.isPending}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) {
+            deleteMut.mutate({
+              id: deleteTarget.id,
+              hasPerson: Boolean(deleteTarget.personId),
+            })
+          }
+        }}
+      />
     </div>
   )
 }

@@ -25,6 +25,14 @@ export class UpdateSubscriptionDto {
   @IsUUID()
   bankId?: string;
 
+  /**
+   * Trocar a categoria afeta só os próximos lançamentos. Os já gerados
+   * permanecem na categoria que tinham quando nasceram — são fatos.
+   */
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
+
   @IsOptional()
   @IsEnum(TransactionType)
   type?: TransactionType;

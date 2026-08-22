@@ -1,5 +1,11 @@
 import { api } from '@/lib/api'
-import type { GenerationPlanItem, Subscription, TransactionType } from '@/types'
+import type {
+  GenerationPlanItem,
+  Subscription,
+  SubscriptionCreateResult,
+  SubscriptionRunResult,
+  TransactionType,
+} from '@/types'
 
 export async function getSubscriptions(): Promise<Subscription[]> {
   const { data } = await api.get<Subscription[]>('/subscriptions')
@@ -9,6 +15,16 @@ export async function getSubscriptions(): Promise<Subscription[]> {
 export interface CreateSubscriptionPayload {
   title: string
   bankId: string
+  /** Omitida cai na categoria de sistema "Assinatura". */
+  categoryId?: string
+  /**
+   * Chave desta TENTATIVA de criação.
+   *
+   * Reenviar o mesmo POST com a mesma chave devolve a MESMA assinatura em vez
+   * de criar outra. Não identifica a assinatura — duas "Netflix" idênticas são
+   * cadastro legítimo; identifica a tentativa.
+   */
+  creationKey?: string
   type: TransactionType
   amount: number
   description?: string
@@ -18,8 +34,8 @@ export interface CreateSubscriptionPayload {
 
 export async function createSubscription(
   payload: CreateSubscriptionPayload,
-): Promise<Subscription & { generated: GenerationPlanItem[] }> {
-  const { data } = await api.post<Subscription & { generated: GenerationPlanItem[] }>(
+): Promise<SubscriptionCreateResult> {
+  const { data } = await api.post<SubscriptionCreateResult>(
     '/subscriptions',
     payload,
   )
@@ -50,10 +66,14 @@ export async function previewSubscription(params: {
   return data
 }
 
-/** Rede de segurança: gera o que ficou pendente desde a última visita. */
-export async function runSubscriptions(): Promise<
-  Array<{ subscriptionId: string; generated: GenerationPlanItem[] }>
-> {
-  const { data } = await api.post('/subscriptions/run')
+/**
+ * Rede de segurança: gera o que ficou pendente desde a última visita.
+ *
+ * O cron diário é o caminho principal; isto cobre o intervalo em que o
+ * servidor esteve hibernando. Cada assinatura vem com o seu resultado — uma
+ * que falhe não impede as demais, e a falha é reportada em vez de sumir.
+ */
+export async function runSubscriptions(): Promise<SubscriptionRunResult[]> {
+  const { data } = await api.post<SubscriptionRunResult[]>('/subscriptions/run')
   return data
 }

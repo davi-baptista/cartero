@@ -4,18 +4,7 @@ import { useState, useMemo, useEffect, useRef, memo } from 'react'
 import { AnimatePresence, motion, animate } from 'motion/react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import {
-  Plus,
-  Pencil,
-  Trash2,
-  Check,
-  Undo2,
-  Wallet,
-  Search,
-  MoreVertical,
-  X,
-  Repeat2,
-} from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, Undo2, Wallet, Search, MoreVertical, X, Repeat2, TriangleAlert, RotateCcw, Loader2, ShoppingBag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { monthBounds, periodFromDate, useMonthPeriod } from '@/components/month-nav'
@@ -57,47 +46,15 @@ import {
 import { useSearchParams } from 'next/navigation'
 import { getPersons } from '@/services/persons.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
-import { formatDateValue } from '@/lib/date'
+import Link from 'next/link'
+import { isOverdue, overdueCountLabel } from '@/lib/settlement-status'
+import { SettlementStatusDot } from '@/components/settlement-status-dot'
 import { cn } from '@/lib/utils'
 import type { Receivable } from '@/types'
 import { InstallmentScope } from '@/types'
 import { useAuth } from '@/providers/auth-provider'
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function isOverdue(r: Receivable): boolean {
-  if (r.isPaid) return false
-  const today = formatDateValue()
-  return r.dueDate < today
-}
-
 // ─── Sub-components ──────────────────────────────────────────────────────────
-
-function StatusDot({ receivable }: { receivable: Receivable }) {
-  if (receivable.isPaid)
-    return (
-      <>
-        <span className="size-2.5 rounded-full bg-receivable shrink-0" aria-hidden="true" />
-        <span className="sr-only">Recebido</span>
-      </>
-    )
-  if (isOverdue(receivable))
-    return (
-      <>
-        <span className="relative flex size-2.5 shrink-0 items-center justify-center" aria-hidden="true">
-          <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/50 opacity-75" />
-          <span className="size-2.5 rounded-full bg-destructive" />
-        </span>
-        <span className="sr-only">Atrasado</span>
-      </>
-    )
-  return (
-    <>
-      <span className="size-2.5 rounded-full bg-receivable/50 shrink-0" aria-hidden="true" />
-      <span className="sr-only">Pendente</span>
-    </>
-  )
-}
 
 const ReceivableRow = memo(function ReceivableRow({
   receivable,
@@ -147,7 +104,7 @@ const ReceivableRow = memo(function ReceivableRow({
         ) : (
           <>
             <span className="block group-hover/dot:hidden">
-              <StatusDot receivable={receivable} />
+              <SettlementStatusDot item={receivable} domain="receivable" />
             </span>
             <span className="hidden group-hover/dot:block text-muted-foreground">
               <Check className="size-3.5" />
@@ -173,6 +130,24 @@ const ReceivableRow = memo(function ReceivableRow({
               <span className="sr-only">Parcelado</span>
             </>
           )}
+          {/*
+            Cobrança gerada por uma compra no cartão.
+
+            Sem essa marca as duas origens ficavam indistinguíveis na lista, e
+            o usuário só descobria que o valor era travado ao abrir o
+            formulário e não conseguir editá-lo.
+          */}
+          {receivable.transactionId && (
+            <Link
+              href={`/transactions?startDate=${receivable.occurredAt.slice(0, 10)}&endDate=${receivable.occurredAt.slice(0, 10)}&highlight=${receivable.transactionId}`}
+              onClick={(event) => event.stopPropagation()}
+              title="Ver a compra que gerou esta cobrança"
+              className="shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground"
+            >
+              <ShoppingBag aria-hidden="true" className="size-3.5" />
+              <span className="sr-only">Ver a compra que gerou esta cobrança</span>
+            </Link>
+          )}
         </span>
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <span className="truncate">{receivable.person?.name ?? receivable.debtorName}{receivable.description ? <> · <i>{receivable.description}</i></> : ''}</span>
@@ -193,7 +168,7 @@ const ReceivableRow = memo(function ReceivableRow({
         </span>
         {overdue ? (
           <span className="inline-flex items-center rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-medium text-destructive">
-            Atrasada {formatDate(receivable.dueDate)}
+            Em atraso · {formatDate(receivable.dueDate)}
           </span>
         ) : (
           <span className="text-xs text-muted-foreground">{formatDate(receivable.dueDate)}</span>
@@ -324,7 +299,14 @@ export default function ReceivablesPage() {
   // Sem `startDate` na query: o backend devolve tudo até o fim do mês
   // selecionado, e o recorte por mês acontece no cliente — assim recebíveis
   // vencidos de meses anteriores continuam visíveis em qualquer mês.
-  const { data: allReceivables, isLoading } = useQuery({
+  const {
+    data: allReceivables,
+    isLoading,
+    isError,
+    isSuccess,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ['receivables', personFilter, endDate],
     queryFn: () => getReceivables({
       personId: personFilter,
@@ -346,6 +328,12 @@ export default function ReceivablesPage() {
     mutationFn: createReceivable,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['receivables'] })
+      /*
+        Cobrança nova aparece no informativo do Orçamento e, com pessoa, na
+        linha dela em "Acertos com pessoas". Sem esta invalidação o card só
+        atualizava na navegação seguinte — mesmo caso do lado das dívidas.
+      */
+      qc.invalidateQueries({ queryKey: ['budget'] })
       setSheetOpen(false)
       toast.success('Cobrança criada')
     },
@@ -545,7 +533,7 @@ export default function ReceivablesPage() {
             </span>
             {summary.overdueCount > 0 && (
               <span className="ml-2 text-xs font-medium text-destructive">
-                · {summary.overdueCount} atrasada{summary.overdueCount > 1 ? 's' : ''}
+                · {overdueCountLabel(summary.overdueCount, 'receivable')}
               </span>
             )}
           </p>
@@ -634,7 +622,43 @@ export default function ReceivablesPage() {
               <RowSkeleton key={i} />
             ))}
           </div>
-        ) : filtered.length === 0 ? (
+        ) : isError ? (
+          /*
+            Erro é estado próprio, não lista vazia.
+            Com a API fora do ar, `isLoading` vira false e os dados ficam
+            undefined — a tela dizia "Nada a receber por enquanto", afirmando ao usuário que ele
+            não tem cobranças quando o servidor apenas não respondeu.
+          */
+          <div
+            role="alert"
+            className="flex flex-col items-center justify-center py-16 text-center"
+          >
+            <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-destructive/10">
+              <TriangleAlert className="size-6 text-destructive/70" aria-hidden />
+            </div>
+            <p className="text-sm font-medium">
+              Não foi possível carregar suas cobranças
+            </p>
+            <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+              Verifique sua conexão e tente novamente. Seus dados continuam
+              salvos.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-5 gap-1.5"
+              disabled={isFetching}
+              onClick={() => void refetch()}
+            >
+              {isFetching ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              ) : (
+                <RotateCcw className="size-3.5" aria-hidden />
+              )}
+              {isFetching ? 'Carregando…' : 'Tentar novamente'}
+            </Button>
+          </div>
+        ) : isSuccess && filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="mb-3 flex size-12 items-center justify-center rounded-xl bg-receivable/10">
               <Wallet className="size-5 text-receivable/70" />
@@ -696,6 +720,7 @@ export default function ReceivablesPage() {
       <InstallmentScopeDialog
         open={scopeDialog !== null}
         mode={scopeDialog?.mode ?? 'delete'}
+        isPending={scopeDialog?.mode === 'delete' ? deleteMut.isPending : updateMut.isPending}
         onConfirm={handleScopeConfirm}
         onCancel={() => setScopeDialog(null)}
         linkedWarning={Boolean(
@@ -707,6 +732,13 @@ export default function ReceivablesPage() {
       <DeleteLinkedWarningDialog
         open={linkedWarningTarget !== null}
         kind="receivable"
+        /*
+          Cobrança automática nasce de uma compra; cobrança recebida tem
+          comprovante. A frase do diálogo precisa dizer qual das duas, senão o
+          usuário decide sem saber o que perde.
+        */
+        link={linkedWarningTarget?.transactionId ? 'purchase' : 'payment'}
+        isPending={deleteMut.isPending}
         onConfirm={handleLinkedWarningConfirm}
         onDeleteOnly={handleLinkedWarningDeleteOnly}
         onCancel={() => setLinkedWarningTarget(null)}
@@ -717,6 +749,7 @@ export default function ReceivablesPage() {
         open={markPaidTarget !== null}
         kind="receivable"
         createTransaction={user?.createIncomeOnReceivablePaid ?? false}
+        isPending={updateMut.isPending}
         onConfirm={handleMarkPaidConfirm}
         onCancel={() => setMarkPaidTarget(null)}
       />
@@ -725,6 +758,7 @@ export default function ReceivablesPage() {
       <UnmarkPaidWarningDialog
         open={unmarkPaidTarget !== null}
         kind="receivable"
+        isPending={updateMut.isPending}
         onConfirm={handleUnmarkPaidConfirm}
         onCancel={() => setUnmarkPaidTarget(null)}
       />

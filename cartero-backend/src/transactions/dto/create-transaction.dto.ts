@@ -24,6 +24,16 @@ export class CreateTransactionDto {
   @IsEnum(TransactionType)
   type: TransactionType;
 
+  /**
+   * VALOR TOTAL da compra, não o da parcela.
+   *
+   * Com `installments > 1`, o backend divide este valor entre as parcelas
+   * (`splitInstallmentAmount`), e a soma delas fecha exatamente com o total.
+   * Uma compra de R$ 1.000 em 10x gera dez lançamentos de R$ 100.
+   *
+   * Cuidado: em `UpdateTransactionDto` o mesmo campo significa o valor de UMA
+   * parcela — ver o comentário em `TransactionsService.update`.
+   */
   @IsNumber()
   @Min(0.01)
   amount: number;

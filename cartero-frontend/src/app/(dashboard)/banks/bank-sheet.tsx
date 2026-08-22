@@ -26,7 +26,7 @@ const numberField = (message: string) => z.preprocess(
 const schema = z.object({
   name: z.string().min(1, 'Nome obrigatório'),
   invoiceDueDate: numberField('Dia obrigatório'),
-  invoiceDueDaysAfterClose: numberField('Intervalo obrigatório'),
+  invoiceDueDaysAfterClose: numberField('Informe quantos dias antes a fatura fecha'),
 })
 
 export type BankFormData = z.infer<typeof schema>
@@ -40,6 +40,7 @@ interface BankSheetProps {
 
 export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankSheetProps) {
   const isEditing = editTarget !== null
+
 
   const {
     register,
@@ -107,7 +108,7 @@ export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankShee
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="invoice-due-days-after-close">Dias do intervalo da fatura</Label>
+            <Label htmlFor="invoice-due-days-after-close">A fatura fecha quantos dias antes?</Label>
             <Input
               id="invoice-due-days-after-close"
               type="number"
@@ -118,12 +119,13 @@ export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankShee
               {...register('invoiceDueDaysAfterClose', { valueAsNumber: true })}
             />
             <p className="text-xs text-muted-foreground">
-              Normalmente são 7 dias corridos antes do vencimento.
+              Normalmente são alguns dias antes do vencimento. O Cartero calcula a data exata de cada fatura.
             </p>
             {errors.invoiceDueDaysAfterClose && (
               <p className="text-xs text-destructive">{errors.invoiceDueDaysAfterClose.message}</p>
             )}
           </div>
+
         </form>
 
         <SheetFooter className="px-6 pb-6 pt-0">

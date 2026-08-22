@@ -7,7 +7,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { FindInvoicesDto } from './dto/find-invoices.dto';
-import { deriveInvoiceStatus } from 'src/common/helpers/invoice.helper';
+import { deriveStatusFromInvoiceDates } from 'src/common/helpers/invoice.helper';
 
 @Injectable()
 export class InvoicesService {
@@ -36,7 +36,7 @@ export class InvoicesService {
   }
 
   async findAll(userId: string, filters: FindInvoicesDto = {}) {
-    return await this.prisma.invoice.findMany({
+    const invoices = await this.prisma.invoice.findMany({
       where: {
         userId,
         bankId: filters.bankId,
@@ -44,6 +44,40 @@ export class InvoicesService {
         year: filters.year,
       },
       include: { bank: true },
+    });
+
+    if (invoices.length === 0) return invoices;
+
+    // Quanto de cada fatura pertence a outra pessoa. Uma única consulta
+    // agrupada para todas as faturas da lista — a alternativa seria hidratar
+    // as transações de cada uma só para somar.
+    //
+    // `totalAmount` continua bruto: é o valor que o banco cobra. Os campos
+    // abaixo são leituras derivadas para as telas que falam de custo pessoal.
+    const reimbursableByInvoice = await this.prisma.transaction.groupBy({
+      by: ['invoiceId'],
+      where: {
+        userId,
+        invoiceId: { in: invoices.map((invoice) => invoice.id) },
+        personId: { not: null },
+        type: 'CREDIT_CARD',
+      },
+      _sum: { amount: true },
+    });
+
+    const perInvoice = new Map<string, number>();
+    for (const row of reimbursableByInvoice) {
+      if (!row.invoiceId) continue;
+      perInvoice.set(row.invoiceId, Number(row._sum.amount ?? 0));
+    }
+
+    return invoices.map((invoice) => {
+      const reimbursable = perInvoice.get(invoice.id) ?? 0;
+      return {
+        ...invoice,
+        reimbursable,
+        ownAmount: Number(invoice.totalAmount) - reimbursable,
+      };
     });
   }
 
@@ -75,14 +109,10 @@ export class InvoicesService {
     return this.prisma.invoice.update({
       where: { id, userId },
       data: {
-        status: deriveInvoiceStatus(
-          {
-            invoiceDueDate: invoice.bank.invoiceDueDate,
-            invoiceDueDaysAfterClose: invoice.bank.invoiceDueDaysAfterClose,
-          },
-          invoice.year,
-          invoice.month,
-        ),
+        // Das datas congeladas da própria fatura, não da configuração atual
+        // do banco: reabrir não é motivo para recalcular o calendário de uma
+        // fatura histórica.
+        status: deriveStatusFromInvoiceDates(invoice),
       },
     });
   }
@@ -105,14 +135,7 @@ export class InvoicesService {
         this.prisma.invoice.update({
           where: { id: invoice.id, userId },
           data: {
-            status: deriveInvoiceStatus(
-              {
-                invoiceDueDate: invoice.bank.invoiceDueDate,
-                invoiceDueDaysAfterClose: invoice.bank.invoiceDueDaysAfterClose,
-              },
-              invoice.year,
-              invoice.month,
-            ),
+            status: deriveStatusFromInvoiceDates(invoice),
           },
         }),
       ),
