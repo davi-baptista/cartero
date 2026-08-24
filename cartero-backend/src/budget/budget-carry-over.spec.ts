@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BudgetService } from './budget.service';
 import { SalaryService } from 'src/salary/salary.service';
 import type { PrismaService } from 'src/prisma/prisma.service';
@@ -6,17 +6,23 @@ import { USER_ID, makeBank, money } from 'src/common/testing/fixtures';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
- * Pendências anteriores — carry-over (Fase 9B)
+ * Pendências anteriores — eventos, não snapshot mensal
  * ══════════════════════════════════════════════════════════════════════════
  *
- * Antes, uma dívida vencida em junho e ainda aberta simplesmente DESAPARECIA
- * do orçamento de agosto: o filtro era `dueDate` estritamente dentro do mês.
- * O painel "Atenção agora" a mostrava, o Orçamento não — duas telas com
- * respostas diferentes para "o que eu devo".
+ * A regra anterior perguntava "isto ainda estava aberto quando o mês
+ * começou?", e repetia a MESMA obrigação em toda competência entre o
+ * vencimento e o pagamento: uma dívida de 08/12 paga em 24/08 aparecia em
+ * dezembro, janeiro, fevereiro… até agosto.
  *
- * A regra temporal usa `paidAt`, não `isPaid`. Reconstruir agosto com o estado
- * de HOJE diria que uma dívida paga em setembro já estava resolvida em agosto —
- * e ela não estava. O orçamento de um mês passado é um snapshot daquele mês.
+ * Defensável como fotografia histórica, mas na tela parecia que a mesma dívida
+ * estava sendo cobrada de novo a cada mês.
+ *
+ * Agora o orçamento reconhece dois EVENTOS:
+ *
+ *   · `currentOpenPrior`  — ainda aberta, SÓ no mês civil corrente
+ *   · `priorPaidInMonth`  — o pagamento aconteceu NESTA competência
+ *
+ * Os meses intermediários, onde nada aconteceu, não repetem mais nada.
  */
 
 interface DebtRow {
@@ -30,13 +36,14 @@ interface DebtRow {
   title?: string;
 }
 
+/** 24/08/2026, meio-dia em Fortaleza — o "hoje" de todos os testes. */
+const HOJE = new Date(Date.UTC(2026, 7, 24, 15));
+
 /**
- * Prisma que aplica as DUAS regras temporais de verdade.
+ * Prisma que aplica as TRÊS regras temporais de verdade.
  *
- * A consulta do mês recorta `[monthStart, monthEnd)`; a de carry-over pega
- * `dueDate < monthStart` E (`paidAt` nulo OU `>= monthStart`). Um duplo que
- * devolvesse listas fixas passaria mesmo com o serviço aplicando a condição
- * errada — e é exatamente a condição que este arquivo testa.
+ * Um duplo que devolvesse listas fixas passaria mesmo com o serviço aplicando
+ * a condição errada — e é exatamente a condição que este arquivo testa.
  */
 function buildService(rows: DebtRow[]) {
   const prisma: any = {
@@ -59,32 +66,35 @@ function buildService(rows: DebtRow[]) {
           dueDate: new Date(`${row.dueDate}T12:00:00.000Z`),
           personId: row.personId ?? null,
           person: row.personId
-            ? { id: row.personId, name: row.personName ?? 'Eva' }
+            ? { id: row.personId, name: row.personName ?? 'Pessoa' }
             : null,
         });
 
-        const isCarryQuery = where?.dueDate?.lt && !where?.dueDate?.gte;
+        return rows.map(toRow).filter((row) => {
+          // A. Dívidas do próprio mês.
+          if (where.dueDate?.gte && where.dueDate?.lt) {
+            return (
+              row.dueDate >= where.dueDate.gte && row.dueDate < where.dueDate.lt
+            );
+          }
 
-        if (isCarryQuery) {
-          const monthStart: Date = where.dueDate.lt;
-          return rows
-            .filter((row) => {
-              const due = new Date(`${row.dueDate}T12:00:00.000Z`);
-              if (due >= monthStart) return false;
-              // Ainda aberta ao ENTRAR no mês.
-              if (!row.paidAt) return true;
-              return new Date(`${row.paidAt}T12:00:00.000Z`) >= monthStart;
-            })
-            .map(toRow);
-        }
+          if (!where.dueDate?.lt) return false;
+          if (row.dueDate >= where.dueDate.lt) return false;
 
-        const { gte, lt } = where.dueDate;
-        return rows
-          .filter((row) => {
-            const due = new Date(`${row.dueDate}T12:00:00.000Z`);
-            return due >= gte && due < lt;
-          })
-          .map(toRow);
+          // B. Anteriores ainda abertas.
+          if (where.isPaid === false) return !row.isPaid;
+
+          // C. Anteriores pagas dentro da janela do mês.
+          if (where.paidAt?.gte && where.paidAt?.lt) {
+            return (
+              row.paidAt != null &&
+              row.paidAt >= where.paidAt.gte &&
+              row.paidAt < where.paidAt.lt
+            );
+          }
+
+          return false;
+        });
       }),
     },
   };
@@ -95,199 +105,297 @@ function buildService(rows: DebtRow[]) {
   );
 }
 
-describe('Dívida vencida em junho, nunca paga', () => {
-  const rows: DebtRow[] = [
-    { amount: 300, dueDate: '2026-06-10', paidAt: null, title: 'Aluguel' },
+describe('item 41: dezembro → agosto, sem repetir no meio', () => {
+  /** R$ 300, vence 08/12/2025, paga em 24/08/2026. */
+  const CENARIO: DebtRow[] = [
+    { amount: 300, dueDate: '2025-12-08', paidAt: '2026-08-24' },
   ];
 
-  it('junho: é obrigação do próprio mês', async () => {
-    const budget = await buildService(rows).getBudget(USER_ID, 6, 2026);
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(HOJE);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('dezembro: a obrigação pertence ao próprio mês', async () => {
+    const budget = await buildService(CENARIO).getBudget(USER_ID, 12, 2025);
 
     expect(budget.debts.dueInMonth).toBe(300);
-    expect(budget.debts.priorCarry).toBe(0);
-  });
-
-  it('agosto: aparece como pendência anterior', async () => {
-    const budget = await buildService(rows).getBudget(USER_ID, 8, 2026);
-
-    expect(budget.debts.dueInMonth).toBe(0);
-    expect(budget.debts.priorCarry).toBe(300);
     expect(budget.debts.total).toBe(300);
   });
 
-  it('o vencimento ORIGINAL é preservado', async () => {
-    // Reescrever a data como se fosse deste mês esconderia o atraso.
-    const budget = await buildService(rows).getBudget(USER_ID, 8, 2026);
+  it.each([
+    ['janeiro', 1, 2026],
+    ['fevereiro', 2, 2026],
+    ['março', 3, 2026],
+    ['julho', 7, 2026],
+  ])('%s NÃO repete a dívida de dezembro', async (_nome, mes, ano) => {
+    const budget = await buildService(CENARIO).getBudget(USER_ID, mes, ano);
 
-    const item = budget.debts.priorCarryItems[0];
-    expect(item.dueDate.toISOString().slice(0, 10)).toBe('2026-06-10');
-    expect(item.title).toBe('Aluguel');
+    expect(budget.debts.total).toBe(0);
+    expect(budget.debts.currentOpenPrior).toBe(0);
+    expect(budget.debts.priorPaidInMonth).toBe(0);
+    expect(budget.totalToPay).toBe(0);
   });
 
-  it('aparece em julho, agosto e setembro enquanto continuar aberta', async () => {
-    /**
-     * A repetição entre meses é INTENCIONAL: é a mesma obrigação carregada
-     * por snapshots mensais sucessivos, não uma despesa nova a cada mês.
-     * A seção própria na UI existe para deixar isso claro.
-     */
-    const service = buildService(rows);
+  it('agosto: reconhece o desembolso, porque foi pago aqui', async () => {
+    const budget = await buildService(CENARIO).getBudget(USER_ID, 8, 2026);
 
-    const [julho, agosto, setembro] = await Promise.all([
-      service.getBudget(USER_ID, 7, 2026),
-      service.getBudget(USER_ID, 8, 2026),
-      service.getBudget(USER_ID, 9, 2026),
-    ]);
-
-    expect(julho.debts.priorCarry).toBe(300);
-    expect(agosto.debts.priorCarry).toBe(300);
-    expect(setembro.debts.priorCarry).toBe(300);
-  });
-});
-
-describe('A condição temporal usa paidAt, não o estado de hoje', () => {
-  it('paga em agosto: é pendência anterior EM agosto', async () => {
-    /**
-     * Item 44. Ela estava aberta quando agosto começou, então pertence ao
-     * snapshot de agosto — o pagamento aconteceu dentro do mês.
-     */
-    const rows: DebtRow[] = [
-      { amount: 500, dueDate: '2026-06-10', paidAt: '2026-08-20' },
-    ];
-
-    const budget = await buildService(rows).getBudget(USER_ID, 8, 2026);
-
-    expect(budget.debts.priorCarry).toBe(500);
-    expect(budget.debts.priorCarryItems[0].paidInMonth).toBe(true);
+    expect(budget.debts.priorPaidInMonth).toBe(300);
+    expect(budget.debts.currentOpenPrior).toBe(0);
+    expect(budget.debts.total).toBe(300);
   });
 
-  it('paga em agosto: NÃO é pendência anterior em setembro', async () => {
-    // Em setembro ela já estava resolvida.
-    const rows: DebtRow[] = [
-      { amount: 500, dueDate: '2026-06-10', paidAt: '2026-08-20' },
-    ];
+  it('setembro (futuro) não projeta nada', async () => {
+    const budget = await buildService(CENARIO).getBudget(USER_ID, 9, 2026);
 
-    const budget = await buildService(rows).getBudget(USER_ID, 9, 2026);
-
-    expect(budget.debts.priorCarry).toBe(0);
-    expect(budget.debts.priorCarryItems).toHaveLength(0);
-  });
-
-  it('paga em julho: NÃO é pendência anterior em agosto', async () => {
-    /**
-     * Item 45 e o teste obrigatório do item 37.
-     *
-     * Se a condição fosse `isPaid === false` (o estado de hoje), esta dívida
-     * também desapareceria de JULHO — onde ela de fato era uma pendência
-     * anterior até ser paga. `paidAt` é o que permite reconstruir cada mês.
-     */
-    const rows: DebtRow[] = [
-      { amount: 500, dueDate: '2026-06-10', paidAt: '2026-07-15' },
-    ];
-    const service = buildService(rows);
-
-    const [julho, agosto] = await Promise.all([
-      service.getBudget(USER_ID, 7, 2026),
-      service.getBudget(USER_ID, 8, 2026),
-    ]);
-
-    expect(julho.debts.priorCarry).toBe(500);
-    expect(agosto.debts.priorCarry).toBe(0);
-  });
-
-  it('paga legado sem paidAt é tratada como ainda aberta', async () => {
-    /**
-     * Fallback conservador (item 38).
-     *
-     * `isPaid: true` com `paidAt: null` pode existir em registro antigo. Não
-     * inventamos uma data: sem saber QUANDO foi paga, a dívida continua
-     * aparecendo como pendência anterior. Exibi-la a mais é recuperável pelo
-     * usuário; sumir com uma obrigação não é.
-     */
-    const rows: DebtRow[] = [
-      { amount: 200, dueDate: '2026-06-10', paidAt: null },
-    ];
-
-    const budget = await buildService(rows).getBudget(USER_ID, 8, 2026);
-
-    expect(budget.debts.priorCarry).toBe(200);
+    expect(budget.debts.total).toBe(0);
   });
 });
 
-describe('Dívidas futuras não entram no mês atual', () => {
-  it('dívida de setembro fica fora de agosto', async () => {
-    /**
-     * Item 18/47: decisão de PRODUTO, não bug. O orçamento é planejamento
-     * mensal; trazer setembro para agosto misturaria os meses e inflaria o
-     * comprometimento de um mês que ainda não chegou.
-     */
-    const rows: DebtRow[] = [
-      { amount: 400, dueDate: '2026-09-10', paidAt: null },
-    ];
-    const service = buildService(rows);
+describe('item 42: dívida antiga ainda ABERTA', () => {
+  const ABERTA: DebtRow[] = [{ amount: 300, dueDate: '2025-12-08' }];
 
-    const [agosto, setembro] = await Promise.all([
-      service.getBudget(USER_ID, 8, 2026),
-      service.getBudget(USER_ID, 9, 2026),
-    ]);
-
-    expect(agosto.debts.total).toBe(0);
-    expect(setembro.debts.dueInMonth).toBe(400);
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(HOJE);
   });
-});
+  afterEach(() => vi.useRealTimers());
 
-describe('Reconciliação dos totais', () => {
-  it('total = dueInMonth + priorCarry', async () => {
-    const rows: DebtRow[] = [
-      { amount: 100, dueDate: '2026-08-05', paidAt: null },
-      { amount: 300, dueDate: '2026-06-10', paidAt: null },
-    ];
-
-    const budget = await buildService(rows).getBudget(USER_ID, 8, 2026);
-
-    expect(budget.debts.dueInMonth).toBe(100);
-    expect(budget.debts.priorCarry).toBe(300);
-    expect(budget.debts.total).toBe(400);
-    expect(budget.debts.total).toBe(
-      budget.debts.dueInMonth + budget.debts.priorCarry,
-    );
+  it('dezembro: obrigação do próprio mês', async () => {
+    const budget = await buildService(ABERTA).getBudget(USER_ID, 12, 2025);
+    expect(budget.debts.dueInMonth).toBe(300);
   });
 
-  it('as linhas de carry somam priorCarry', async () => {
-    const rows: DebtRow[] = [
-      { amount: 300, dueDate: '2026-06-10', paidAt: null },
-      { amount: 150, dueDate: '2026-07-02', paidAt: null },
-    ];
-
-    const budget = await buildService(rows).getBudget(USER_ID, 8, 2026);
-
-    const soma = budget.debts.priorCarryItems.reduce(
-      (total, item) => total + item.amount,
-      0,
-    );
-    expect(soma).toBe(budget.debts.priorCarry);
-    expect(budget.priorCarryCount).toBe(2);
+  it.each([
+    ['janeiro', 1],
+    ['março', 3],
+    ['julho', 7],
+  ])('%s histórico não repete', async (_nome, mes) => {
+    const budget = await buildService(ABERTA).getBudget(USER_ID, mes, 2026);
+    expect(budget.debts.total).toBe(0);
   });
 
-  it('totalToPay inclui o carry', async () => {
-    const rows: DebtRow[] = [
-      { amount: 300, dueDate: '2026-06-10', paidAt: null },
-    ];
+  it('agosto (mês CORRENTE): aparece como pendência em aberto', async () => {
+    /*
+      O único caso em que dívida antiga aberta é carregada: ela precisa ser
+      resolvida AGORA, e o orçamento do mês corrente é planejamento.
+    */
+    const budget = await buildService(ABERTA).getBudget(USER_ID, 8, 2026);
 
-    const budget = await buildService(rows).getBudget(USER_ID, 8, 2026);
-
-    // Sem faturas nem pagamentos diretos: o total é o próprio carry.
+    expect(budget.debts.currentOpenPrior).toBe(300);
+    expect(budget.debts.priorPaidInMonth).toBe(0);
     expect(budget.totalToPay).toBe(300);
   });
 
-  it('sem carry, a lista fica vazia e o valor é zero', async () => {
-    // A UI não deve renderizar "Pendências anteriores — R$ 0".
-    const rows: DebtRow[] = [
-      { amount: 100, dueDate: '2026-08-05', paidAt: null },
-    ];
+  it('item 53: setembro futuro não projeta o atraso', async () => {
+    const budget = await buildService(ABERTA).getBudget(USER_ID, 9, 2026);
+    expect(budget.debts.total).toBe(0);
+  });
+});
 
-    const budget = await buildService(rows).getBudget(USER_ID, 8, 2026);
+describe('item 54: o carry acompanha o PRESENTE', () => {
+  const ABERTA: DebtRow[] = [{ amount: 300, dueDate: '2025-12-08' }];
 
-    expect(budget.debts.priorCarry).toBe(0);
-    expect(budget.debts.priorCarryItems).toHaveLength(0);
+  afterEach(() => vi.useRealTimers());
+
+  it('em agosto aparece em agosto; em setembro migra para setembro', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(HOJE);
+    const agostoCorrente = await buildService(ABERTA).getBudget(
+      USER_ID,
+      8,
+      2026,
+    );
+    expect(agostoCorrente.debts.currentOpenPrior).toBe(300);
+
+    // O relógio avança: agosto vira histórico.
+    vi.setSystemTime(new Date(Date.UTC(2026, 8, 15, 15)));
+    const agostoHistorico = await buildService(ABERTA).getBudget(
+      USER_ID,
+      8,
+      2026,
+    );
+    const setembroCorrente = await buildService(ABERTA).getBudget(
+      USER_ID,
+      9,
+      2026,
+    );
+
+    expect(agostoHistorico.debts.currentOpenPrior).toBe(0);
+    expect(setembroCorrente.debts.currentOpenPrior).toBe(300);
+  });
+});
+
+describe('item 43: transição open → paid no mês corrente', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(HOJE);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('a contribuição de agosto é 300 antes E depois de pagar', async () => {
+    /*
+      A dívida muda de CATEGORIA, não de valor: o dinheiro sai em agosto de
+      qualquer forma. Cair para zero ao quitar esconderia o desembolso.
+    */
+    const antes = await buildService([
+      { amount: 300, dueDate: '2025-12-08' },
+    ]).getBudget(USER_ID, 8, 2026);
+
+    const depois = await buildService([
+      { amount: 300, dueDate: '2025-12-08', paidAt: '2026-08-24' },
+    ]).getBudget(USER_ID, 8, 2026);
+
+    expect(antes.debts.total).toBe(300);
+    expect(depois.debts.total).toBe(300);
+
+    // Item 13: nunca as duas categorias ao mesmo tempo.
+    expect(antes.debts.currentOpenPrior).toBe(300);
+    expect(antes.debts.priorPaidInMonth).toBe(0);
+    expect(depois.debts.currentOpenPrior).toBe(0);
+    expect(depois.debts.priorPaidInMonth).toBe(300);
+  });
+});
+
+describe('itens 7 e 45: paga no próprio mês do vencimento', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(HOJE);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('conta UMA vez, como dívida do mês', async () => {
+    const budget = await buildService([
+      { amount: 300, dueDate: '2026-01-10', paidAt: '2026-01-20' },
+    ]).getBudget(USER_ID, 1, 2026);
+
+    expect(budget.debts.dueInMonth).toBe(300);
+    // `priorPaidInMonth` exige dueMonth < paidMonth — aqui são o mesmo.
+    expect(budget.debts.priorPaidInMonth).toBe(0);
+    expect(budget.debts.total).toBe(300);
+  });
+});
+
+describe('itens 20 e 46: legado pago sem data', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(HOJE);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  /*
+    `isPaid: true` com `paidAt: null`. Sabemos que foi resolvida, não quando.
+    O duplo representa isso como uma linha sem `paidAt` mas já quitada — o
+    serviço a exclui de todos os ramos, sem inventar mês de pagamento.
+  */
+  const LEGADO: DebtRow[] = [
+    { amount: 300, dueDate: '2025-12-08', paidAt: null },
+  ];
+
+  it('aparece no mês do vencimento', async () => {
+    const budget = await buildService(LEGADO).getBudget(USER_ID, 12, 2025);
+    expect(budget.debts.dueInMonth).toBe(300);
+  });
+
+  it('não inventa mês de pagamento', async () => {
+    for (const mes of [1, 3, 8]) {
+      const budget = await buildService(LEGADO).getBudget(USER_ID, mes, 2026);
+      expect(budget.debts.priorPaidInMonth).toBe(0);
+    }
+  });
+});
+
+describe('itens 51 e 52: os exemplos reais', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(HOJE);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const CENARIO: DebtRow[] = [
+    // Dezembro: vence lá, paga só em agosto.
+    { amount: 300, dueDate: '2025-12-08', paidAt: '2026-08-24' },
+    // Janeiro: dívida própria do mês.
+    { amount: 300, dueDate: '2026-01-15' },
+  ];
+
+  it('dezembro: 300 de dívida', async () => {
+    const budget = await buildService(CENARIO).getBudget(USER_ID, 12, 2025);
+    expect(budget.debts.total).toBe(300);
+  });
+
+  it('janeiro: 300, não 600', async () => {
+    /*
+      A dívida de dezembro NÃO reaparece em janeiro só porque continuava
+      aberta. Era exatamente essa soma que inflava o mês.
+    */
+    const budget = await buildService(CENARIO).getBudget(USER_ID, 1, 2026);
+
+    expect(budget.debts.total).toBe(300);
+    expect(budget.debts.dueInMonth).toBe(300);
+    expect(budget.debts.currentOpenPrior).toBe(0);
+  });
+});
+
+describe('item 44: corrigir paidAt muda o mês do desembolso', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(HOJE);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('antes: agosto reconhece; depois: dezembro fica com tudo', async () => {
+    const registradoEmAgosto = await buildService([
+      { amount: 300, dueDate: '2025-12-08', paidAt: '2026-08-24' },
+    ]).getBudget(USER_ID, 8, 2026);
+
+    const corrigidoParaDezembro = await buildService([
+      { amount: 300, dueDate: '2025-12-08', paidAt: '2025-12-20' },
+    ]).getBudget(USER_ID, 8, 2026);
+
+    expect(registradoEmAgosto.debts.priorPaidInMonth).toBe(300);
+    expect(corrigidoParaDezembro.debts.priorPaidInMonth).toBe(0);
+  });
+});
+
+describe('item 18: várias pendências pagas no mesmo mês somam', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(HOJE);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('dezembro + janeiro + fevereiro pagas em agosto = 930', async () => {
+    /*
+      Agosto fica alto, e isso é CORRETO para os dados armazenados: o dinheiro
+      foi registrado como saindo ali. Se as datas estiverem erradas por
+      regularização, o caminho é corrigir `paidAt`, não mascarar com regra.
+    */
+    const budget = await buildService([
+      { amount: 300, dueDate: '2025-12-08', paidAt: '2026-08-24' },
+      { amount: 300, dueDate: '2026-01-15', paidAt: '2026-08-24' },
+      { amount: 330, dueDate: '2026-02-10', paidAt: '2026-08-24' },
+    ]).getBudget(USER_ID, 8, 2026);
+
+    expect(budget.debts.priorPaidInMonth).toBe(930);
+  });
+});
+
+describe('o vencimento original é preservado', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(HOJE);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('os itens carregam a data real e o estado de quitação', async () => {
+    const budget = await buildService([
+      { amount: 300, dueDate: '2025-12-08', paidAt: '2026-08-24' },
+    ]).getBudget(USER_ID, 8, 2026);
+
+    const [item] = budget.debts.priorItems;
+    expect(item.dueDate.toISOString()).toContain('2025-12-08');
+    expect(item.paidInMonth).toBe(true);
   });
 });

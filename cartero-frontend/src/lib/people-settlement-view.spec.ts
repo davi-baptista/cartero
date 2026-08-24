@@ -40,7 +40,8 @@ function person(overrides: {
     budget: {
       receivableDueInMonth: 0,
       debtDueInMonth: 0,
-      priorDebtCarry: 0,
+      currentOpenPrior: 0,
+      priorPaidInMonth: 0,
       debtTotal: 0,
       automaticReceivable: 0,
       ...overrides.budget,
@@ -182,56 +183,49 @@ describe('openPriorLabel', () => {
   })
 })
 
-describe('budgetContextLabel — só o que acrescenta informação', () => {
+describe('budgetContextLabel — pendência anterior paga na competência', () => {
   /*
-    A linha de contexto repetia o número que já aparecia em "A pagar":
-
-        No orçamento de setembro 2026 · R$ 330 em dívidas
-        A pagar R$ 330
-
-    Agora ela mostra apenas a DIFERENÇA entre os dois universos — a parcela
-    já quitada, que é a única coisa que "Em aberto" não consegue dizer.
+    Com a competência de EVENTO, o contexto do orçamento não é mais "o que
+    sobrou de outro mês": é o desembolso que aconteceu AQUI, mesmo que a
+    obrigação tenha nascido antes.
   */
-  it('caso 1: dívida totalmente em aberto não gera contexto', () => {
-    const totalmenteAberta = person({
+  it('pendência anterior paga neste mês aparece', () => {
+    const pagaAqui = person({
+      budget: { priorPaidInMonth: 330, debtTotal: 330 },
+      open: { itemCount: 0 },
+    })
+    const label = budgetContextLabel(pagaAqui, brl)
+
+    expect(label).toContain('330')
+    expect(label).toContain('pagas neste mês')
+  })
+
+  it('dívida do próprio mês não vira contexto de pendência anterior', () => {
+    /*
+      Ela já aparece como dívida da competência; rotulá-la de "anterior"
+      duplicaria a leitura.
+    */
+    const doMes = person({
       budget: { debtDueInMonth: 330, debtTotal: 330 },
       open: { debtInMonth: 330, debtTotal: 330, net: -330, itemCount: 1 },
     })
-    expect(budgetContextLabel(totalmenteAberta, brl)).toBeNull()
+    expect(budgetContextLabel(doMes, brl)).toBeNull()
   })
 
-  it('caso 2: dívida totalmente quitada mostra o valor inteiro', () => {
-    const quitada = person({
-      budget: { debtDueInMonth: 330, debtTotal: 330 },
-      open: { itemCount: 0 },
+  it('pendência anterior ainda ABERTA não usa a frase de pagamento', () => {
+    // Ela está viva; dizer "paga neste mês" seria falso.
+    const aberta = person({
+      budget: { currentOpenPrior: 300, debtTotal: 300 },
+      open: { priorDebt: 300, debtTotal: 300, net: -300, itemCount: 1 },
     })
-    const label = budgetContextLabel(quitada, brl)
-    expect(label).toContain('330')
-    expect(label).toContain('já quitados')
-    expect(label).toContain('compõem o orçamento')
+    expect(budgetContextLabel(aberta, brl)).toBeNull()
   })
 
-  it('caso 3: parcialmente quitada mostra só a diferença', () => {
-    /*
-      500 no orçamento, 300 em aberto → 200 quitados.
-      Repetir os 500 inteiros duplicaria os 300 que já aparecem em "A pagar".
-    */
-    const parcial = person({
-      budget: { debtDueInMonth: 500, debtTotal: 500 },
-      open: { debtInMonth: 300, debtTotal: 300, net: -300, itemCount: 1 },
-    })
-    const label = budgetContextLabel(parcial, brl)
-    expect(label).toContain('200')
-    expect(label).not.toContain('500')
-    expect(label).not.toContain('300')
-  })
-
-  it('caso 4: sem dívida nenhuma não há linha', () => {
+  it('sem dívida nenhuma não há linha', () => {
     expect(budgetContextLabel(person({}), brl)).toBeNull()
   })
 
-  it('caso 5: pessoa só com recebível não ganha linha artificial', () => {
-    // O caso do Jeoge: recebível aberto, nenhuma dívida em nenhum universo.
+  it('pessoa só com recebível não ganha linha artificial', () => {
     const soRecebivel = person({
       budget: { receivableDueInMonth: 780.28 },
       open: { receivableTotal: 780.28, net: 780.28, itemCount: 1 },
@@ -239,24 +233,14 @@ describe('budgetContextLabel — só o que acrescenta informação', () => {
     expect(budgetContextLabel(soRecebivel, brl)).toBeNull()
   })
 
-  it('o carry histórico quitado também conta como diferença', () => {
-    /*
-      A parcela quitada pode vir do carry anterior, não só do mês. O cálculo é
-      sobre `debtTotal` justamente para não precisar distinguir a origem.
-    */
-    const carryQuitado = person({
-      budget: { debtDueInMonth: 250, priorDebtCarry: 100, debtTotal: 350 },
-      open: { debtInMonth: 250, debtTotal: 250, net: -250, itemCount: 1 },
-    })
-    expect(budgetContextLabel(carryQuitado, brl)).toContain('100')
-  })
-
   it('não repete a competência — ela já está no título da seção', () => {
-    const quitada = person({
-      budget: { debtTotal: 330 },
+    const pagaAqui = person({
+      budget: { priorPaidInMonth: 330, debtTotal: 330 },
       open: { itemCount: 0 },
     })
-    expect(budgetContextLabel(quitada, brl)).not.toMatch(/orçamento de \w+ \d{4}/)
+    expect(budgetContextLabel(pagaAqui, brl)).not.toMatch(
+      /orçamento de \w+ \d{4}/,
+    )
   })
 })
 
@@ -283,7 +267,7 @@ describe('settlementAriaLabel', () => {
   it('depois da quitação diz nada em aberto, sem perder o contexto', () => {
     const label = settlementAriaLabel(
       person({
-        budget: { debtDueInMonth: 200, debtTotal: 200 },
+        budget: { priorPaidInMonth: 200, debtTotal: 200 },
         open: { itemCount: 0 },
       }),
       brl,
@@ -291,7 +275,7 @@ describe('settlementAriaLabel', () => {
 
     expect(label).toContain('nada em aberto')
     // O contexto que reconcilia o total continua audível.
-    expect(label).toContain('já quitados')
+    expect(label).toContain('pagas neste mês')
     // Não pode sugerir pendência viva.
     expect(label).not.toMatch(/em aberto, R\$/)
   })
@@ -316,7 +300,7 @@ describe('coerência entre os universos', () => {
     const depoisDeQuitar = person({
       budget: {
         receivableDueInMonth: 200,
-        debtDueInMonth: 200,
+        priorPaidInMonth: 200,
         debtTotal: 200,
       },
       open: { itemCount: 0 },
@@ -338,7 +322,8 @@ describe('coerência entre os universos', () => {
       budget: {
         receivableDueInMonth: 9999,
         debtDueInMonth: 9999,
-        priorDebtCarry: 9999,
+        currentOpenPrior: 9999,
+        priorPaidInMonth: 9999,
         debtTotal: 19998,
         automaticReceivable: 9999,
       },

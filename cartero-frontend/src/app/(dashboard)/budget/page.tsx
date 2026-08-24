@@ -276,8 +276,13 @@ export default function BudgetPage() {
     (row) => row.kind !== 'person',
   )
 
-  const priorCarry = budget?.debts.priorCarry ?? 0
-  const priorCarryItems = budget?.debts.priorCarryItems ?? []
+  /*
+    Dois eventos distintos, nunca somados numa frase só: o que ainda está
+    aberto agora e o que foi efetivamente pago nesta competência.
+  */
+  const currentOpenPrior = budget?.debts.currentOpenPrior ?? 0
+  const priorPaidInMonth = budget?.debts.priorPaidInMonth ?? 0
+  const priorCarryItems = budget?.debts.priorItems ?? []
   /** Pendências anteriores SEM pessoa, pela mesma razão. */
   const standalonePriorItems = priorCarryItems.filter(
     (item) => !item.personId,
@@ -381,11 +386,23 @@ export default function BudgetPage() {
                 O total já INCLUI as pendências anteriores. Dizer isso aqui
                 evita a leitura de que o mês piorou sozinho.
               */}
-              {priorCarry > 0 && (
+              {currentOpenPrior > 0 && (
                 /* `mt-0.5` agrupa com a linha acima: as duas descrevem a mesma
                    composição, não dois avisos independentes. */
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Inclui {formatCurrency(priorCarry)} de pendências anteriores
+                  Inclui {formatCurrency(currentOpenPrior)} de pendências
+                  anteriores em aberto
+                </p>
+              )}
+              {/*
+                Duas microcopies curtas em vez de uma frase somando os dois:
+                "em aberto" e "paga neste mês" são estados diferentes, e
+                juntá-los num número só esconderia qual é qual.
+              */}
+              {priorPaidInMonth > 0 && (
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Inclui {formatCurrency(priorPaidInMonth)} de pendências
+                  anteriores pagas neste mês
                 </p>
               )}
             </div>

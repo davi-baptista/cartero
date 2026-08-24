@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BudgetService } from './budget.service';
 import { SalaryService } from 'src/salary/salary.service';
 import type { PrismaService } from 'src/prisma/prisma.service';
@@ -82,6 +82,16 @@ function matchesWhere(where: any, row: FixtureItem): boolean {
   const paidAt = row.paidAt ?? null;
 
   if (where.isPaid !== undefined && where.isPaid !== isPaid) return false;
+
+  /*
+    Janela de `paidAt` — a consulta de pendência anterior PAGA no mês. Sem
+    honrá-la, a mesma dívida entraria também aqui e o total dobraria: foi
+    exatamente o 450-onde-deveria-ser-350 que este duplo deixava passar.
+  */
+  if (where.paidAt?.gte && where.paidAt?.lt) {
+    if (paidAt == null) return false;
+    if (paidAt < where.paidAt.gte || paidAt >= where.paidAt.lt) return false;
+  }
 
   if (where.OR) {
     const matched = where.OR.some((clause: any) => {
@@ -191,6 +201,18 @@ function buildService(setup: Setup) {
     new SalaryService(prisma as PrismaService),
   );
 }
+
+/*
+  Relógio fixo em setembro/2026 — a competência que estes testes consultam.
+
+  `currentOpenPrior` só é buscado quando a competência pedida é o mês civil
+  corrente; sem fixar o relógio, o resultado mudaria conforme a data real.
+*/
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(Date.UTC(2026, 8, 15, 15)));
+});
+afterEach(() => vi.useRealTimers());
 
 /** O cenário real observado na tela. */
 const CENARIO_REAL: Setup = {
@@ -357,7 +379,7 @@ describe('Pendências anteriores da pessoa', () => {
     const mariana = budget.peopleSettlements[0];
 
     // Universo do orçamento: carry em campo próprio, para reconciliar o total.
-    expect(mariana.budget.priorDebtCarry).toBe(100);
+    expect(mariana.budget.currentOpenPrior).toBe(100);
     expect(mariana.budget.debtTotal).toBe(350);
 
     /*
@@ -372,13 +394,13 @@ describe('Pendências anteriores da pessoa', () => {
     expect(mariana.open.itemCount).toBe(3);
   });
 
-  it('o carry continua em priorCarry e no total', async () => {
+  it('a pendência anterior aberta entra no total do mês corrente', async () => {
     const budget = await buildService({
       monthDebts: [{ amount: 250, person: MARIANA }],
       priorDebts: [{ amount: 100, person: MARIANA }],
     }).getBudget(USER_ID, 9, 2026);
 
-    expect(budget.debts.priorCarry).toBe(100);
+    expect(budget.debts.currentOpenPrior).toBe(100);
     expect(budget.debts.total).toBe(350);
   });
 
@@ -388,7 +410,7 @@ describe('Pendências anteriores da pessoa', () => {
     }).getBudget(USER_ID, 9, 2026);
 
     expect(budget.peopleSettlements).toHaveLength(0);
-    expect(budget.debts.priorCarry).toBe(300);
+    expect(budget.debts.currentOpenPrior).toBe(300);
   });
 });
 
@@ -818,27 +840,39 @@ describe('Em aberto: os dois universos não se contaminam', () => {
     /*
       A assimetria entre os lados é DELIBERADA.
 
-      Dívida tem duas consultas anteriores: a histórica (por `paidAt`) alimenta
-      `priorCarry` e o total do mês, e a de em aberto responde o que falta
-      acertar.
+      Dívida tem TRÊS consultas anteriores, porque responde a três perguntas:
 
-      Recebível tem só a de em aberto. A histórica existia espelhando a da
-      dívida, mas recebível não compõe `totalToPay` — nenhuma reconstrução
-      dependia dela, e era ela que produzia os R$ 300 fantasmas. Manter uma
-      consulta sem consumidor seria um round-trip pago à toa.
+        · pendência anterior ainda ABERTA (mês corrente, `isPaid: false`);
+        · pendência anterior PAGA nesta competência (janela de `paidAt`);
+        · o universo em aberto de "Acertos com pessoas" (`personId` + aberta).
+
+      Recebível tem só a de em aberto: ele não compõe `totalToPay`, então não
+      há reconstrução histórica que dependa dele — e a consulta que existia
+      era a que produzia os R$ 300 fantasmas.
+
+      Nenhuma delas usa mais o `OR` de `paidAt`: aquele era o snapshot mensal
+      que repetia a mesma dívida em toda competência.
     */
-    expect(debtPrior).toHaveLength(2);
+    expect(debtPrior).toHaveLength(3);
     expect(recPrior).toHaveLength(1);
 
-    const debtHistorica = debtPrior.find((w: any) => w.OR !== undefined);
-    const debtEmAberto = debtPrior.find((w: any) => w.isPaid === false);
+    const abertaNoMesCorrente = debtPrior.find(
+      (w: any) => w.isPaid === false && w.personId === undefined,
+    );
+    const pagaNoMes = debtPrior.find((w: any) => w.paidAt?.gte);
 
-    expect(debtHistorica).toBeDefined();
-    expect(debtEmAberto).toBeDefined();
-    // A histórica NÃO filtra por estado atual.
-    expect(debtHistorica.isPaid).toBeUndefined();
-    // A de em aberto NÃO usa `paidAt`.
-    expect(debtEmAberto.OR).toBeUndefined();
+    expect(abertaNoMesCorrente).toBeDefined();
+    expect(pagaNoMes).toBeDefined();
+
+    // A de em aberto olha o estado ATUAL, nunca `paidAt`.
+    expect(abertaNoMesCorrente.paidAt).toBeUndefined();
+    // A de paga no mês recorta a janela da competência.
+    expect(pagaNoMes.paidAt.lt).toBeInstanceOf(Date);
+
+    // Nenhuma reconstrói o snapshot mensal antigo.
+    for (const where of debtPrior) {
+      expect(where.OR).toBeUndefined();
+    }
 
     // O único carry anterior de recebível é o de em aberto.
     expect(recPrior[0].isPaid).toBe(false);

@@ -13,6 +13,36 @@ const DIRECT_PAYMENT_TYPES: TransactionType[] = [
   TransactionType.BOLETO,
 ];
 
+/** Campos que as consultas de pendência anterior precisam. */
+const PRIOR_DEBT_SELECT = {
+  amount: true,
+  isPaid: true,
+  paidAt: true,
+  title: true,
+  dueDate: true,
+  personId: true,
+  person: { select: { id: true, name: true } },
+} as const;
+
+/**
+ * A competência pedida é o mês civil CORRENTE?
+ *
+ * Decide se pendências anteriores ainda abertas entram. O fuso é explícito
+ * porque o servidor roda em UTC: em 31/08 às 22h de Fortaleza já é 01/09 em
+ * UTC, e `getUTCMonth()` diria setembro — o carry sumiria da tela um dia antes
+ * da hora.
+ */
+function isCurrentCompetence(
+  year: number,
+  month: number,
+  now: Date = new Date(),
+): boolean {
+  const fortaleza = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+  return (
+    fortaleza.getUTCFullYear() === year && fortaleza.getUTCMonth() + 1 === month
+  );
+}
+
 /** Dívida não tem status próprio: sai de `isPaid` + `dueDate`. */
 type DebtStatus = 'PAID' | 'OVERDUE' | 'PENDING';
 
@@ -30,13 +60,20 @@ export class BudgetService {
     const monthStart = new Date(Date.UTC(year, month - 1, 1));
     const monthEnd = new Date(Date.UTC(year, month, 1));
 
+    /*
+      Pendência anterior aberta acompanha o PRESENTE, não cada snapshot.
+      Fora do mês corrente a consulta nem é feita.
+    */
+    const isCurrentMonth = isCurrentCompetence(year, month);
+
     const [
       salary,
       invoices,
       directPayments,
       debts,
       monthReceivables,
-      priorDebts,
+      currentOpenPrior,
+      priorPaidInMonth,
       openReceivablesInMonth,
       openDebtsInMonth,
       openPriorReceivables,
@@ -113,32 +150,60 @@ export class BudgetService {
       }),
 
       /*
-          Pendências ANTERIORES: dívidas vencidas antes do mês que ainda
-          estavam abertas quando ele começou.
+        ══════════════════════════════════════════════════════════════════
+        Pendências anteriores — DOIS eventos, não um snapshot mensal
+        ══════════════════════════════════════════════════════════════════
 
-          A condição temporal usa `paidAt`, não `isPaid`: reconstruir agosto
-          com o estado de hoje diria que uma dívida paga em setembro já estava
-          resolvida em agosto — e ela não estava.
+        A regra anterior perguntava "isto ainda estava aberto quando o mês
+        começou?" e repetia a MESMA obrigação em toda competência entre o
+        vencimento e o pagamento. Uma dívida de 08/12 paga em 24/08 aparecia
+        em dezembro, janeiro, fevereiro… até agosto: defensável como
+        fotografia histórica, mas na tela parecia estar sendo cobrada de novo
+        a cada mês.
 
-          `paidAt: null` cobre dois casos: nunca paga, e paga em legado sem
-          data registrada. O segundo é conservador de propósito — ver
-          `carryOverWhere`.
-        */
+        Agora o orçamento reconhece dois EVENTOS distintos:
+
+          A. `currentOpenPrior` — dívida antiga ainda aberta, exibida SÓ no
+             mês civil corrente. É obrigação real que precisa ser resolvida
+             agora, e por isso acompanha o presente, não cada snapshot
+             passado.
+
+          B. `priorPaidInMonth` — dívida antiga cujo pagamento ACONTECEU nesta
+             competência. É desembolso real do mês, e some dos meses
+             intermediários onde nada aconteceu.
+
+        A consulta (A) é condicional: fora do mês corrente ela não seria usada,
+        e buscá-la seria uma ida ao banco desperdiçada.
+      */
+      isCurrentMonth
+        ? this.prisma.debt.findMany({
+            where: {
+              userId,
+              isPaid: false,
+              dueDate: { lt: monthStart },
+            },
+            select: PRIOR_DEBT_SELECT,
+          })
+        : Promise.resolve([]),
+
+      /*
+        Dívidas anteriores PAGAS nesta competência.
+
+        Filtro no banco pelas três condições — venceu antes, foi paga dentro
+        da janela do mês. Carregar histórico para decidir em memória traria
+        anos de dívidas resolvidas a cada consulta.
+
+        `paidAt: null` (legado pago sem data) não casa com o range e fica de
+        fora: sem saber QUANDO foi pago, nenhum mês pode reivindicar o
+        desembolso — e inventar um seria pior que omitir.
+      */
       this.prisma.debt.findMany({
         where: {
           userId,
           dueDate: { lt: monthStart },
-          OR: [{ paidAt: null }, { paidAt: { gte: monthStart } }],
+          paidAt: { gte: monthStart, lt: monthEnd },
         },
-        select: {
-          amount: true,
-          isPaid: true,
-          paidAt: true,
-          title: true,
-          dueDate: true,
-          personId: true,
-          person: { select: { id: true, name: true } },
-        },
+        select: PRIOR_DEBT_SELECT,
       }),
 
       /*
@@ -293,35 +358,59 @@ export class BudgetService {
       0,
     );
 
-    /**
-     * Pendências anteriores carregadas para este mês.
-     *
-     * Não são despesas novas: é a mesma obrigação aparecendo em snapshots
-     * mensais sucessivos enquanto não é resolvida. A UI as separa numa seção
-     * própria justamente para isso ficar claro.
-     */
-    const priorCarry = priorDebts.reduce(
-      (sum, debt) => sum + Number(debt.amount),
-      0,
-    );
+    const sumAmount = (rows: readonly { amount: unknown }[]) =>
+      rows.reduce((sum, row) => sum + Number(row.amount), 0);
 
-    const priorCarryBreakdown = priorDebts.map((debt) => ({
+    /**
+     * Pendências anteriores AINDA ABERTAS — só no mês corrente.
+     *
+     * Obrigação real que precisa ser resolvida agora. Nos meses históricos a
+     * consulta nem roda: reconstruir "isto também estava aberto naquele
+     * momento" era o que repetia a mesma dívida em toda competência.
+     */
+    const currentOpenPriorTotal = sumAmount(currentOpenPrior);
+
+    /**
+     * Pendências anteriores PAGAS nesta competência.
+     *
+     * O desembolso aconteceu aqui, então o mês o reconhece — mesmo que a
+     * obrigação tenha nascido meses antes.
+     */
+    const priorPaidInMonthTotal = sumAmount(priorPaidInMonth);
+
+    /*
+      Os dois conjuntos são disjuntos por construção: `currentOpenPrior` exige
+      `isPaid: false` e `priorPaidInMonth` exige `paidAt` dentro do mês. A
+      mesma dívida nunca entra nos dois — é o que impede o total de dobrar no
+      instante em que ela é quitada.
+    */
+    const priorTotal = currentOpenPriorTotal + priorPaidInMonthTotal;
+
+    /*
+      Tipo explícito: sem ele o spread das duas listas alarga para `any` e o
+      `.map` seguinte perde a checagem de cada campo.
+    */
+    type PriorRow = (typeof currentOpenPrior)[number];
+    const priorBreakdown = [
+      ...currentOpenPrior.map((debt: PriorRow) => ({ debt, settled: false })),
+      ...priorPaidInMonth.map((debt: PriorRow) => ({ debt, settled: true })),
+    ].map(({ debt, settled }: { debt: PriorRow; settled: boolean }) => ({
       title: debt.title,
       amount: Number(debt.amount),
       /** Vencimento ORIGINAL — não reescrito como se fosse deste mês. */
       dueDate: debt.dueDate,
       personId: debt.personId,
       personName: debt.person?.name ?? null,
-      /** Se já estava paga ao fim do mês consultado. */
-      paidInMonth: debt.paidAt != null,
+      /** `true` quando o pagamento aconteceu NESTA competência. */
+      paidInMonth: settled,
     }));
 
     /*
-      Total de dívidas = do mês + pendências anteriores.
+      Total de dívidas = do mês + os dois eventos de pendência anterior.
 
       Nenhum recebível entra como redução.
     */
-    const totalDebts = dueInMonth + priorCarry;
+    const totalDebts = dueInMonth + priorTotal;
 
     // Faturas e dívidas já quitadas continuam somando: o número representa o
     // custo real do mês, não só o que ainda falta desembolsar.
@@ -363,7 +452,10 @@ export class BudgetService {
       */
       budgetReceivableDueInMonth: number;
       budgetDebtDueInMonth: number;
-      budgetPriorDebtCarry: number;
+      /** Anteriores ainda abertas (só no mês corrente). */
+      budgetCurrentOpenPrior: number;
+      /** Anteriores pagas nesta competência. */
+      budgetPriorPaidInMonth: number;
       /** Parcela do "a receber" do orçamento que veio de compra no cartão. */
       budgetAutomaticReceivable: number;
       /*
@@ -394,7 +486,8 @@ export class BudgetService {
         personName,
         budgetReceivableDueInMonth: 0,
         budgetDebtDueInMonth: 0,
-        budgetPriorDebtCarry: 0,
+        budgetCurrentOpenPrior: 0,
+        budgetPriorPaidInMonth: 0,
         budgetAutomaticReceivable: 0,
         openReceivableInMonth: 0,
         openDebtInMonth: 0,
@@ -429,12 +522,26 @@ export class BudgetService {
       ).budgetDebtDueInMonth += Number(debt.amount);
     }
 
-    for (const debt of priorDebts) {
+    /*
+      Pendência anterior da pessoa, separada por evento — a microcopy precisa
+      distinguir "ainda em aberto" de "paga neste mês". Somar as duas num
+      campo só faria a linha dizer "R$ 300 já quitados" para uma dívida que
+      continua devendo.
+    */
+    for (const debt of currentOpenPrior) {
       if (!debt.personId) continue;
       settlementEntry(
         debt.personId,
         debt.person?.name ?? 'Pessoa',
-      ).budgetPriorDebtCarry += Number(debt.amount);
+      ).budgetCurrentOpenPrior += Number(debt.amount);
+    }
+
+    for (const debt of priorPaidInMonth) {
+      if (!debt.personId) continue;
+      settlementEntry(
+        debt.personId,
+        debt.person?.name ?? 'Pessoa',
+      ).budgetPriorPaidInMonth += Number(debt.amount);
     }
 
     /*
@@ -510,7 +617,8 @@ export class BudgetService {
     const movement = (entry: SettlementAccumulator) =>
       entry.budgetReceivableDueInMonth +
       entry.budgetDebtDueInMonth +
-      entry.budgetPriorDebtCarry +
+      entry.budgetCurrentOpenPrior +
+      entry.budgetPriorPaidInMonth +
       entry.openReceivableInMonth +
       entry.openDebtInMonth +
       entry.openPriorReceivable +
@@ -546,9 +654,13 @@ export class BudgetService {
           budget: {
             receivableDueInMonth: entry.budgetReceivableDueInMonth,
             debtDueInMonth: entry.budgetDebtDueInMonth,
-            priorDebtCarry: entry.budgetPriorDebtCarry,
+            currentOpenPrior: entry.budgetCurrentOpenPrior,
+            priorPaidInMonth: entry.budgetPriorPaidInMonth,
             /** `debtDueInMonth + priorDebtCarry` — o que compõe o orçamento. */
-            debtTotal: entry.budgetDebtDueInMonth + entry.budgetPriorDebtCarry,
+            debtTotal:
+              entry.budgetDebtDueInMonth +
+              entry.budgetCurrentOpenPrior +
+              entry.budgetPriorPaidInMonth,
             automaticReceivable: entry.budgetAutomaticReceivable,
           },
 
@@ -640,15 +752,23 @@ export class BudgetService {
         `totalDebts` sozinho não dizia de onde vinha o número — e antes vinha
         de um valor já compensado por recebíveis.
       */
+      /*
+        `priorCarry` foi REMOVIDO: o nome descrevia o snapshot mensal que
+        deixou de existir, e mantê-lo apontando para outro conceito faria
+        qualquer consumidor calcular errado sem aviso.
+      */
       debts: {
         dueInMonth,
-        priorCarry,
+        /** Anteriores ainda abertas — zero fora do mês corrente. */
+        currentOpenPrior: currentOpenPriorTotal,
+        /** Anteriores cujo pagamento aconteceu nesta competência. */
+        priorPaidInMonth: priorPaidInMonthTotal,
         total: totalDebts,
-        priorCarryItems: priorCarryBreakdown,
+        priorItems: priorBreakdown,
       },
       totalDebts,
       debtsCount: debts.length,
-      priorCarryCount: priorDebts.length,
+      priorCount: currentOpenPrior.length + priorPaidInMonth.length,
       paidDebtsCount,
 
       /** Informativo: NÃO entra em `totalToPay`. */

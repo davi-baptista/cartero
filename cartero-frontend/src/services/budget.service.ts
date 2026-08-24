@@ -46,15 +46,19 @@ export interface BudgetSummary {
     /** Vencimento dentro do mês selecionado. */
     dueInMonth: number
     /**
-     * Dívidas vencidas ANTES do mês e ainda abertas quando ele começou.
+     * Pendências anteriores ainda ABERTAS — zero fora do mês corrente.
      *
-     * Não são despesas novas: é a mesma obrigação atravessando snapshots
-     * mensais enquanto não é resolvida.
+     * `priorCarry` foi removido: aquele campo era o snapshot mensal que
+     * repetia a mesma dívida em toda competência entre o vencimento e o
+     * pagamento. Manter o nome apontando para outro conceito faria qualquer
+     * consumidor calcular errado sem aviso.
      */
-    priorCarry: number
-    /** `dueInMonth + priorCarry`. */
+    currentOpenPrior: number
+    /** Pendências anteriores cujo pagamento ACONTECEU nesta competência. */
+    priorPaidInMonth: number
+    /** `dueInMonth + currentOpenPrior + priorPaidInMonth`. */
     total: number
-    priorCarryItems: Array<{
+    priorItems: Array<{
       title: string
       amount: number
       /** Vencimento ORIGINAL — nunca reescrito como se fosse deste mês. */
@@ -69,7 +73,7 @@ export interface BudgetSummary {
   totalDebts: number
   /** Quantidade de dívidas com vencimento dentro do mês. */
   debtsCount: number
-  priorCarryCount: number
+  priorCount: number
   /** Quantas dessas dívidas já estão pagas. */
   paidDebtsCount: number
   /**
@@ -100,8 +104,11 @@ export interface BudgetSummary {
     budget: {
       receivableDueInMonth: number
       debtDueInMonth: number
-      priorDebtCarry: number
-      /** `debtDueInMonth + priorDebtCarry`. */
+      /** Anteriores ainda abertas (só no mês corrente). */
+      currentOpenPrior: number
+      /** Anteriores pagas nesta competência. */
+      priorPaidInMonth: number
+      /** `debtDueInMonth + currentOpenPrior + priorPaidInMonth`. */
       debtTotal: number
       automaticReceivable: number
     }

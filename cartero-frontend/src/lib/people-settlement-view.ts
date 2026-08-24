@@ -115,7 +115,7 @@ export function openPriorLabel(
  * parcela que "Em aberto" não consegue mostrar sozinha.
  */
 function settledRemainder(person: PersonSettlement): number {
-  return person.budget.debtTotal - person.open.debtTotal
+  return person.budget.priorPaidInMonth
 }
 
 /**
@@ -142,7 +142,12 @@ export function budgetContextLabel(
 ): string | null {
   const settled = settledRemainder(person)
   if (settled <= EPSILON) return null
-  return `${formatCurrency(settled)} já quitados ainda compõem o orçamento`
+  /*
+    "pagas neste mês", não "já quitados ainda compõem o orçamento": com a
+    competência de evento, esse valor é um desembolso REAL desta competência,
+    não um resíduo histórico de outra.
+  */
+  return `${formatCurrency(settled)} de pendências anteriores pagas neste mês`
 }
 
 /**
