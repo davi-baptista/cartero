@@ -52,6 +52,7 @@ import Link from 'next/link'
 import { isOverdue, overdueCountLabel } from '@/lib/settlement-status'
 import { SettlementStatusDot } from '@/components/settlement-status-dot'
 import { apiErrorMessage } from '@/lib/api-error'
+import { canEditSettlementDate } from '@/lib/settlement-date-action'
 import { cn } from '@/lib/utils'
 import type { Receivable } from '@/types'
 import { InstallmentScope } from '@/types'
@@ -195,6 +196,22 @@ const ReceivableRow = memo(function ReceivableRow({
 
       {/* Desktop hover actions */}
       <div className="hidden items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
+        {/*
+          Correção da data de acerto: só faz sentido em item resolvido, e é
+          ferramenta de regularização — mesmo peso visual das demais ações.
+        */}
+        {canEditSettlementDate(receivable) && onEditSettlementDate && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => onEditSettlementDate(receivable)}
+            aria-label="Alterar data do recebimento"
+            title="Alterar data do recebimento"
+          >
+            <CalendarDays className="size-3.5" />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -233,7 +250,7 @@ const ReceivableRow = memo(function ReceivableRow({
               Correção de data: só faz sentido em item já resolvido, e é
               ferramenta de regularização — fica no menu, nunca em destaque.
             */}
-            {receivable.isPaid && onEditSettlementDate && (
+            {canEditSettlementDate(receivable) && onEditSettlementDate && (
               <DropdownMenuItem onClick={() => onEditSettlementDate(receivable)}>
                 <CalendarDays className="size-3.5" />
                 Alterar data do recebimento

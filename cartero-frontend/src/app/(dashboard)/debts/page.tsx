@@ -51,6 +51,7 @@ import { formatCurrency, formatDate } from '@/lib/formatters'
 import { isOverdue, overdueCountLabel } from '@/lib/settlement-status'
 import { SettlementStatusDot } from '@/components/settlement-status-dot'
 import { apiErrorMessage } from '@/lib/api-error'
+import { canEditSettlementDate } from '@/lib/settlement-date-action'
 import { cn } from '@/lib/utils'
 import type { Debt, TransactionType } from '@/types'
 import { InstallmentScope } from '@/types'
@@ -183,6 +184,22 @@ const DebtRow = memo(function DebtRow({
 
       {/* Actions — hover only */}
       <div className="hidden items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
+        {/*
+          Correção da data de acerto: só faz sentido em item resolvido, e é
+          ferramenta de regularização — mesmo peso visual das demais ações.
+        */}
+        {canEditSettlementDate(debt) && onEditSettlementDate && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => onEditSettlementDate(debt)}
+            aria-label="Alterar data do pagamento"
+            title="Alterar data do pagamento"
+          >
+            <CalendarDays className="size-3.5" />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -221,7 +238,7 @@ const DebtRow = memo(function DebtRow({
               Correção de data: só faz sentido em item já resolvido, e é
               ferramenta de regularização — fica no menu, nunca em destaque.
             */}
-            {debt.isPaid && onEditSettlementDate && (
+            {canEditSettlementDate(debt) && onEditSettlementDate && (
               <DropdownMenuItem onClick={() => onEditSettlementDate(debt)}>
                 <CalendarDays className="size-3.5" />
                 Alterar data do pagamento

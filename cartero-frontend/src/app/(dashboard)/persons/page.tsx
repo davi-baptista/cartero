@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Users, ChevronRight, Loader2, Check, Undo2, MoreVertical, MessageCircle, FileText, Download, Share2, TriangleAlert, RotateCcw, CreditCard } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, ChevronRight, Loader2, Check, Undo2, MoreVertical, MessageCircle, FileText, Download, Share2, TriangleAlert, RotateCcw, CreditCard, CalendarDays } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -26,6 +26,7 @@ import { ReceivableSheet, type ReceivableFormData } from '../receivables/receiva
 import { settlementStatus } from '@/lib/settlement-status'
 import { apiErrorMessage } from '@/lib/api-error'
 import { SettlePersonDialog } from './settle-person-dialog'
+import { SettlementDateDialog } from '../transactions/settlement-date-dialog'
 import {
   Dialog,
   DialogContent,
@@ -52,7 +53,12 @@ import {
 } from '@/components/ui/sheet'
 import { formatCurrency, formatDate, formatMonthYear } from '@/lib/formatters'
 import { generateStatementPdf, statementPdfFileName } from '@/lib/statement-pdf'
-import { createDebt, updateDebt, deleteDebt } from '@/services/debts.service'
+import {
+  createDebt,
+  updateDebt,
+  deleteDebt,
+  updateDebtSettlementDate,
+} from '@/services/debts.service'
 import {
   getPersons,
   createPerson,
@@ -61,7 +67,12 @@ import {
   getPersonStatement,
   settlePerson,
 } from '@/services/persons.service'
-import { createReceivable, updateReceivable, deleteReceivable } from '@/services/receivables.service'
+import {
+  createReceivable,
+  updateReceivable,
+  deleteReceivable,
+  updateReceivableSettlementDate,
+} from '@/services/receivables.service'
 import {
   dueLabel,
   openItemsFor,
@@ -72,6 +83,7 @@ import {
   buildWhatsAppMessage,
   normalizeWhatsAppPhone,
 } from '@/lib/person-statement'
+import { canEditSettlementDate } from '@/lib/settlement-date-action'
 import { cn } from '@/lib/utils'
 import type { Person, Debt, Receivable } from '@/types'
 import { InstallmentScope, TransactionType } from '@/types'
@@ -92,6 +104,7 @@ function StatementRow({
   onToggle,
   onEdit,
   onDelete,
+  onEditSettlementDate,
 }: {
   kind: 'debt' | 'receivable'
   item: Debt | Receivable
@@ -104,6 +117,8 @@ function StatementRow({
   onToggle: () => void
   onEdit: () => void
   onDelete: () => void
+  /** Só em item resolvido: corrige a data real do acerto. */
+  onEditSettlementDate?: () => void
 }) {
   const status = settlementStatus(item)
   const isReceivable = kind === 'receivable'
@@ -203,6 +218,16 @@ function StatementRow({
           <MoreVertical className="size-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {/*
+            Correção da data de acerto — o Histórico é justamente onde o
+            usuário encontra o registro antigo que precisa regularizar.
+          */}
+          {canEditSettlementDate(item) && onEditSettlementDate && (
+            <DropdownMenuItem onClick={onEditSettlementDate}>
+              <CalendarDays className="size-3.5" />
+              Alterar data do {isReceivable ? 'recebimento' : 'pagamento'}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={onEdit}>
             <Pencil className="size-3.5" /> Editar
           </DropdownMenuItem>
@@ -395,6 +420,50 @@ function StatementSheet({
       qc.invalidateQueries({ queryKey: ['persons'] }),
     ])
   }
+
+  /**
+   * Item cuja data de acerto está sendo corrigida.
+   *
+   * Guarda o `kind` junto porque Debt e Receivable usam serviços distintos e
+   * a linha resolvida pode ser de qualquer um dos dois.
+   */
+  const [settlementDateItem, setSettlementDateItem] = useState<
+    { kind: 'debt' | 'receivable'; item: Debt | Receivable } | null
+  >(null)
+
+  /**
+   * Corrige a data real do acerto de um item já resolvido.
+   *
+   * `invalidateStatement` já cobre person-statement, debts, receivables,
+   * transactions, bank-invoices, budget e persons — exatamente as superfícies
+   * que mudam quando `paidAt` e a transação-espelho são corrigidos.
+   */
+  const settlementDateMut = useMutation({
+    mutationFn: ({
+      kind,
+      id,
+      paidAt,
+    }: {
+      kind: 'debt' | 'receivable'
+      id: string
+      paidAt: string
+    }) =>
+      /*
+        `void` porque o retorno não é usado — Debt e Receivable têm formas
+        diferentes, e tipar a união só para descartá-la não ajudaria ninguém.
+      */
+      kind === 'debt'
+        ? updateDebtSettlementDate(id, paidAt).then(() => undefined)
+        : updateReceivableSettlementDate(id, paidAt).then(() => undefined),
+    onSuccess: () => {
+      invalidateStatement()
+      setSettlementDateItem(null)
+      toast.success('Data atualizada')
+    },
+    // O diálogo permanece aberto no erro: fechar sugeriria sucesso.
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, 'Não foi possível atualizar a data')),
+  })
 
   const createDebtMut = useMutation({
     mutationFn: createDebt,
@@ -1160,6 +1229,9 @@ function StatementSheet({
                         onToggle={() => handleReceivableToggle(r)}
                         onEdit={() => handleEditReceivable(r)}
                         onDelete={() => handleDeleteReceivable(r)}
+                        onEditSettlementDate={() =>
+                          setSettlementDateItem({ kind: 'receivable', item: r })
+                        }
                       />
                     ))}
                     {historyDebts.map((d) => (
@@ -1171,6 +1243,9 @@ function StatementSheet({
                         onToggle={() => handleDebtToggle(d)}
                         onEdit={() => handleEditDebt(d)}
                         onDelete={() => handleDeleteDebt(d)}
+                        onEditSettlementDate={() =>
+                          setSettlementDateItem({ kind: 'debt', item: d })
+                        }
                       />
                     ))}
                   </div>
@@ -1235,6 +1310,25 @@ function StatementSheet({
         onConfirm={handleUnmarkPaidConfirm}
         onCancel={() => setUnmarkPaidTarget(null)}
       />
+      {settlementDateItem && (
+        <SettlementDateDialog
+          open
+          kind={settlementDateItem.kind}
+          title={settlementDateItem.item.title}
+          amount={Number(settlementDateItem.item.amount)}
+          currentDate={settlementDateItem.item.paidAt ?? null}
+          isPending={settlementDateMut.isPending}
+          onConfirm={(paidAt) =>
+            settlementDateMut.mutate({
+              kind: settlementDateItem.kind,
+              id: settlementDateItem.item.id,
+              paidAt,
+            })
+          }
+          onCancel={() => setSettlementDateItem(null)}
+        />
+      )}
+
       <SettlePersonDialog
         open={settleOpen}
         personName={person?.name ?? ''}
@@ -1746,6 +1840,7 @@ export default function PersonsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   )
 }
