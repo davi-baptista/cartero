@@ -85,6 +85,47 @@ function shortDate(iso: string): string {
   return `${day}/${month}`
 }
 
+/** `10/09/2025` — forma completa, para datas fora do ano da competência. */
+function fullDate(iso: string): string {
+  const [year, month, day] = iso.slice(0, 10).split('-')
+  return `${day}/${month}/${year}`
+}
+
+/**
+ * Data de vencimento como o drawer deve exibi-la.
+ *
+ * `14/10` é ambíguo entre 2025 e 2026, e o drawer mostra as duas coisas na
+ * mesma lista: um parcelamento que atravessa a virada do ano aparece com
+ * `14/09 · 14/10 · … · 14/03`, sem nada indicando que os quatro primeiros são
+ * do ano passado.
+ *
+ * A lógica temporal SEMPRE considerou o ano — `dueStateOf` compara
+ * `YYYY-MM-DD` inteiro e `compareCompetence` compara ano antes de mês. O que
+ * faltava era o ano chegar aos olhos de quem lê.
+ *
+ * Regra: o ano aparece quando difere do ano da competência selecionada. No
+ * mesmo ano a forma compacta é preservada, porque ali não há ambiguidade.
+ */
+function dueDisplay(iso: string, selected: SettlementCompetence): string {
+  const year = Number(iso.slice(0, 4))
+  return year === selected.year ? shortDate(iso) : fullDate(iso)
+}
+
+/**
+ * Competência de origem por extenso.
+ *
+ * "referente a outubro" tem o mesmo problema do `14/10`: em março de 2026,
+ * outubro pode ser 2025 (carry) ou 2026 (futuro). O ano entra quando difere
+ * do ano da competência exibida.
+ */
+function originLabel(
+  reference: SettlementCompetence,
+  selected: SettlementCompetence,
+): string {
+  const name = MONTH_NAMES[reference.month - 1]
+  return reference.year === selected.year ? name : `${name} de ${reference.year}`
+}
+
 const MONTH_NAMES = [
   'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
   'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
@@ -106,18 +147,19 @@ export function dueLabel(
   const cameFromBefore =
     compareCompetence(item.referenceMonth, selected) < 0
   const origin = cameFromBefore
-    ? ` · referente a ${MONTH_NAMES[item.referenceMonth.month - 1]}`
+    ? ` · referente a ${originLabel(item.referenceMonth, selected)}`
     : ''
+  const dueText = dueDisplay(due, selected)
 
   switch (state) {
     case 'overdue':
-      return `Em atraso${origin} · venceu em ${shortDate(due)}`
+      return `Em atraso${origin} · venceu em ${dueText}`
     case 'dueToday':
       return `${cameFromBefore ? 'A vencer' : 'Pendente'}${origin} · vence hoje`
     case 'upcoming':
-      return `A vencer${origin} · vence em ${shortDate(due)}`
+      return `A vencer${origin} · vence em ${dueText}`
     case 'pending':
-      return `Pendente · vence em ${shortDate(due)}`
+      return `Pendente · vence em ${dueText}`
   }
 }
 
@@ -244,7 +286,15 @@ export function resolvedLabel(
 ): string {
   const verb = kind === 'receivable' ? 'Recebido' : 'Pago'
 
-  if (!item.paidAt) return `Venceu em ${shortDate(item.dueDate)}`
+  /*
+    A data de resolução SEMPRE sai completa: o histórico é arquivado por
+    `referenceMonth`, então um item de agosto/2025 recebido em outubro/2025
+    aparece na prateleira de agosto — e "recebido em 17/10" sem o ano deixaria
+    dúvida sobre qual outubro.
+  */
+  if (!item.paidAt) {
+    return `Venceu em ${dueDisplay(item.dueDate, item.referenceMonth)}`
+  }
 
   const due = item.dueDate.slice(0, 10)
   const [dueYear, dueMonth] = due.split('-').map(Number)
@@ -253,14 +303,20 @@ export function resolvedLabel(
     dueMonth !== item.referenceMonth.month
 
   if (venceuEmOutraCompetencia) {
-    return `Venceu em ${shortDate(due)} · ${verb.toLowerCase()} em ${shortDate(item.paidAt)}`
+    /*
+      As duas datas saem completas quando os anos divergem entre si.
+
+      "Venceu em 10/12 · pago em 15/03/2026" faria o leitor supor que dezembro
+      é de 2026 — o mesmo ano do pagamento —, quando o vencimento é de 2025 e
+      a distância entre os dois fatos é justamente o que a linha explica.
+    */
+    const anosDivergem = due.slice(0, 4) !== item.paidAt.slice(0, 4)
+    const vencimento = anosDivergem
+      ? fullDate(due)
+      : dueDisplay(due, item.referenceMonth)
+
+    return `Venceu em ${vencimento} · ${verb.toLowerCase()} em ${fullDate(item.paidAt)}`
   }
 
   return `${verb} em ${fullDate(item.paidAt)}`
-}
-
-/** `15/09/2026` — sem construir `Date`, para não deslocar o dia por fuso. */
-function fullDate(iso: string): string {
-  const [year, month, day] = iso.slice(0, 10).split('-')
-  return `${day}/${month}/${year}`
 }

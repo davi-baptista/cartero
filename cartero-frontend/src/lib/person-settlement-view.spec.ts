@@ -314,3 +314,175 @@ describe('resolvedLabel — microcopy do Histórico', () => {
     expect(resolvedLabel(primeiroDia, 'debt')).toBe('Pago em 01/05/2026')
   })
 })
+
+describe('Cross-year: ano faz parte de toda decisão temporal', () => {
+  /**
+   * O drawer exibe parcelamentos que atravessam a virada do ano: em março de
+   * 2026 a lista mostra 14/09, 14/10, 14/11, 14/12, 14/01, 14/02, 14/03.
+   *
+   * A auditoria confirmou que a LÓGICA sempre considerou o ano — `dueStateOf`
+   * compara `YYYY-MM-DD` inteiro e `compareCompetence` compara ano antes de
+   * mês. O que faltava era o ano chegar aos olhos: `14/10` renderizava igual
+   * para 2025 e 2026.
+   */
+  const MARCO = { year: 2026, month: 3 }
+  const HOJE = '2026-03-10'
+
+  const item = (
+    dueDate: string,
+    reference: { year: number; month: number },
+  ) => ({
+    dueDate: `${dueDate}T12:00:00.000Z`,
+    isPaid: false,
+    referenceMonth: reference,
+    dueMonth: {
+      year: Number(dueDate.slice(0, 4)),
+      month: Number(dueDate.slice(5, 7)),
+    },
+  })
+
+  it('item 18: outubro do ano ANTERIOR é carry em atraso, com ano visível', () => {
+    const carry = item('2025-10-14', { year: 2025, month: 10 })
+
+    expect(belongsToCompetence(carry, MARCO)).toBe(true)
+    expect(dueStateOf(carry, MARCO, HOJE)).toBe('overdue')
+
+    const label = dueLabel(carry, MARCO, HOJE)
+    expect(label).toContain('Em atraso')
+    // O ano deixa imediatamente claro por que "outubro" aparece em março.
+    expect(label).toContain('14/10/2025')
+    expect(label).toContain('outubro de 2025')
+  })
+
+  it('item 19: outubro do MESMO ano, futuro, não entra na competência', () => {
+    const futuro = item('2026-10-14', { year: 2026, month: 10 })
+
+    expect(belongsToCompetence(futuro, MARCO)).toBe(false)
+  })
+
+  it('item 7: mesmo dia e mês, anos diferentes, estados opostos', () => {
+    const passado = item('2025-10-14', { year: 2025, month: 10 })
+    const futuro = item('2026-10-14', { year: 2026, month: 10 })
+
+    expect(dueStateOf(passado, MARCO, HOJE)).toBe('overdue')
+    expect(dueStateOf(futuro, MARCO, HOJE)).toBe('pending')
+    expect(dueStateOf(passado, MARCO, HOJE)).not.toBe(
+      dueStateOf(futuro, MARCO, HOJE),
+    )
+  })
+
+  it('item 20: futuro COM referenceMonth da competência aparece', () => {
+    // Cobrança automática originada em março, vencendo em outubro.
+    const originadoEmMarco = item('2026-10-14', { year: 2026, month: 3 })
+
+    expect(belongsToCompetence(originadoEmMarco, MARCO)).toBe(true)
+    expect(dueStateOf(originadoEmMarco, MARCO, HOJE)).toBe('pending')
+    // Não é carry: nasceu na competência exibida.
+    expect(dueLabel(originadoEmMarco, MARCO, HOJE)).toContain('Pendente')
+  })
+
+  it('item 21: a virada do ano classifica cada parcela individualmente', () => {
+    const parcelas = [
+      { due: '2025-12-14', esperado: 'overdue' },
+      { due: '2026-01-14', esperado: 'overdue' },
+      { due: '2026-02-14', esperado: 'overdue' },
+      { due: '2026-03-14', esperado: 'pending' },
+    ] as const
+
+    for (const parcela of parcelas) {
+      const ref = {
+        year: Number(parcela.due.slice(0, 4)),
+        month: Number(parcela.due.slice(5, 7)),
+      }
+      expect(dueStateOf(item(parcela.due, ref), MARCO, HOJE)).toBe(
+        parcela.esperado,
+      )
+    }
+  })
+
+  it('dezembro de 2025 não é tratado como dezembro de 2026', () => {
+    const dez2025 = item('2025-12-14', { year: 2025, month: 12 })
+    const dez2026 = item('2026-12-14', { year: 2026, month: 12 })
+
+    expect(dueStateOf(dez2025, MARCO, HOJE)).toBe('overdue')
+    expect(dueStateOf(dez2026, MARCO, HOJE)).toBe('pending')
+    expect(dueLabel(dez2025, MARCO, HOJE)).toContain('2025')
+  })
+
+  it('item 23: o ano só aparece quando difere da competência', () => {
+    const mesmoAno = item('2026-03-14', { year: 2026, month: 3 })
+    const outroAno = item('2025-10-14', { year: 2025, month: 10 })
+
+    // Forma compacta onde não há ambiguidade.
+    expect(dueLabel(mesmoAno, MARCO, HOJE)).toContain('14/03')
+    expect(dueLabel(mesmoAno, MARCO, HOJE)).not.toContain('14/03/2026')
+
+    expect(dueLabel(outroAno, MARCO, HOJE)).toContain('14/10/2025')
+  })
+
+  it('item 17: a ordenação é cronológica através dos anos', () => {
+    const lista = [
+      item('2026-03-14', { year: 2026, month: 3 }),
+      item('2025-10-14', { year: 2025, month: 10 }),
+      item('2025-09-14', { year: 2025, month: 9 }),
+      item('2026-01-14', { year: 2026, month: 1 }),
+    ]
+
+    const ordenada = openItemsFor(lista, MARCO, HOJE)
+
+    expect(ordenada.map((i) => i.dueDate.slice(0, 10))).toEqual([
+      '2025-09-14',
+      '2025-10-14',
+      '2026-01-14',
+      '2026-03-14',
+    ])
+  })
+
+  it('item 13: parcelas compartilham a origem, cada uma com seu vencimento', () => {
+    /*
+      Compra parcelada em 14/09/2025: TODAS as parcelas têm o mesmo
+      `referenceMonth` (a compra), e vencimentos que avançam mês a mês.
+    */
+    const origem = { year: 2025, month: 9 }
+    const marco = item('2026-03-14', origem)
+
+    // Veio de antes e ainda não venceu → "A vencer", nunca "Em atraso".
+    expect(dueStateOf(marco, MARCO, HOJE)).toBe('upcoming')
+    const label = dueLabel(marco, MARCO, HOJE)
+    expect(label).toContain('A vencer')
+    expect(label).toContain('setembro de 2025')
+  })
+})
+
+describe('Cross-year no Histórico', () => {
+  it('item 12/22: arquiva por referenceMonth, com paidAt completo', () => {
+    /*
+      referenceMonth agosto/2025, recebido em outubro/2025: pertence à
+      prateleira de agosto, e a data de resolução sai com o ano.
+    */
+    const label = resolvedLabel(
+      {
+        dueDate: '2025-08-14',
+        paidAt: '2025-10-17',
+        referenceMonth: { year: 2025, month: 8 },
+      },
+      'receivable',
+    )
+
+    expect(label).toContain('17/10/2025')
+  })
+
+  it('vencimento em outro ano mantém os dois contextos', () => {
+    const label = resolvedLabel(
+      {
+        dueDate: '2025-12-10',
+        paidAt: '2026-03-15',
+        referenceMonth: { year: 2025, month: 8 },
+      },
+      'debt',
+    )
+
+    expect(label).toContain('10/12/2025')
+    expect(label).toContain('15/03/2026')
+  })
+})
