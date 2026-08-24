@@ -65,6 +65,7 @@ import { createReceivable, updateReceivable, deleteReceivable } from '@/services
 import {
   dueLabel,
   openItemsFor,
+  resolvedLabel,
   summarizeCompetence,
 } from '@/lib/person-settlement-view'
 import {
@@ -744,9 +745,15 @@ function StatementSheet({
       return null
     }
 
-    const periodLabel = startDate && endDate
-      ? `${formatDate(startDate)} a ${formatDate(endDate)}`
-      : 'período selecionado'
+    /*
+      A competência, não o intervalo de datas.
+
+      O histórico passou a ser arquivado por `referenceMonth`, então
+      "01/07/2026 a 31/07/2026" descreveria o critério errado — sugeriria que
+      a seção lista o que foi QUITADO naquelas datas, quando ela lista o que
+      PERTENCE àquele mês, possivelmente quitado depois.
+    */
+    const periodLabel = formatMonthYear(period.month, period.year)
 
     return {
       person,
@@ -1107,7 +1114,8 @@ function StatementSheet({
                 ── Histórico ──
 
                 Usa o MESMO seletor do topo — não existe mais um segundo.
-                Itens resolvidos no período, por `paidAt`.
+                Itens resolvidos, arquivados por `referenceMonth` — a competência a
+                que o acerto pertence, não o mês em que o dinheiro se moveu.
               */}
               <div>
                 <p className="mb-2 text-xs font-medium text-muted-foreground">
@@ -1128,6 +1136,11 @@ function StatementSheet({
                         key={r.id}
                         kind="receivable"
                         item={r}
+                        /*
+                          A data real da resolução, que o arquivamento por
+                          competência não mostra sozinho.
+                        */
+                        dueLabel={resolvedLabel(r, 'receivable')}
                         onToggle={() => handleReceivableToggle(r)}
                         onEdit={() => handleEditReceivable(r)}
                         onDelete={() => handleDeleteReceivable(r)}
@@ -1138,6 +1151,7 @@ function StatementSheet({
                         key={d.id}
                         kind="debt"
                         item={d}
+                        dueLabel={resolvedLabel(d, 'debt')}
                         onToggle={() => handleDebtToggle(d)}
                         onEdit={() => handleEditDebt(d)}
                         onDelete={() => handleDeleteDebt(d)}

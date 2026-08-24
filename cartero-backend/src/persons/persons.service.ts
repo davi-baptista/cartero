@@ -1,10 +1,6 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { Prisma, TransactionType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
-import {
-  parseDateFilterEnd,
-  parseDateFilterStart,
-} from 'src/common/helpers/date-only.helper';
 import { parseDateOnly } from 'src/common/helpers/date-only.helper';
 import { findOrCreateSystemReceivableBank } from 'src/common/helpers/invoice.helper';
 import {
@@ -20,9 +16,12 @@ import {
 } from 'src/common/helpers/person-consolidated';
 import {
   belongsToCompetence,
+  belongsToHistoryCompetence,
   dueMonthOf,
   referenceMonthOf,
   resolveDefaultCompetence,
+  type SettleableItem,
+  type SettlementCompetence,
 } from 'src/common/helpers/person-settlement-month';
 import {
   DEBT_PAID_CATEGORY_COLOR,
@@ -316,23 +315,27 @@ export class PersonsService {
     const pendingWhere = this.pendingWhere(userId, person.id);
 
     /*
-      Período aplicado por `paidAt`, não por `dueDate`.
+      Histórico arquivado por `referenceMonth` — a competência a que o acerto
+      PERTENCE —, não pelo mês em que o dinheiro se moveu.
 
-      O histórico responde "o que foi quitado neste mês", e isso é a data do
-      pagamento. Filtrar por vencimento traria uma dívida de junho paga em
-      agosto para o mês errado.
+      Antes o recorte era `paidAt` em SQL. Uma dívida de julho paga em 15/09
+      aparecia no histórico de setembro, então revisar julho não mostrava o
+      acerto de julho, e um mesmo combinado se dispersava por vários meses
+      conforme cada parte fosse quitada.
+
+      A troca exige filtrar em MEMÓRIA: para o recebível automático a
+      referência é a data da Transaction de origem, que está em outra tabela —
+      um `where` sobre a própria linha não alcança. O conjunto é pequeno
+      (itens resolvidos de UMA pessoa) e as duas consultas continuam em
+      paralelo com as de pendências, sem N+1.
+
+      `paidAt` não sumiu: continua na linha, como data real da resolução.
     */
-    const paidAt = {
-      gte: filters.startDate
-        ? parseDateFilterStart(filters.startDate)
-        : undefined,
-      lte: filters.endDate ? parseDateFilterEnd(filters.endDate) : undefined,
-    };
+    const historySelected = this.historyCompetence(filters);
     const historyWhere = {
       userId,
       personId: person.id,
       isPaid: true,
-      paidAt,
     };
 
     // Quatro queries em paralelo, sem N+1: nada é buscado por item.
@@ -359,10 +362,42 @@ export class PersonsService {
         this.prisma.receivable.findMany({
           where: historyWhere,
           orderBy: HISTORY_ORDER,
+          /*
+            A relação é obrigatória aqui pelo mesmo motivo das pendências: sem
+            ela `referenceMonthOf` cairia no vencimento e arquivaria todo
+            recebível automático no mês errado, em silêncio.
+          */
+          include: { transaction: { select: { date: true } } },
         }),
       ]);
 
     const summary = buildPersonSummary(pendingReceivables, pendingDebts);
+
+    /*
+      Histórico da competência selecionada.
+
+      Cada item resolvido carrega as duas competências, como as pendências já
+      faziam — assim o frontend rotula sem reimplementar a regra. Sem
+      competência pedida (nenhum filtro), devolve tudo: o consumidor decide.
+    */
+    const withCompetences = <T extends SettleableItem>(items: readonly T[]) =>
+      items.map((item) => ({
+        ...item,
+        referenceMonth: referenceMonthOf(item),
+        dueMonth: dueMonthOf(item),
+      }));
+
+    const inHistory = <T extends SettleableItem>(items: readonly T[]) =>
+      withCompetences(
+        historySelected
+          ? items.filter((item) =>
+              belongsToHistoryCompetence(item, historySelected),
+            )
+          : items,
+      );
+
+    const settledDebts = inHistory(historyDebts);
+    const settledReceivables = inHistory(historyReceivables);
 
     /*
       Contrato com os dois universos SEPARADOS por nome.
@@ -429,13 +464,48 @@ export class PersonsService {
           startDate: filters.startDate ?? null,
           endDate: filters.endDate ?? null,
         },
-        /** Critério: `paidAt` dentro do intervalo — nunca `dueDate`. */
-        scopedBy: 'paidAt' as const,
-        settledDebts: historyDebts,
-        settledReceivables: historyReceivables,
-        settledDebtTotal: sumAmounts(historyDebts),
-        settledReceivableTotal: sumAmounts(historyReceivables),
+        /**
+         * Critério: `referenceMonth` — a competência a que o acerto pertence.
+         *
+         * Era `paidAt`. O nome do campo é a única defesa do consumidor contra
+         * ler o universo errado, então ele muda junto com a regra: quem
+         * dependia de "quitado neste mês" falha visivelmente em vez de receber
+         * outra resposta em silêncio.
+         */
+        scopedBy: 'referenceMonth' as const,
+        settledDebts: settledDebts,
+        settledReceivables: settledReceivables,
+        settledDebtTotal: sumAmounts(settledDebts),
+        settledReceivableTotal: sumAmounts(settledReceivables),
       },
     };
+  }
+
+  /**
+   * A competência que o histórico deve exibir, derivada do filtro recebido.
+   *
+   * O contrato de `GET /persons/:id/statement` continua sendo um intervalo de
+   * datas — mudar para `year`/`month` quebraria o consumidor sem necessidade,
+   * já que o drawer sempre envia exatamente um mês civil.
+   *
+   * `startDate` é a origem: ele marca o primeiro dia da competência pedida.
+   * Sem filtro, devolve `null` e o histórico não é recortado.
+   */
+  private historyCompetence(
+    filters: GetStatementDto,
+  ): SettlementCompetence | null {
+    if (!filters.startDate) return null;
+
+    /*
+      Lido direto da STRING, não de um `Date`.
+
+      `parseDateFilterStart('2026-05-01')` devolve meia-noite UTC, e
+      `competenceOf` desconta 3h de Fortaleza — o instante cai em 30/04 e a
+      competência viraria ABRIL. O filtro é uma data civil; convertê-la em
+      instante só para reextrair mês e ano introduz um erro de fuso que não
+      existia no dado original.
+    */
+    const [year, month] = filters.startDate.slice(0, 10).split('-').map(Number);
+    return { year, month };
   }
 }

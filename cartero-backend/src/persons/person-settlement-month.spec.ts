@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   belongsToCompetence,
+  belongsToHistoryCompetence,
   competenceOf,
   dueMonthOf,
   dueStateOf,
@@ -316,5 +317,150 @@ describe('Competência padrão ao abrir o drawer', () => {
     expect(
       resolveDefaultCompetence([], new Date('2026-09-01T04:00:00.000Z')),
     ).toEqual(SETEMBRO);
+  });
+});
+
+describe('belongsToHistoryCompetence — arquivo por referenceMonth', () => {
+  /**
+   * O histórico do drawer deixou de ser organizado por `paidAt`.
+   *
+   * Uma dívida de julho paga em setembro pertence ao acerto de JULHO: é ali
+   * que o usuário procura ao revisar aquele mês. Arquivar pelo movimento do
+   * dinheiro espalhava um mesmo combinado por vários meses conforme cada
+   * parte fosse quitada.
+   */
+  const JULHO = { year: 2026, month: 7 };
+  const AGOSTO = { year: 2026, month: 8 };
+  const SETEMBRO = { year: 2026, month: 9 };
+  const OUTUBRO = { year: 2026, month: 10 };
+
+  it('item 3: Debt de julho paga em setembro arquiva em julho', () => {
+    const debt = {
+      id: 'd1',
+      dueDate: new Date('2026-07-20T12:00:00.000Z'),
+      isPaid: true,
+      paidAt: new Date('2026-09-15T12:00:00.000Z'),
+    };
+
+    expect(belongsToHistoryCompetence(debt, JULHO)).toBe(true);
+    // E não reaparece no mês do pagamento: uma competência canônica por item.
+    expect(belongsToHistoryCompetence(debt, SETEMBRO)).toBe(false);
+  });
+
+  it('item 4: Receivable manual de agosto recebido em outubro', () => {
+    const receivable = {
+      id: 'r1',
+      dueDate: new Date('2026-08-10T12:00:00.000Z'),
+      isPaid: true,
+      paidAt: new Date('2026-10-03T12:00:00.000Z'),
+      transactionId: null,
+    };
+
+    expect(belongsToHistoryCompetence(receivable, AGOSTO)).toBe(true);
+    expect(belongsToHistoryCompetence(receivable, OUTUBRO)).toBe(false);
+  });
+
+  it('item 5: Receivable automático segue a compra de origem', () => {
+    /*
+      Compra 16/08, vence 10/09, recebido 15/10 → pertence a AGOSTO.
+      Nem o vencimento nem o pagamento decidem: a compra é o evento que
+      originou o acerto.
+    */
+    const automatico = {
+      id: 'r2',
+      dueDate: new Date('2026-09-10T12:00:00.000Z'),
+      isPaid: true,
+      paidAt: new Date('2026-10-15T12:00:00.000Z'),
+      transactionId: 'tx-1',
+      transaction: { date: new Date('2026-08-16T12:00:00.000Z') },
+    };
+
+    expect(belongsToHistoryCompetence(automatico, AGOSTO)).toBe(true);
+    expect(belongsToHistoryCompetence(automatico, SETEMBRO)).toBe(false);
+    expect(belongsToHistoryCompetence(automatico, OUTUBRO)).toBe(false);
+  });
+
+  it('item 6: nunca em duas competências ao mesmo tempo', () => {
+    const debt = {
+      id: 'd2',
+      dueDate: new Date('2026-07-20T12:00:00.000Z'),
+      isPaid: true,
+      paidAt: new Date('2026-09-15T12:00:00.000Z'),
+    };
+
+    const meses = [JULHO, AGOSTO, SETEMBRO, OUTUBRO];
+    const encontrados = meses.filter((mes) =>
+      belongsToHistoryCompetence(debt, mes),
+    );
+
+    expect(encontrados).toHaveLength(1);
+    expect(encontrados[0]).toEqual(JULHO);
+  });
+
+  it('item aberto NÃO entra no histórico', () => {
+    const aberto = {
+      id: 'd3',
+      dueDate: new Date('2026-07-20T12:00:00.000Z'),
+      isPaid: false,
+      paidAt: null,
+    };
+
+    expect(belongsToHistoryCompetence(aberto, JULHO)).toBe(false);
+  });
+
+  it('sem a relação carregada, o automático cai no vencimento', () => {
+    /*
+      Conservador de propósito: melhor arquivar pelo vencimento do que sumir
+      com o item. Por isso a consulta do histórico carrega `transaction` —
+      sem ela o fallback seria silencioso.
+    */
+    const semRelacao = {
+      id: 'r3',
+      dueDate: new Date('2026-09-10T12:00:00.000Z'),
+      isPaid: true,
+      paidAt: new Date('2026-10-15T12:00:00.000Z'),
+      transactionId: 'tx-1',
+      transaction: null,
+    };
+
+    expect(belongsToHistoryCompetence(semRelacao, SETEMBRO)).toBe(true);
+  });
+
+  it('vencimento no dia 1 não escorrega para o mês anterior', () => {
+    /*
+      Fortaleza é UTC-3: um item gravado à meia-noite UTC do dia 1 cai no dia
+      30 do mês anterior em horário local. `competenceOf` já trata isso, e
+      este teste vigia a propriedade — foi exatamente o erro que apareceu ao
+      derivar a competência do filtro a partir de um `Date`.
+    */
+    const primeiroDia = {
+      id: 'd4',
+      dueDate: new Date('2026-05-01T12:00:00.000Z'),
+      isPaid: true,
+      paidAt: new Date('2026-08-03T12:00:00.000Z'),
+    };
+
+    expect(
+      belongsToHistoryCompetence(primeiroDia, { year: 2026, month: 5 }),
+    ).toBe(true);
+    expect(
+      belongsToHistoryCompetence(primeiroDia, { year: 2026, month: 4 }),
+    ).toBe(false);
+  });
+
+  it('atravessa a virada de ano', () => {
+    const dezembro = {
+      id: 'd5',
+      dueDate: new Date('2025-12-20T12:00:00.000Z'),
+      isPaid: true,
+      paidAt: new Date('2026-02-10T12:00:00.000Z'),
+    };
+
+    expect(
+      belongsToHistoryCompetence(dezembro, { year: 2025, month: 12 }),
+    ).toBe(true);
+    expect(belongsToHistoryCompetence(dezembro, { year: 2026, month: 2 })).toBe(
+      false,
+    );
   });
 });

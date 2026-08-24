@@ -192,13 +192,23 @@ describe('summary é all-time, mesmo com filtro de agosto', () => {
   });
 });
 
-describe('period é temporal e recortado por paidAt', () => {
-  it('filtra por paidAt, nunca por dueDate', async () => {
-    /**
-     * A distinção importa: uma dívida vencida em maio e paga em agosto
-     * pertence ao histórico de AGOSTO — é quando o dinheiro se moveu. Filtrar
-     * por `dueDate` a jogaria em maio, onde nada aconteceu.
-     */
+describe('period é arquivado por referenceMonth', () => {
+  /**
+   * A regra MUDOU: o histórico deixou de ser recortado por `paidAt`.
+   *
+   * Uma dívida de maio paga em agosto pertence ao acerto de MAIO — é ali que
+   * o usuário vai procurá-la ao revisar aquele mês. Arquivar pelo movimento
+   * do dinheiro dispersava um mesmo combinado por vários meses conforme cada
+   * parte fosse quitada.
+   *
+   * `paidAt` continua na linha, como data real da resolução.
+   */
+  it('a consulta de histórico não recorta por data', async () => {
+    /*
+      O recorte passou a ser em memória: para o recebível automático a
+      referência é a data da Transaction de origem, que está em outra tabela
+      e nenhum `where` sobre a própria linha alcança.
+    */
     const harness = buildHarness(CENARIO);
 
     await harness.service.getStatement('person-1', USER_ID, AGOSTO as any);
@@ -206,13 +216,12 @@ describe('period é temporal e recortado por paidAt', () => {
     const historyWhere = harness.queries.debt.find(
       (where) => where.isPaid === true,
     );
-    expect(historyWhere).toHaveProperty('paidAt');
+    expect(historyWhere).not.toHaveProperty('paidAt');
     expect(historyWhere).not.toHaveProperty('dueDate');
   });
 
-  it('declara o recorte aplicado', async () => {
-    // Sem isso o consumidor não distingue "nada foi quitado em agosto" de
-    // "nenhum filtro foi enviado".
+  it('declara o recorte aplicado e o critério', async () => {
+    // Sem isso o consumidor não distingue "nada em agosto" de "sem filtro".
     const harness = buildHarness(CENARIO);
 
     const result = await harness.service.getStatement(
@@ -225,7 +234,11 @@ describe('period é temporal e recortado por paidAt', () => {
       startDate: '2026-08-01',
       endDate: '2026-08-31',
     });
-    expect(result.period.scopedBy).toBe('paidAt');
+    /*
+      O nome do campo muda junto com a regra: quem dependia de "quitado neste
+      mês" falha visivelmente, em vez de receber outro universo em silêncio.
+    */
+    expect(result.period.scopedBy).toBe('referenceMonth');
   });
 
   it('sem filtro, o recorte é nulo — não zero', async () => {
@@ -239,20 +252,78 @@ describe('period é temporal e recortado por paidAt', () => {
     });
   });
 
-  it('os totais do período NÃO se misturam ao consolidado', async () => {
+  it('item de maio pago em agosto arquiva em MAIO', async () => {
     const harness = buildHarness(CENARIO);
 
-    const result = await harness.service.getStatement(
+    const maio = await harness.service.getStatement('person-1', USER_ID, {
+      startDate: '2026-05-01',
+      endDate: '2026-05-31',
+    } as any);
+
+    expect(maio.period.settledDebtTotal).toBe(90);
+    expect(maio.period.settledReceivableTotal).toBe(40);
+  });
+
+  it('e NÃO reaparece no mês do pagamento', async () => {
+    const harness = buildHarness(CENARIO);
+
+    const agosto = await harness.service.getStatement(
       'person-1',
       USER_ID,
       AGOSTO as any,
     );
 
-    // Quitados em agosto: 90 e 40. Pendentes: 300 e 800. Universos separados.
-    expect(result.period.settledDebtTotal).toBe(90);
-    expect(result.period.settledReceivableTotal).toBe(40);
-    expect(result.summary.debtPending).toBe(300);
-    expect(result.summary.receivablePending).toBe(800);
+    // Uma competência canônica por item: sem duplicação entre os dois meses.
+    expect(agosto.period.settledDebtTotal).toBe(0);
+    expect(agosto.period.settledReceivableTotal).toBe(0);
+    expect(agosto.period.settledDebts).toHaveLength(0);
+    expect(agosto.period.settledReceivables).toHaveLength(0);
+  });
+
+  it('os totais do período NÃO se misturam ao consolidado', async () => {
+    const harness = buildHarness(CENARIO);
+
+    const maio = await harness.service.getStatement('person-1', USER_ID, {
+      startDate: '2026-05-01',
+      endDate: '2026-05-31',
+    } as any);
+
+    // Resolvidos de maio: 90 e 40. Pendentes (all-time): 300 e 800.
+    expect(maio.period.settledDebtTotal).toBe(90);
+    expect(maio.period.settledReceivableTotal).toBe(40);
+    expect(maio.summary.debtPending).toBe(300);
+    expect(maio.summary.receivablePending).toBe(800);
+  });
+
+  it('paidAt continua exposto em cada item resolvido', async () => {
+    // A data real da resolução não sumiu — só deixou de escolher o mês.
+    const harness = buildHarness(CENARIO);
+
+    const maio = await harness.service.getStatement('person-1', USER_ID, {
+      startDate: '2026-05-01',
+      endDate: '2026-05-31',
+    } as any);
+
+    expect(maio.period.settledDebts[0].paidAt).toBeInstanceOf(Date);
+    expect(maio.period.settledReceivables[0].paidAt).toBeInstanceOf(Date);
+  });
+
+  it('cada item resolvido carrega as duas competências', async () => {
+    const harness = buildHarness(CENARIO);
+
+    const maio = await harness.service.getStatement('person-1', USER_ID, {
+      startDate: '2026-05-01',
+      endDate: '2026-05-31',
+    } as any);
+
+    expect(maio.period.settledDebts[0].referenceMonth).toEqual({
+      year: 2026,
+      month: 5,
+    });
+    expect(maio.period.settledDebts[0].dueMonth).toEqual({
+      year: 2026,
+      month: 5,
+    });
   });
 });
 

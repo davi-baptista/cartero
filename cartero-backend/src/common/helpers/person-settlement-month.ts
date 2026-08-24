@@ -188,3 +188,28 @@ export function resolveDefaultCompetence(
 
   return previousStillInTime ? previous : current;
 }
+
+/**
+ * O item RESOLVIDO pertence ao histórico da competência selecionada?
+ *
+ * A competência canônica do arquivo é `referenceMonth`, não o mês de
+ * `paidAt`. Uma dívida de julho paga em 15/09 pertence ao acerto de JULHO —
+ * é ali que o usuário vai procurá-la ao revisar aquele mês.
+ *
+ * Arquivar por `paidAt` colocava o item no mês em que o dinheiro se moveu, o
+ * que dispersava um mesmo acerto por vários meses conforme cada parte fosse
+ * quitada, e tornava difícil reconstruir "o que combinamos em julho".
+ *
+ * `paidAt` continua sendo a data real da resolução e segue exibido na linha —
+ * apenas deixou de escolher a prateleira.
+ *
+ * Uma competência só por item: nunca `referenceMonth` E `paidAtMonth`, senão
+ * o mesmo acerto apareceria duas vezes no histórico.
+ */
+export function belongsToHistoryCompetence(
+  item: SettleableItem,
+  selected: SettlementCompetence,
+): boolean {
+  if (!item.isPaid) return false;
+  return compareCompetence(referenceMonthOf(item), selected) === 0;
+}

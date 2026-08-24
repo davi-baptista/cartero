@@ -261,17 +261,26 @@ export interface PersonSummary {
 }
 
 /**
- * Itens quitados dentro de um intervalo, com o recorte explicitado.
+ * Itens resolvidos de uma competência, com o critério explicitado.
  *
- * O critério é `paidAt`, não `dueDate`: uma dívida vencida em junho e paga em
- * agosto pertence ao histórico de agosto, que é quando o dinheiro se moveu.
+ * O critério é `referenceMonth` — a competência a que o acerto PERTENCE —, e
+ * não o mês de `paidAt`. Uma dívida de julho paga em setembro pertence ao
+ * histórico de JULHO: é ali que o usuário a procura ao revisar aquele mês.
+ *
+ * Arquivar pelo movimento do dinheiro dispersava um mesmo combinado por
+ * vários meses conforme cada parte fosse quitada. `paidAt` continua em cada
+ * item, como data real da resolução — só deixou de escolher a prateleira.
  */
 export interface PersonPeriod {
   /** O recorte que de fato valeu; `null` quando nenhum filtro foi enviado. */
   appliedRange: { startDate: string | null; endDate: string | null }
-  scopedBy: 'paidAt'
-  settledDebts: Debt[]
-  settledReceivables: Receivable[]
+  scopedBy: 'referenceMonth'
+  /*
+    `SettlementItem` porque os resolvidos agora carregam as competências, como
+    as pendências já faziam — a tela rotula sem reimplementar a regra.
+  */
+  settledDebts: SettlementItem<Debt>[]
+  settledReceivables: SettlementItem<Receivable>[]
   settledDebtTotal: number
   settledReceivableTotal: number
 }

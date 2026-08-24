@@ -217,3 +217,50 @@ export function openItemsFor<T extends Timed>(
   const eligible = items.filter((item) => belongsToCompetence(item, selected))
   return sortOpenItems(eligible, selected, today)
 }
+
+/**
+ * Microcopy de um item RESOLVIDO no Histórico.
+ *
+ * O histórico é arquivado por `referenceMonth` — a competência a que o acerto
+ * pertence —, e não pelo mês em que o dinheiro se moveu. Por isso a data real
+ * da resolução precisa aparecer na linha: sem ela, uma dívida de julho paga em
+ * setembro ficaria no mês certo mas sem dizer quando foi quitada.
+ *
+ * Quando o vencimento caiu em OUTRA competência, o contexto entra junto —
+ * senão "Recebido em 15/10" dentro do histórico de agosto pareceria erro:
+ *
+ *   mesmo mês  → `Pago em 15/07/2026`
+ *   outro mês  → `Venceu em 10/09 · recebido em 15/10`
+ *
+ * Sem `paidAt` (legado), cai no vencimento: nenhuma data é inventada.
+ */
+export function resolvedLabel(
+  item: {
+    dueDate: string
+    paidAt?: string | null
+    referenceMonth: SettlementCompetence
+  },
+  kind: 'debt' | 'receivable',
+): string {
+  const verb = kind === 'receivable' ? 'Recebido' : 'Pago'
+
+  if (!item.paidAt) return `Venceu em ${shortDate(item.dueDate)}`
+
+  const due = item.dueDate.slice(0, 10)
+  const [dueYear, dueMonth] = due.split('-').map(Number)
+  const venceuEmOutraCompetencia =
+    dueYear !== item.referenceMonth.year ||
+    dueMonth !== item.referenceMonth.month
+
+  if (venceuEmOutraCompetencia) {
+    return `Venceu em ${shortDate(due)} · ${verb.toLowerCase()} em ${shortDate(item.paidAt)}`
+  }
+
+  return `${verb} em ${fullDate(item.paidAt)}`
+}
+
+/** `15/09/2026` — sem construir `Date`, para não deslocar o dia por fuso. */
+function fullDate(iso: string): string {
+  const [year, month, day] = iso.slice(0, 10).split('-')
+  return `${day}/${month}/${year}`
+}

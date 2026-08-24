@@ -5,6 +5,7 @@ import {
   dueStateOf,
   openItemsFor,
   summarizeCompetence,
+  resolvedLabel,
 } from './person-settlement-view'
 
 /**
@@ -241,5 +242,75 @@ describe('Cenário do item 75', () => {
     expect(s.debtTotal).toBe(200)
     expect(s.net).toBe(390)
     expect(s.itemCount).toBe(4)
+  })
+})
+
+describe('resolvedLabel — microcopy do Histórico', () => {
+  /**
+   * O histórico é arquivado por `referenceMonth`, não pelo mês de `paidAt`.
+   * Por isso a data real da resolução precisa estar na linha: sem ela, uma
+   * dívida de julho paga em setembro ficaria no mês certo sem dizer quando
+   * foi quitada.
+   */
+  it('mesma competência: diz quando foi pago', () => {
+    const debt = {
+      dueDate: '2026-07-20',
+      paidAt: '2026-07-25',
+      referenceMonth: { year: 2026, month: 7 },
+    }
+    expect(resolvedLabel(debt, 'debt')).toBe('Pago em 25/07/2026')
+  })
+
+  it('recebível usa o verbo próprio', () => {
+    const receivable = {
+      dueDate: '2026-08-10',
+      paidAt: '2026-08-12',
+      referenceMonth: { year: 2026, month: 8 },
+    }
+    expect(resolvedLabel(receivable, 'receivable')).toBe(
+      'Recebido em 12/08/2026',
+    )
+  })
+
+  it('vencimento em outra competência mantém o contexto', () => {
+    /*
+      Recebível automático: compra em agosto (referência), vence 10/09,
+      recebido 15/10. Só "Recebido em 15/10" dentro do histórico de agosto
+      pareceria erro — o vencimento explica a distância.
+    */
+    const automatico = {
+      dueDate: '2026-09-10',
+      paidAt: '2026-10-15',
+      referenceMonth: { year: 2026, month: 8 },
+    }
+    const label = resolvedLabel(automatico, 'receivable')
+
+    expect(label).toContain('Venceu em 10/09')
+    expect(label).toContain('recebido em 15/10')
+  })
+
+  it('sem paidAt (legado), não inventa data', () => {
+    const semData = {
+      dueDate: '2026-07-20',
+      paidAt: null,
+      referenceMonth: { year: 2026, month: 7 },
+    }
+    const label = resolvedLabel(semData, 'debt')
+
+    expect(label).toBe('Venceu em 20/07')
+    expect(label).not.toContain('Pago em')
+  })
+
+  it('não desloca o dia por fuso', () => {
+    /*
+      Data lida da STRING, nunca por `new Date(iso)`: em UTC-3 o dia 1 às
+      00:00Z vira dia 30 do mês anterior.
+    */
+    const primeiroDia = {
+      dueDate: '2026-05-01',
+      paidAt: '2026-05-01',
+      referenceMonth: { year: 2026, month: 5 },
+    }
+    expect(resolvedLabel(primeiroDia, 'debt')).toBe('Pago em 01/05/2026')
   })
 })
