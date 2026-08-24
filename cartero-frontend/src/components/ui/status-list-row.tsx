@@ -20,9 +20,34 @@ const TONE_CLASSES: Record<StatusRowTone, { bg: string; icon: string; amount: st
 }
 
 export interface StatusListRowProps {
-  href: string
+  /**
+   * Destino da navegação.
+   *
+   * Opcional porque a mesma linha também serve para ABRIR um drawer sobre a
+   * própria página — no Orçamento, sair para Bancos ou Pessoas só para ver um
+   * detalhe fazia o usuário perder a competência que estava analisando.
+   * Passe `href` OU `onClick`.
+   */
+  href?: string
+  onClick?: () => void
+  /** Descrição para leitor de tela, quando o título não basta. */
+  ariaLabel?: string
   icon: LucideIcon
+  /** Estado da linha: pinta ícone e — por padrão — o valor. */
   tone: StatusRowTone
+  /**
+   * Sobrescreve a cor do VALOR, sem mexer no ícone.
+   *
+   * Existe porque algumas listas têm dois eixos independentes. Em "Acertos
+   * com pessoas" o ícone comunica urgência (existe algo vencido?) e o valor
+   * comunica direção (a receber ou a pagar) — um saldo negativo dentro do
+   * prazo precisa de valor vermelho com ícone neutro, e `tone` sozinho não
+   * consegue expressar isso.
+   *
+   * Faturas não passa nada e continua com os dois eixos casados, que é o
+   * comportamento correto lá: o status É a única dimensão.
+   */
+  amountTone?: StatusRowTone
   title: string
   badge?: { label: string; className: string }
   subtitle?: React.ReactNode
@@ -34,14 +59,31 @@ export interface StatusListRowProps {
  * seta — o layout compartilhado entre Faturas e Dívidas no Orçamento. Um
  * único lugar garante que os dois nunca voltem a divergir em cor ou espaçamento.
  */
-export function StatusListRow({ href, icon: Icon, tone, title, badge, subtitle, amount }: StatusListRowProps) {
+export function StatusListRow({
+  href,
+  onClick,
+  ariaLabel,
+  icon: Icon,
+  tone,
+  amountTone,
+  title,
+  badge,
+  subtitle,
+  amount,
+}: StatusListRowProps) {
   const toneClasses = TONE_CLASSES[tone]
+  const amountClasses = TONE_CLASSES[amountTone ?? tone]
 
-  return (
-    <Link
-      href={href}
-      className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30"
-    >
+  /*
+    `Link` ou `button` conforme o uso, com as MESMAS classes: a linha precisa
+    ser idêntica nos dois modos, e o `button` mantém Enter/Espaço e foco de
+    graça — reimplementar isso numa `div` clicável perderia acessibilidade.
+  */
+  const classes =
+    'group flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/30'
+
+  const conteudo = (
+    <>
       <div
         className={cn(
           'flex size-8 shrink-0 items-center justify-center rounded-lg',
@@ -75,7 +117,7 @@ export function StatusListRow({ href, icon: Icon, tone, title, badge, subtitle, 
       <span
         className={cn(
           'shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]',
-          toneClasses.amount,
+          amountClasses.amount,
         )}
       >
         {formatCurrency(amount)}
@@ -84,6 +126,20 @@ export function StatusListRow({ href, icon: Icon, tone, title, badge, subtitle, 
         className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary/60"
         aria-hidden
       />
+    </>
+  )
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={classes} aria-label={ariaLabel}>
+        {conteudo}
+      </button>
+    )
+  }
+
+  return (
+    <Link href={href ?? '#'} className={classes} aria-label={ariaLabel}>
+      {conteudo}
     </Link>
   )
 }

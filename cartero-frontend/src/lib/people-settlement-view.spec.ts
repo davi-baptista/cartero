@@ -61,6 +61,7 @@ function person(overrides: {
       net: 0,
       priorNet: 0,
       itemCount: 0,
+      hasOverdue: false,
       automaticReceivable: 0,
       ...overrides.open,
     },
@@ -783,5 +784,121 @@ describe('peopleRowView — anatomia da linha', () => {
     expect(aberto).toContain('a receber')
     expect(quitado).toContain('Quitado')
     expect(quitado).toContain('pagos nesta competência')
+  })
+})
+
+describe('Cores: direção no valor, urgência no ícone', () => {
+  /**
+   * Os dois eixos são independentes. Antes um `tone` só pintava ícone e valor
+   * juntos: saldo positivo ficava branco (perdendo o "a receber") e saldo
+   * negativo deixava o ícone vermelho mesmo sem nada vencido.
+   */
+  it('item 10: net positivo sem atraso → verde, ícone neutro', () => {
+    const eva = person({
+      open: {
+        receivableTotal: 610.9,
+        debtTotal: 330,
+        net: 280.9,
+        itemCount: 2,
+      },
+    })
+    const view = peopleRowView(eva, brl)
+
+    expect(view.direction).toBe('in')
+    expect(view.iconState).toBe('neutral')
+  })
+
+  it('item 12: net negativo sem atraso → vermelho, ícone NEUTRO', () => {
+    /*
+      O caso do Fabrício: −R$ 1,00 com tudo dentro do prazo. O ícone vermelho
+      dizia "urgente" por um saldo que é apenas negativo.
+    */
+    const fabricio = person({
+      open: { receivableTotal: 10, debtTotal: 11, net: -1, itemCount: 2 },
+    })
+    const view = peopleRowView(fabricio, brl)
+
+    expect(view.direction).toBe('out')
+    expect(view.iconState).toBe('neutral')
+  })
+
+  it('item 19.3: net zero com itens → neutro, ainda Em aberto', () => {
+    const view = peopleRowView(
+      person({
+        open: { receivableTotal: 300, debtTotal: 300, net: 0, itemCount: 2 },
+      }),
+      brl,
+    )
+
+    expect(view.direction).toBe('neutral')
+    expect(view.status).toBe('open')
+  })
+
+  it('item 7: net positivo COM atraso → verde e ícone vermelho', () => {
+    /*
+      Cobrança de R$ 500 vencida e dívida de R$ 100 no prazo. As cores não se
+      contradizem: uma diz direção, a outra diz urgência.
+    */
+    const view = peopleRowView(
+      person({
+        open: {
+          receivableTotal: 500,
+          debtTotal: 100,
+          net: 400,
+          itemCount: 2,
+          hasOverdue: true,
+        },
+      }),
+      brl,
+    )
+
+    expect(view.direction).toBe('in')
+    expect(view.iconState).toBe('overdue')
+  })
+
+  it('item 19.5: net negativo com atraso → vermelho nos dois', () => {
+    const view = peopleRowView(
+      person({
+        open: { debtTotal: 300, net: -300, itemCount: 1, hasOverdue: true },
+      }),
+      brl,
+    )
+
+    expect(view.direction).toBe('out')
+    expect(view.iconState).toBe('overdue')
+  })
+
+  it('item 8: quitado tem ícone de concluído e valor NEUTRO', () => {
+    /*
+      O valor de uma dívida quitada não fica verde: aquele dinheiro SAIU do
+      bolso, e verde sugeriria recebimento. O verde do estado vive no ícone.
+    */
+    const view = peopleRowView(
+      person({
+        budget: { paidInMonth: 300, debtTotal: 300 },
+        open: { itemCount: 0 },
+      }),
+      brl,
+    )
+
+    expect(view.iconState).toBe('settled')
+    expect(view.direction).toBe('neutral')
+  })
+
+  it('urgência nunca é derivada do saldo', () => {
+    // Duplo adversarial: mesmo saldo, `hasOverdue` diferente.
+    const semAtraso = peopleRowView(
+      person({ open: { debtTotal: 999, net: -999, itemCount: 1 } }),
+      brl,
+    )
+    const comAtraso = peopleRowView(
+      person({
+        open: { debtTotal: 999, net: -999, itemCount: 1, hasOverdue: true },
+      }),
+      brl,
+    )
+
+    expect(semAtraso.direction).toBe(comAtraso.direction)
+    expect(semAtraso.iconState).not.toBe(comAtraso.iconState)
   })
 })

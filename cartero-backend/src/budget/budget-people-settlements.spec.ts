@@ -51,6 +51,8 @@ interface FixtureItem {
   automatic?: boolean;
   /** Estado ATUAL. Default `false`. */
   isPaid?: boolean;
+  /** Vencimento — decide `hasOverdue`. */
+  dueDate?: Date;
   /**
    * Quando foi quitado. Só governa o universo do ORÇAMENTO.
    *
@@ -172,7 +174,8 @@ function buildService(setup: Setup) {
             isPaid: row.isPaid ?? false,
             paidAt: row.paidAt ?? null,
             title: `Dívida ${index}`,
-            dueDate: new Date(Date.UTC(2026, isCarry ? 6 : 8, 10, 12)),
+            dueDate:
+              row.dueDate ?? new Date(Date.UTC(2026, isCarry ? 6 : 8, 10, 12)),
             personId: row.person?.id ?? null,
             person: row.person ?? null,
           }));
@@ -197,6 +200,8 @@ function buildService(setup: Setup) {
             paidAt: row.paidAt ?? null,
             personId: row.person?.id ?? null,
             person: row.person ?? null,
+            dueDate:
+              row.dueDate ?? new Date(Date.UTC(2026, isPrior ? 6 : 8, 10, 12)),
             transactionId: row.automatic
               ? `tx-${isPrior ? 'p' : 'm'}${index}`
               : null,
@@ -907,5 +912,84 @@ describe('Em aberto: os dois universos não se contaminam', () => {
 
     expect(budget.peopleSettlements[0].personName).toBe('Mariana Souza');
     expect(budget.peopleSettlements[0].open.net).toBe(0);
+  });
+});
+
+describe('hasOverdue — urgência, não direção', () => {
+  /**
+   * O ícone da linha comunica "existe algo vencido nesta relação"; o valor
+   * comunica direção (a receber / a pagar). São eixos independentes: um saldo
+   * negativo dentro do prazo não é atraso, e um saldo positivo com cobrança
+   * vencida é.
+   */
+  /*
+    O relógio global deste arquivo já está fixo em 15/09/2026, então os dias
+    abaixo se posicionam em relação a ele: 10 é passado, 15 é hoje, 20 é
+    futuro.
+  */
+  function comVencimento(dia: number) {
+    return new Date(Date.UTC(2026, 8, dia, 12));
+  }
+
+  it('item aberto já vencido marca a relação', async () => {
+    const budget = await buildService({
+      monthDebts: [
+        { amount: 100, person: MARIANA, dueDate: comVencimento(10) },
+      ],
+    }).getBudget(USER_ID, 9, 2026);
+
+    expect(budget.peopleSettlements[0].open.hasOverdue).toBe(true);
+  });
+
+  it('item dentro do prazo NÃO marca', async () => {
+    const budget = await buildService({
+      monthDebts: [
+        { amount: 100, person: MARIANA, dueDate: comVencimento(20) },
+      ],
+    }).getBudget(USER_ID, 9, 2026);
+
+    expect(budget.peopleSettlements[0].open.hasOverdue).toBe(false);
+  });
+
+  it('item 6: o PRÓPRIO dia do vencimento não é atraso', async () => {
+    // Há o dia inteiro para resolver.
+    const budget = await buildService({
+      monthDebts: [
+        { amount: 100, person: MARIANA, dueDate: comVencimento(15) },
+      ],
+    }).getBudget(USER_ID, 9, 2026);
+
+    expect(budget.peopleSettlements[0].open.hasOverdue).toBe(false);
+  });
+
+  it('item 7: cobrança vencida também marca, não só dívida', async () => {
+    /*
+      A urgência é da RELAÇÃO. Vincular o vermelho só a dívida esconderia uma
+      cobrança atrasada de R$ 500.
+    */
+    const budget = await buildService({
+      monthReceivables: [
+        { amount: 500, person: MARIANA, dueDate: comVencimento(1) },
+      ],
+    }).getBudget(USER_ID, 9, 2026);
+
+    expect(budget.peopleSettlements[0].open.hasOverdue).toBe(true);
+    // E o saldo continua positivo: direção e urgência não se confundem.
+    expect(budget.peopleSettlements[0].open.net).toBe(500);
+  });
+
+  it('sem nada em aberto, não há atraso', async () => {
+    const budget = await buildService({
+      monthDebts: [
+        {
+          amount: 100,
+          person: MARIANA,
+          isPaid: true,
+          paidAt: new Date(Date.UTC(2026, 8, 5, 12)),
+        },
+      ],
+    }).getBudget(USER_ID, 9, 2026);
+
+    expect(budget.peopleSettlements[0].open.hasOverdue).toBe(false);
   });
 });

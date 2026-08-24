@@ -138,6 +138,13 @@ export interface BudgetSummary {
        * itens em aberto. É esta contagem que autoriza dizer "Nada em aberto".
        */
       itemCount: number
+      /**
+       * Existe item VENCIDO em aberto, de qualquer lado.
+       *
+       * Urgência, não direção: um saldo negativo dentro do prazo não é
+       * atraso, e um saldo positivo com cobrança vencida é.
+       */
+      hasOverdue: boolean
       automaticReceivable: number
     }
   }>

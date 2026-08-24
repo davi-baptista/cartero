@@ -390,6 +390,14 @@ export interface PeopleRowView {
   amount: number
   /** Direção do valor, para a cor. `neutral` quando não há sinal a dar. */
   direction: 'in' | 'out' | 'neutral'
+  /**
+   * Estado do ÍCONE — urgência, não direção.
+   *
+   * Os dois eixos são independentes e as cores não se contradizem: o valor
+   * diz para onde o dinheiro vai, o ícone diz se algo já passou do prazo.
+   * Fabrício com −R$ 1,00 dentro do prazo tem valor vermelho e ícone neutro.
+   */
+  iconState: 'neutral' | 'overdue' | 'settled'
   /** Linha secundária — só quando acrescenta informação. */
   metadata: string[]
 }
@@ -450,6 +458,12 @@ export function peopleRowView(
           : person.open.net < -EPSILON
             ? 'out'
             : 'neutral',
+      /*
+        Vermelho SÓ por atraso. Derivar do saldo pintaria de urgente toda
+        relação em que se deve mais do que se tem a receber, mesmo com tudo
+        dentro do prazo.
+      */
+      iconState: person.open.hasOverdue ? 'overdue' : 'neutral',
       metadata,
     }
   }
@@ -461,7 +475,13 @@ export function peopleRowView(
   return {
     status: 'settled',
     amount: person.budget.debtTotal,
+    /*
+      Valor NEUTRO, não verde: o dinheiro de uma dívida quitada saiu do bolso.
+      Pintá-lo de verde sugeriria recebimento. O verde do estado concluído
+      fica no ícone e na badge, onde significa "resolvido".
+    */
     direction: 'neutral',
+    iconState: 'settled',
     metadata,
   }
 }

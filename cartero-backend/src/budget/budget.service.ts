@@ -13,6 +13,30 @@ const DIRECT_PAYMENT_TYPES: TransactionType[] = [
   TransactionType.BOLETO,
 ];
 
+/**
+ * O item em aberto já está VENCIDO hoje?
+ *
+ * Dia civil de Fortaleza (UTC-3): no PRÓPRIO dia do vencimento o item ainda
+ * não está atrasado — há o dia inteiro para resolvê-lo. O servidor roda em
+ * UTC, e comparar instantes marcaria como vencido algo que ainda está no
+ * prazo durante a noite.
+ */
+function isOverdueToday(
+  dueDate: Date | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  /*
+    Sem vencimento não há atraso a afirmar. A coluna é obrigatória no schema,
+    mas tratar a ausência como "vencido" pintaria a linha de vermelho por um
+    dado faltante — o oposto de informar.
+  */
+  if (!dueDate) return false;
+
+  const civil = (date: Date) =>
+    new Date(date.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return civil(dueDate) < civil(now);
+}
+
 /** Campos que as consultas de pendência anterior precisam. */
 const PRIOR_DEBT_SELECT = {
   amount: true,
@@ -251,6 +275,8 @@ export class BudgetService {
           personId: true,
           person: { select: { id: true, name: true } },
           transactionId: true,
+          /* Para derivar `hasOverdue` na mesma passagem, sem consulta extra. */
+          dueDate: true,
         },
       }),
       this.prisma.debt.findMany({
@@ -264,6 +290,7 @@ export class BudgetService {
           amount: true,
           personId: true,
           person: { select: { id: true, name: true } },
+          dueDate: true,
         },
       }),
 
@@ -286,6 +313,8 @@ export class BudgetService {
           personId: true,
           person: { select: { id: true, name: true } },
           transactionId: true,
+          /* Para derivar `hasOverdue` na mesma passagem, sem consulta extra. */
+          dueDate: true,
         },
       }),
       this.prisma.debt.findMany({
@@ -299,6 +328,7 @@ export class BudgetService {
           amount: true,
           personId: true,
           person: { select: { id: true, name: true } },
+          dueDate: true,
         },
       }),
     ]);
@@ -484,6 +514,13 @@ export class BudgetService {
       openPriorReceivable: number;
       openPriorDebt: number;
       openItemCount: number;
+      /**
+       * Existe algo VENCIDO em aberto nesta relação?
+       *
+       * Urgência, não direção: um saldo negativo dentro do prazo não é
+       * atraso, e um saldo positivo com cobrança vencida é.
+       */
+      openHasOverdue: boolean;
       /** Parcela do que está EM ABERTO originada de compra no cartão. */
       openAutomaticReceivable: number;
     }
@@ -509,6 +546,7 @@ export class BudgetService {
         openPriorReceivable: 0,
         openPriorDebt: 0,
         openItemCount: 0,
+        openHasOverdue: false,
         openAutomaticReceivable: 0,
       };
       settlementByPerson.set(personId, fresh);
@@ -588,6 +626,7 @@ export class BudgetService {
       const amount = Number(receivable.amount);
       entry.openReceivableInMonth += amount;
       entry.openItemCount += 1;
+      if (isOverdueToday(receivable.dueDate)) entry.openHasOverdue = true;
       if (receivable.transactionId) entry.openAutomaticReceivable += amount;
     }
 
@@ -599,6 +638,7 @@ export class BudgetService {
       );
       entry.openDebtInMonth += Number(debt.amount);
       entry.openItemCount += 1;
+      if (isOverdueToday(debt.dueDate)) entry.openHasOverdue = true;
     }
 
     for (const receivable of openPriorReceivables) {
@@ -610,6 +650,7 @@ export class BudgetService {
       const amount = Number(receivable.amount);
       entry.openPriorReceivable += amount;
       entry.openItemCount += 1;
+      if (isOverdueToday(receivable.dueDate)) entry.openHasOverdue = true;
       if (receivable.transactionId) entry.openAutomaticReceivable += amount;
     }
 
@@ -621,6 +662,7 @@ export class BudgetService {
       );
       entry.openPriorDebt += Number(debt.amount);
       entry.openItemCount += 1;
+      if (isOverdueToday(debt.dueDate)) entry.openHasOverdue = true;
     }
 
     /*
@@ -702,6 +744,8 @@ export class BudgetService {
             /** `priorReceivable - priorDebt`. Zero = nada trazido. */
             priorNet: entry.openPriorReceivable - entry.openPriorDebt,
             itemCount: entry.openItemCount,
+            /** Urgência: existe item vencido, de qualquer lado. */
+            hasOverdue: entry.openHasOverdue,
             automaticReceivable: entry.openAutomaticReceivable,
           },
         };

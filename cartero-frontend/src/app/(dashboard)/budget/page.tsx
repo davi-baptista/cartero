@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CreditCard, PiggyBank, ArrowRight, Wallet, HandCoins, User } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -16,6 +17,8 @@ import { Button } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
 import { toast } from 'sonner'
 import { bankDisplayName } from '@/lib/bank-display'
+import { PersonStatementDrawer } from '@/components/person-statement-drawer'
+import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
 import {
   summarizePeopleSettlements,
   summaryAriaLabel,
@@ -151,6 +154,59 @@ export default function BudgetPage() {
   const qc = useQueryClient()
   const [salaryDialogOpen, setSalaryDialogOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+
+  /*
+    ── Drawers locais ──
+
+    Antes o clique NAVEGAVA para Bancos ou Pessoas. Funcionava, mas ao fechar
+    o usuário caía na outra página e precisava voltar manualmente para a
+    competência que estava analisando.
+
+    Agora o mesmo drawer abre SOBRE o Orçamento. O estado vive na URL para o
+    Back do navegador fechá-lo e para o link ser compartilhável — o padrão
+    `?personId=` já é o usado na página de Pessoas.
+
+    Um drawer de detalhe por vez: abrir um limpa o outro.
+  */
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
+
+  const openPersonId = searchParams.get('personId')
+  const openInvoiceId = searchParams.get('invoiceId')
+
+  const setDrawerParam = (key: 'personId' | 'invoiceId', value: string | null) => {
+    const next = new URLSearchParams(searchParams.toString())
+    // Exclusivos entre si: nunca dois drawers de domínio empilhados.
+    next.delete('personId')
+    next.delete('invoiceId')
+    if (value) next.set(key, value)
+    /*
+      `scroll: false` preserva a posição da página: abrir e fechar o drawer
+      não pode jogar o usuário de volta ao topo do Orçamento.
+    */
+    router.push(`${pathname}?${next.toString()}`, { scroll: false })
+  }
+
+  const closeDrawers = () => setDrawerParam('personId', null)
+
+  const openPerson = useMemo(
+    () =>
+      openPersonId
+        ? (budget?.peopleSettlements.find((p) => p.personId === openPersonId) ??
+          null)
+        : null,
+    [openPersonId, budget],
+  )
+
+  const openInvoice = useMemo(
+    () =>
+      openInvoiceId
+        ? (budget?.invoices.find((inv) => inv.id === openInvoiceId) ?? null)
+        : null,
+    [openInvoiceId, budget],
+  )
+
 
   /**
    * Salva a renda a partir do mês selecionado.
@@ -680,7 +736,8 @@ export default function BudgetPage() {
               return (
                 <StatusListRow
                   key={inv.id}
-                  href={`/banks/${inv.bankId}/invoices?invoiceId=${inv.id}`}
+                  onClick={() => setDrawerParam('invoiceId', inv.id)}
+                  ariaLabel={`Abrir detalhes da fatura do ${bankDisplayName(inv.bank)} de ${formatMonthYear(inv.month, inv.year)}`}
                   icon={CreditCard}
                   tone={tone}
                   title={bankDisplayName(inv.bank, 'Banco')}
@@ -795,10 +852,25 @@ export default function BudgetPage() {
               return (
                 <StatusListRow
                   key={person.personId}
-                  href={`/persons?personId=${person.personId}&period=${monthKey}`}
+                  onClick={() => setDrawerParam('personId', person.personId)}
+                  ariaLabel={`Abrir acertos com ${person.personName} em ${formatMonthYear(month, year)}`}
                   icon={User}
+                  /*
+                    Dois eixos separados: o ÍCONE comunica urgência (algo
+                    vencido?) e o VALOR comunica direção (a receber / a
+                    pagar). Antes um `tone` só pintava os dois, então um saldo
+                    negativo dentro do prazo deixava o ícone vermelho e um
+                    saldo positivo ficava branco.
+                  */
                   tone={
-                    quitado
+                    view.iconState === 'settled'
+                      ? 'positive'
+                      : view.iconState === 'overdue'
+                        ? 'negative'
+                        : 'neutral'
+                  }
+                  amountTone={
+                    view.direction === 'in'
                       ? 'positive'
                       : view.direction === 'out'
                         ? 'negative'
@@ -953,6 +1025,44 @@ export default function BudgetPage() {
           </div>
         </div>
       )}
+
+      {/*
+        Os MESMOS drawers de Pessoas e Bancos, abertos sobre o Orçamento.
+        Não existe versão reduzida: uma implementação de cada, e as páginas
+        originais continuam consumindo os mesmos componentes.
+      */}
+      <PersonStatementDrawer
+        person={
+          openPerson
+            ? {
+                id: openPerson.personId,
+                name: openPerson.personName,
+                /*
+                  O agregado do Orçamento não traz telefone; o drawer trata
+                  ausência devolvendo `null` em `normalizeWhatsAppPhone`, e o
+                  botão de WhatsApp já lida com isso.
+                */
+                phone: null,
+              }
+            : null
+        }
+        open={openPerson !== null}
+        onClose={closeDrawers}
+        /*
+          A competência do Orçamento tem prioridade sobre o `defaultCompetence`
+          do drawer: abrir Eva olhando setembro precisa mostrar setembro.
+          Depois disso o drawer controla o próprio mês, sem snap-back — e sem
+          alterar o mês global atrás.
+        */
+        initialPeriod={{ month, year }}
+      />
+
+      <InvoiceDetailsDrawer
+        invoiceId={openInvoiceId}
+        bankId={openInvoice?.bankId ?? ''}
+        open={openInvoice !== null}
+        onOpenChange={(next) => !next && closeDrawers()}
+      />
 
       <SalaryHistorySheet open={historyOpen} onOpenChange={setHistoryOpen} />
 
