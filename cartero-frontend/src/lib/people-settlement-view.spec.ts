@@ -6,6 +6,11 @@ import {
   openDirection,
   openPriorLabel,
   settlementAriaLabel,
+  summarizePeopleSettlements,
+  summaryAriaLabel,
+  summaryBalanceLabel,
+  summaryCompositionParts,
+  summaryDirection,
 } from './people-settlement-view'
 import type { BudgetSummary } from '@/services/budget.service'
 
@@ -344,5 +349,187 @@ describe('coerência entre os universos', () => {
     expect(openBalanceLabel(so_orcamento, brl)).toBe('Nada em aberto')
     expect(openCompositionParts(so_orcamento)).toEqual([])
     expect(openPriorLabel(so_orcamento, brl)).toBeNull()
+  })
+})
+
+describe('summarizePeopleSettlements — o cabeçalho da seção', () => {
+  /**
+   * A propriedade central: o cabeçalho tem de FECHAR com as linhas exibidas.
+   * Qualquer outro agregado (como `receivables.dueInMonth`, que inclui
+   * cobrança sem pessoa) divergiria da lista logo abaixo.
+   */
+  it('item 48: o cenário real Eva + Jeoge + Fabrício', () => {
+    const eva = person({
+      name: 'Eva',
+      open: {
+        receivableTotal: 780.28,
+        debtTotal: 330,
+        net: 450.28,
+        itemCount: 2,
+      },
+    })
+    const jeoge = person({
+      name: 'Jeoge',
+      open: { receivableTotal: 219.66, net: 219.66, itemCount: 1 },
+    })
+    const fabricio = person({
+      name: 'Fabrício',
+      open: { receivableTotal: 10, debtTotal: 11, net: -1, itemCount: 2 },
+    })
+
+    const summary = summarizePeopleSettlements([eva, jeoge, fabricio])
+
+    expect(summary.receivableTotal).toBeCloseTo(1009.94, 2)
+    expect(summary.debtTotal).toBeCloseTo(341, 2)
+    expect(summary.net).toBeCloseTo(668.94, 2)
+    expect(summaryBalanceLabel(summary, brl)).toContain('a receber')
+  })
+
+  it('item 25: reconcilia exatamente com a soma das linhas', () => {
+    const people = [
+      person({ open: { receivableTotal: 780.28, debtTotal: 330, itemCount: 2 } }),
+      person({ open: { receivableTotal: 219.66, itemCount: 1 } }),
+      person({ open: { receivableTotal: 10, debtTotal: 11, itemCount: 2 } }),
+    ]
+    const summary = summarizePeopleSettlements(people)
+
+    const somaLinhas = people.reduce(
+      (acc, p) => ({
+        receber: acc.receber + p.open.receivableTotal,
+        pagar: acc.pagar + p.open.debtTotal,
+      }),
+      { receber: 0, pagar: 0 },
+    )
+
+    expect(summary.receivableTotal).toBe(somaLinhas.receber)
+    expect(summary.debtTotal).toBe(somaLinhas.pagar)
+  })
+
+  it('item 49: contexto histórico do orçamento NÃO entra', () => {
+    /*
+      Dívida de 330 já quitada: continua compondo `totalToPay` e mantém a
+      pessoa na lista, mas não é pendência. Somá-la ao "a pagar" do cabeçalho
+      afirmaria uma obrigação viva que não existe.
+    */
+    const quitada = person({
+      budget: { debtDueInMonth: 330, debtTotal: 330 },
+      open: { itemCount: 0 },
+    })
+
+    const summary = summarizePeopleSettlements([quitada])
+
+    expect(summary.debtTotal).toBe(0)
+    expect(summary.debtTotal).not.toBe(330)
+    expect(summary.isEmpty).toBe(true)
+  })
+
+  it('item 50: prior não é contado duas vezes', () => {
+    /*
+      `receivableTotal` JÁ é `receivableInMonth + priorReceivable`. Somar os
+      componentes de novo daria 600 onde existem 300.
+    */
+    const comPrior = person({
+      open: {
+        receivableInMonth: 200,
+        priorReceivable: 100,
+        receivableTotal: 300,
+        net: 300,
+        itemCount: 2,
+      },
+    })
+
+    const summary = summarizePeopleSettlements([comPrior])
+
+    expect(summary.receivableTotal).toBe(300)
+    expect(summary.receivableTotal).not.toBe(600)
+  })
+
+  it('item 52: saldo zero COM itens não é "Nada em aberto"', () => {
+    const compensado = person({
+      open: { receivableTotal: 500, debtTotal: 500, net: 0, itemCount: 2 },
+    })
+
+    const summary = summarizePeopleSettlements([compensado])
+
+    expect(summary.isEmpty).toBe(false)
+    expect(summaryBalanceLabel(summary, brl)).toBe('Saldo zerado')
+    expect(summaryBalanceLabel(summary, brl)).not.toContain('Nada')
+    // Os dois lados continuam visíveis no cabeçalho.
+    expect(summaryCompositionParts(summary)).toHaveLength(2)
+  })
+
+  it('item 53: nada em aberto, mas pessoa presente por contexto', () => {
+    const soHistorico = person({
+      budget: { debtDueInMonth: 200, debtTotal: 200 },
+      open: { itemCount: 0 },
+    })
+
+    const summary = summarizePeopleSettlements([soHistorico])
+
+    expect(summaryBalanceLabel(summary, brl)).toBe('Nada em aberto')
+    // Sem "R$ 0 a receber · R$ 0 a pagar".
+    expect(summaryCompositionParts(summary)).toEqual([])
+  })
+
+  it('item 29: só a receber não exibe "R$ 0 a pagar"', () => {
+    const summary = summarizePeopleSettlements([
+      person({ open: { receivableTotal: 300, net: 300, itemCount: 1 } }),
+    ])
+
+    const parts = summaryCompositionParts(summary)
+    expect(parts).toHaveLength(1)
+    expect(parts[0].side).toBe('receivable')
+    expect(summaryDirection(summary)).toBe('receive')
+  })
+
+  it('item 30: só a pagar', () => {
+    const summary = summarizePeopleSettlements([
+      person({ open: { debtTotal: 300, net: -300, itemCount: 1 } }),
+    ])
+
+    const parts = summaryCompositionParts(summary)
+    expect(parts).toHaveLength(1)
+    expect(parts[0].side).toBe('debt')
+    expect(summaryBalanceLabel(summary, brl)).toContain('a pagar')
+    expect(summaryDirection(summary)).toBe('pay')
+  })
+
+  it('lista vazia é um resumo vazio', () => {
+    const summary = summarizePeopleSettlements([])
+    expect(summary).toMatchObject({ receivableTotal: 0, debtTotal: 0, net: 0 })
+    expect(summary.isEmpty).toBe(true)
+  })
+})
+
+describe('summaryAriaLabel', () => {
+  it('item 43: cada número sai com a sua direção', () => {
+    const summary = summarizePeopleSettlements([
+      person({
+        open: {
+          receivableTotal: 1009.94,
+          debtTotal: 341,
+          net: 668.94,
+          itemCount: 3,
+        },
+      }),
+    ])
+
+    const label = summaryAriaLabel(summary, brl)
+
+    expect(label).toContain('Acertos com pessoas')
+    expect(label).toContain('a receber')
+    expect(label).toContain('a pagar')
+    expect(label).toContain('Saldo em aberto')
+    // Nenhum valor solto, sem direção monetária.
+    expect(label).not.toMatch(/R\$ [\d.,]+\.\s*$/)
+  })
+
+  it('nada em aberto tem rótulo próprio', () => {
+    const summary = summarizePeopleSettlements([
+      person({ budget: { debtTotal: 200 }, open: { itemCount: 0 } }),
+    ])
+    expect(summaryAriaLabel(summary, brl)).toBe(
+      'Acertos com pessoas. Nada em aberto.',
+    )
   })
 })

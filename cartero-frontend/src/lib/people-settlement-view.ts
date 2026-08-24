@@ -183,3 +183,129 @@ export function settlementAriaLabel(
 
   return parts.join(', ')
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Resumo da seção "Acertos com pessoas"
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * O cabeçalho precisa FECHAR com as linhas exibidas logo abaixo. Por isso ele
+ * agrega `peopleSettlements[].open` — o mesmo universo que alimenta cada
+ * linha — e nunca `receivables.dueInMonth`, que tem outro recorte (inclui
+ * cobrança sem pessoa) e divergiria da lista.
+ *
+ * Três cuidados que a agregação respeita:
+ *
+ *   · soma `receivableTotal`/`debtTotal`, que JÁ incluem mês + anteriores em
+ *     aberto. Somar `priorReceivable`/`priorDebt` de novo contaria em dobro;
+ *   · ignora `budget.*` por completo: uma dívida já quitada continua compondo
+ *     `totalToPay` e mantém a pessoa na lista, mas não é pendência;
+ *   · `itemCount` decide "Nada em aberto", não o saldo — R$ 500 de cada lado
+ *     dá net zero com obrigações vivas dos dois lados.
+ *
+ * Nada aqui altera `totalToPay`: é consolidado informativo (Fase 9B).
+ */
+export interface PeopleSettlementSummary {
+  receivableTotal: number
+  debtTotal: number
+  /** `receivableTotal - debtTotal`. Informativo, sem compensação. */
+  net: number
+  /** Itens abertos somados. Zero = nada em aberto. */
+  itemCount: number
+  /** `true` quando não há nenhuma pendência viva. */
+  isEmpty: boolean
+}
+
+export function summarizePeopleSettlements(
+  people: readonly PersonSettlement[],
+): PeopleSettlementSummary {
+  let receivableTotal = 0
+  let debtTotal = 0
+  let itemCount = 0
+
+  for (const person of people) {
+    receivableTotal += person.open.receivableTotal
+    debtTotal += person.open.debtTotal
+    itemCount += person.open.itemCount
+  }
+
+  return {
+    receivableTotal,
+    debtTotal,
+    net: receivableTotal - debtTotal,
+    itemCount,
+    isEmpty: itemCount === 0,
+  }
+}
+
+/**
+ * Composição do cabeçalho — só os lados que existem.
+ *
+ * Com apenas cobranças abertas, "R$ 0,00 a pagar" seria ruído: a ausência já
+ * é dita pela omissão.
+ */
+export function summaryCompositionParts(
+  summary: PeopleSettlementSummary,
+): Array<{ side: 'receivable' | 'debt'; amount: number }> {
+  const parts: Array<{ side: 'receivable' | 'debt'; amount: number }> = []
+  if (summary.receivableTotal > EPSILON) {
+    parts.push({ side: 'receivable', amount: summary.receivableTotal })
+  }
+  if (summary.debtTotal > EPSILON) {
+    parts.push({ side: 'debt', amount: summary.debtTotal })
+  }
+  return parts
+}
+
+/**
+ * O saldo da seção, à direita do cabeçalho.
+ *
+ * Reusa a mesma distinção das linhas: saldo zero COM itens é "Saldo zerado",
+ * não "Nada em aberto" — a segunda frase afirmaria quitação que não houve.
+ */
+export function summaryBalanceLabel(
+  summary: PeopleSettlementSummary,
+  formatCurrency: (value: number) => string,
+): string {
+  if (summary.isEmpty) return 'Nada em aberto'
+  if (summary.net > EPSILON) return `${formatCurrency(summary.net)} a receber`
+  if (summary.net < -EPSILON) {
+    return `${formatCurrency(Math.abs(summary.net))} a pagar`
+  }
+  return 'Saldo zerado'
+}
+
+/** Direção do saldo da seção, para a cor. */
+export function summaryDirection(
+  summary: PeopleSettlementSummary,
+): OpenDirection {
+  if (summary.isEmpty) return 'settled'
+  if (summary.net > EPSILON) return 'receive'
+  if (summary.net < -EPSILON) return 'pay'
+  return 'offset'
+}
+
+/**
+ * Rótulo acessível do cabeçalho.
+ *
+ * Cada número sai acompanhado da direção: quem usa leitor de tela não pode
+ * depender da cor nem da ordem para saber o que é receber e o que é pagar.
+ */
+export function summaryAriaLabel(
+  summary: PeopleSettlementSummary,
+  formatCurrency: (value: number) => string,
+): string {
+  if (summary.isEmpty) return 'Acertos com pessoas. Nada em aberto.'
+
+  const parts = summaryCompositionParts(summary).map(
+    (part) =>
+      `${formatCurrency(part.amount)} ${
+        part.side === 'receivable' ? 'a receber' : 'a pagar'
+      }`,
+  )
+
+  return `Acertos com pessoas. ${parts.join('. ')}. Saldo em aberto de ${summaryBalanceLabel(
+    summary,
+    formatCurrency,
+  )}.`
+}

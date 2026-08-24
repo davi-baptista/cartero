@@ -23,6 +23,11 @@ import {
   openDirection,
   openPriorLabel,
   settlementAriaLabel,
+  summarizePeopleSettlements,
+  summaryAriaLabel,
+  summaryBalanceLabel,
+  summaryCompositionParts,
+  summaryDirection,
 } from '@/lib/people-settlement-view'
 import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
@@ -167,7 +172,6 @@ export default function BudgetPage() {
   */
   const salary = budget?.salary ?? null
   const salaryKnown = budget?.salaryKnown ?? false
-  const salaryEffectiveFrom = budget?.salaryEffectiveFrom ?? null
 
   const summary = useMemo(
     () => ({
@@ -202,8 +206,6 @@ export default function BudgetPage() {
     inclui as dívidas de pessoas, agora mostradas em "Acertos com pessoas")
     servem: o título tem de fechar com as linhas logo abaixo dele.
   */
-  const receivableInMonth = budget?.receivables.dueInMonth ?? 0
-
   /*
     Acertos com pessoas — camada informativa.
 
@@ -212,6 +214,25 @@ export default function BudgetPage() {
     obrigação. Ela continua no `totalToPay`; só a representação muda.
   */
   const peopleSettlements = budget?.peopleSettlements ?? []
+
+  /*
+    Resumo da seção, agregado sobre as MESMAS pessoas renderizadas abaixo.
+
+    Não usa `receivables.dueInMonth`: aquele total tem outro recorte (inclui
+    cobrança sem pessoa) e o cabeçalho passaria a divergir da lista. A soma é
+    de `open.receivableTotal`/`open.debtTotal`, que já contêm mês + anteriores
+    em aberto — somar `prior*` de novo contaria em dobro.
+  */
+  /*
+    Sem `useMemo`: `peopleSettlements` é um array novo a cada render (vem de
+    `budget?.x ?? []`), então a memo nunca acertaria — só adicionaria uma
+    dependência instável. Somar meia dúzia de números é mais barato que isso.
+  */
+  const peopleSummary = summarizePeopleSettlements(peopleSettlements)
+  const peopleSummaryParts = summaryCompositionParts(peopleSummary)
+  const peopleSummaryBalance = summaryBalanceLabel(peopleSummary, formatCurrency)
+  const peopleSummaryDirection = summaryDirection(peopleSummary)
+  const peopleSummaryAria = summaryAriaLabel(peopleSummary, formatCurrency)
 
   /** Dívidas do mês SEM pessoa — as vinculadas vivem nos acertos. */
   const standaloneDebtRows = debtBreakdown.filter(
@@ -238,15 +259,23 @@ export default function BudgetPage() {
   const pct = budget?.committedPct ?? null
 
   /*
-    A entrada aplicável é de um mês anterior: vale dizer de quando, senão o
-    usuário não entende por que a renda exibida não é a que ele configurou por
-    último.
+    Rótulo acessível da barra de renda.
+
+    A barra sozinha comunica por posição, e `aria-valuenow` é travado em 100%
+    para não emitir valor inválido — então quem usa leitor de tela perderia
+    tanto o estouro quanto o dinheiro livre. O texto carrega os três fatos:
+    percentual REAL, renda total e quanto sobra (ou quanto excedeu).
   */
-  const inheritedFrom =
-    salaryEffectiveFrom &&
-    (salaryEffectiveFrom.year !== year || salaryEffectiveFrom.month !== month)
-      ? formatMonthYear(salaryEffectiveFrom.month, salaryEffectiveFrom.year)
-      : null
+  const salaryProgressLabel = useMemo(() => {
+    if (salary == null || pct == null) return 'Percentual da renda comprometido'
+
+    const consumo = `${pct.toFixed(0)}% da renda de ${formatCurrency(salary)} comprometido`
+    if (balance == null) return consumo
+
+    return balance < 0
+      ? `${consumo}, ${formatCurrency(Math.abs(balance))} acima da renda`
+      : `${consumo}, ${formatCurrency(balance)} livres`
+  }, [salary, pct, balance])
 
   return (
     <div className="flex flex-col gap-6">
@@ -254,7 +283,7 @@ export default function BudgetPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Orçamento</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Quanto sai do seu bolso neste mês
+          Planeje o que precisa sair do seu bolso neste mês
         </p>
       </div>
 
@@ -281,18 +310,44 @@ export default function BudgetPage() {
           <>
             {/* Hero: total a pagar no mês */}
             <div>
-              <p className="text-[38px] font-semibold tabular-nums tracking-[-0.025em] leading-none">
+              {/*
+                Label da MÉTRICA, não da página. O subtítulo acima descreve o
+                que a tela faz; esta linha nomeia o número logo abaixo.
+              */}
+              <p className="text-sm text-muted-foreground">
+                Total a pagar no mês
+              </p>
+              {/*
+                Neutro de propósito — nunca `text-destructive`. O número não é
+                erro nem atraso: é o custo normal da competência.
+              */}
+              <p className="mt-1 text-[38px] font-semibold tabular-nums tracking-[-0.025em] leading-none">
                 {formatCurrency(summary.totalToPay)}
               </p>
-              {summary.totalToPay === 0 && (
+              {summary.totalToPay === 0 ? (
                 <p className="mt-2 text-sm text-muted-foreground">nada a pagar neste mês</p>
+              ) : (
+                /*
+                  Diz o que COMPÕE o número, e só isso.
+
+                  A frase "valores a receber não reduzem este total" saiu daqui:
+                  explicar uma ausência ao lado da métrica principal misturava
+                  duas seções e deixava a leitura ambígua. A independência entre
+                  os dois universos é assunto de "Acertos com pessoas", onde os
+                  valores a receber de fato aparecem.
+                */
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Inclui sua parte das faturas, pagamentos e dívidas.
+                </p>
               )}
               {/*
                 O total já INCLUI as pendências anteriores. Dizer isso aqui
                 evita a leitura de que o mês piorou sozinho.
               */}
               {priorCarry > 0 && (
-                <p className="mt-2 text-xs text-muted-foreground">
+                /* `mt-0.5` agrupa com a linha acima: as duas descrevem a mesma
+                   composição, não dois avisos independentes. */
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   Inclui {formatCurrency(priorCarry)} de pendências anteriores
                 </p>
               )}
@@ -308,143 +363,148 @@ export default function BudgetPage() {
             )}
 
             {/*
-              A Receber no mês — informação, nunca dedução.
+              ── Renda do mês ──
 
-              Sem saldo líquido de propósito: um "saldo entre vocês" aqui
-              reintroduziria a ambiguidade que a compensação criava, sugerindo
-              que o valor a pagar é menor do que é. O que a pessoa te deve
-              aparece no extrato dela, lado a lado com o que você deve.
+              Um bloco visual só, no lugar de três variações de frase. A barra
+              e o salário à direita já explicam a relação, então "Sobra
+              estimada de X sobre Y" virou redundância textual.
+
+              "renda válida desde <mês>" saiu daqui: o dado continua correto e
+              continua no fluxo de Histórico salarial, mas competia por
+              atenção no topo sem mudar nenhuma decisão.
             */}
-            {receivableInMonth > 0 && (
-              <p className="text-xs text-muted-foreground">
-                <span className="font-medium text-receivable">
-                  {formatCurrency(receivableInMonth)}
-                </span>{' '}
-                a receber neste mês — não abate o valor acima
-              </p>
-            )}
-
-            {/*
-              Renda desconhecida para o período.
-
-              A migration não inventou histórico: só sabemos o valor a partir
-              do mês de adoção. Exibir "R$ 0,00" aqui afirmaria que a pessoa
-              não tinha renda, o que é diferente de não sabermos.
-            */}
-            {!salaryKnown && (
-              <div className="border-t border-border/60 pt-4">
-                <p className="text-sm text-muted-foreground">
-                  Renda não registrada para {formatMonthYear(month, year)}.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-2.5 gap-1.5"
-                  onClick={() => setSalaryDialogOpen(true)}
-                >
-                  <Wallet className="size-3.5" aria-hidden />
-                  Definir renda
-                </Button>
-              </div>
-            )}
-
-            {/* Renda conhecida e igual a zero: a sobra existe, o percentual não. */}
-            {salaryKnown && salary === 0 && (
-              <div className="border-t border-border/60 pt-4">
-                <p className="text-sm text-muted-foreground">
-                  Renda registrada de{' '}
-                  <span className="font-semibold tabular-nums">
-                    {formatCurrency(0)}
-                  </span>{' '}
-                  para este período.
-                </p>
+            <div className="border-t border-border/60 pt-4">
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="text-sm text-muted-foreground">Renda do mês</p>
+                {/*
+                  Ação terciária: corrigir uma competência cadastrada errada é
+                  raro, e não deve ter o peso de uma seção. Fica aqui porque
+                  vale nos três estados de renda — inclusive desconhecida,
+                  já que pode haver entrada em outro mês.
+                */}
                 <button
                   type="button"
-                  onClick={() => setSalaryDialogOpen(true)}
-                  className="mt-1.5 text-xs text-primary underline-offset-2 hover:underline"
+                  onClick={() => setHistoryOpen(true)}
+                  className="shrink-0 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                 >
-                  Alterar renda
+                  Histórico salarial
                 </button>
               </div>
-            )}
 
-            {/* Salário — complemento opcional */}
-            {salaryKnown && salary != null && salary > 0 && (
-              <div className="border-t border-border/60 pt-4">
-                <p className="text-sm text-muted-foreground">
-                  Sobra estimada de{' '}
-                  <span
-                    className={cn(
-                      'font-semibold tabular-nums',
-                      balance! < 0 ? 'text-destructive' : 'text-receivable',
-                    )}
+              {/*
+                Renda desconhecida: a migration não inventou histórico, e
+                exibir "R$ 0,00" afirmaria que a pessoa não tinha renda — o
+                que é diferente de não sabermos.
+              */}
+              {!salaryKnown && (
+                <div className="mt-2">
+                  <p className="text-sm text-muted-foreground">
+                    Renda não registrada para {formatMonthYear(month, year)}.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2.5 gap-1.5"
+                    onClick={() => setSalaryDialogOpen(true)}
                   >
-                    {formatCurrency(balance!)}
-                  </span>{' '}
-                  sobre {formatCurrency(salary)}
-                  {inheritedFrom && (
-                    <span className="text-muted-foreground/70">
-                      {' '}
-                      · renda válida desde {inheritedFrom}
-                    </span>
-                  )}
-                </p>
+                    <Wallet className="size-3.5" aria-hidden />
+                    Definir renda
+                  </Button>
+                </div>
+              )}
 
-                {pct != null && summary.totalToPay > 0 && (
-                  <div className="mt-2">
+              {/* Renda zero: a sobra existe, o percentual não. */}
+              {salaryKnown && salary === 0 && (
+                <div className="mt-2">
+                  <p className="text-sm text-muted-foreground">
+                    Renda registrada de{' '}
+                    <span className="font-semibold tabular-nums">
+                      {formatCurrency(0)}
+                    </span>{' '}
+                    para este período.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setSalaryDialogOpen(true)}
+                    className="mt-1.5 text-xs text-primary underline-offset-2 hover:underline"
+                  >
+                    Alterar renda
+                  </button>
+                </div>
+              )}
+
+              {salaryKnown && salary != null && salary > 0 && (
+                <div className="mt-2">
+                  {/*
+                    A barra representa UTILIZAÇÃO, não algo positivo — por isso
+                    a cor primária, e não verde. O âmbar e o vermelho entram só
+                    quando o comprometimento aperta ou estoura.
+                  */}
+                  <div className="flex items-center gap-3">
                     <div
                       role="progressbar"
-                      aria-valuenow={Math.min(Math.round(pct), 100)}
+                      aria-valuenow={Math.min(Math.round(pct ?? 0), 100)}
                       aria-valuemin={0}
                       aria-valuemax={100}
-                      aria-label="Percentual do salário comprometido"
-                      className="relative h-1.5 overflow-hidden rounded-full bg-muted/50"
+                      aria-label={salaryProgressLabel}
+                      className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-muted/50"
                     >
                       <div
                         aria-hidden
                         className={cn(
                           'absolute inset-y-0 left-0 rounded-full motion-safe:transition-[width] motion-safe:duration-700 motion-safe:ease-out',
-                          pct > 100
+                          pct != null && pct > 100
                             ? 'bg-destructive'
-                            : pct > 70
+                            : pct != null && pct > 70
                               ? 'bg-pending'
-                              : 'bg-receivable',
+                              : 'bg-primary',
                         )}
-                        style={{ width: `${Math.min(pct, 100)}%` }}
+                        /* Clamp em 100%: width acima disso é inválida. */
+                        style={{ width: `${Math.min(pct ?? 0, 100)}%` }}
                       />
                     </div>
+                    <p className="shrink-0 text-sm font-semibold tabular-nums">
+                      {formatCurrency(salary)}
+                    </p>
+                  </div>
+
+                  <div className="mt-1.5 flex items-baseline justify-between gap-3">
+                    {/*
+                      O percentual continua REAL mesmo com a barra travada em
+                      100%: travar o texto junto esconderia o estouro.
+                    */}
                     <p
                       className={cn(
-                        'mt-1.5 text-[11px] tabular-nums',
-                        pct > 100
+                        'text-[11px] tabular-nums',
+                        pct != null && pct > 100
                           ? 'text-destructive'
-                          : pct > 70
+                          : pct != null && pct > 70
                             ? 'text-pending'
                             : 'text-muted-foreground',
                       )}
                     >
-                      {pct.toFixed(0)}% do salário comprometido
-                      {pct > 100 && ` — ${(pct - 100).toFixed(0)}% acima do limite`}
+                      {pct != null ? `${pct.toFixed(0)}% comprometido` : ' '}
                     </p>
+                    {/*
+                      Sobra positiva é conquista (verde); estouro não vira
+                      "-R$ X livres", que seria contraditório — vira
+                      "R$ X acima da renda".
+                    */}
+                    {balance != null && (
+                      <p
+                        className={cn(
+                          'shrink-0 text-[13px] font-semibold tabular-nums',
+                          balance < 0 ? 'text-destructive' : 'text-receivable',
+                        )}
+                      >
+                        {balance < 0
+                          ? `${formatCurrency(Math.abs(balance))} acima da renda`
+                          : `${formatCurrency(balance)} livres`}
+                      </p>
+                    )}
                   </div>
-                )}
-              </div>
-            )}
-
-            {/*
-              Acesso discreto ao histórico, para corrigir uma competência
-              cadastrada errada. Fica fora dos três ramos acima porque vale nos
-              três — inclusive com renda desconhecida no mês exibido, já que
-              pode existir entrada em outro mês.
-            */}
-            <div className="border-t border-border/60 pt-3">
-              <button
-                type="button"
-                onClick={() => setHistoryOpen(true)}
-                className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-              >
-                Histórico salarial
-              </button>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -554,12 +614,65 @@ export default function BudgetPage() {
       */}
       {!isLoading && peopleSettlements.length > 0 && (
         <div>
-          <h2 className="mb-3 text-[15px] font-semibold tracking-tight">
-            Acertos com pessoas
-            <span className="ml-1.5 font-normal text-muted-foreground">
-              · {formatMonthYear(month, year)}
-            </span>
-          </h2>
+          {/*
+            Mesma anatomia do cabeçalho de Faturas: título + resumo da seção à
+            esquerda, informação complementar à direita, lista logo abaixo.
+
+            A competência saiu do título — o seletor global da página já a
+            exibe, e repeti-la aqui não acrescentava nada. "neste mês" também
+            não serve: o universo em aberto pode carregar pendências
+            anteriores, então a frase seria imprecisa além de redundante.
+          */}
+          <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
+            <h2 className="text-[15px] font-semibold tracking-tight">
+              Acertos com pessoas
+              {peopleSummaryParts.length > 0 && (
+                <span className="font-normal text-muted-foreground">
+                  {peopleSummaryParts.map((part) => (
+                    <span key={part.side}>
+                      <span className="mx-1.5 text-muted-foreground/40" aria-hidden>
+                        ·
+                      </span>
+                      <span
+                        className={cn(
+                          'font-medium',
+                          part.side === 'receivable'
+                            ? 'text-receivable'
+                            : 'text-destructive',
+                        )}
+                      >
+                        {formatCurrency(part.amount)}
+                      </span>{' '}
+                      {part.side === 'receivable' ? 'a receber' : 'a pagar'}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </h2>
+
+            {/*
+              O saldo é consolidado INFORMATIVO da relação com pessoas: não
+              abate `totalToPay` nem qualquer obrigação (Fase 9B).
+            */}
+            <p
+              className="text-[11px] text-muted-foreground sm:shrink-0 sm:text-right"
+              aria-label={peopleSummaryAria}
+            >
+              <span className="sm:block">Saldo em aberto</span>
+              <span className="mx-1.5 text-muted-foreground/40 sm:hidden" aria-hidden>
+                ·
+              </span>
+              <span
+                className={cn(
+                  'font-medium tabular-nums',
+                  peopleSummaryDirection === 'receive' && 'text-receivable',
+                  peopleSummaryDirection === 'pay' && 'text-destructive',
+                )}
+              >
+                {peopleSummaryBalance}
+              </span>
+            </p>
+          </div>
 
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
             {peopleSettlements.map((person) => {
