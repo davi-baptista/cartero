@@ -196,3 +196,79 @@ export function invoiceSectionParts(
   }
   return parts
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Apresentação da linha de fatura no Orçamento
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * O valor em destaque é o BRUTO — o mesmo que o drawer mostra ao abrir.
+ *
+ * Antes a linha destacava a sua parte e o bruto ficava no subtítulo, então o
+ * número principal MUDAVA de significado ao clicar: R$ 56,85 na lista virava
+ * R$ 144,55 no detalhe. Os dois estavam certos, mas a troca sem aviso obriga
+ * o leitor a reconciliar de cabeça.
+ *
+ * A decomposição desce para a linha secundária, e o cabeçalho da seção já
+ * seguia essa mesma hierarquia (bruto à direita, composição ao lado do
+ * título) — agora os três níveis concordam.
+ *
+ * Nada disso toca `totalToPay`: ele continua somando apenas a sua parte.
+ */
+export interface InvoiceRowView {
+  /** O número em destaque: o que o banco cobra. */
+  gross: number
+  /** Parcela do usuário — o que de fato entra no orçamento. */
+  own: number
+  /** Parcela de terceiros dentro da fatura. */
+  thirdParty: number
+  /**
+   * A linha secundária deve aparecer?
+   *
+   * Sem terceiros, `own` é igual ao bruto, e repetir "Sua parte R$ 245,59"
+   * logo abaixo de R$ 245,59 só gastaria altura.
+   */
+  showBreakdown: boolean
+}
+
+export function invoiceRowView(invoice: {
+  totalAmount: number | string
+  ownAmount?: number
+  reimbursable?: number
+}): InvoiceRowView {
+  const gross = Number(invoice.totalAmount)
+  const thirdParty = invoice.reimbursable ?? 0
+  /*
+    `ownAmount` vem do backend; o fallback cobre a fatura sem terceiros, onde
+    os dois coincidem. Nada é recalculado a partir de transações.
+  */
+  const own = invoice.ownAmount ?? gross - thirdParty
+
+  return {
+    gross,
+    own,
+    thirdParty,
+    showBreakdown: thirdParty > 0,
+  }
+}
+
+/**
+ * Rótulo acessível da linha.
+ *
+ * Comunica os três números em texto: quem usa leitor de tela não deve
+ * depender da disposição visual para saber qual é o bruto e qual é a sua
+ * parte.
+ */
+export function invoiceRowAriaLabel(
+  view: InvoiceRowView,
+  bankName: string,
+  formatCurrency: (value: number) => string,
+): string {
+  const base = `Abrir fatura do ${bankName}. Total ${formatCurrency(view.gross)}.`
+
+  if (!view.showBreakdown) return base
+
+  return `${base} Sua parte ${formatCurrency(view.own)}. ${formatCurrency(
+    view.thirdParty,
+  )} de outras pessoas.`
+}

@@ -34,6 +34,8 @@ import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import { invoiceStatusConfig } from '@/lib/invoice-status'
 import {
+  invoiceRowAriaLabel,
+  invoiceRowView,
   invoiceSectionParts,
   summarizeInvoiceSection,
 } from '@/lib/invoice-composition'
@@ -728,35 +730,52 @@ export default function BudgetPage() {
                   : inv.status === InvoiceStatus.OVERDUE
                     ? 'negative'
                     : 'neutral'
-              // O Orçamento fala de custo pessoal, então o valor em destaque é
-              // a sua parte. O bruto continua visível no subtítulo: é ele que
-              // o banco vai cobrar, e é o número que aparece em Bancos.
-              const reimbursable = inv.reimbursable ?? 0
-              const hasOthers = reimbursable > 0
+              /*
+                O valor em destaque é o BRUTO — o mesmo que o drawer mostra ao
+                abrir. Antes a linha destacava a sua parte, e o número
+                principal mudava de significado ao clicar.
+
+                Isso é apresentação: `totalToPay` continua somando só a sua
+                parte.
+              */
+              const view = invoiceRowView({
+                totalAmount: inv.totalAmount,
+                ownAmount: inv.ownAmount,
+                reimbursable: inv.reimbursable,
+              })
               return (
                 <StatusListRow
                   key={inv.id}
                   onClick={() => setDrawerParam('invoiceId', inv.id)}
-                  ariaLabel={`Abrir detalhes da fatura do ${bankDisplayName(inv.bank)} de ${formatMonthYear(inv.month, inv.year)}`}
+                  ariaLabel={invoiceRowAriaLabel(
+                    view,
+                    bankDisplayName(inv.bank, 'Banco'),
+                    formatCurrency,
+                  )}
                   icon={CreditCard}
                   tone={tone}
                   title={bankDisplayName(inv.bank, 'Banco')}
                   badge={{ label, className }}
                   subtitle={
-                    hasOthers ? (
+                    /*
+                      Só a decomposição. "Fatura total R$ 144,55" aqui virou
+                      redundância assim que o próprio valor principal passou a
+                      ser o bruto.
+                    */
+                    view.showBreakdown ? (
                       <>
-                        Fatura total {formatCurrency(Number(inv.totalAmount))}
+                        Sua parte {formatCurrency(view.own)}
                         <span className="mx-1 text-muted-foreground/40" aria-hidden>
                           ·
                         </span>
                         <span className="text-receivable">
-                          {formatCurrency(reimbursable)}
+                          {formatCurrency(view.thirdParty)}
                         </span>{' '}
                         de outras pessoas
                       </>
                     ) : undefined
                   }
-                  amount={hasOthers ? inv.ownAmount : Number(inv.totalAmount)}
+                  amount={view.gross}
                 />
               )
             })}

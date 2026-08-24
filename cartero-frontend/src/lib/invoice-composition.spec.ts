@@ -8,6 +8,8 @@ import {
   invoiceSectionParts,
   summarizeInvoiceSection,
   THIRD_PARTY_BUCKET,
+  invoiceRowView,
+  invoiceRowAriaLabel,
 } from './invoice-composition'
 
 /**
@@ -70,6 +72,8 @@ const FATURA_REAL = [
   tx({ id: 'spotify', amount: '21.9', categoryId: 'assin', categoryName: 'Assinatura' }),
   tx({ id: 'prime', amount: '19.9', categoryId: 'assin', categoryName: 'Assinatura' }),
 ]
+
+const brl = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`
 
 describe('Breakdown do cabeçalho', () => {
   it('valores em STRING não produzem NaN', () => {
@@ -382,5 +386,140 @@ describe('invoiceSectionParts', () => {
       }),
     )
     expect(parts).toEqual([])
+  })
+})
+
+describe('invoiceRowView — o bruto em destaque', () => {
+  /**
+   * O número principal da linha passou a ser o BRUTO, o mesmo que o drawer
+   * mostra ao abrir. Antes a linha destacava a sua parte, e R$ 56,85 virava
+   * R$ 144,55 ao clicar — os dois corretos, mas obrigando o leitor a
+   * reconciliar de cabeça.
+   */
+  it('item 20: Bradesco expõe os três valores', () => {
+    const view = invoiceRowView({
+      totalAmount: 144.55,
+      ownAmount: 56.85,
+      reimbursable: 87.7,
+    })
+
+    expect(view.gross).toBeCloseTo(144.55, 2)
+    expect(view.own).toBeCloseTo(56.85, 2)
+    expect(view.thirdParty).toBeCloseTo(87.7, 2)
+    expect(view.showBreakdown).toBe(true)
+  })
+
+  it('item 21: Mercado Pago idem', () => {
+    const view = invoiceRowView({
+      totalAmount: 748.95,
+      ownAmount: 398.49,
+      reimbursable: 350.46,
+    })
+
+    expect(view.gross).toBeCloseTo(748.95, 2)
+    expect(view.showBreakdown).toBe(true)
+  })
+
+  it('item 22: sem terceiros, nenhuma linha secundária', () => {
+    /*
+      `own` seria idêntico ao bruto — repetir "Sua parte R$ 245,59" abaixo de
+      R$ 245,59 só gastaria altura.
+    */
+    const view = invoiceRowView({
+      totalAmount: 245.59,
+      ownAmount: 245.59,
+      reimbursable: 0,
+    })
+
+    expect(view.gross).toBeCloseTo(245.59, 2)
+    expect(view.showBreakdown).toBe(false)
+  })
+
+  it('item 23: terceiros ausente é tratado como zero', () => {
+    const view = invoiceRowView({ totalAmount: 100, ownAmount: 100 })
+    expect(view.thirdParty).toBe(0)
+    expect(view.showBreakdown).toBe(false)
+  })
+
+  it('deriva `own` quando o backend não envia', () => {
+    // Fallback: nada é recalculado a partir de transações.
+    const view = invoiceRowView({ totalAmount: 100, reimbursable: 30 })
+    expect(view.own).toBe(70)
+  })
+
+  it('item 8: gross e own decompõem sem sobra', () => {
+    const view = invoiceRowView({
+      totalAmount: 144.55,
+      ownAmount: 56.85,
+      reimbursable: 87.7,
+    })
+    expect(view.own + view.thirdParty).toBeCloseTo(view.gross, 2)
+  })
+})
+
+describe('Reconciliação header × linhas', () => {
+  /** As quatro faturas do cenário real. */
+  const FATURAS = [
+    { totalAmount: 144.55, ownAmount: 56.85, reimbursable: 87.7 },
+    { totalAmount: 748.95, ownAmount: 398.49, reimbursable: 350.46 },
+    { totalAmount: 245.59, ownAmount: 245.59, reimbursable: 0 },
+    { totalAmount: 186.05, ownAmount: 186.05, reimbursable: 0 },
+  ]
+
+  const views = FATURAS.map(invoiceRowView)
+  const soma = (pegar: (v: ReturnType<typeof invoiceRowView>) => number) =>
+    views.reduce((total, v) => total + pegar(v), 0)
+
+  it('item 17: a soma dos brutos fecha com "Total das faturas"', () => {
+    const header = summarizeInvoiceSection({
+      totalInvoices: 1325.14,
+      netAmount: 886.98,
+      totalReimbursable: 438.16,
+    })
+
+    expect(soma((v) => v.gross)).toBeCloseTo(header.gross, 2)
+  })
+
+  it('item 18: a soma das partes próprias fecha com "sua parte"', () => {
+    expect(soma((v) => v.own)).toBeCloseTo(886.98, 2)
+  })
+
+  it('item 19: a soma de terceiros fecha com "de outras pessoas"', () => {
+    expect(soma((v) => v.thirdParty)).toBeCloseTo(438.16, 2)
+  })
+
+  it('item 9: o bruto NÃO é a contribuição ao totalToPay', () => {
+    /*
+      Mostrar 144,55 na linha é apresentação. O orçamento continua somando
+      apenas 56,85 daquela fatura — confundir os dois inflaria o mês em
+      R$ 438,16 de dinheiro que é de outras pessoas.
+    */
+    const [bradesco] = views
+    expect(bradesco.gross).not.toBeCloseTo(bradesco.own, 2)
+    expect(soma((v) => v.own)).toBeLessThan(soma((v) => v.gross))
+  })
+})
+
+describe('invoiceRowAriaLabel', () => {
+  it('item 27: com terceiros, comunica os três números', () => {
+    const view = invoiceRowView({
+      totalAmount: 144.55,
+      ownAmount: 56.85,
+      reimbursable: 87.7,
+    })
+    const label = invoiceRowAriaLabel(view, 'Bradesco', brl)
+
+    expect(label).toContain('Bradesco')
+    expect(label).toContain('Total')
+    expect(label).toContain('Sua parte')
+    expect(label).toContain('de outras pessoas')
+  })
+
+  it('sem terceiros, só o total', () => {
+    const view = invoiceRowView({ totalAmount: 245.59, ownAmount: 245.59 })
+    const label = invoiceRowAriaLabel(view, 'Santander', brl)
+
+    expect(label).toContain('Total')
+    expect(label).not.toContain('Sua parte')
   })
 })
