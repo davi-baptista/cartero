@@ -107,47 +107,104 @@ export function openPriorLabel(
 }
 
 /**
- * A parte da obrigação do orçamento que JÁ FOI QUITADA.
+ * ══════════════════════════════════════════════════════════════════════════
+ * Contexto do orçamento na linha da pessoa
+ * ══════════════════════════════════════════════════════════════════════════
  *
- * `budget.debtTotal` conta a obrigação inteira da competência (inclusive o que
- * já foi pago, porque continua compondo `totalToPay`); `open.debtTotal` conta
- * só o que resta. A diferença é exatamente o que foi quitado — e é a única
- * parcela que "Em aberto" não consegue mostrar sozinha.
+ * A contribuição de uma pessoa ao `totalToPay` vem de TRÊS buckets, os mesmos
+ * do cálculo global:
+ *
+ *   · `debtDueInMonth`    — dívida que vence nesta competência
+ *   · `currentOpenPrior`  — anterior ainda aberta (só no mês corrente)
+ *   · `priorPaidInMonth`  — anterior cujo pagamento aconteceu aqui
+ *
+ * A versão anterior lia SÓ `priorPaidInMonth`. Em dezembro, uma dívida de
+ * R$ 300 que vence no mês e já foi paga depois tinha `debtDueInMonth: 300` e
+ * `priorPaidInMonth: 0` — o rótulo voltava `null`, a linha ficava sem
+ * contexto, e como a dívida já estava quitada o lado "em aberto" também
+ * estava vazio. Resultado: uma linha em branco explicando nada, enquanto os
+ * R$ 300 seguiam dentro do total do mês.
  */
-function settledRemainder(person: PersonSettlement): number {
-  return person.budget.priorPaidInMonth
+
+/** Quanto a pessoa contribui para o `totalToPay` desta competência. */
+export function budgetDebtContribution(person: PersonSettlement): number {
+  return person.budget.debtTotal
 }
 
 /**
- * Contexto histórico do orçamento — só quando ACRESCENTA informação.
+ * A dívida do mês já está explicada pelo lado "em aberto"?
  *
- * A versão anterior exibia sempre que `budget.debtTotal > 0`, e com uma dívida
- * totalmente em aberto isso repetia o mesmo número duas vezes na mesma linha:
- *
- *     No orçamento de setembro 2026 · R$ 330 em dívidas
- *     A pagar R$ 330
- *
- * Agora a linha só aparece quando existe diferença entre os dois universos, e
- * mostra apenas a diferença:
- *
- *   · 330 no orçamento, 330 em aberto  → nada (não há o que acrescentar)
- *   · 330 no orçamento, 0 em aberto    → "R$ 330,00 já quitados…"
- *   · 500 no orçamento, 300 em aberto  → "R$ 200,00 já quitados…" (não 500)
- *
- * Sem repetir a competência: ela já está no título da seção.
+ * Quando `debtDueInMonth` e `open.debtTotal` coincidem, a linha já mostra
+ * "A pagar R$ 300" — repetir "R$ 300 em dívidas deste mês" logo abaixo é
+ * ruído. O backend continua entregando o valor; esconder o texto é decisão de
+ * apresentação (item 8).
  */
+function dueIsRedundant(person: PersonSettlement): boolean {
+  return (
+    Math.abs(person.budget.debtDueInMonth - person.open.debtTotal) <= EPSILON
+  )
+}
+
+/**
+ * Contexto do orçamento — só os componentes que ACRESCENTAM informação.
+ *
+ * Cada bucket tem vocabulário próprio, porque descrevem fatos diferentes:
+ * uma dívida que nasceu aqui não é a mesma coisa que um desembolso de
+ * pendência antiga. Chamar os R$ 2.580 de agosto de "dívidas de agosto"
+ * afirmaria que elas nasceram lá — e não nasceram.
+ */
+export function budgetContextParts(
+  person: PersonSettlement,
+  formatCurrency: (value: number) => string,
+): string[] {
+  const parts: string[] = []
+
+  if (person.budget.debtDueInMonth > EPSILON && !dueIsRedundant(person)) {
+    parts.push(`${formatCurrency(person.budget.debtDueInMonth)} em dívidas deste mês`)
+  }
+
+  if (person.budget.priorPaidInMonth > EPSILON) {
+    parts.push(
+      `${formatCurrency(person.budget.priorPaidInMonth)} de pendências anteriores pagas neste mês`,
+    )
+  }
+
+  /*
+    `currentOpenPrior` não ganha texto próprio: ele SEMPRE aparece como
+    "A pagar" no lado em aberto, porque a dívida está viva. Descrevê-lo aqui
+    duplicaria o mesmo número na mesma linha (item 16).
+  */
+
+  return parts
+}
+
+/** As partes acima numa frase só. `null` quando não há o que dizer. */
 export function budgetContextLabel(
   person: PersonSettlement,
   formatCurrency: (value: number) => string,
 ): string | null {
-  const settled = settledRemainder(person)
-  if (settled <= EPSILON) return null
-  /*
-    "pagas neste mês", não "já quitados ainda compõem o orçamento": com a
-    competência de evento, esse valor é um desembolso REAL desta competência,
-    não um resíduo histórico de outra.
-  */
-  return `${formatCurrency(settled)} de pendências anteriores pagas neste mês`
+  const parts = budgetContextParts(person, formatCurrency)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+/**
+ * A linha da pessoa deve ser renderizada?
+ *
+ * Uma pessoa sem nada em aberto E sem contribuição ao orçamento não tem o que
+ * dizer nesta competência — renderizá-la produzia a linha vazia com "Nada em
+ * aberto" espalhada por meses onde nada aconteceu.
+ *
+ * O backend já filtra por movimentação; isto é a defesa do frontend, para a
+ * tela nunca depender de o servidor ter filtrado certo.
+ */
+export function shouldRenderPeopleSettlement(
+  person: PersonSettlement,
+): boolean {
+  return (
+    budgetDebtContribution(person) > EPSILON ||
+    person.open.itemCount > 0 ||
+    person.budget.receivableDueInMonth > EPSILON
+  )
 }
 
 /**

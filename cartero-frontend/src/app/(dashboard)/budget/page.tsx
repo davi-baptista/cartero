@@ -28,6 +28,7 @@ import {
   summaryBalanceLabel,
   summaryCompositionParts,
   summaryDirection,
+  shouldRenderPeopleSettlement,
 } from '@/lib/people-settlement-view'
 import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
@@ -254,7 +255,14 @@ export default function BudgetPage() {
     `budget?.x ?? []`), então a memo nunca acertaria — só adicionaria uma
     dependência instável. Somar meia dúzia de números é mais barato que isso.
   */
-  const peopleSummary = summarizePeopleSettlements(peopleSettlements)
+  /*
+    Defesa do frontend: pessoa sem contribuição ao orçamento E sem nada em
+    aberto não tem o que dizer nesta competência. O backend já filtra por
+    movimentação; isto impede a linha vazia mesmo se aquilo mudar.
+  */
+  const visiblePeople = peopleSettlements.filter(shouldRenderPeopleSettlement)
+
+  const peopleSummary = summarizePeopleSettlements(visiblePeople)
   /*
     Resumo da seção Faturas — mesma anatomia do de pessoas. O bruto vem do
     agregado consolidado do backend, não de soma no JSX.
@@ -714,7 +722,7 @@ export default function BudgetPage() {
         entra em nenhum total. Para quitar de fato, o caminho é o drawer da
         pessoa.
       */}
-      {!isLoading && peopleSettlements.length > 0 && (
+      {!isLoading && visiblePeople.length > 0 && (
         <div>
           {/*
             Mesma anatomia do cabeçalho de Faturas: título + resumo da seção à
@@ -774,7 +782,7 @@ export default function BudgetPage() {
           </div>
 
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
-            {peopleSettlements.map((person) => {
+            {visiblePeople.map((person) => {
               /*
                 Dois universos, dois rótulos. O módulo `people-settlement-view`
                 decide a semântica; aqui só apresentamos (item 31).

@@ -11,6 +11,8 @@ import {
   summaryBalanceLabel,
   summaryCompositionParts,
   summaryDirection,
+  budgetDebtContribution,
+  shouldRenderPeopleSettlement,
 } from './people-settlement-view'
 import type { BudgetSummary } from '@/services/budget.service'
 
@@ -516,5 +518,145 @@ describe('summaryAriaLabel', () => {
     expect(summaryAriaLabel(summary, brl)).toBe(
       'Acertos com pessoas. Nada em aberto.',
     )
+  })
+})
+
+describe('Projeção por pessoa dos três buckets do orçamento', () => {
+  /**
+   * O bug: `budgetContextLabel` lia SÓ `priorPaidInMonth`.
+   *
+   * Em dezembro, uma dívida de R$ 300 que vence no mês e foi paga depois tem
+   * `debtDueInMonth: 300` e `priorPaidInMonth: 0` — o rótulo voltava `null`,
+   * a linha ficava sem contexto, e como a dívida já estava quitada o lado em
+   * aberto também estava vazio. Uma linha em branco, enquanto os R$ 300
+   * seguiam dentro do total do mês.
+   */
+  it('item 19: dívida do mês já quitada explica a contribuição', () => {
+    const dezembro = person({
+      budget: { debtDueInMonth: 300, debtTotal: 300 },
+      open: { itemCount: 0 },
+    })
+
+    const label = budgetContextLabel(dezembro, brl)
+    expect(label).not.toBeNull()
+    expect(label).toContain('300')
+    expect(label).toContain('em dívidas deste mês')
+  })
+
+  it('item 21: open zerado NÃO significa contribuição zero', () => {
+    const dezembro = person({
+      budget: { debtDueInMonth: 300, debtTotal: 300 },
+      open: { itemCount: 0 },
+    })
+
+    expect(budgetDebtContribution(dezembro)).toBe(300)
+    expect(openBalanceLabel(dezembro, brl)).toBe('Nada em aberto')
+    // A linha continua visível, com o contexto explicando os R$ 300.
+    expect(shouldRenderPeopleSettlement(dezembro)).toBe(true)
+  })
+
+  it('item 18: dívida do mês ainda aberta não repete o número', () => {
+    /*
+      "A pagar R$ 300" já está na linha. Repetir "R$ 300 em dívidas deste mês"
+      logo abaixo seria ruído — o backend segue entregando o valor.
+    */
+    const aberta = person({
+      budget: { debtDueInMonth: 300, debtTotal: 300 },
+      open: { debtInMonth: 300, debtTotal: 300, net: -300, itemCount: 1 },
+    })
+
+    expect(budgetContextLabel(aberta, brl)).toBeNull()
+    expect(budgetDebtContribution(aberta)).toBe(300)
+  })
+
+  it('itens 14-15: prior paid usa vocabulário próprio', () => {
+    const agosto = person({
+      budget: { priorPaidInMonth: 2580, debtTotal: 2580 },
+      open: { itemCount: 0 },
+    })
+
+    const label = budgetContextLabel(agosto, brl)
+    expect(label).toContain('pendências anteriores pagas neste mês')
+    // Não nasceram em agosto — chamá-las de "dívidas deste mês" seria falso.
+    expect(label).not.toContain('deste mês já')
+    expect(label).not.toMatch(/em dívidas deste mês/)
+  })
+
+  it('item 23: os dois componentes aparecem juntos', () => {
+    const misto = person({
+      budget: { debtDueInMonth: 300, priorPaidInMonth: 200, debtTotal: 500 },
+      open: { itemCount: 0 },
+    })
+
+    const label = budgetContextLabel(misto, brl)
+    expect(label).toContain('300')
+    expect(label).toContain('200')
+    expect(budgetDebtContribution(misto)).toBe(500)
+  })
+
+  it('item 16: currentOpenPrior não ganha texto duplicado', () => {
+    /*
+      Ele SEMPRE aparece como "A pagar" no lado em aberto, porque a dívida
+      está viva. Descrevê-lo aqui repetiria o mesmo número na mesma linha.
+    */
+    const abertaAntiga = person({
+      budget: { currentOpenPrior: 300, debtTotal: 300 },
+      open: { priorDebt: 300, debtTotal: 300, net: -300, itemCount: 1 },
+    })
+
+    expect(budgetContextLabel(abertaAntiga, brl)).toBeNull()
+    expect(budgetDebtContribution(abertaAntiga)).toBe(300)
+  })
+
+  it('item 17: a transição open → paid preserva a contribuição', () => {
+    const antes = person({
+      budget: { currentOpenPrior: 300, debtTotal: 300 },
+      open: { priorDebt: 300, debtTotal: 300, net: -300, itemCount: 1 },
+    })
+    const depois = person({
+      budget: { priorPaidInMonth: 300, debtTotal: 300 },
+      open: { itemCount: 0 },
+    })
+
+    expect(budgetDebtContribution(antes)).toBe(300)
+    expect(budgetDebtContribution(depois)).toBe(300)
+
+    // O que muda é a explicação, não o valor.
+    expect(budgetContextLabel(antes, brl)).toBeNull()
+    expect(budgetContextLabel(depois, brl)).toContain('pagas neste mês')
+  })
+})
+
+describe('shouldRenderPeopleSettlement', () => {
+  it('itens 10/22/31/34: sem nada relevante, não renderiza', () => {
+    /*
+      O caso dos meses intermediários: a dívida de dezembro paga em agosto não
+      contribui para março, e a pessoa não tem mais nada lá. Renderizar
+      produziria a linha vazia com "Nada em aberto".
+    */
+    expect(shouldRenderPeopleSettlement(person({}))).toBe(false)
+  })
+
+  it('item 35: pessoa só com recebível aberto continua visível', () => {
+    const soRecebivel = person({
+      open: { receivableTotal: 300, net: 300, itemCount: 1 },
+    })
+    expect(shouldRenderPeopleSettlement(soRecebivel)).toBe(true)
+  })
+
+  it('contribuição ao orçamento basta, mesmo sem nada em aberto', () => {
+    const soOrcamento = person({
+      budget: { debtDueInMonth: 300, debtTotal: 300 },
+      open: { itemCount: 0 },
+    })
+    expect(shouldRenderPeopleSettlement(soOrcamento)).toBe(true)
+  })
+
+  it('recebível do orçamento também conta', () => {
+    const recebivelDoMes = person({
+      budget: { receivableDueInMonth: 480 },
+      open: { itemCount: 0 },
+    })
+    expect(shouldRenderPeopleSettlement(recebivelDoMes)).toBe(true)
   })
 })
