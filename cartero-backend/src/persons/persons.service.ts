@@ -315,8 +315,8 @@ export class PersonsService {
     const pendingWhere = this.pendingWhere(userId, person.id);
 
     /*
-      Histórico arquivado por `referenceMonth` — a competência a que o acerto
-      PERTENCE —, não pelo mês em que o dinheiro se moveu.
+      Histórico arquivado por `dueMonth` — a mesma competência canônica dos
+      itens abertos, não o mês em que o dinheiro se moveu.
 
       Antes o recorte era `paidAt` em SQL. Uma dívida de julho paga em 15/09
       aparecia no histórico de setembro, então revisar julho não mostrava o
@@ -431,15 +431,11 @@ export class PersonsService {
        * resumo sem reimplementar a regra — e para o settle usar exatamente o
        * mesmo universo que a tela mostra.
        *
-       * `defaultCompetence` é o mês que o drawer deve abrir: o anterior
-       * enquanto o acerto dele ainda estiver em andamento (item aberto que não
-       * venceu), senão o corrente.
+       * `defaultCompetence` é simplesmente o mês civil corrente — a rota tem
+       * prioridade sobre ele quando informa uma competência válida.
        */
       settlement: {
-        defaultCompetence: resolveDefaultCompetence(
-          [...pendingReceivables, ...pendingDebts],
-          new Date(),
-        ),
+        defaultCompetence: resolveDefaultCompetence(new Date()),
         receivables: pendingReceivables.map((item) => ({
           ...item,
           referenceMonth: referenceMonthOf(item),
@@ -465,14 +461,13 @@ export class PersonsService {
           endDate: filters.endDate ?? null,
         },
         /**
-         * Critério: `referenceMonth` — a competência a que o acerto pertence.
+         * Critério: `dueMonth` — a competência canônica, a MESMA dos abertos.
          *
-         * Era `paidAt`. O nome do campo é a única defesa do consumidor contra
-         * ler o universo errado, então ele muda junto com a regra: quem
-         * dependia de "quitado neste mês" falha visivelmente em vez de receber
-         * outra resposta em silêncio.
+         * Passou por `paidAt` e depois por `referenceMonth`. O nome do campo é
+         * a única defesa do consumidor contra ler o universo errado, então ele
+         * muda junto com a regra em vez de permanecer genérico.
          */
-        scopedBy: 'referenceMonth' as const,
+        scopedBy: 'dueMonth' as const,
         settledDebts: settledDebts,
         settledReceivables: settledReceivables,
         settledDebtTotal: sumAmounts(settledDebts),

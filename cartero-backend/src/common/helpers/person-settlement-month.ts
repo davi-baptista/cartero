@@ -6,21 +6,22 @@
  * O drawer de Person responde: **"quanto eu e esta pessoa temos para acertar
  * nesta competência?"** — uma pergunta MENSAL.
  *
- * Duas dimensões temporais coexistem, e confundi-las é o que tornava a tela
- * difícil de ler:
+ * A competência canônica é UMA: o mês civil de `dueDate`. Vale igual para
+ * Debt, recebível manual e recebível automático.
  *
- *   • `referenceMonth` — o mês a que o acerto PERTENCE conceitualmente
- *   • `dueMonth`       — o mês em que ele VENCE
+ * A versão anterior distinguia `referenceMonth` (mês da compra de origem) de
+ * `dueMonth`, e a tela mostrava o item nos DOIS meses: a compra de agosto que
+ * vence em 10/09 aparecia em agosto como "Pendente · vence em 10/09" e em
+ * setembro como "A vencer · referente a agosto". Tecnicamente coerente, mas
+ * fazia a mesma obrigação parecer pertencer a duas competências — e nenhuma
+ * das duas telas era claramente a certa para agir.
  *
- * Para a maioria dos itens as duas coincidem. A exceção é o recebível
- * automático: ele nasce de uma compra no cartão, e a compra é o evento
- * financeiro que o originou. Um jantar dividido em 16/08 que vence com a
- * fatura em 10/09 pertence ao acerto de AGOSTO ("o que paguei para ela naquele
- * mês") e vence em SETEMBRO.
+ * A pergunta do drawer é "o que preciso acertar nesta competência?", e a
+ * resposta é o que VENCE nela, mais o que já venceu e continua aberto.
  *
- * Debt e recebível manual não têm esse evento de origem — para eles o
- * vencimento é a única referência disponível, e usar `occurredAt` misturaria
- * uma data de registro com uma competência de acerto.
+ * A data da compra não sumiu: `referenceMonthOf` segue disponível como
+ * METADADO de origem (rótulo "No cartão", auditoria, PDF), apenas não decide
+ * mais em que mês o item aparece.
  */
 
 /** Competência mensal — inteiros, como em `Invoice` e `SalaryHistory`. */
@@ -84,19 +85,25 @@ export function referenceMonthOf(item: SettleableItem): SettlementCompetence {
   return competenceOf(item.dueDate);
 }
 
-/** Rótulo temporal de um item em aberto, dentro de uma competência. */
-export type DueState = 'overdue' | 'dueToday' | 'pending' | 'upcoming';
+/**
+ * Rótulo temporal de um item em aberto.
+ *
+ * `upcoming` ("A vencer") foi REMOVIDO junto com a ponte por origem: ele
+ * existia só para nomear o item que vinha de outra competência e ainda estava
+ * no prazo. Com o vencimento como regra única, esse caso não existe — todo
+ * item da competência vence nela.
+ */
+export type DueState = 'overdue' | 'dueToday' | 'pending';
 
 /**
- * Estado temporal de um item OPEN visto de uma competência.
+ * Estado temporal de um item OPEN.
  *
- * `upcoming` ("A vencer") não é status persistido: é a microcopy de um item que
- * veio de uma competência ANTERIOR e vence na selecionada, ainda no prazo.
- * Chamá-lo de "Em atraso" seria falso, e de "Pendente" perderia a informação
- * de que ele veio de antes.
+ * Depende só do vencimento contra hoje — `selected` não participa mais, e
+ * permanece na assinatura para não quebrar os chamadores.
  *
- * `today` é comparado por dia CIVIL: no próprio dia do vencimento o item ainda
- * não está atrasado — há o dia inteiro para resolvê-lo.
+ * O dia é CIVIL (America/Fortaleza): no próprio dia do vencimento o item
+ * ainda não está atrasado, há o dia inteiro para resolvê-lo. O ano faz parte
+ * da comparação, então out/2025 e out/2026 nunca colidem.
  */
 export function dueStateOf(
   item: SettleableItem,
@@ -106,12 +113,11 @@ export function dueStateOf(
   const dueDay = competenceKeyWithDay(item.dueDate);
   const todayDay = competenceKeyWithDay(today);
 
+  void selected;
+
   if (dueDay < todayDay) return 'overdue';
   if (dueDay === todayDay) return 'dueToday';
-
-  // Ainda no prazo: distingue o que nasceu aqui do que veio de antes.
-  const reference = referenceMonthOf(item);
-  return compareCompetence(reference, selected) < 0 ? 'upcoming' : 'pending';
+  return 'pending';
 }
 
 /** `2026-08-21` em horário civil — comparação lexicográfica = cronológica. */
@@ -123,78 +129,68 @@ function competenceKeyWithDay(date: Date): string {
 /**
  * O item OPEN pertence ao universo da competência selecionada?
  *
- * União de três condições, deduplicada pela identidade do item:
+ * DUAS condições, sobre uma competência canônica só (`dueMonth`):
  *
- *   A. nasceu na competência (`referenceMonth == selected`)
- *   B. veio de antes e vence nela (`dueMonth == selected`)
- *   C. já venceu antes do início dela e continua aberto (carry-over)
+ *   A. vence na competência (`dueMonth == selected`)
+ *   B. venceu antes E já está efetivamente vencido HOJE — o carry
  *
- * A condição C é o que impede um atraso de junho desaparecer em setembro. E
- * como o retorno é booleano por item, o mesmo item nunca gera duas linhas
- * quando satisfaz mais de uma condição.
+ * A ponte por origem foi REMOVIDA. Ela fazia a mesma obrigação aparecer em
+ * dois meses: a compra de agosto que vence em 10/09 saía tanto no acerto de
+ * agosto ("Pendente · vence em 10/09") quanto no de setembro ("A vencer ·
+ * referente a agosto"), e nenhuma das duas telas era claramente a certa.
+ *
+ * A condição B compara com HOJE, não com o início da competência. Navegar
+ * para setembro em 24/08 não pode transformar uma dívida que vence em 30/08
+ * num atraso — ela ainda está no prazo, e projetar o estado futuro afirmaria
+ * um fato que não aconteceu.
+ *
+ * O retorno é booleano por item, então nada gera duas linhas.
  */
 export function belongsToCompetence(
   item: SettleableItem,
   selected: SettlementCompetence,
+  today: Date = new Date(),
 ): boolean {
   if (item.isPaid) return false;
 
-  const reference = referenceMonthOf(item);
   const due = dueMonthOf(item);
+  const posicao = compareCompetence(due, selected);
 
-  // A. Originado na competência.
-  if (compareCompetence(reference, selected) === 0) return true;
+  // A. Vence nesta competência — mesmo que a data ainda esteja no futuro.
+  if (posicao === 0) return true;
 
-  // B. Ponte: veio de antes e vence aqui.
-  if (compareCompetence(due, selected) === 0) return true;
-
-  // C. Carry-over: venceu antes desta competência e segue aberto.
-  if (compareCompetence(due, selected) < 0) return true;
+  // B. Carry: de competência anterior e JÁ vencido hoje.
+  if (posicao < 0) {
+    return competenceKeyWithDay(item.dueDate) < competenceKeyWithDay(today);
+  }
 
   return false;
 }
 
 /**
- * Competência que o drawer deve abrir.
+ * Competência que o drawer deve abrir: o MÊS CIVIL CORRENTE.
  *
- * Não é simplesmente o mês corrente: enquanto existir item aberto originado no
- * mês ANTERIOR que ainda não venceu, o acerto daquele mês continua em
- * andamento e é o que o usuário quer conferir. É o caso do jantar de agosto
- * que vence com a fatura em 10/09 — no começo de setembro o acerto de agosto
- * ainda está de pé.
+ * A versão anterior abria o mês passado enquanto existisse cobrança
+ * automática originada nele e ainda no prazo. Fazia sentido quando a origem
+ * definia a competência; com o vencimento como regra única, abrir agosto
+ * porque a compra foi feita lá — quando o item vence em setembro e é lá que
+ * ele aparece — só desorienta.
  *
- * A busca olha apenas mês anterior e mês corrente: uma pendência de junho não
- * deve fazer o drawer abrir em junho — ela aparece como carry-over no mês
- * corrente.
+ * A rota tem prioridade sobre isto: quando a URL informa uma competência
+ * válida, ela vence, e navegação manual nunca sofre snap-back.
  */
 export function resolveDefaultCompetence(
-  items: readonly SettleableItem[],
   today: Date = new Date(),
 ): SettlementCompetence {
-  const current = competenceOf(today);
-  const previous =
-    current.month === 1
-      ? { year: current.year - 1, month: 12 }
-      : { year: current.year, month: current.month - 1 };
-
-  const todayDay = competenceKeyWithDay(today);
-
-  const previousStillInTime = items.some((item) => {
-    if (item.isPaid) return false;
-    if (compareCompetence(referenceMonthOf(item), previous) !== 0) return false;
-    // "Ainda no prazo" inclui o próprio dia do vencimento.
-    return competenceKeyWithDay(item.dueDate) >= todayDay;
-  });
-
-  return previousStillInTime ? previous : current;
+  return competenceOf(today);
 }
 
 /**
  * O item RESOLVIDO pertence ao histórico da competência selecionada?
  *
- * A competência canônica do arquivo é `referenceMonth`, não o mês de
- * `paidAt`. Uma dívida de julho paga em 15/09 pertence ao acerto de JULHO —
- * é ali que o usuário vai procurá-la ao revisar aquele mês.
+ * A competência canônica do arquivo é `dueMonth` — a MESMA dos itens abertos.
+ * Uma dívida que vence em 20/07 e é paga em 15/09 pertence ao acerto de
+ * JULHO: é ali que o usuário vai procurá-la ao revisar aquele mês.
  *
  * Arquivar por `paidAt` colocava o item no mês em que o dinheiro se moveu, o
  * que dispersava um mesmo acerto por vários meses conforme cada parte fosse
@@ -211,5 +207,5 @@ export function belongsToHistoryCompetence(
   selected: SettlementCompetence,
 ): boolean {
   if (!item.isPaid) return false;
-  return compareCompetence(referenceMonthOf(item), selected) === 0;
+  return compareCompetence(dueMonthOf(item), selected) === 0;
 }

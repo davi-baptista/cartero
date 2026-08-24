@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Users, ChevronRight, Loader2, Check, Undo2, MoreVertical, MessageCircle, FileText, Download, Share2, TriangleAlert, RotateCcw } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, ChevronRight, Loader2, Check, Undo2, MoreVertical, MessageCircle, FileText, Download, Share2, TriangleAlert, RotateCcw, CreditCard } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -125,24 +125,20 @@ function StatementRow({
         }
       />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <span
-            className={cn(
-              'truncate text-sm',
-              item.isPaid && 'text-muted-foreground line-through',
-            )}
-          >
-            {item.title}
-          </span>
-          {isAutomatic && (
-            /*
-              Indicação discreta da origem: explica por que valor e vencimento
-              desta cobrança não são editáveis aqui.
-            */
-            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              Compra no cartão
-            </span>
+        {/*
+          Primeira linha: só o título.
+
+          A badge "Compra no cartão" vivia aqui e consumia 80–120px, truncando
+          nomes cedo demais ("Pinga Cer…", "Financiamento Duster …"). A origem
+          é contexto, não identidade — foi para a linha de metadata.
+        */}
+        <span
+          className={cn(
+            'truncate text-sm',
+            item.isPaid && 'text-muted-foreground line-through',
           )}
+        >
+          {item.title}
         </span>
         <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           {/*
@@ -163,6 +159,26 @@ function StatementRow({
             </span>
           ) : (
             formatDate(item.dueDate)
+          )}
+
+          {/*
+            Origem em forma compacta, sem pill: aqui ela é contexto de baixa
+            prioridade. O ícone é decorativo; o texto carrega a informação, e
+            o `title` mantém o nome completo para quem precisar.
+          */}
+          {isAutomatic && (
+            <>
+              <span className="text-muted-foreground/40" aria-hidden>
+                ·
+              </span>
+              <span
+                className="inline-flex shrink-0 items-center gap-1"
+                title="Compra no cartão"
+              >
+                <CreditCard className="size-3" aria-hidden />
+                No cartão
+              </span>
+            </>
           )}
         </span>
       </div>

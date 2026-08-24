@@ -10,15 +10,26 @@ import type { SettlementCompetence } from '@/types'
  * histórico. Ele responde "quanto eu e esta pessoa temos para acertar nesta
  * competência?".
  *
- * As competências (`referenceMonth`/`dueMonth`) vêm resolvidas do backend —
- * este módulo só decide o que mostrar e como rotular, para o settle e a tela
- * usarem exatamente o mesmo universo.
+ * A competência canônica é UMA: `dueMonth`. A ponte por origem foi removida —
+ * ela fazia a compra de agosto que vence em 10/09 aparecer nos dois meses,
+ * como se fossem duas obrigações.
+ *
+ * `referenceMonth` continua no contrato como METADADO de origem (o rótulo
+ * "No cartão"), sem decidir em que mês o item aparece. Este módulo só decide
+ * o que mostrar e como rotular, para o settle e a tela usarem o mesmo
+ * universo.
  */
 
 /** O mínimo para posicionar um item no tempo. */
 interface Timed {
   dueDate: string
   isPaid: boolean
+  /**
+   * Origem do item — metadado, não competência.
+   *
+   * Preservado porque o contrato o entrega e outras leituras (auditoria,
+   * "No cartão") podem usá-lo. Nenhuma decisão temporal daqui o consulta.
+   */
   referenceMonth: SettlementCompetence
   dueMonth: SettlementCompetence
 }
@@ -38,45 +49,59 @@ function dueDay(item: Timed): string {
 /**
  * O item pertence ao universo desta competência?
  *
- * União de três condições — nasceu aqui, vence aqui, ou já venceu antes e
- * segue aberto. O retorno é booleano POR ITEM, então o mesmo item nunca gera
- * duas linhas quando satisfaz mais de uma.
+ * DUAS condições, sobre uma competência canônica só (`dueMonth`): vence aqui,
+ * ou venceu antes e JÁ está vencido hoje.
+ *
+ * A ponte por origem foi removida — ela fazia a compra de agosto que vence em
+ * 10/09 aparecer nos dois meses, como se fossem duas obrigações.
+ *
+ * O carry compara com HOJE, não com o início da competência: navegar para
+ * setembro em 24/08 não pode transformar uma dívida que vence em 30/08 num
+ * atraso que ainda não aconteceu.
  */
 export function belongsToCompetence(
   item: Timed,
   selected: SettlementCompetence,
+  today = formatDateValue(),
 ): boolean {
   if (item.isPaid) return false
-  if (compareCompetence(item.referenceMonth, selected) === 0) return true
-  if (compareCompetence(item.dueMonth, selected) === 0) return true
-  // Carry-over: venceu antes desta competência e continua aberto.
-  return compareCompetence(item.dueMonth, selected) < 0
+
+  const posicao = compareCompetence(item.dueMonth, selected)
+
+  // A. Vence nesta competência — mesmo com a data ainda no futuro.
+  if (posicao === 0) return true
+
+  // B. Carry: de competência anterior e JÁ vencido hoje.
+  if (posicao < 0) return dueDay(item) < today
+
+  return false
 }
 
-export type DueState = 'overdue' | 'dueToday' | 'pending' | 'upcoming'
+export type DueState = 'overdue' | 'dueToday' | 'pending'
 
 /**
- * Estado temporal do item visto da competência selecionada.
+ * Estado temporal do item.
  *
- * `upcoming` ("A vencer") não é status persistido: é um item que veio de uma
- * competência anterior e vence nesta, ainda no prazo. Chamá-lo de "Em atraso"
- * seria falso; de "Pendente", perderia a informação de que veio de antes.
+ * Depende só do vencimento contra hoje — `selected` permanece na assinatura
+ * para não quebrar chamadores, mas não participa mais. `upcoming` foi
+ * removido junto com a ponte por origem: com a competência única, todo item
+ * exibido vence nela ou já venceu.
  *
- * No PRÓPRIO dia do vencimento o item ainda não está atrasado.
+ * No PRÓPRIO dia do vencimento o item ainda não está atrasado. O ano faz
+ * parte da comparação — out/2025 e out/2026 nunca colidem.
  */
 export function dueStateOf(
   item: Timed,
   selected: SettlementCompetence,
   today = formatDateValue(),
 ): DueState {
+  void selected
+
   const due = dueDay(item)
 
   if (due < today) return 'overdue'
   if (due === today) return 'dueToday'
-
-  return compareCompetence(item.referenceMonth, selected) < 0
-    ? 'upcoming'
-    : 'pending'
+  return 'pending'
 }
 
 /** `10/09` — sem construir `Date`, para não deslocar o dia por fuso. */
@@ -111,53 +136,25 @@ function dueDisplay(iso: string, selected: SettlementCompetence): string {
   return year === selected.year ? shortDate(iso) : fullDate(iso)
 }
 
-/**
- * Competência de origem por extenso.
- *
- * "referente a outubro" tem o mesmo problema do `14/10`: em março de 2026,
- * outubro pode ser 2025 (carry) ou 2026 (futuro). O ano entra quando difere
- * do ano da competência exibida.
- */
-function originLabel(
-  reference: SettlementCompetence,
-  selected: SettlementCompetence,
-): string {
-  const name = MONTH_NAMES[reference.month - 1]
-  return reference.year === selected.year ? name : `${name} de ${reference.year}`
-}
-
-const MONTH_NAMES = [
-  'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
-  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
-]
-
-/**
- * Microcopy temporal completa de um item em aberto.
- *
- * Preserva três distinções que a lista mistura de propósito: o que está
- * atrasado, o que vence agora, e o que veio de outra competência.
- */
+/** Microcopy temporal de um item em aberto: atrasado, vence hoje, pendente. */
 export function dueLabel(
   item: Timed,
   selected: SettlementCompetence,
   today = formatDateValue(),
 ): string {
   const state = dueStateOf(item, selected, today)
-  const due = dueDay(item)
-  const cameFromBefore =
-    compareCompetence(item.referenceMonth, selected) < 0
-  const origin = cameFromBefore
-    ? ` · referente a ${originLabel(item.referenceMonth, selected)}`
-    : ''
-  const dueText = dueDisplay(due, selected)
+  const dueText = dueDisplay(dueDay(item), selected)
 
+  /*
+    Sem "· referente a <mês de origem>": com o vencimento como competência
+    única, o item já está no mês certo, e a origem virou metadado ("No
+    cartão") em vez de justificativa temporal.
+  */
   switch (state) {
     case 'overdue':
-      return `Em atraso${origin} · venceu em ${dueText}`
+      return `Em atraso · venceu em ${dueText}`
     case 'dueToday':
-      return `${cameFromBefore ? 'A vencer' : 'Pendente'}${origin} · vence hoje`
-    case 'upcoming':
-      return `A vencer${origin} · vence em ${dueText}`
+      return 'Pendente · vence hoje'
     case 'pending':
       return `Pendente · vence em ${dueText}`
   }
@@ -167,8 +164,7 @@ export function dueLabel(
 const STATE_ORDER: Record<DueState, number> = {
   overdue: 0,
   dueToday: 1,
-  upcoming: 2,
-  pending: 3,
+  pending: 2,
 }
 
 export function sortOpenItems<T extends Timed>(
@@ -221,9 +217,14 @@ export function summarizeCompetence(
   const sum = (items: readonly Monetary[]) =>
     items.reduce((total, item) => total + Number(item.amount), 0)
 
+  /*
+    Carry: venceu em competência ANTERIOR e continua aberto. Antes o critério
+    era a origem, que com a competência única deixou de fazer sentido — um
+    item de origem antiga que vence aqui não é pendência trazida de antes.
+  */
   const carried = (items: readonly Monetary[]) =>
     items
-      .filter((item) => compareCompetence(item.referenceMonth, selected) < 0)
+      .filter((item) => compareCompetence(item.dueMonth, selected) < 0)
       .reduce((total, item) => total + Number(item.amount), 0)
 
   const notYetDue = [...receivables, ...debts].filter(
@@ -256,17 +257,24 @@ export function openItemsFor<T extends Timed>(
   selected: SettlementCompetence,
   today = formatDateValue(),
 ): T[] {
-  const eligible = items.filter((item) => belongsToCompetence(item, selected))
+  /*
+    `today` precisa chegar ao filtro: o carry compara o vencimento com HOJE,
+    e omiti-lo faria a lista usar o relógio real em vez da data informada —
+    quebrando justamente a regra de não projetar atraso futuro.
+  */
+  const eligible = items.filter((item) =>
+    belongsToCompetence(item, selected, today),
+  )
   return sortOpenItems(eligible, selected, today)
 }
 
 /**
  * Microcopy de um item RESOLVIDO no Histórico.
  *
- * O histórico é arquivado por `referenceMonth` — a competência a que o acerto
- * pertence —, e não pelo mês em que o dinheiro se moveu. Por isso a data real
- * da resolução precisa aparecer na linha: sem ela, uma dívida de julho paga em
- * setembro ficaria no mês certo mas sem dizer quando foi quitada.
+ * O histórico é arquivado por `dueMonth` — a mesma competência canônica dos
+ * itens abertos —, e não pelo mês em que o dinheiro se moveu. Por isso a data
+ * real da resolução precisa aparecer na linha: sem ela, uma dívida de julho
+ * paga em setembro ficaria no mês certo mas sem dizer quando foi quitada.
  *
  * Quando o vencimento caiu em OUTRA competência, o contexto entra junto —
  * senão "Recebido em 15/10" dentro do histórico de agosto pareceria erro:
@@ -280,7 +288,7 @@ export function resolvedLabel(
   item: {
     dueDate: string
     paidAt?: string | null
-    referenceMonth: SettlementCompetence
+    dueMonth: SettlementCompetence
   },
   kind: 'debt' | 'receivable',
 ): string {
@@ -288,19 +296,19 @@ export function resolvedLabel(
 
   /*
     A data de resolução SEMPRE sai completa: o histórico é arquivado por
-    `referenceMonth`, então um item de agosto/2025 recebido em outubro/2025
+    `dueMonth`, então um item que vence em agosto/2025 e é recebido em
+    outubro/2025
     aparece na prateleira de agosto — e "recebido em 17/10" sem o ano deixaria
     dúvida sobre qual outubro.
   */
   if (!item.paidAt) {
-    return `Venceu em ${dueDisplay(item.dueDate, item.referenceMonth)}`
+    return `Venceu em ${dueDisplay(item.dueDate, item.dueMonth)}`
   }
 
   const due = item.dueDate.slice(0, 10)
   const [dueYear, dueMonth] = due.split('-').map(Number)
   const venceuEmOutraCompetencia =
-    dueYear !== item.referenceMonth.year ||
-    dueMonth !== item.referenceMonth.month
+    dueYear !== item.dueMonth.year || dueMonth !== item.dueMonth.month
 
   if (venceuEmOutraCompetencia) {
     /*
@@ -313,7 +321,7 @@ export function resolvedLabel(
     const anosDivergem = due.slice(0, 4) !== item.paidAt.slice(0, 4)
     const vencimento = anosDivergem
       ? fullDate(due)
-      : dueDisplay(due, item.referenceMonth)
+      : dueDisplay(due, item.dueMonth)
 
     return `Venceu em ${vencimento} · ${verb.toLowerCase()} em ${fullDate(item.paidAt)}`
   }

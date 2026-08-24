@@ -192,7 +192,7 @@ describe('summary é all-time, mesmo com filtro de agosto', () => {
   });
 });
 
-describe('period é arquivado por referenceMonth', () => {
+describe('period é arquivado por dueMonth', () => {
   /**
    * A regra MUDOU: o histórico deixou de ser recortado por `paidAt`.
    *
@@ -235,10 +235,10 @@ describe('period é arquivado por referenceMonth', () => {
       endDate: '2026-08-31',
     });
     /*
-      O nome do campo muda junto com a regra: quem dependia de "quitado neste
-      mês" falha visivelmente, em vez de receber outro universo em silêncio.
+      O nome do campo muda junto com a regra: quem dependia de outro universo
+      falha visivelmente, em vez de receber a resposta errada em silêncio.
     */
-    expect(result.period.scopedBy).toBe('referenceMonth');
+    expect(result.period.scopedBy).toBe('dueMonth');
   });
 
   it('sem filtro, o recorte é nulo — não zero', async () => {

@@ -13,10 +13,12 @@ import {
  * Acerto mensal — apresentação
  * ══════════════════════════════════════════════════════════════════════════
  *
- * O caso central: um jantar dividido comprado em 16/08 que vence com a fatura
- * em 10/09 pertence ao acerto de AGOSTO e vence em SETEMBRO. Ele é visível nos
- * dois meses — as duas competências fazem perguntas diferentes sobre o mesmo
- * item, e nada soma agosto com setembro.
+ * A competência canônica é UMA: o mês do VENCIMENTO.
+ *
+ * O caso central: um jantar comprado em 16/08 que vence em 10/09 pertence ao
+ * acerto de SETEMBRO. Antes ele aparecia nos dois meses — em agosto pela
+ * origem, em setembro pelo vencimento —, e a mesma obrigação parecia
+ * pertencer a duas competências.
  */
 
 const AGOSTO = { year: 2026, month: 8 }
@@ -47,21 +49,25 @@ const JANTAR = item({
   reference: AGOSTO,
 })
 
-describe('Universo da competência', () => {
-  it('agosto mostra o item originado em agosto', () => {
-    expect(belongsToCompetence(JANTAR, AGOSTO)).toBe(true)
+describe('Universo da competência — só o vencimento', () => {
+  const HOJE_AGOSTO = '2026-08-24'
+  const HOJE_SETEMBRO = '2026-09-05'
+
+  it('item 39: agosto NÃO mostra o jantar — a compra não decide', () => {
+    expect(belongsToCompetence(JANTAR, AGOSTO, HOJE_AGOSTO)).toBe(false)
   })
 
-  it('setembro também mostra, porque vence lá', () => {
-    expect(belongsToCompetence(JANTAR, SETEMBRO)).toBe(true)
+  it('item 39: setembro mostra, porque é lá que vence', () => {
+    expect(belongsToCompetence(JANTAR, SETEMBRO, HOJE_AGOSTO)).toBe(true)
   })
 
-  it('outubro mostra como carry-over', () => {
-    expect(belongsToCompetence(JANTAR, OUTUBRO)).toBe(true)
+  it('item 9: vencimento futuro do mês selecionado aparece', () => {
+    // Navegar para setembro em 24/08 mostra o que vence lá.
+    expect(belongsToCompetence(JANTAR, SETEMBRO, HOJE_AGOSTO)).toBe(true)
   })
 
-  it('julho não mostra', () => {
-    expect(belongsToCompetence(JANTAR, { year: 2026, month: 7 })).toBe(false)
+  it('outubro mostra como carry se já vencido e aberto', () => {
+    expect(belongsToCompetence(JANTAR, OUTUBRO, '2026-10-05')).toBe(true)
   })
 
   it('item resolvido sai do universo aberto', () => {
@@ -70,71 +76,67 @@ describe('Universo da competência', () => {
       reference: AGOSTO,
       isPaid: true,
     })
-
-    expect(belongsToCompetence(pago, AGOSTO)).toBe(false)
-    expect(belongsToCompetence(pago, SETEMBRO)).toBe(false)
+    expect(belongsToCompetence(pago, SETEMBRO, HOJE_SETEMBRO)).toBe(false)
   })
 
-  it('item puramente de setembro não aparece em agosto', () => {
-    expect(belongsToCompetence(item({ dueDate: '2026-09-21' }), AGOSTO)).toBe(
-      false,
-    )
+  it('item 44: NÃO projeta carry futuro', () => {
+    /*
+      Hoje 24/08, vence 30/08, olhando setembro: ainda está no prazo. Marcá-la
+      como carry afirmaria um atraso que não aconteceu.
+    */
+    const fimDeAgosto = item({ dueDate: '2026-08-30' })
+
+    expect(belongsToCompetence(fimDeAgosto, SETEMBRO, '2026-08-24')).toBe(false)
+    expect(belongsToCompetence(fimDeAgosto, SETEMBRO, '2026-09-01')).toBe(true)
   })
 
-  it('atraso antigo aparece na competência atual', () => {
-    expect(belongsToCompetence(item({ dueDate: '2026-06-15' }), SETEMBRO)).toBe(
-      true,
-    )
+  it('item 43: atraso antigo continua visível', () => {
+    const junho = item({ dueDate: '2026-06-15' })
+    expect(belongsToCompetence(junho, SETEMBRO, HOJE_SETEMBRO)).toBe(true)
   })
 
-  it('não duplica quando referência e vencimento coincidem', () => {
-    const proprio = item({ dueDate: '2026-09-10' })
-    const rows = openItemsFor([proprio], SETEMBRO, '2026-09-05')
-
-    expect(rows).toHaveLength(1)
+  it('cada item devolve um booleano — nunca duas linhas', () => {
+    expect(belongsToCompetence(JANTAR, SETEMBRO, HOJE_SETEMBRO)).toBe(true)
   })
 })
 
-describe('Estado e microcopy', () => {
-  it('05/09 em setembro: A vencer, referente a agosto', () => {
-    expect(dueStateOf(JANTAR, SETEMBRO, '2026-09-05')).toBe('upcoming')
+describe('Estado e microcopy — sem "referente a"', () => {
+  it('antes do vencimento: Pendente', () => {
+    expect(dueStateOf(JANTAR, SETEMBRO, '2026-09-05')).toBe('pending')
     expect(dueLabel(JANTAR, SETEMBRO, '2026-09-05')).toBe(
-      'A vencer · referente a agosto · vence em 10/09',
-    )
-  })
-
-  it('10/09: vence hoje, não em atraso', () => {
-    expect(dueStateOf(JANTAR, SETEMBRO, '2026-09-10')).toBe('dueToday')
-    expect(dueLabel(JANTAR, SETEMBRO, '2026-09-10')).toBe(
-      'A vencer · referente a agosto · vence hoje',
-    )
-  })
-
-  it('11/09: em atraso, com a origem preservada', () => {
-    expect(dueStateOf(JANTAR, SETEMBRO, '2026-09-11')).toBe('overdue')
-    expect(dueLabel(JANTAR, SETEMBRO, '2026-09-11')).toBe(
-      'Em atraso · referente a agosto · venceu em 10/09',
-    )
-  })
-
-  it('visto de agosto, é pendente comum', () => {
-    // Aqui a referência É a competência: não veio de antes.
-    expect(dueStateOf(JANTAR, AGOSTO, '2026-08-20')).toBe('pending')
-    expect(dueLabel(JANTAR, AGOSTO, '2026-08-20')).toBe(
       'Pendente · vence em 10/09',
     )
   })
 
-  it('item do próprio mês em atraso não menciona origem', () => {
-    const proprio = item({ dueDate: '2026-09-05' })
-
-    expect(dueLabel(proprio, SETEMBRO, '2026-09-11')).toBe(
-      'Em atraso · venceu em 05/09',
+  it('no dia: vence hoje, não em atraso', () => {
+    expect(dueStateOf(JANTAR, SETEMBRO, '2026-09-10')).toBe('dueToday')
+    expect(dueLabel(JANTAR, SETEMBRO, '2026-09-10')).toBe(
+      'Pendente · vence hoje',
     )
   })
 
-  it('nunca chama item futuro de atraso', () => {
-    expect(dueLabel(JANTAR, SETEMBRO, '2026-09-05')).not.toMatch(/atraso/i)
+  it('depois: em atraso', () => {
+    expect(dueStateOf(JANTAR, SETEMBRO, '2026-09-11')).toBe('overdue')
+    expect(dueLabel(JANTAR, SETEMBRO, '2026-09-11')).toBe(
+      'Em atraso · venceu em 10/09',
+    )
+  })
+
+  it('a origem não aparece mais no status', () => {
+    /*
+      "A vencer · referente a agosto" sugeria que o item pertencia a outro mês.
+      A origem virou metadado ("No cartão"), fora do status temporal.
+    */
+    const label = dueLabel(JANTAR, SETEMBRO, '2026-09-05')
+    expect(label).not.toContain('referente a')
+    expect(label).not.toContain('A vencer')
+  })
+
+  it('o estado não depende da competência exibida', () => {
+    const hoje = '2026-09-05'
+    expect(dueStateOf(JANTAR, AGOSTO, hoje)).toBe(
+      dueStateOf(JANTAR, SETEMBRO, hoje),
+    )
   })
 })
 
@@ -177,11 +179,16 @@ describe('Resumo da competência', () => {
     expect(s.net).toBe(290)
   })
 
-  it('destaca o que veio de competências anteriores', () => {
-    const s = summarizeCompetence([JANTAR], [], SETEMBRO, '2026-09-05')
+  it('destaca o que VENCEU em competências anteriores', () => {
+    /*
+      Carry é vencimento anterior, não origem anterior. O jantar nasceu em
+      agosto mas vence em setembro — é item do próprio mês, não pendência
+      trazida de antes.
+    */
+    const carry = item({ dueDate: '2026-07-20', amount: 100 })
+    const s = summarizeCompetence([JANTAR, carry], [], SETEMBRO, '2026-09-05')
 
-    // Os 240 nasceram em agosto.
-    expect(s.carriedReceivable).toBe(240)
+    expect(s.carriedReceivable).toBe(100)
     expect(s.carriedDebt).toBe(0)
   })
 
@@ -247,7 +254,7 @@ describe('Cenário do item 75', () => {
 
 describe('resolvedLabel — microcopy do Histórico', () => {
   /**
-   * O histórico é arquivado por `referenceMonth`, não pelo mês de `paidAt`.
+   * O histórico é arquivado por `dueMonth`, não pelo mês de `paidAt`.
    * Por isso a data real da resolução precisa estar na linha: sem ela, uma
    * dívida de julho paga em setembro ficaria no mês certo sem dizer quando
    * foi quitada.
@@ -256,7 +263,7 @@ describe('resolvedLabel — microcopy do Histórico', () => {
     const debt = {
       dueDate: '2026-07-20',
       paidAt: '2026-07-25',
-      referenceMonth: { year: 2026, month: 7 },
+      dueMonth: { year: 2026, month: 7 },
     }
     expect(resolvedLabel(debt, 'debt')).toBe('Pago em 25/07/2026')
   })
@@ -265,7 +272,7 @@ describe('resolvedLabel — microcopy do Histórico', () => {
     const receivable = {
       dueDate: '2026-08-10',
       paidAt: '2026-08-12',
-      referenceMonth: { year: 2026, month: 8 },
+      dueMonth: { year: 2026, month: 8 },
     }
     expect(resolvedLabel(receivable, 'receivable')).toBe(
       'Recebido em 12/08/2026',
@@ -281,7 +288,7 @@ describe('resolvedLabel — microcopy do Histórico', () => {
     const automatico = {
       dueDate: '2026-09-10',
       paidAt: '2026-10-15',
-      referenceMonth: { year: 2026, month: 8 },
+      dueMonth: { year: 2026, month: 8 },
     }
     const label = resolvedLabel(automatico, 'receivable')
 
@@ -293,7 +300,7 @@ describe('resolvedLabel — microcopy do Histórico', () => {
     const semData = {
       dueDate: '2026-07-20',
       paidAt: null,
-      referenceMonth: { year: 2026, month: 7 },
+      dueMonth: { year: 2026, month: 7 },
     }
     const label = resolvedLabel(semData, 'debt')
 
@@ -309,7 +316,7 @@ describe('resolvedLabel — microcopy do Histórico', () => {
     const primeiroDia = {
       dueDate: '2026-05-01',
       paidAt: '2026-05-01',
-      referenceMonth: { year: 2026, month: 5 },
+      dueMonth: { year: 2026, month: 5 },
     }
     expect(resolvedLabel(primeiroDia, 'debt')).toBe('Pago em 01/05/2026')
   })
@@ -344,20 +351,19 @@ describe('Cross-year: ano faz parte de toda decisão temporal', () => {
   it('item 18: outubro do ano ANTERIOR é carry em atraso, com ano visível', () => {
     const carry = item('2025-10-14', { year: 2025, month: 10 })
 
-    expect(belongsToCompetence(carry, MARCO)).toBe(true)
+    expect(belongsToCompetence(carry, MARCO, HOJE)).toBe(true)
     expect(dueStateOf(carry, MARCO, HOJE)).toBe('overdue')
 
     const label = dueLabel(carry, MARCO, HOJE)
     expect(label).toContain('Em atraso')
     // O ano deixa imediatamente claro por que "outubro" aparece em março.
     expect(label).toContain('14/10/2025')
-    expect(label).toContain('outubro de 2025')
   })
 
   it('item 19: outubro do MESMO ano, futuro, não entra na competência', () => {
     const futuro = item('2026-10-14', { year: 2026, month: 10 })
 
-    expect(belongsToCompetence(futuro, MARCO)).toBe(false)
+    expect(belongsToCompetence(futuro, MARCO, HOJE)).toBe(false)
   })
 
   it('item 7: mesmo dia e mês, anos diferentes, estados opostos', () => {
@@ -371,14 +377,17 @@ describe('Cross-year: ano faz parte de toda decisão temporal', () => {
     )
   })
 
-  it('item 20: futuro COM referenceMonth da competência aparece', () => {
-    // Cobrança automática originada em março, vencendo em outubro.
-    const originadoEmMarco = item('2026-10-14', { year: 2026, month: 3 })
+  it('item 40: origem na competência NÃO traz o item de volta', () => {
+    /*
+      Cobrança comprada em março, vencendo em outubro: pertence a OUTUBRO.
+      Antes a origem a puxava para março, e ela aparecia nos dois meses.
+    */
+    const compradoEmMarco = item('2026-10-14', { year: 2026, month: 3 })
 
-    expect(belongsToCompetence(originadoEmMarco, MARCO)).toBe(true)
-    expect(dueStateOf(originadoEmMarco, MARCO, HOJE)).toBe('pending')
-    // Não é carry: nasceu na competência exibida.
-    expect(dueLabel(originadoEmMarco, MARCO, HOJE)).toContain('Pendente')
+    expect(belongsToCompetence(compradoEmMarco, MARCO, HOJE)).toBe(false)
+    expect(
+      belongsToCompetence(compradoEmMarco, { year: 2026, month: 10 }, HOJE),
+    ).toBe(true)
   })
 
   it('item 21: a virada do ano classifica cada parcela individualmente', () => {
@@ -438,19 +447,21 @@ describe('Cross-year: ano faz parte de toda decisão temporal', () => {
     ])
   })
 
-  it('item 13: parcelas compartilham a origem, cada uma com seu vencimento', () => {
+  it('item 13: cada parcela pertence ao mês do SEU vencimento', () => {
     /*
-      Compra parcelada em 14/09/2025: TODAS as parcelas têm o mesmo
-      `referenceMonth` (a compra), e vencimentos que avançam mês a mês.
+      Compra parcelada em 14/09/2025: todas as parcelas compartilham a origem,
+      mas cada uma vence num mês diferente — e é o vencimento que decide onde
+      ela aparece. A origem comum não as agrupa mais em setembro/2025.
     */
     const origem = { year: 2025, month: 9 }
     const marco = item('2026-03-14', origem)
 
-    // Veio de antes e ainda não venceu → "A vencer", nunca "Em atraso".
-    expect(dueStateOf(marco, MARCO, HOJE)).toBe('upcoming')
+    expect(belongsToCompetence(marco, MARCO, HOJE)).toBe(true)
+    expect(dueStateOf(marco, MARCO, HOJE)).toBe('pending')
+
     const label = dueLabel(marco, MARCO, HOJE)
-    expect(label).toContain('A vencer')
-    expect(label).toContain('setembro de 2025')
+    expect(label).toBe('Pendente · vence em 14/03')
+    expect(label).not.toContain('setembro')
   })
 })
 
@@ -464,7 +475,7 @@ describe('Cross-year no Histórico', () => {
       {
         dueDate: '2025-08-14',
         paidAt: '2025-10-17',
-        referenceMonth: { year: 2025, month: 8 },
+        dueMonth: { year: 2025, month: 8 },
       },
       'receivable',
     )
@@ -477,12 +488,56 @@ describe('Cross-year no Histórico', () => {
       {
         dueDate: '2025-12-10',
         paidAt: '2026-03-15',
-        referenceMonth: { year: 2025, month: 8 },
+        dueMonth: { year: 2025, month: 8 },
       },
       'debt',
     )
 
     expect(label).toContain('10/12/2025')
     expect(label).toContain('15/03/2026')
+  })
+})
+
+describe('Escopo do settle segue o universo exibido', () => {
+  /**
+   * `openItemsFor` define o que a tela mostra E o que o settle alcança — o
+   * backend reconsulta com a mesma regra. Um item invisível não pode ser
+   * quitado por acidente.
+   */
+  const SET = { year: 2026, month: 9 }
+  const HOJE = '2026-09-10'
+
+  it('item 49: A (setembro) + B (agosto vencido), nunca C (outubro)', () => {
+    const a = item({ dueDate: '2026-09-15', amount: 10 })
+    const b = item({ dueDate: '2026-08-20', amount: 20 })
+    // Comprado em setembro, vence em outubro: pertence a outubro.
+    const c = item({ dueDate: '2026-10-14', amount: 30, reference: SET })
+
+    const visiveis = openItemsFor([a, b, c], SET, HOJE)
+
+    expect(visiveis.map((i) => i.amount).sort()).toEqual([10, 20])
+    expect(visiveis.some((i) => i.amount === 30)).toBe(false)
+  })
+
+  it('item 50: quitação antecipada continua possível', () => {
+    /*
+      Hoje em agosto, olhando setembro: o item aparece e pode ser quitado.
+      O diálogo avisa que ainda não venceu — `notYetDueCount` é o dado.
+    */
+    const futuro = item({ dueDate: '2026-09-10', amount: 100 })
+    const visiveis = openItemsFor([futuro], SET, '2026-08-24')
+
+    expect(visiveis).toHaveLength(1)
+
+    const resumo = summarizeCompetence(visiveis, [], SET, '2026-08-24')
+    expect(resumo.notYetDueCount).toBe(1)
+  })
+
+  it('carry ainda não vencido não entra no settle do mês seguinte', () => {
+    // Hoje 24/08, vence 30/08: não é pendência de setembro ainda.
+    const fimDeAgosto = item({ dueDate: '2026-08-30', amount: 55 })
+
+    expect(openItemsFor([fimDeAgosto], SET, '2026-08-24')).toHaveLength(0)
+    expect(openItemsFor([fimDeAgosto], SET, '2026-09-01')).toHaveLength(1)
   })
 })
