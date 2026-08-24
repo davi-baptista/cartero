@@ -144,3 +144,55 @@ export function filterByCompositionKey(
     (tx) => !tx.personId && (tx.categoryId ?? 'sem-categoria') === key,
   )
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Resumo da seção "Faturas" no Orçamento
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Espelha `summarizePeopleSettlements`: as duas seções são irmãs e mostram
+ * título + composição à esquerda, agregado neutro à direita.
+ *
+ * O BRUTO vem de `totalInvoices`, o agregado que o backend já consolida — e
+ * do qual `netAmount` é derivado (`totalInvoices - totalReimbursable`). Somar
+ * `own + thirdParty` daria o mesmo número, mas usar a fonte consolidada
+ * garante que o cabeçalho feche com as faturas listadas mesmo se a relação
+ * entre os três mudar no backend.
+ */
+export interface InvoiceSectionSummary {
+  /** Bruto cobrado pelos bancos. NÃO é `totalToPay`. */
+  gross: number
+  /** Parcela econômica do usuário. */
+  own: number
+  /** Parcela de terceiros dentro das faturas. */
+  thirdParty: number
+}
+
+export function summarizeInvoiceSection(input: {
+  totalInvoices: number
+  netAmount: number
+  totalReimbursable: number
+}): InvoiceSectionSummary {
+  return {
+    gross: input.totalInvoices,
+    own: input.netAmount,
+    thirdParty: input.totalReimbursable,
+  }
+}
+
+/**
+ * Composição exibida ao lado do título — só os lados que existem.
+ *
+ * Sem terceiros, "R$ 0,00 de outras pessoas" seria ruído: a ausência já é
+ * dita pela omissão, como no cabeçalho de Acertos.
+ */
+export function invoiceSectionParts(
+  summary: InvoiceSectionSummary,
+): Array<{ kind: 'own' | 'thirdParty'; amount: number }> {
+  const parts: Array<{ kind: 'own' | 'thirdParty'; amount: number }> = []
+  if (summary.own > 0.005) parts.push({ kind: 'own', amount: summary.own })
+  if (summary.thirdParty > 0.005) {
+    parts.push({ kind: 'thirdParty', amount: summary.thirdParty })
+  }
+  return parts
+}

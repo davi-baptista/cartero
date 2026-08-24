@@ -5,6 +5,8 @@ import {
   filterByCompositionKey,
   invoiceBreakdown,
   invoiceComposition,
+  invoiceSectionParts,
+  summarizeInvoiceSection,
   THIRD_PARTY_BUCKET,
 } from './invoice-composition'
 
@@ -256,5 +258,129 @@ describe('Filtro pela linha da composição', () => {
     const depois = invoiceBreakdown(1173.95, FATURA_REAL)
 
     expect(depois).toEqual(antes)
+  })
+})
+
+describe('summarizeInvoiceSection — cabeçalho da seção Faturas', () => {
+  /**
+   * O cabeçalho passou a expor os três números explicitamente, no lugar de
+   * "já descontado R$ X de outras pessoas" — que não dizia se o valor tinha
+   * sido somado ou subtraído do número ao lado.
+   */
+  it('item 11: expõe bruto, sua parte e terceiros', () => {
+    const summary = summarizeInvoiceSection({
+      totalInvoices: 1325.14,
+      netAmount: 886.98,
+      totalReimbursable: 438.16,
+    })
+
+    expect(summary.own).toBeCloseTo(886.98, 2)
+    expect(summary.thirdParty).toBeCloseTo(438.16, 2)
+    expect(summary.gross).toBeCloseTo(1325.14, 2)
+  })
+
+  it('o bruto fecha com own + terceiros', () => {
+    const summary = summarizeInvoiceSection({
+      totalInvoices: 1325.14,
+      netAmount: 886.98,
+      totalReimbursable: 438.16,
+    })
+
+    expect(summary.own + summary.thirdParty).toBeCloseTo(summary.gross, 2)
+  })
+
+  it('item 7: reconcilia com a soma das faturas listadas', () => {
+    /*
+      Bradesco 144,55 (87,70 de terceiros) · Mercado Pago 748,95 (350,46) ·
+      Santander 245,59 · Porto Seguro 186,05.
+    */
+    const faturas = [
+      { total: 144.55, thirdParty: 87.7 },
+      { total: 748.95, thirdParty: 350.46 },
+      { total: 245.59, thirdParty: 0 },
+      { total: 186.05, thirdParty: 0 },
+    ]
+    const bruto = faturas.reduce((sum, f) => sum + f.total, 0)
+    const terceiros = faturas.reduce((sum, f) => sum + f.thirdParty, 0)
+
+    const summary = summarizeInvoiceSection({
+      totalInvoices: bruto,
+      netAmount: bruto - terceiros,
+      totalReimbursable: terceiros,
+    })
+
+    expect(summary.gross).toBeCloseTo(1325.14, 2)
+    expect(summary.thirdParty).toBeCloseTo(438.16, 2)
+    expect(summary.own).toBeCloseTo(886.98, 2)
+  })
+
+  it('item 5: o bruto NÃO é totalToPay', () => {
+    /*
+      `totalToPay` soma ainda pagamentos diretos, dívidas e pendências
+      anteriores. Usar um no lugar do outro afirmaria que o mês custa o
+      valor das faturas — e ele custa mais.
+    */
+    const summary = summarizeInvoiceSection({
+      totalInvoices: 1325.14,
+      netAmount: 886.98,
+      totalReimbursable: 438.16,
+    })
+    const totalToPay = 1603.95 // faturas + diretos + dívidas
+
+    expect(summary.gross).not.toBe(totalToPay)
+    expect(summary.own).not.toBe(totalToPay)
+  })
+})
+
+describe('invoiceSectionParts', () => {
+  it('item 12: sem terceiros, omite o lado zerado', () => {
+    const parts = invoiceSectionParts(
+      summarizeInvoiceSection({
+        totalInvoices: 1000,
+        netAmount: 1000,
+        totalReimbursable: 0,
+      }),
+    )
+
+    expect(parts).toHaveLength(1)
+    expect(parts[0].kind).toBe('own')
+    // Nada de "R$ 0,00 de outras pessoas".
+    expect(parts.some((p) => p.kind === 'thirdParty')).toBe(false)
+  })
+
+  it('com terceiros, os dois lados aparecem nesta ordem', () => {
+    const parts = invoiceSectionParts(
+      summarizeInvoiceSection({
+        totalInvoices: 1325.14,
+        netAmount: 886.98,
+        totalReimbursable: 438.16,
+      }),
+    )
+
+    expect(parts.map((p) => p.kind)).toEqual(['own', 'thirdParty'])
+  })
+
+  it('fatura integralmente de terceiros não inventa "sua parte"', () => {
+    const parts = invoiceSectionParts(
+      summarizeInvoiceSection({
+        totalInvoices: 240,
+        netAmount: 0,
+        totalReimbursable: 240,
+      }),
+    )
+
+    expect(parts).toHaveLength(1)
+    expect(parts[0].kind).toBe('thirdParty')
+  })
+
+  it('sem faturas, não há composição', () => {
+    const parts = invoiceSectionParts(
+      summarizeInvoiceSection({
+        totalInvoices: 0,
+        netAmount: 0,
+        totalReimbursable: 0,
+      }),
+    )
+    expect(parts).toEqual([])
   })
 })

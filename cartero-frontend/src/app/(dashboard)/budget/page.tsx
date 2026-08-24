@@ -32,12 +32,38 @@ import {
 import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import { invoiceStatusConfig } from '@/lib/invoice-status'
+import {
+  invoiceSectionParts,
+  summarizeInvoiceSection,
+} from '@/lib/invoice-composition'
 import { InvoiceStatus } from '@/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 // O mapa de status vivia aqui, em `overview` e em `banks/[id]/invoices`, com
 // os mesmos rótulos copiados. Agora vem de `@/lib/invoice-status`.
+
+/**
+ * Composição de cabeçalho compartilhada por "Faturas" e "Acertos com pessoas".
+ *
+ * As duas seções são irmãs: título + resumo à esquerda, informação
+ * complementar à direita, lista logo abaixo. Antes cada uma tinha o próprio
+ * conjunto de classes e, embora as duas usassem `mb-3`, a distância até a
+ * lista divergia — o lado direito de Acertos empilha rótulo e valor
+ * (`sm:block`), deixando o cabeçalho mais alto que o de Faturas, que era de
+ * uma linha só.
+ *
+ * Centralizar aqui é o que impede a divergência de voltar: mudar o spacing de
+ * uma seção passa obrigatoriamente pela outra.
+ */
+const SECTION_HEADER_CLASS =
+  'mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3'
+
+const SECTION_TITLE_CLASS = 'text-[15px] font-semibold tracking-tight'
+
+/** Bloco à direita: rótulo muted + valor. Empilha no desktop, inline no mobile. */
+const SECTION_ASIDE_CLASS =
+  'text-[11px] text-muted-foreground sm:shrink-0 sm:text-right'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -229,6 +255,17 @@ export default function BudgetPage() {
     dependência instável. Somar meia dúzia de números é mais barato que isso.
   */
   const peopleSummary = summarizePeopleSettlements(peopleSettlements)
+  /*
+    Resumo da seção Faturas — mesma anatomia do de pessoas. O bruto vem do
+    agregado consolidado do backend, não de soma no JSX.
+  */
+  const invoiceSummary = summarizeInvoiceSection({
+    totalInvoices: summary.totalAll,
+    netAmount: summary.netAmount,
+    totalReimbursable: summary.totalReimbursable,
+  })
+  const invoiceParts = invoiceSectionParts(invoiceSummary)
+
   const peopleSummaryParts = summaryCompositionParts(peopleSummary)
   const peopleSummaryBalance = summaryBalanceLabel(peopleSummary, formatCurrency)
   const peopleSummaryDirection = summaryDirection(peopleSummary)
@@ -512,22 +549,63 @@ export default function BudgetPage() {
 
       {/* Invoice list */}
       <div>
-        <div className="mb-3 flex items-baseline justify-between gap-2">
-          <h2 className="text-[15px] font-semibold tracking-tight">
+        {/*
+          Mesma composição de spacing do cabeçalho de Acertos com pessoas
+          (SECTION_HEADER_CLASS): as duas seções são irmãs, e um `mb-*`
+          divergente escondido num dos wrappers reabriria a diferença.
+        */}
+        <div className={SECTION_HEADER_CLASS}>
+          <h2 className={SECTION_TITLE_CLASS}>
             Faturas
-            {!isLoading && summary.netAmount > 0 && (
-              <span className="ml-1.5 font-normal text-muted-foreground">
-                · {formatCurrency(summary.netAmount)} sua parte
-              </span>
-            )}
+            {/*
+              Composição no mesmo padrão de "a receber · a pagar" dos acertos.
+              Antes a parcela de terceiros era "já descontado R$ X de outras
+              pessoas" à direita, que deixava ambíguo se o número tinha sido
+              somado ou subtraído do valor ao lado.
+            */}
+            {!isLoading &&
+              invoiceParts.map((part) => (
+                <span
+                  key={part.kind}
+                  className="font-normal text-muted-foreground"
+                >
+                  <span className="mx-1.5 text-muted-foreground/40" aria-hidden>
+                    ·
+                  </span>
+                  <span
+                    className={cn(
+                      'font-medium',
+                      part.kind === 'thirdParty' && 'text-receivable',
+                    )}
+                  >
+                    {formatCurrency(part.amount)}
+                  </span>{' '}
+                  {part.kind === 'own' ? 'sua parte' : 'de outras pessoas'}
+                </span>
+              ))}
           </h2>
-          {!isLoading && summary.totalReimbursable > 0 && (
-            <p className="text-[11px] text-muted-foreground">
-              já descontado{' '}
-              <span className="font-medium text-receivable">
-                {formatCurrency(summary.totalReimbursable)}
-              </span>{' '}
-              de outras pessoas
+
+          {/*
+            O BRUTO das faturas — o que os bancos cobram. Vem de
+            `totalInvoices`, o agregado que o backend já consolida e do qual
+            `netAmount` é derivado (`totalInvoices - totalReimbursable`), então
+            o cabeçalho fecha com as faturas listadas por construção.
+
+            Neutro de propósito: não é `totalToPay` (que ainda soma pagamentos
+            diretos, dívidas e pendências anteriores) nem valor a receber.
+          */}
+          {!isLoading && invoiceSummary.gross > 0 && (
+            <p
+              className={SECTION_ASIDE_CLASS}
+              aria-label={`Total das faturas, ${formatCurrency(invoiceSummary.gross)}`}
+            >
+              <span className="sm:block">Total das faturas</span>
+              <span className="mx-1.5 text-muted-foreground/40 sm:hidden" aria-hidden>
+                ·
+              </span>
+              <span className="font-medium tabular-nums text-foreground">
+                {formatCurrency(invoiceSummary.gross)}
+              </span>
             </p>
           )}
         </div>
@@ -623,8 +701,8 @@ export default function BudgetPage() {
             não serve: o universo em aberto pode carregar pendências
             anteriores, então a frase seria imprecisa além de redundante.
           */}
-          <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
-            <h2 className="text-[15px] font-semibold tracking-tight">
+          <div className={SECTION_HEADER_CLASS}>
+            <h2 className={SECTION_TITLE_CLASS}>
               Acertos com pessoas
               {peopleSummaryParts.length > 0 && (
                 <span className="font-normal text-muted-foreground">
@@ -654,10 +732,7 @@ export default function BudgetPage() {
               O saldo é consolidado INFORMATIVO da relação com pessoas: não
               abate `totalToPay` nem qualquer obrigação (Fase 9B).
             */}
-            <p
-              className="text-[11px] text-muted-foreground sm:shrink-0 sm:text-right"
-              aria-label={peopleSummaryAria}
-            >
+            <p className={SECTION_ASIDE_CLASS} aria-label={peopleSummaryAria}>
               <span className="sm:block">Saldo em aberto</span>
               <span className="mx-1.5 text-muted-foreground/40 sm:hidden" aria-hidden>
                 ·
