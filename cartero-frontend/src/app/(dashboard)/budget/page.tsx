@@ -57,7 +57,7 @@ import { InvoiceStatus } from '@/types'
  * uma seção passa obrigatoriamente pela outra.
  */
 const SECTION_HEADER_CLASS =
-  'mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3'
+  'mb-2 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3'
 
 const SECTION_TITLE_CLASS = 'text-[15px] font-semibold tracking-tight'
 
@@ -410,7 +410,14 @@ export default function BudgetPage() {
               continua no fluxo de Histórico salarial, mas competia por
               atenção no topo sem mudar nenhuma decisão.
             */}
-            <div className="border-t border-border/60 pt-4">
+            {/*
+              Delimitado pelos DOIS lados, com o mesmo divisor.
+
+              A linha de baixo encerra o bloco: sem ela, "Renda do mês" e
+              "Faturas" liam como uma seção contínua. O `py-4` mantém o
+              respiro simétrico — a barra e os textos não encostam nas linhas.
+            */}
+            <div className="border-y border-border/60 py-4">
               <div className="flex items-baseline justify-between gap-3">
                 <p className="text-sm text-muted-foreground">Renda do mês</p>
                 {/*
