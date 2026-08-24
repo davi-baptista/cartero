@@ -43,8 +43,14 @@ export interface BudgetSummary {
    * um valor já compensado por recebíveis.
    */
   debts: {
-    /** Vencimento dentro do mês selecionado. */
-    dueInMonth: number
+    /**
+     * Vence no mês e continua ABERTA.
+     *
+     * Dívida resolvida NÃO entra aqui: ela pertence financeiramente ao mês em
+     * que o dinheiro saiu (`paidInMonth`). Contá-la nos dois representaria a
+     * mesma obrigação duas vezes.
+     */
+    openDueInMonth: number
     /**
      * Pendências anteriores ainda ABERTAS — zero fora do mês corrente.
      *
@@ -54,9 +60,9 @@ export interface BudgetSummary {
      * consumidor calcular errado sem aviso.
      */
     currentOpenPrior: number
-    /** Pendências anteriores cujo pagamento ACONTECEU nesta competência. */
-    priorPaidInMonth: number
-    /** `dueInMonth + currentOpenPrior + priorPaidInMonth`. */
+    /** PAGAS nesta competência, qualquer que tenha sido o vencimento. */
+    paidInMonth: number
+    /** `openDueInMonth + currentOpenPrior + paidInMonth`. */
     total: number
     priorItems: Array<{
       title: string
@@ -103,12 +109,13 @@ export interface BudgetSummary {
     /** Contexto do orçamento — pode incluir item já quitado. */
     budget: {
       receivableDueInMonth: number
-      debtDueInMonth: number
+      /** Vence no mês e continua aberta. */
+      openDueInMonth: number
       /** Anteriores ainda abertas (só no mês corrente). */
       currentOpenPrior: number
-      /** Anteriores pagas nesta competência. */
-      priorPaidInMonth: number
-      /** `debtDueInMonth + currentOpenPrior + priorPaidInMonth`. */
+      /** Pagas nesta competência, qualquer vencimento. */
+      paidInMonth: number
+      /** `openDueInMonth + currentOpenPrior + paidInMonth`. */
       debtTotal: number
       automaticReceivable: number
     }

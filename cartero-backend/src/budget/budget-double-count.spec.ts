@@ -8,6 +8,7 @@ import {
   makeInvoice,
   money,
 } from 'src/common/testing/fixtures';
+import { routeDebtQuery } from 'src/common/testing/debt-query-double';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -89,23 +90,30 @@ function buildService(setup: Setup) {
           : [],
       ),
     },
+    /*
+      Roteia pelas três consultas de dívida. Devolver a mesma linha para todas
+      contaria a dívida paga duas vezes — em `openDueInMonth` e em
+      `paidInMonth` —, que é justamente o double count deste arquivo.
+    */
     debt: {
-      findMany: vi.fn(async ({ where }: any) => {
-        if (where?.dueDate?.lt && !where?.dueDate?.gte) return [];
-        return setup.debtAmount
-          ? [
-              {
-                amount: money(setup.debtAmount),
-                isPaid: true,
-                paidAt: new Date(Date.UTC(2026, 7, 15, 12)),
-                title: 'Aluguel',
-                dueDate: new Date(Date.UTC(2026, 7, 10, 12)),
-                personId: null,
-                person: null,
-              },
-            ]
-          : [];
-      }),
+      findMany: vi.fn(async ({ where }: any) =>
+        routeDebtQuery(
+          where,
+          setup.debtAmount
+            ? [
+                {
+                  amount: money(setup.debtAmount),
+                  isPaid: true,
+                  paidAt: new Date(Date.UTC(2026, 7, 15, 12)),
+                  title: 'Aluguel',
+                  dueDate: new Date(Date.UTC(2026, 7, 10, 12)),
+                  personId: null,
+                  person: null,
+                },
+              ]
+            : [],
+        ),
+      ),
     },
     receivable: {
       findMany: vi.fn(async () =>

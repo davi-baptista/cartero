@@ -13,6 +13,9 @@ import {
   summaryDirection,
   budgetDebtContribution,
   shouldRenderPeopleSettlement,
+  peopleRowView,
+  peopleRowStatusLabel,
+  peopleRowAriaLabel,
 } from './people-settlement-view'
 import type { BudgetSummary } from '@/services/budget.service'
 
@@ -41,9 +44,9 @@ function person(overrides: {
     personName: overrides.name ?? 'Mariana Souza',
     budget: {
       receivableDueInMonth: 0,
-      debtDueInMonth: 0,
+      openDueInMonth: 0,
       currentOpenPrior: 0,
-      priorPaidInMonth: 0,
+      paidInMonth: 0,
       debtTotal: 0,
       automaticReceivable: 0,
       ...overrides.budget,
@@ -178,7 +181,7 @@ describe('openPriorLabel', () => {
       não há nada aberto de antes. A linha de carry precisa ficar ausente.
     */
     const paga = person({
-      budget: { debtDueInMonth: 300, debtTotal: 300 },
+      budget: { openDueInMonth: 300, debtTotal: 300 },
       open: { priorNet: 0, itemCount: 0 },
     })
     expect(openPriorLabel(paga, brl)).toBeNull()
@@ -193,7 +196,7 @@ describe('budgetContextLabel — pendência anterior paga na competência', () =
   */
   it('pendência anterior paga neste mês aparece', () => {
     const pagaAqui = person({
-      budget: { priorPaidInMonth: 330, debtTotal: 330 },
+      budget: { paidInMonth: 330, debtTotal: 330 },
       open: { itemCount: 0 },
     })
     const label = budgetContextLabel(pagaAqui, brl)
@@ -208,7 +211,7 @@ describe('budgetContextLabel — pendência anterior paga na competência', () =
       duplicaria a leitura.
     */
     const doMes = person({
-      budget: { debtDueInMonth: 330, debtTotal: 330 },
+      budget: { openDueInMonth: 330, debtTotal: 330 },
       open: { debtInMonth: 330, debtTotal: 330, net: -330, itemCount: 1 },
     })
     expect(budgetContextLabel(doMes, brl)).toBeNull()
@@ -237,7 +240,7 @@ describe('budgetContextLabel — pendência anterior paga na competência', () =
 
   it('não repete a competência — ela já está no título da seção', () => {
     const pagaAqui = person({
-      budget: { priorPaidInMonth: 330, debtTotal: 330 },
+      budget: { paidInMonth: 330, debtTotal: 330 },
       open: { itemCount: 0 },
     })
     expect(budgetContextLabel(pagaAqui, brl)).not.toMatch(
@@ -250,7 +253,7 @@ describe('settlementAriaLabel', () => {
   it('descreve a composição em aberto sem depender de cor', () => {
     const label = settlementAriaLabel(
       person({
-        budget: { debtDueInMonth: 200, debtTotal: 200 },
+        budget: { openDueInMonth: 200, debtTotal: 200 },
         open: { receivableTotal: 200, debtTotal: 200, net: 0, itemCount: 2 },
       }),
       brl,
@@ -269,7 +272,7 @@ describe('settlementAriaLabel', () => {
   it('depois da quitação diz nada em aberto, sem perder o contexto', () => {
     const label = settlementAriaLabel(
       person({
-        budget: { priorPaidInMonth: 200, debtTotal: 200 },
+        budget: { paidInMonth: 200, debtTotal: 200 },
         open: { itemCount: 0 },
       }),
       brl,
@@ -302,7 +305,7 @@ describe('coerência entre os universos', () => {
     const depoisDeQuitar = person({
       budget: {
         receivableDueInMonth: 200,
-        priorPaidInMonth: 200,
+        paidInMonth: 200,
         debtTotal: 200,
       },
       open: { itemCount: 0 },
@@ -323,9 +326,9 @@ describe('coerência entre os universos', () => {
     const so_orcamento = person({
       budget: {
         receivableDueInMonth: 9999,
-        debtDueInMonth: 9999,
+        openDueInMonth: 9999,
         currentOpenPrior: 9999,
-        priorPaidInMonth: 9999,
+        paidInMonth: 9999,
         debtTotal: 19998,
         automaticReceivable: 9999,
       },
@@ -399,7 +402,7 @@ describe('summarizePeopleSettlements — o cabeçalho da seção', () => {
       afirmaria uma obrigação viva que não existe.
     */
     const quitada = person({
-      budget: { debtDueInMonth: 330, debtTotal: 330 },
+      budget: { openDueInMonth: 330, debtTotal: 330 },
       open: { itemCount: 0 },
     })
 
@@ -447,7 +450,7 @@ describe('summarizePeopleSettlements — o cabeçalho da seção', () => {
 
   it('item 53: nada em aberto, mas pessoa presente por contexto', () => {
     const soHistorico = person({
-      budget: { debtDueInMonth: 200, debtTotal: 200 },
+      budget: { openDueInMonth: 200, debtTotal: 200 },
       open: { itemCount: 0 },
     })
 
@@ -526,14 +529,14 @@ describe('Projeção por pessoa dos três buckets do orçamento', () => {
    * O bug: `budgetContextLabel` lia SÓ `priorPaidInMonth`.
    *
    * Em dezembro, uma dívida de R$ 300 que vence no mês e foi paga depois tem
-   * `debtDueInMonth: 300` e `priorPaidInMonth: 0` — o rótulo voltava `null`,
+   * `openDueInMonth: 300` e `paidInMonth: 0` — o rótulo voltava `null`,
    * a linha ficava sem contexto, e como a dívida já estava quitada o lado em
    * aberto também estava vazio. Uma linha em branco, enquanto os R$ 300
    * seguiam dentro do total do mês.
    */
   it('item 19: dívida do mês já quitada explica a contribuição', () => {
     const dezembro = person({
-      budget: { debtDueInMonth: 300, debtTotal: 300 },
+      budget: { openDueInMonth: 300, debtTotal: 300 },
       open: { itemCount: 0 },
     })
 
@@ -545,7 +548,7 @@ describe('Projeção por pessoa dos três buckets do orçamento', () => {
 
   it('item 21: open zerado NÃO significa contribuição zero', () => {
     const dezembro = person({
-      budget: { debtDueInMonth: 300, debtTotal: 300 },
+      budget: { openDueInMonth: 300, debtTotal: 300 },
       open: { itemCount: 0 },
     })
 
@@ -561,7 +564,7 @@ describe('Projeção por pessoa dos três buckets do orçamento', () => {
       logo abaixo seria ruído — o backend segue entregando o valor.
     */
     const aberta = person({
-      budget: { debtDueInMonth: 300, debtTotal: 300 },
+      budget: { openDueInMonth: 300, debtTotal: 300 },
       open: { debtInMonth: 300, debtTotal: 300, net: -300, itemCount: 1 },
     })
 
@@ -571,7 +574,7 @@ describe('Projeção por pessoa dos três buckets do orçamento', () => {
 
   it('itens 14-15: prior paid usa vocabulário próprio', () => {
     const agosto = person({
-      budget: { priorPaidInMonth: 2580, debtTotal: 2580 },
+      budget: { paidInMonth: 2580, debtTotal: 2580 },
       open: { itemCount: 0 },
     })
 
@@ -584,7 +587,7 @@ describe('Projeção por pessoa dos três buckets do orçamento', () => {
 
   it('item 23: os dois componentes aparecem juntos', () => {
     const misto = person({
-      budget: { debtDueInMonth: 300, priorPaidInMonth: 200, debtTotal: 500 },
+      budget: { openDueInMonth: 300, paidInMonth: 200, debtTotal: 500 },
       open: { itemCount: 0 },
     })
 
@@ -614,7 +617,7 @@ describe('Projeção por pessoa dos três buckets do orçamento', () => {
       open: { priorDebt: 300, debtTotal: 300, net: -300, itemCount: 1 },
     })
     const depois = person({
-      budget: { priorPaidInMonth: 300, debtTotal: 300 },
+      budget: { paidInMonth: 300, debtTotal: 300 },
       open: { itemCount: 0 },
     })
 
@@ -646,7 +649,7 @@ describe('shouldRenderPeopleSettlement', () => {
 
   it('contribuição ao orçamento basta, mesmo sem nada em aberto', () => {
     const soOrcamento = person({
-      budget: { debtDueInMonth: 300, debtTotal: 300 },
+      budget: { openDueInMonth: 300, debtTotal: 300 },
       open: { itemCount: 0 },
     })
     expect(shouldRenderPeopleSettlement(soOrcamento)).toBe(true)
@@ -658,5 +661,127 @@ describe('shouldRenderPeopleSettlement', () => {
       open: { itemCount: 0 },
     })
     expect(shouldRenderPeopleSettlement(recebivelDoMes)).toBe(true)
+  })
+})
+
+describe('peopleRowView — anatomia da linha', () => {
+  it('item 45: sem nada aberto, o destaque é o quitado', () => {
+    const eva = person({
+      budget: { paidInMonth: 300, debtTotal: 300 },
+      open: { itemCount: 0 },
+    })
+    const view = peopleRowView(eva, brl)
+
+    expect(view.status).toBe('settled')
+    expect(view.amount).toBe(300)
+    expect(peopleRowStatusLabel(view.status)).toBe('Quitado')
+    // A badge comunica o estado; a linha não repete "Nada em aberto".
+    expect(view.metadata).toEqual([])
+  })
+
+  it('item 43: só dívida aberta destaca o saldo devedor', () => {
+    const view = peopleRowView(
+      person({
+        open: { debtTotal: 300, net: -300, itemCount: 1 },
+      }),
+      brl,
+    )
+
+    expect(view.status).toBe('open')
+    expect(view.direction).toBe('out')
+    expect(view.amount).toBe(-300)
+    // Um lado só: o valor já diz tudo, sem composição redundante.
+    expect(view.metadata).toEqual([])
+  })
+
+  it('item 44: bilateral mostra a composição', () => {
+    const view = peopleRowView(
+      person({
+        open: {
+          receivableTotal: 610.9,
+          debtTotal: 330,
+          net: 280.9,
+          itemCount: 2,
+        },
+      }),
+      brl,
+    )
+
+    expect(view.direction).toBe('in')
+    expect(view.amount).toBeCloseTo(280.9, 2)
+    expect(view.metadata[0]).toContain('a receber')
+    expect(view.metadata[0]).toContain('a pagar')
+  })
+
+  it('item 41: saldo zero COM itens não é Quitado', () => {
+    /*
+      R$ 300 de cada lado dá net zero com duas obrigações vivas. Chamar isso
+      de quitado repetiria o erro que a Fase 8B removeu do WhatsApp.
+    */
+    const view = peopleRowView(
+      person({
+        open: { receivableTotal: 300, debtTotal: 300, net: 0, itemCount: 2 },
+      }),
+      brl,
+    )
+
+    expect(view.status).toBe('open')
+    expect(view.direction).toBe('neutral')
+    expect(view.amount).toBe(0)
+  })
+
+  it('item 46: pago + aberto mostra os dois', () => {
+    const view = peopleRowView(
+      person({
+        budget: { paidInMonth: 300, debtTotal: 400 },
+        open: { debtTotal: 100, net: -100, itemCount: 1 },
+      }),
+      brl,
+    )
+
+    // Ainda existe o que resolver: o estado principal é "Em aberto".
+    expect(view.status).toBe('open')
+    expect(view.amount).toBe(-100)
+    // E o desembolso já feito não desaparece.
+    expect(view.metadata.some((m) => m.includes('quitados neste mês'))).toBe(
+      true,
+    )
+  })
+
+  it('item 42: origem em compra no cartão vira metadata', () => {
+    const view = peopleRowView(
+      person({
+        open: {
+          receivableTotal: 219.66,
+          net: 219.66,
+          itemCount: 1,
+          automaticReceivable: 219.66,
+        },
+      }),
+      brl,
+    )
+
+    expect(view.metadata.some((m) => m.includes('compras no seu cartão'))).toBe(
+      true,
+    )
+  })
+
+  it('item 55: o rótulo acessível não depende de cor', () => {
+    const aberto = peopleRowAriaLabel(
+      person({ open: { net: 280.9, itemCount: 1 } }),
+      brl,
+    )
+    const quitado = peopleRowAriaLabel(
+      person({
+        budget: { paidInMonth: 300, debtTotal: 300 },
+        open: { itemCount: 0 },
+      }),
+      brl,
+    )
+
+    expect(aberto).toContain('Em aberto')
+    expect(aberto).toContain('a receber')
+    expect(quitado).toContain('Quitado')
+    expect(quitado).toContain('pagos nesta competência')
   })
 })

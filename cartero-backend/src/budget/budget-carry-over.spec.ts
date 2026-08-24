@@ -3,6 +3,7 @@ import { BudgetService } from './budget.service';
 import { SalaryService } from 'src/salary/salary.service';
 import type { PrismaService } from 'src/prisma/prisma.service';
 import { USER_ID, makeBank, money } from 'src/common/testing/fixtures';
+import { routeDebtQuery } from 'src/common/testing/debt-query-double';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -17,12 +18,14 @@ import { USER_ID, makeBank, money } from 'src/common/testing/fixtures';
  * Defensável como fotografia histórica, mas na tela parecia que a mesma dívida
  * estava sendo cobrada de novo a cada mês.
  *
- * Agora o orçamento reconhece dois EVENTOS:
+ * A competência financeira final de uma dívida:
  *
- *   · `currentOpenPrior`  — ainda aberta, SÓ no mês civil corrente
- *   · `priorPaidInMonth`  — o pagamento aconteceu NESTA competência
+ *   ABERTA → o vencimento (planejamento), mais o mês corrente se atrasada
+ *   PAGA   → `paidAt`, sempre — é quando o dinheiro saiu
  *
- * Os meses intermediários, onde nada aconteceu, não repetem mais nada.
+ * Uma dívida resolvida deixa de contribuir no mês do vencimento: aquele
+ * desembolso aconteceu em outro mês, e contá-lo nos dois representaria a
+ * mesma R$ 300 duas vezes.
  */
 
 interface DebtRow {
@@ -70,31 +73,7 @@ function buildService(rows: DebtRow[]) {
             : null,
         });
 
-        return rows.map(toRow).filter((row) => {
-          // A. Dívidas do próprio mês.
-          if (where.dueDate?.gte && where.dueDate?.lt) {
-            return (
-              row.dueDate >= where.dueDate.gte && row.dueDate < where.dueDate.lt
-            );
-          }
-
-          if (!where.dueDate?.lt) return false;
-          if (row.dueDate >= where.dueDate.lt) return false;
-
-          // B. Anteriores ainda abertas.
-          if (where.isPaid === false) return !row.isPaid;
-
-          // C. Anteriores pagas dentro da janela do mês.
-          if (where.paidAt?.gte && where.paidAt?.lt) {
-            return (
-              row.paidAt != null &&
-              row.paidAt >= where.paidAt.gte &&
-              row.paidAt < where.paidAt.lt
-            );
-          }
-
-          return false;
-        });
+        return routeDebtQuery(where, rows.map(toRow));
       }),
     },
   };
@@ -117,11 +96,16 @@ describe('item 41: dezembro → agosto, sem repetir no meio', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it('dezembro: a obrigação pertence ao próprio mês', async () => {
+  it('dezembro: a dívida JÁ PAGA não contribui mais', async () => {
+    /*
+      O dinheiro não saiu em dezembro. Como hoje sabemos quando saiu, o mês do
+      vencimento deixa de reivindicar o desembolso — senão a mesma R$ 300
+      contaria em dezembro e em agosto.
+    */
     const budget = await buildService(CENARIO).getBudget(USER_ID, 12, 2025);
 
-    expect(budget.debts.dueInMonth).toBe(300);
-    expect(budget.debts.total).toBe(300);
+    expect(budget.debts.openDueInMonth).toBe(0);
+    expect(budget.debts.total).toBe(0);
   });
 
   it.each([
@@ -134,14 +118,14 @@ describe('item 41: dezembro → agosto, sem repetir no meio', () => {
 
     expect(budget.debts.total).toBe(0);
     expect(budget.debts.currentOpenPrior).toBe(0);
-    expect(budget.debts.priorPaidInMonth).toBe(0);
+    expect(budget.debts.paidInMonth).toBe(0);
     expect(budget.totalToPay).toBe(0);
   });
 
   it('agosto: reconhece o desembolso, porque foi pago aqui', async () => {
     const budget = await buildService(CENARIO).getBudget(USER_ID, 8, 2026);
 
-    expect(budget.debts.priorPaidInMonth).toBe(300);
+    expect(budget.debts.paidInMonth).toBe(300);
     expect(budget.debts.currentOpenPrior).toBe(0);
     expect(budget.debts.total).toBe(300);
   });
@@ -164,7 +148,7 @@ describe('item 42: dívida antiga ainda ABERTA', () => {
 
   it('dezembro: obrigação do próprio mês', async () => {
     const budget = await buildService(ABERTA).getBudget(USER_ID, 12, 2025);
-    expect(budget.debts.dueInMonth).toBe(300);
+    expect(budget.debts.openDueInMonth).toBe(300);
   });
 
   it.each([
@@ -184,7 +168,7 @@ describe('item 42: dívida antiga ainda ABERTA', () => {
     const budget = await buildService(ABERTA).getBudget(USER_ID, 8, 2026);
 
     expect(budget.debts.currentOpenPrior).toBe(300);
-    expect(budget.debts.priorPaidInMonth).toBe(0);
+    expect(budget.debts.paidInMonth).toBe(0);
     expect(budget.totalToPay).toBe(300);
   });
 
@@ -252,9 +236,9 @@ describe('item 43: transição open → paid no mês corrente', () => {
 
     // Item 13: nunca as duas categorias ao mesmo tempo.
     expect(antes.debts.currentOpenPrior).toBe(300);
-    expect(antes.debts.priorPaidInMonth).toBe(0);
+    expect(antes.debts.paidInMonth).toBe(0);
     expect(depois.debts.currentOpenPrior).toBe(0);
-    expect(depois.debts.priorPaidInMonth).toBe(300);
+    expect(depois.debts.paidInMonth).toBe(300);
   });
 });
 
@@ -270,9 +254,12 @@ describe('itens 7 e 45: paga no próprio mês do vencimento', () => {
       { amount: 300, dueDate: '2026-01-10', paidAt: '2026-01-20' },
     ]).getBudget(USER_ID, 1, 2026);
 
-    expect(budget.debts.dueInMonth).toBe(300);
-    // `priorPaidInMonth` exige dueMonth < paidMonth — aqui são o mesmo.
-    expect(budget.debts.priorPaidInMonth).toBe(0);
+    /*
+      Uma dívida resolvida usa `paidAt`, mesmo quando coincide com o mês do
+      vencimento. O importante é contar UMA vez.
+    */
+    expect(budget.debts.openDueInMonth).toBe(0);
+    expect(budget.debts.paidInMonth).toBe(300);
     expect(budget.debts.total).toBe(300);
   });
 });
@@ -295,13 +282,13 @@ describe('itens 20 e 46: legado pago sem data', () => {
 
   it('aparece no mês do vencimento', async () => {
     const budget = await buildService(LEGADO).getBudget(USER_ID, 12, 2025);
-    expect(budget.debts.dueInMonth).toBe(300);
+    expect(budget.debts.openDueInMonth).toBe(300);
   });
 
   it('não inventa mês de pagamento', async () => {
     for (const mes of [1, 3, 8]) {
       const budget = await buildService(LEGADO).getBudget(USER_ID, mes, 2026);
-      expect(budget.debts.priorPaidInMonth).toBe(0);
+      expect(budget.debts.paidInMonth).toBe(0);
     }
   });
 });
@@ -320,9 +307,9 @@ describe('itens 51 e 52: os exemplos reais', () => {
     { amount: 300, dueDate: '2026-01-15' },
   ];
 
-  it('dezembro: 300 de dívida', async () => {
+  it('dezembro: a dívida paga em agosto não conta aqui', async () => {
     const budget = await buildService(CENARIO).getBudget(USER_ID, 12, 2025);
-    expect(budget.debts.total).toBe(300);
+    expect(budget.debts.total).toBe(0);
   });
 
   it('janeiro: 300, não 600', async () => {
@@ -333,7 +320,7 @@ describe('itens 51 e 52: os exemplos reais', () => {
     const budget = await buildService(CENARIO).getBudget(USER_ID, 1, 2026);
 
     expect(budget.debts.total).toBe(300);
-    expect(budget.debts.dueInMonth).toBe(300);
+    expect(budget.debts.openDueInMonth).toBe(300);
     expect(budget.debts.currentOpenPrior).toBe(0);
   });
 });
@@ -354,8 +341,8 @@ describe('item 44: corrigir paidAt muda o mês do desembolso', () => {
       { amount: 300, dueDate: '2025-12-08', paidAt: '2025-12-20' },
     ]).getBudget(USER_ID, 8, 2026);
 
-    expect(registradoEmAgosto.debts.priorPaidInMonth).toBe(300);
-    expect(corrigidoParaDezembro.debts.priorPaidInMonth).toBe(0);
+    expect(registradoEmAgosto.debts.paidInMonth).toBe(300);
+    expect(corrigidoParaDezembro.debts.paidInMonth).toBe(0);
   });
 });
 
@@ -378,7 +365,7 @@ describe('item 18: várias pendências pagas no mesmo mês somam', () => {
       { amount: 330, dueDate: '2026-02-10', paidAt: '2026-08-24' },
     ]).getBudget(USER_ID, 8, 2026);
 
-    expect(budget.debts.priorPaidInMonth).toBe(930);
+    expect(budget.debts.paidInMonth).toBe(930);
   });
 });
 

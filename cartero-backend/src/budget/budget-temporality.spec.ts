@@ -3,6 +3,7 @@ import { BudgetService } from './budget.service';
 import type { PrismaService } from 'src/prisma/prisma.service';
 import { SalaryService } from 'src/salary/salary.service';
 import { USER_ID, makeBank, money } from 'src/common/testing/fixtures';
+import { matchesDebtQuery } from 'src/common/testing/debt-query-double';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -28,6 +29,8 @@ interface DatedDebt {
   amount: number;
   dueDate: string;
   isPaid?: boolean;
+  /** Data real do pagamento — decide a competência de uma dívida resolvida. */
+  paidAt?: string | null;
   personId?: string | null;
   personName?: string;
 }
@@ -71,11 +74,21 @@ function buildPrisma(universe: {
     debt: {
       findMany: vi.fn(async ({ where }: any) => {
         seen.debtWhere.push(where);
-        // Consulta de pendências anteriores (`dueDate.lt` sem `gte`): fora do
-        // escopo deste arquivo, que testa o recorte mensal.
-        if (where?.dueDate?.lt && !where?.dueDate?.gte) return [];
+        /*
+          Roteia pelas três consultas. Antes só a janela do mês era honrada, e
+          uma dívida paga casava tanto em `openDueInMonth` quanto em
+          `paidInMonth`.
+        */
         return universe.debts
-          .filter((debt) => inRange(debt.dueDate, where))
+          .filter((debt) =>
+            matchesDebtQuery(where, {
+              isPaid: debt.isPaid ?? false,
+              paidAt: debt.paidAt
+                ? new Date(`${debt.paidAt}T12:00:00.000Z`)
+                : null,
+              dueDate: new Date(`${debt.dueDate}T12:00:00.000Z`),
+            }),
+          )
           .map((debt, index) => ({
             amount: money(debt.amount),
             isPaid: debt.isPaid ?? false,

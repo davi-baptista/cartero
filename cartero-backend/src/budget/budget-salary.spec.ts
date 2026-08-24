@@ -3,6 +3,7 @@ import { BudgetService } from './budget.service';
 import { SalaryService } from 'src/salary/salary.service';
 import type { PrismaService } from 'src/prisma/prisma.service';
 import { USER_ID, makeBank, money } from 'src/common/testing/fixtures';
+import { routeDebtQuery } from 'src/common/testing/debt-query-double';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -66,20 +67,35 @@ function buildPrisma(history: Entry[], debtAmount = 1000) {
       Aqui só existe dívida do mês — o carry-over tem testes próprios.
     */
     debt: {
-      findMany: vi.fn(async ({ where }: any) =>
-        where?.dueDate?.lt && !where?.dueDate?.gte
-          ? []
-          : [
-              {
-                amount: money(debtAmount),
-                isPaid: false,
-                title: 'Aluguel',
-                dueDate: new Date(Date.UTC(2026, 0, 10, 12)),
-                personId: null,
-                person: null,
-              },
-            ],
-      ),
+      findMany: vi.fn(async ({ where }: any) => {
+        /*
+          O vencimento acompanha a competência consultada: estes testes medem
+          a RENDA, e uma dívida fora do mês sumiria do total por um motivo
+          alheio ao que eles protegem.
+        */
+        /*
+          Sem `gte` a consulta é a de pendências ANTERIORES, fora do escopo
+          deste arquivo — devolver a dívida ali a contaria uma segunda vez no
+          mês corrente, como `currentOpenPrior`.
+        */
+        if (!where?.dueDate?.gte) return [];
+
+        const dueDate = new Date(
+          where.dueDate.gte.getTime() + 9 * 24 * 3600 * 1000,
+        );
+
+        return routeDebtQuery(where, [
+          {
+            amount: money(debtAmount),
+            isPaid: false,
+            paidAt: null,
+            title: 'Aluguel',
+            dueDate,
+            personId: null,
+            person: null,
+          },
+        ]);
+      }),
     },
     receivable: { findMany: vi.fn(async () => []) },
     bank: { findMany: vi.fn(async () => [makeBank()]) },

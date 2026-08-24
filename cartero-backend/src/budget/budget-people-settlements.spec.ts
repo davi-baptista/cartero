@@ -84,6 +84,16 @@ function matchesWhere(where: any, row: FixtureItem): boolean {
   if (where.isPaid !== undefined && where.isPaid !== isPaid) return false;
 
   /*
+    Consulta de dívidas PAGAS no mês: exige `paidAt` na janela. Sem esta
+    checagem, uma dívida quitada casaria também aqui e o total dobraria.
+  */
+  if (where.paidAt?.gte && where.paidAt?.lt) {
+    if (paidAt == null) return false;
+    if (paidAt < where.paidAt.gte || paidAt >= where.paidAt.lt) return false;
+    return true;
+  }
+
+  /*
     Janela de `paidAt` — a consulta de pendência anterior PAGA no mês. Sem
     honrá-la, a mesma dívida entraria também aqui e o total dobraria: foi
     exatamente o 450-onde-deveria-ser-350 que este duplo deixava passar.
@@ -247,7 +257,7 @@ describe('Cenário principal', () => {
     const budget = await buildService(CENARIO_REAL).getBudget(USER_ID, 9, 2026);
     const mariana = budget.peopleSettlements[0];
 
-    expect(mariana.budget.debtDueInMonth).toBe(250);
+    expect(mariana.budget.openDueInMonth).toBe(250);
     expect(mariana.open.net).toBe(230);
   });
 
@@ -271,12 +281,12 @@ describe('totalToPay NÃO muda — a regressão obrigatória', () => {
   it('a dívida da pessoa continua no total', async () => {
     /**
      * A dívida sai da LISTA visual de "Dívidas" para aparecer no acerto da
-     * pessoa, mas continua compondo `debts.dueInMonth` e `totalToPay`. Tirá-la
+     * pessoa, mas continua compondo `debts.openDueInMonth` e `totalToPay`. Tirá-la
      * do cálculo por causa de uma reorganização visual seria perder R$ 250.
      */
     const budget = await buildService(CENARIO_REAL).getBudget(USER_ID, 9, 2026);
 
-    expect(budget.debts.dueInMonth).toBe(250);
+    expect(budget.debts.openDueInMonth).toBe(250);
     expect(budget.debts.total).toBe(250);
     // 933,95 da fatura + 250 da dívida.
     expect(budget.totalToPay).toBeCloseTo(1183.95, 2);
@@ -329,7 +339,7 @@ describe('Saldo líquido não é compensação', () => {
     const mariana = budget.peopleSettlements[0];
     expect(mariana.open.net).toBe(0);
     expect(mariana.budget.receivableDueInMonth).toBe(500);
-    expect(mariana.budget.debtDueInMonth).toBe(500);
+    expect(mariana.budget.openDueInMonth).toBe(500);
 
     // O ponto: saldo zero NÃO zera a obrigação.
     expect(budget.debts.total).toBe(500);
@@ -363,7 +373,7 @@ describe('Dívidas sem pessoa', () => {
     }).getBudget(USER_ID, 9, 2026);
 
     expect(budget.peopleSettlements).toHaveLength(1);
-    expect(budget.peopleSettlements[0].budget.debtDueInMonth).toBe(250);
+    expect(budget.peopleSettlements[0].budget.openDueInMonth).toBe(250);
     expect(budget.debts.total).toBe(670);
   });
 });
@@ -693,8 +703,12 @@ describe('Em aberto: antes e depois de quitar', () => {
       por isso a pessoa permanece na lista. Se ela desaparecesse, o total do
       orçamento deixaria de fechar com as linhas visíveis.
     */
-    expect(mariana.budget.debtDueInMonth).toBe(200);
-    expect(budget.debts.dueInMonth).toBe(200);
+    /*
+      A dívida foi PAGA nesta competência: pertence a `paidInMonth`, não ao
+      bucket de abertas. O total do mês continua o mesmo.
+    */
+    expect(mariana.budget.paidInMonth).toBe(200);
+    expect(budget.debts.paidInMonth).toBe(200);
     expect(budget.totalToPay).toBe(200);
   });
 
@@ -773,7 +787,7 @@ describe('Em aberto: renderização da pessoa', () => {
 
     expect(budget.peopleSettlements).toHaveLength(1);
     expect(budget.peopleSettlements[0].open.itemCount).toBe(0);
-    expect(budget.peopleSettlements[0].budget.debtDueInMonth).toBe(200);
+    expect(budget.peopleSettlements[0].budget.paidInMonth).toBe(200);
     expect(budget.totalToPay).toBe(200);
   });
 
@@ -853,21 +867,21 @@ describe('Em aberto: os dois universos não se contaminam', () => {
       Nenhuma delas usa mais o `OR` de `paidAt`: aquele era o snapshot mensal
       que repetia a mesma dívida em toda competência.
     */
-    expect(debtPrior).toHaveLength(3);
+    expect(debtPrior).toHaveLength(2);
     expect(recPrior).toHaveLength(1);
 
     const abertaNoMesCorrente = debtPrior.find(
       (w: any) => w.isPaid === false && w.personId === undefined,
     );
-    const pagaNoMes = debtPrior.find((w: any) => w.paidAt?.gte);
-
     expect(abertaNoMesCorrente).toBeDefined();
-    expect(pagaNoMes).toBeDefined();
-
     // A de em aberto olha o estado ATUAL, nunca `paidAt`.
     expect(abertaNoMesCorrente.paidAt).toBeUndefined();
-    // A de paga no mês recorta a janela da competência.
-    expect(pagaNoMes.paidAt.lt).toBeInstanceOf(Date);
+
+    /*
+      A consulta de dívidas PAGAS não filtra por vencimento anterior: uma
+      dívida resolvida pertence ao mês do pagamento, tenha vencido quando
+      tiver. Por isso ela não aparece nesta lista de "anteriores".
+    */
 
     // Nenhuma reconstrói o snapshot mensal antigo.
     for (const where of debtPrior) {

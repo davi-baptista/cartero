@@ -17,18 +17,15 @@ import { QueryError } from '@/components/ui/query-error'
 import { toast } from 'sonner'
 import { bankDisplayName } from '@/lib/bank-display'
 import {
-  budgetContextLabel,
-  openBalanceLabel,
-  openCompositionParts,
-  openDirection,
-  openPriorLabel,
-  settlementAriaLabel,
   summarizePeopleSettlements,
   summaryAriaLabel,
   summaryBalanceLabel,
   summaryCompositionParts,
   summaryDirection,
   shouldRenderPeopleSettlement,
+  peopleRowView,
+  peopleRowStatusLabel,
+  peopleRowAriaLabel,
 } from '@/lib/people-settlement-view'
 import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
@@ -289,7 +286,7 @@ export default function BudgetPage() {
     aberto agora e o que foi efetivamente pago nesta competência.
   */
   const currentOpenPrior = budget?.debts.currentOpenPrior ?? 0
-  const priorPaidInMonth = budget?.debts.priorPaidInMonth ?? 0
+  const priorPaidInMonth = budget?.debts.paidInMonth ?? 0
   const priorCarryItems = budget?.debts.priorItems ?? []
   /** Pendências anteriores SEM pessoa, pela mesma razão. */
   const standalonePriorItems = priorCarryItems.filter(
@@ -784,114 +781,45 @@ export default function BudgetPage() {
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
             {visiblePeople.map((person) => {
               /*
-                Dois universos, dois rótulos. O módulo `people-settlement-view`
-                decide a semântica; aqui só apresentamos (item 31).
+                Mesma anatomia das Faturas, pelo mesmo componente: ícone
+                tonal, nome, badge de estado, valor e seta.
+
+                Os rótulos "Saldo em aberto" / "Nada em aberto" saíram de cada
+                linha — a badge comunica o estado e o cabeçalho da seção já dá
+                o contexto. Repeti-los em toda linha era o que deixava a
+                tabela verbosa.
               */
-              const context = budgetContextLabel(person, formatCurrency)
-              const composition = openCompositionParts(person)
-              const balance = openBalanceLabel(person, formatCurrency)
-              const prior = openPriorLabel(person, formatCurrency)
-              const direction = openDirection(person)
+              const view = peopleRowView(person, formatCurrency)
+              const quitado = view.status === 'settled'
 
               return (
-                <Link
+                <StatusListRow
                   key={person.personId}
                   href={`/persons?personId=${person.personId}&period=${monthKey}`}
-                  aria-label={settlementAriaLabel(person, formatCurrency)}
-                  className="group flex flex-col gap-1.5 px-4 py-3.5 transition-colors hover:bg-muted/30 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
-                >
-                  <div className="min-w-0">
-                    <p className="flex items-center gap-1.5 text-[13px] font-medium transition-colors group-hover:text-primary">
-                      <User className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                      <span className="truncate">{person.personName}</span>
-                    </p>
-
-                    {/*
-                      Composição do que está EM ABERTO — a informação primária.
-                      Some quando o item é quitado.
-                    */}
-                    {composition.length > 0 && (
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        {composition.map((part, index) => (
-                          <span key={part.side}>
-                            {index > 0 && (
-                              <span
-                                className="mx-1.5 text-muted-foreground/40"
-                                aria-hidden
-                              >
-                                ·
-                              </span>
-                            )}
-                            {part.side === 'receivable' ? 'A receber' : 'A pagar'}{' '}
-                            <span
-                              className={cn(
-                                'font-medium',
-                                part.side === 'receivable'
-                                  ? 'text-receivable'
-                                  : 'text-destructive',
-                              )}
-                            >
-                              {formatCurrency(part.amount)}
-                            </span>
-                          </span>
-                        ))}
-                      </p>
-                    )}
-
-                    {/*
-                      Contexto histórico — SÓ a parcela já quitada que ainda
-                      compõe `totalToPay`. Sem ela, uma dívida paga sumiria da
-                      tela enquanto segue somando no total, e o orçamento
-                      deixaria de fechar com as linhas visíveis.
-
-                      Quando nada foi quitado, esta linha não aparece: repetiria
-                      o mesmo número já exibido logo acima em "A pagar".
-                    */}
-                    {context && (
-                      <p className="mt-0.5 text-[11px] text-muted-foreground/70">
-                        {context}
-                      </p>
-                    )}
-
-                    {/*
-                      Explica por que a fatura mostra "R$ 240 de outras pessoas"
-                      e o acerto mostra R$ 480: parte passou pelo seu cartão.
-                    */}
-                    {person.open.automaticReceivable > 0 && (
-                      <p className="mt-0.5 text-[11px] text-muted-foreground/70">
-                        {formatCurrency(person.open.automaticReceivable)} vêm de
-                        compras no seu cartão
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="shrink-0 sm:text-right">
-                    {/*
-                      "Saldo em aberto", nunca "Saldo líquido": este número é
-                      pendência atual, e o rótulo antigo podia ser lido como
-                      obrigação viva quando na verdade era histórico do
-                      orçamento.
-                    */}
-                    <p className="text-[11px] text-muted-foreground">
-                      Saldo em aberto
-                    </p>
-                    <p
-                      className={cn(
-                        'text-[13px] font-semibold tabular-nums',
-                        direction === 'receive' && 'text-receivable',
-                        direction === 'pay' && 'text-destructive',
-                        direction === 'settled' && 'text-muted-foreground',
-                      )}
-                    >
-                      {balance}
-                    </p>
-                    {prior && (
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        {prior}
-                      </p>
-                    )}
-                  </div>
-                </Link>
+                  icon={User}
+                  tone={
+                    quitado
+                      ? 'positive'
+                      : view.direction === 'out'
+                        ? 'negative'
+                        : 'neutral'
+                  }
+                  title={person.personName}
+                  badge={{
+                    label: peopleRowStatusLabel(view.status),
+                    className: quitado
+                      ? 'bg-paid/15 text-paid'
+                      : 'bg-primary/15 text-primary',
+                  }}
+                  subtitle={
+                    view.metadata.length > 0 ? (
+                      <span aria-label={peopleRowAriaLabel(person, formatCurrency)}>
+                        {view.metadata.join(' · ')}
+                      </span>
+                    ) : undefined
+                  }
+                  amount={quitado ? view.amount : Math.abs(view.amount)}
+                />
               )
             })}
           </div>

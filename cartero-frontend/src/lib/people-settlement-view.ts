@@ -141,7 +141,7 @@ export function budgetDebtContribution(person: PersonSettlement): number {
  */
 function dueIsRedundant(person: PersonSettlement): boolean {
   return (
-    Math.abs(person.budget.debtDueInMonth - person.open.debtTotal) <= EPSILON
+    Math.abs(person.budget.openDueInMonth - person.open.debtTotal) <= EPSILON
   )
 }
 
@@ -159,13 +159,13 @@ export function budgetContextParts(
 ): string[] {
   const parts: string[] = []
 
-  if (person.budget.debtDueInMonth > EPSILON && !dueIsRedundant(person)) {
-    parts.push(`${formatCurrency(person.budget.debtDueInMonth)} em dívidas deste mês`)
+  if (person.budget.openDueInMonth > EPSILON && !dueIsRedundant(person)) {
+    parts.push(`${formatCurrency(person.budget.openDueInMonth)} em dívidas deste mês`)
   }
 
-  if (person.budget.priorPaidInMonth > EPSILON) {
+  if (person.budget.paidInMonth > EPSILON) {
     parts.push(
-      `${formatCurrency(person.budget.priorPaidInMonth)} de pendências anteriores pagas neste mês`,
+      `${formatCurrency(person.budget.paidInMonth)} de pendências anteriores pagas neste mês`,
     )
   }
 
@@ -370,4 +370,128 @@ export function summaryAriaLabel(
     summary,
     formatCurrency,
   )}.`
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Estado visual da linha da pessoa
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * A linha segue a anatomia das Faturas: ícone, nome, badge de estado e um
+ * valor em destaque. O estado é comunicado por badge e cor, não por rótulos
+ * repetidos ("Saldo em aberto", "Nada em aberto") em cada linha — o cabeçalho
+ * da seção já dá esse contexto.
+ */
+export type PeopleRowStatus = 'settled' | 'open'
+
+export interface PeopleRowView {
+  status: PeopleRowStatus
+  /** O número em destaque à direita. */
+  amount: number
+  /** Direção do valor, para a cor. `neutral` quando não há sinal a dar. */
+  direction: 'in' | 'out' | 'neutral'
+  /** Linha secundária — só quando acrescenta informação. */
+  metadata: string[]
+}
+
+/**
+ * Resolve o que a linha mostra.
+ *
+ * `Quitado` exige AUSÊNCIA de itens abertos, nunca saldo zero: R$ 300 de cada
+ * lado dá net zero com duas obrigações vivas, e chamar isso de quitado seria
+ * a mesma afirmação falsa que a Fase 8B removeu da mensagem de WhatsApp.
+ *
+ * "Quitado" em vez de "Pago" porque a relação envolve dinheiro nos dois
+ * sentidos — o que eu paguei e o que recebi.
+ */
+export function peopleRowView(
+  person: PersonSettlement,
+  formatCurrency: (value: number) => string,
+): PeopleRowView {
+  const temAberto = person.open.itemCount > 0
+  const metadata: string[] = []
+
+  if (temAberto) {
+    /*
+      Composição bilateral só quando os DOIS lados existem: com um lado só, o
+      valor em destaque já diz tudo e a segunda linha seria eco.
+    */
+    if (
+      person.open.receivableTotal > EPSILON &&
+      person.open.debtTotal > EPSILON
+    ) {
+      metadata.push(
+        `${formatCurrency(person.open.receivableTotal)} a receber · ${formatCurrency(person.open.debtTotal)} a pagar`,
+      )
+    }
+
+    /*
+      Pagamento feito na competência, com algo ainda aberto: sem isto o
+      desembolso ficaria invisível justamente na linha que diz "falta pagar".
+    */
+    if (person.budget.paidInMonth > EPSILON) {
+      metadata.push(
+        `${formatCurrency(person.budget.paidInMonth)} quitados neste mês`,
+      )
+    }
+
+    if (person.open.automaticReceivable > EPSILON) {
+      metadata.push(
+        `${formatCurrency(person.open.automaticReceivable)} vêm de compras no seu cartão`,
+      )
+    }
+
+    return {
+      status: 'open',
+      amount: person.open.net,
+      direction:
+        person.open.net > EPSILON
+          ? 'in'
+          : person.open.net < -EPSILON
+            ? 'out'
+            : 'neutral',
+      metadata,
+    }
+  }
+
+  /*
+    Nada em aberto: o destaque passa a ser o que foi QUITADO na competência.
+    A badge já comunica o estado, então a linha não repete "Nada em aberto".
+  */
+  return {
+    status: 'settled',
+    amount: person.budget.debtTotal,
+    direction: 'neutral',
+    metadata,
+  }
+}
+
+/** Rótulo da badge, por estado. */
+export function peopleRowStatusLabel(status: PeopleRowStatus): string {
+  return status === 'settled' ? 'Quitado' : 'Em aberto'
+}
+
+/**
+ * Rótulo acessível da linha.
+ *
+ * Nome, estado, valor e direção — sem depender de verde/vermelho.
+ */
+export function peopleRowAriaLabel(
+  person: PersonSettlement,
+  formatCurrency: (value: number) => string,
+): string {
+  const view = peopleRowView(person, formatCurrency)
+
+  if (view.status === 'settled') {
+    return `${person.personName}. Quitado. ${formatCurrency(view.amount)} pagos nesta competência.`
+  }
+
+  const direcao =
+    view.direction === 'in'
+      ? 'a receber'
+      : view.direction === 'out'
+        ? 'a pagar'
+        : 'zerado'
+
+  return `${person.personName}. Em aberto. Saldo de ${formatCurrency(Math.abs(view.amount))} ${direcao}.`
 }

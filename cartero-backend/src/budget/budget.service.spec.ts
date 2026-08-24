@@ -10,6 +10,7 @@ import {
   money,
   utcDate,
 } from 'src/common/testing/fixtures';
+import { routeDebtQuery } from 'src/common/testing/debt-query-double';
 
 /**
  * O Orçamento responde "quanto sai do meu bolso neste mês". A fórmula real:
@@ -100,12 +101,18 @@ function buildPrisma(data: {
       contaria cada dívida duas vezes — e um duplo que ignore o `where`
       passaria mesmo com o serviço somando o mês errado.
     */
+    /*
+      Roteia pelas três consultas: uma dívida paga pertence a `paidInMonth`,
+      não a `openDueInMonth`. Sem o roteamento ela casaria nas duas e o total
+      dobraria.
+    */
     debt: {
       findMany: vi.fn(({ where }: any) =>
         Promise.resolve(
-          where?.dueDate?.lt && !where?.dueDate?.gte
-            ? (data.priorDebts ?? [])
-            : (data.debts ?? []),
+          routeDebtQuery(where, [
+            ...(data.debts ?? []),
+            ...(data.priorDebts ?? []),
+          ]),
         ),
       ),
     },
@@ -128,11 +135,21 @@ function debtRow(overrides: {
     isPaid: overrides.isPaid ?? false,
   });
 
+  const dueDate = overrides.dueDate ?? utcDate(2026, 8, 15);
+
   return {
     amount: base.amount,
     isPaid: base.isPaid,
+    /*
+      Dívida paga precisa de `paidAt`: é ele que define a competência
+      financeira. Sem a data, ela não pertence a mês nenhum — comportamento
+      correto para o legado, mas não é o que estas fixtures querem exercitar.
+
+      O default é o próprio dia do vencimento, o caso mais comum.
+    */
+    paidAt: base.isPaid ? dueDate : null,
     title: overrides.title ?? 'Dívida',
-    dueDate: overrides.dueDate ?? utcDate(2026, 8, 15),
+    dueDate,
     personId: overrides.personId ?? null,
     person: overrides.person ?? null,
   };
@@ -554,10 +571,15 @@ describe('BudgetService — status das dívidas no breakdown', () => {
           title: 'Vencida',
           dueDate: utcDate(2020, 1, 1),
         }),
+        /*
+          Vence DENTRO do mês consultado e ainda não venceu de fato: é o caso
+          "Pendente". Uma data de 2099 cairia fora da janela de agosto e a
+          linha nem existiria.
+        */
         debtRow({
           amount: '30',
           title: 'Pendente',
-          dueDate: utcDate(2099, 1, 1),
+          dueDate: utcDate(2026, 8, 28),
         }),
       ],
     });
