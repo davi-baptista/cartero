@@ -1,7 +1,12 @@
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, TransactionType } from '@prisma/client';
 import type { Bank, Debt, Receivable } from '@prisma/client';
 import { findOrCreateInvoice } from './invoice.helper';
+import { parseDateOnly } from './date-only.helper';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -220,5 +225,148 @@ export async function removeSettlementTransaction(
 
   if (Number(invoice.totalAmount) === 0) {
     await tx.invoice.delete({ where: { id: invoice.id, userId } });
+  }
+}
+
+/**
+ * Valida a data informada para um acerto e devolve o `Date` civil.
+ *
+ * ── Por que existe ──
+ *
+ * `paidAt` significa "quando o dinheiro se moveu de fato", não "quando cliquei
+ * em Pago". O usuário regulariza lançamentos antigos, e a data real pode ser
+ * meses atrás — o Budget reconstrói o histórico por `paidAt`, então uma data
+ * errada faz a obrigação reaparecer como pendência anterior em todos os meses
+ * intermediários.
+ *
+ * ── As duas regras ──
+ *
+ * Passado é livre: pagar antes do vencimento é normal, e regularizar algo de
+ * dezembro em agosto é o caso que motivou tudo isto.
+ *
+ * Futuro é recusado: registrar hoje um pagamento de amanhã afirma um fato que
+ * não aconteceu, e o Budget passaria a reconstruir meses futuros com uma
+ * quitação inexistente.
+ *
+ * A comparação é por dia CIVIL de Fortaleza (UTC-3) — o servidor roda em UTC,
+ * e às 22h de 24/08 em Fortaleza já é 25/08 em UTC. Comparar instantes
+ * recusaria uma data legítima na virada do dia.
+ */
+export function resolveSettlementDate(
+  value: string | undefined,
+  now: Date = new Date(),
+): Date {
+  /*
+    Sem data explícita, HOJE — mantém funcionando o consumidor que ainda não
+    envia o campo. O frontend novo sempre envia.
+  */
+  if (!value) return now;
+
+  const informada = value.slice(0, 10);
+  const hoje = civilDay(now);
+
+  if (informada > hoje) {
+    throw new BadRequestException({
+      message: 'A data do pagamento não pode estar no futuro.',
+      code: 'SETTLEMENT_DATE_IN_FUTURE',
+    });
+  }
+
+  return parseDateOnly(informada);
+}
+
+/** `2026-08-24` no dia civil de Fortaleza (UTC-3). */
+function civilDay(date: Date): string {
+  return new Date(date.getTime() - 3 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/**
+ * Corrige a data REAL de um acerto já concluído.
+ *
+ * ── Por que é uma operação própria ──
+ *
+ * Item pago tem edição financeira bloqueada (`PAID_DEBT_EDIT_BLOCKED`), e essa
+ * proteção deve continuar. Mas corrigir a data não é edição financeira: valor,
+ * vencimento, contraparte e categoria seguem intactos — só a dimensão temporal
+ * muda, e é justamente ela que estava errada.
+ *
+ * A alternativa seria desfazer o pagamento e refazê-lo com a data certa. Isso
+ * apaga e recria a Transaction-espelho, com risco de perder o vínculo, e
+ * exige do usuário dois passos destrutivos para uma correção trivial.
+ *
+ * ── O que é atualizado ──
+ *
+ * `paidAt` e, quando existe, a data da Transaction de pagamento — as duas
+ * descrevem o mesmo fato e não podem divergir. A Transaction de ORIGEM de um
+ * recebível automático (a compra no cartão) nunca é tocada: ela registra
+ * quando a compra aconteceu, não quando o acerto foi feito.
+ *
+ * Item resolvido SEM Transaction vinculada é caso legítimo — a preferência
+ * `createExpenseOnDebtPaid` pode estar desligada. A correção segue possível e
+ * nenhuma Transaction é inventada.
+ */
+export async function correctSettlementDate(
+  tx: Prisma.TransactionClient,
+  input: {
+    kind: 'debt' | 'receivable';
+    id: string;
+    userId: string;
+    paidAt: Date;
+  },
+): Promise<void> {
+  const { kind, id, userId, paidAt } = input;
+
+  /*
+    `updateMany` com `userId` no `where` resolve ownership e existência numa
+    ida só: sem a linha do dono, `count` é 0 e nada foi tocado. Um `findFirst`
+    seguido de `update` abriria janela entre a checagem e a escrita.
+  */
+  const existing =
+    kind === 'debt'
+      ? await tx.debt.findFirst({
+          where: { id, userId },
+          select: { isPaid: true, paymentTransactionId: true },
+        })
+      : await tx.receivable.findFirst({
+          where: { id, userId },
+          select: { isPaid: true, paymentTransactionId: true },
+        });
+
+  if (!existing) {
+    throw new NotFoundException({
+      message:
+        kind === 'debt' ? 'Dívida não encontrada.' : 'Cobrança não encontrada.',
+      code: 'SETTLEMENT_RECORD_NOT_FOUND',
+    });
+  }
+
+  if (!existing.isPaid) {
+    /*
+      Item aberto não tem data de acerto para corrigir. Gravar `paidAt` sem
+      `isPaid` criaria um estado que nenhuma leitura do projeto espera.
+    */
+    throw new ConflictException({
+      message:
+        kind === 'debt'
+          ? 'Esta dívida ainda não foi paga.'
+          : 'Esta cobrança ainda não foi recebida.',
+      code: 'SETTLEMENT_NOT_RESOLVED',
+    });
+  }
+
+  if (kind === 'debt') {
+    await tx.debt.update({ where: { id }, data: { paidAt } });
+  } else {
+    await tx.receivable.update({ where: { id }, data: { paidAt } });
+  }
+
+  // A Transaction-espelho descreve o mesmo fato: as datas andam juntas.
+  if (existing.paymentTransactionId) {
+    await tx.transaction.update({
+      where: { id: existing.paymentTransactionId },
+      data: { date: paidAt },
+    });
   }
 }

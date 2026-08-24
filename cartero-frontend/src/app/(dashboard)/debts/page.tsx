@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef, memo } from 'react'
 import { AnimatePresence, motion, animate } from 'motion/react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Check, Undo2, HandCoins, BellOff, Search, MoreVertical, X, Repeat2, TriangleAlert, RotateCcw, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, Undo2, HandCoins, BellOff, Search, MoreVertical, X, Repeat2, TriangleAlert, RotateCcw, Loader2, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { monthBounds, periodFromDate, useMonthPeriod } from '@/components/month-nav'
@@ -36,18 +36,21 @@ import { DebtSheet, type DebtFormData } from './debt-sheet'
 import { InstallmentScopeDialog } from '../transactions/installment-scope-dialog'
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
 import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dialog'
+import { SettlementDateDialog } from '../transactions/settlement-date-dialog'
 import { DeleteLinkedWarningDialog } from '../transactions/delete-linked-warning-dialog'
 import {
   getDebts,
   createDebt,
   updateDebt,
   deleteDebt,
+  updateDebtSettlementDate,
 } from '@/services/debts.service'
 import { useSearchParams } from 'next/navigation'
 import { getPersons } from '@/services/persons.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { isOverdue, overdueCountLabel } from '@/lib/settlement-status'
 import { SettlementStatusDot } from '@/components/settlement-status-dot'
+import { apiErrorMessage } from '@/lib/api-error'
 import { cn } from '@/lib/utils'
 import type { Debt, TransactionType } from '@/types'
 import { InstallmentScope } from '@/types'
@@ -61,12 +64,15 @@ const DebtRow = memo(function DebtRow({
   onEdit,
   onDelete,
   onTogglePaid,
+  onEditSettlementDate,
 }: {
   debt: Debt
   isHighlighted?: boolean
   onEdit: (d: Debt) => void
   onDelete: (d: Debt) => void
   onTogglePaid: (d: Debt) => void
+  /** Só existe para item resolvido — correção de data de regularização. */
+  onEditSettlementDate?: (d: Debt) => void
 }) {
   const overdue = isOverdue(debt)
   const rowRef = useRef<HTMLDivElement>(null)
@@ -211,6 +217,16 @@ const DebtRow = memo(function DebtRow({
               {debt.isPaid ? <Undo2 className="size-3.5" /> : <Check className="size-3.5" />}
               {debt.isPaid ? 'Marcar como pendente' : 'Marcar como paga'}
             </DropdownMenuItem>
+            {/*
+              Correção de data: só faz sentido em item já resolvido, e é
+              ferramenta de regularização — fica no menu, nunca em destaque.
+            */}
+            {debt.isPaid && onEditSettlementDate && (
+              <DropdownMenuItem onClick={() => onEditSettlementDate(debt)}>
+                <CalendarDays className="size-3.5" />
+                Alterar data do pagamento
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onEdit(debt)}>
               <Pencil className="size-3.5" />
@@ -276,6 +292,9 @@ export default function DebtsPage() {
   const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editDebt, setEditDebt] = useState<Debt | null>(null)
+  /** Item cuja data de acerto está sendo corrigida. */
+  const [settlementDateItem, setSettlementDateItem] =
+    useState<Debt | null>(null)
   const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
   const [scopeDialog, setScopeDialog] = useState<{ debt: Debt; mode: 'edit' | 'delete' } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Debt | null>(null)
@@ -355,6 +374,34 @@ export default function DebtsPage() {
       toast.success('Dívida atualizada')
     },
     onError: () => toast.error('Erro ao salvar — verifique sua conexão e tente novamente'),
+  })
+
+  /**
+   * Corrige a data real do pagamento de um item já resolvido.
+   *
+   * Endpoint próprio: o PATCH comum bloqueia edição financeira de item pago,
+   * e essa proteção continua. Aqui só a dimensão temporal muda.
+   */
+  const settlementDateMut = useMutation({
+    mutationFn: ({ id, paidAt }: { id: string; paidAt: string }) =>
+      updateDebtSettlementDate(id, paidAt),
+    onSuccess: () => {
+      /*
+        `paidAt` e a data da transação-espelho mudaram, e o Orçamento
+        reconstrói o histórico por elas — invalidar só a lista deixaria os
+        meses anteriores exibindo a pendência que acabou de ser corrigida.
+      */
+      qc.invalidateQueries({ queryKey: ['debts'] })
+      qc.invalidateQueries({ queryKey: ['budget'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['person-statement'] })
+      qc.invalidateQueries({ queryKey: ['persons'] })
+      setSettlementDateItem(null)
+      toast.success('Data atualizada')
+    },
+    // O diálogo permanece aberto no erro: fechar sugeriria sucesso.
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, 'Não foi possível atualizar a data')),
   })
 
   const deleteMut = useMutation({
@@ -697,7 +744,8 @@ export default function DebtsPage() {
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onTogglePaid={handleTogglePaid}
-                  />
+                  onEditSettlementDate={setSettlementDateItem}
+                />
                 </MotionRow>
               ))}
             </motion.div>
@@ -788,6 +836,21 @@ export default function DebtsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {settlementDateItem && (
+        <SettlementDateDialog
+          open
+          kind="debt"
+          title={settlementDateItem.title}
+          amount={Number(settlementDateItem.amount)}
+          currentDate={settlementDateItem.paidAt ?? null}
+          isPending={settlementDateMut.isPending}
+          onConfirm={(paidAt) =>
+            settlementDateMut.mutate({ id: settlementDateItem.id, paidAt })
+          }
+          onCancel={() => setSettlementDateItem(null)}
+        />
+      )}
+
     </div>
   )
 }

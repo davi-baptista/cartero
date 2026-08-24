@@ -5,6 +5,8 @@ import { getInstallmentDate } from 'src/common/helpers/get-installment-date.help
 import {
   createDebtPaymentTransaction,
   removeSettlementTransaction,
+  resolveSettlementDate,
+  correctSettlementDate,
 } from 'src/common/helpers/settlement.core';
 import { parseDateFilterEnd, parseDateFilterStart, parseDateOnly } from 'src/common/helpers/date-only.helper';
 import {
@@ -219,9 +221,7 @@ export class DebtsService {
           */
           const paidAt =
             dto.isPaid === true && !debt.isPaid
-              ? dto.paymentDate
-                ? parseDateOnly(dto.paymentDate)
-                : new Date()
+              ? resolveSettlementDate(dto.paymentDate)
               : dto.isPaid === false && debt.isPaid
                 ? null
                 : undefined;
@@ -395,5 +395,31 @@ export class DebtsService {
         dueDate: 'asc',
       },
     });
+  }
+
+  /**
+   * Corrige a data real do pagamento de uma dívida já paga.
+   *
+   * `paidAt` significa "quando o dinheiro se moveu", não "quando registrei no
+   * Cartero". Regularizar um lançamento antigo gravava a data de hoje, e o
+   * Budget — que reconstrói o histórico por `paidAt` — passava a mostrar a
+   * obrigação como pendência anterior em todos os meses intermediários.
+   *
+   * Atômico: `paidAt` e a data da Transaction-espelho descrevem o mesmo fato
+   * e não podem divergir nem por um instante.
+   */
+  async updateSettlementDate(id: string, userId: string, paidAt: string) {
+    const data = resolveSettlementDate(paidAt);
+
+    await this.prisma.$transaction(async (tx) => {
+      await correctSettlementDate(tx, {
+        kind: 'debt',
+        id,
+        userId,
+        paidAt: data,
+      });
+    });
+
+    return this.findOne(id, userId);
   }
 }

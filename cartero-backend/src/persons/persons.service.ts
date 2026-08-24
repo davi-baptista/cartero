@@ -1,12 +1,12 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { Prisma, TransactionType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { parseDateOnly } from 'src/common/helpers/date-only.helper';
 import { findOrCreateSystemReceivableBank } from 'src/common/helpers/invoice.helper';
 import {
   assertDebtPaymentDetails,
   createDebtPaymentTransaction,
   createReceivablePaymentTransaction,
+  resolveSettlementDate,
 } from 'src/common/helpers/settlement.core';
 import {
   buildPersonSummary,
@@ -170,9 +170,11 @@ export class PersonsService {
         : allReceivables;
 
       const summary = buildPersonSummary(receivables, debts);
-      const paidAt = dto.paymentDate
-        ? parseDateOnly(dto.paymentDate)
-        : new Date();
+      /*
+        Uma data para o LOTE inteiro: "acertamos tudo nesta data". Itens
+        pagos em datas diferentes se corrigem individualmente depois.
+      */
+      const paidAt = resolveSettlementDate(dto.paymentDate);
 
       const createsExpense = debts.length > 0 && user.createExpenseOnDebtPaid;
       const createsIncome =

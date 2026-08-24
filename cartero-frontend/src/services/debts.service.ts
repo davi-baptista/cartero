@@ -62,3 +62,18 @@ export async function deleteDebt(
     },
   })
 }
+
+/**
+ * Corrige a data real do pagamento de um item JÁ resolvido.
+ *
+ * Distinto do `update`: aquele bloqueia edição financeira de item pago, e
+ * essa proteção continua. Aqui só a dimensão temporal muda — valor,
+ * vencimento e contraparte ficam intactos.
+ */
+export async function updateDebtSettlementDate(
+  id: string,
+  paidAt: string,
+): Promise<Debt> {
+  const { data } = await api.patch(`/debts/${id}/settlement-date`, { paidAt })
+  return data
+}

@@ -15,6 +15,7 @@ import type { User } from '@prisma/client';
 import { ReceivablesService } from './receivables.service';
 import { CreateReceivableDto } from './dto/create-receivable.dto';
 import { UpdateReceivableDto } from './dto/update-receivable.dto';
+import { UpdateSettlementDateDto } from 'src/common/dto/settlement-date.dto';
 import { FindReceivablesDto } from './dto/find-receivables.dto';
 
 @Controller('receivables')
@@ -45,6 +46,20 @@ export class ReceivablesController {
     @Query('scope') scope?: string,
   ) {
     return this.receivablesService.update(id, user.id, dto, scope);
+  }
+
+  /** Corrige a data real do recebimento de uma cobrança JÁ recebida. */
+  @Patch(':id/settlement-date')
+  updateSettlementDate(
+    @Param('id') id: string,
+    @Body() dto: UpdateSettlementDateDto,
+    @CurrentUser() user: User,
+  ) {
+    return this.receivablesService.updateSettlementDate(
+      id,
+      user.id,
+      dto.paidAt,
+    );
   }
 
   @Delete(':id')

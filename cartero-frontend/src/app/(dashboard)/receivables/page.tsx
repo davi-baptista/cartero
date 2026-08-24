@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef, memo } from 'react'
 import { AnimatePresence, motion, animate } from 'motion/react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Check, Undo2, Wallet, Search, MoreVertical, X, Repeat2, TriangleAlert, RotateCcw, Loader2, ShoppingBag } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, Undo2, Wallet, Search, MoreVertical, X, Repeat2, TriangleAlert, RotateCcw, Loader2, ShoppingBag, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { monthBounds, periodFromDate, useMonthPeriod } from '@/components/month-nav'
@@ -37,11 +37,13 @@ import { DeleteLinkedWarningDialog } from '../transactions/delete-linked-warning
 import { InstallmentScopeDialog } from '../transactions/installment-scope-dialog'
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
 import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dialog'
+import { SettlementDateDialog } from '../transactions/settlement-date-dialog'
 import {
   getReceivables,
   createReceivable,
   updateReceivable,
   deleteReceivable,
+  updateReceivableSettlementDate,
 } from '@/services/receivables.service'
 import { useSearchParams } from 'next/navigation'
 import { getPersons } from '@/services/persons.service'
@@ -49,6 +51,7 @@ import { formatCurrency, formatDate } from '@/lib/formatters'
 import Link from 'next/link'
 import { isOverdue, overdueCountLabel } from '@/lib/settlement-status'
 import { SettlementStatusDot } from '@/components/settlement-status-dot'
+import { apiErrorMessage } from '@/lib/api-error'
 import { cn } from '@/lib/utils'
 import type { Receivable } from '@/types'
 import { InstallmentScope } from '@/types'
@@ -62,12 +65,15 @@ const ReceivableRow = memo(function ReceivableRow({
   onEdit,
   onDelete,
   onToggleReceived,
+  onEditSettlementDate,
 }: {
   receivable: Receivable
   isHighlighted?: boolean
   onEdit: (r: Receivable) => void
   onDelete: (r: Receivable) => void
   onToggleReceived: (r: Receivable) => void
+  /** Só existe para item resolvido — correção de data de regularização. */
+  onEditSettlementDate?: (r: Receivable) => void
 }) {
   const overdue = isOverdue(receivable)
   const rowRef = useRef<HTMLDivElement>(null)
@@ -223,6 +229,16 @@ const ReceivableRow = memo(function ReceivableRow({
               {receivable.isPaid ? <Undo2 className="size-3.5" /> : <Check className="size-3.5" />}
               {receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
             </DropdownMenuItem>
+            {/*
+              Correção de data: só faz sentido em item já resolvido, e é
+              ferramenta de regularização — fica no menu, nunca em destaque.
+            */}
+            {receivable.isPaid && onEditSettlementDate && (
+              <DropdownMenuItem onClick={() => onEditSettlementDate(receivable)}>
+                <CalendarDays className="size-3.5" />
+                Alterar data do recebimento
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onEdit(receivable)}>
               <Pencil className="size-3.5" />
@@ -284,6 +300,9 @@ export default function ReceivablesPage() {
   const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editReceivable, setEditReceivable] = useState<Receivable | null>(null)
+  /** Item cuja data de acerto está sendo corrigida. */
+  const [settlementDateItem, setSettlementDateItem] =
+    useState<Receivable | null>(null)
   const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
   const [scopeDialog, setScopeDialog] = useState<{ receivable: Receivable; mode: 'edit' | 'delete' } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Receivable | null>(null)
@@ -362,6 +381,34 @@ export default function ReceivablesPage() {
       toast.success('Cobrança atualizada')
     },
     onError: () => toast.error('Erro ao salvar — verifique sua conexão e tente novamente'),
+  })
+
+  /**
+   * Corrige a data real do recebimento de um item já resolvido.
+   *
+   * Endpoint próprio: o PATCH comum bloqueia edição financeira de item pago,
+   * e essa proteção continua. Aqui só a dimensão temporal muda.
+   */
+  const settlementDateMut = useMutation({
+    mutationFn: ({ id, paidAt }: { id: string; paidAt: string }) =>
+      updateReceivableSettlementDate(id, paidAt),
+    onSuccess: () => {
+      /*
+        `paidAt` e a data da transação-espelho mudaram, e o Orçamento
+        reconstrói o histórico por elas — invalidar só a lista deixaria os
+        meses anteriores exibindo a pendência que acabou de ser corrigida.
+      */
+      qc.invalidateQueries({ queryKey: ['receivables'] })
+      qc.invalidateQueries({ queryKey: ['budget'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['person-statement'] })
+      qc.invalidateQueries({ queryKey: ['persons'] })
+      setSettlementDateItem(null)
+      toast.success('Data atualizada')
+    },
+    // O diálogo permanece aberto no erro: fechar sugeriria sucesso.
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, 'Não foi possível atualizar a data')),
   })
 
   const deleteMut = useMutation({
@@ -693,7 +740,8 @@ export default function ReceivablesPage() {
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onToggleReceived={handleToggleReceived}
-                  />
+                  onEditSettlementDate={setSettlementDateItem}
+                />
                 </MotionRow>
               ))}
             </motion.div>
@@ -792,6 +840,21 @@ export default function ReceivablesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {settlementDateItem && (
+        <SettlementDateDialog
+          open
+          kind="receivable"
+          title={settlementDateItem.title}
+          amount={Number(settlementDateItem.amount)}
+          currentDate={settlementDateItem.paidAt ?? null}
+          isPending={settlementDateMut.isPending}
+          onConfirm={(paidAt) =>
+            settlementDateMut.mutate({ id: settlementDateItem.id, paidAt })
+          }
+          onCancel={() => setSettlementDateItem(null)}
+        />
+      )}
+
     </div>
   )
 }

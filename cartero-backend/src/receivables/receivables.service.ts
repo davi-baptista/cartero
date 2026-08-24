@@ -6,6 +6,8 @@ import { findOrCreateSystemReceivableBank } from 'src/common/helpers/invoice.hel
 import {
   createReceivablePaymentTransaction,
   removeSettlementTransaction,
+  resolveSettlementDate,
+  correctSettlementDate,
 } from 'src/common/helpers/settlement.core';
 import { parseDateFilterEnd, parseDateFilterStart, parseDateOnly } from 'src/common/helpers/date-only.helper';
 import {
@@ -201,9 +203,7 @@ export class ReceivablesService {
         for (const receivable of receivablesToUpdate) {
           const paidAt =
             dto.isPaid === true && !receivable.isPaid
-              ? paymentDate
-                ? parseDateOnly(paymentDate)
-                : new Date()
+              ? resolveSettlementDate(paymentDate)
               : dto.isPaid === false && receivable.isPaid
                 ? null
                 : undefined;
@@ -427,5 +427,31 @@ export class ReceivablesService {
         dueDate: 'asc',
       },
     });
+  }
+
+  /**
+   * Corrige a data real do recebimento de uma cobrança já recebida.
+   *
+   * `paidAt` significa "quando o dinheiro se moveu", não "quando registrei no
+   * Cartero". Regularizar um lançamento antigo gravava a data de hoje, e o
+   * Budget — que reconstrói o histórico por `paidAt` — passava a mostrar a
+   * obrigação como pendência anterior em todos os meses intermediários.
+   *
+   * Atômico: `paidAt` e a data da Transaction-espelho descrevem o mesmo fato
+   * e não podem divergir nem por um instante.
+   */
+  async updateSettlementDate(id: string, userId: string, paidAt: string) {
+    const data = resolveSettlementDate(paidAt);
+
+    await this.prisma.$transaction(async (tx) => {
+      await correctSettlementDate(tx, {
+        kind: 'receivable',
+        id,
+        userId,
+        paidAt: data,
+      });
+    });
+
+    return this.findOne(id, userId);
   }
 }
