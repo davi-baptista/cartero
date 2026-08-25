@@ -54,12 +54,12 @@ function person(overrides: {
     open: {
       receivableInMonth: 0,
       debtInMonth: 0,
-      priorReceivable: 0,
-      priorDebt: 0,
+      priorOverdueReceivable: 0,
+      priorOverdueDebt: 0,
       receivableTotal: 0,
       debtTotal: 0,
       net: 0,
-      priorNet: 0,
+      priorOverdueNet: 0,
       itemCount: 0,
       hasOverdue: false,
       automaticReceivable: 0,
@@ -157,23 +157,34 @@ describe('openPriorLabel', () => {
       O bug corrigido: 200 de cada lado anunciava "+ R$ 200 anterior". Nada foi
       trazido em termos líquidos.
     */
-    expect(
-      openPriorLabel(
-        person({
-          open: { priorReceivable: 200, priorDebt: 200, priorNet: 0 },
-        }),
-        brl,
-      ),
-    ).toBeNull()
+    /*
+      Mudou: com R$ 200 de cada lado o líquido é zero, mas existem DUAS
+      obrigações vivas trazidas de antes. Esconder isso era a mesma
+      afirmação falsa que a Fase 8B removeu do WhatsApp.
+    */
+    const label = openPriorLabel(
+      person({
+        open: { priorOverdueReceivable: 200, priorOverdueDebt: 200 },
+      }),
+      brl,
+    )
+
+    expect(label).toContain('200')
+    expect(label).toContain('a receber')
+    expect(label).toContain('a pagar')
   })
 
   it('tem direção explícita', () => {
     expect(
-      openPriorLabel(person({ open: { priorNet: 100 } }), brl),
-    ).toContain('a receber de períodos anteriores')
+      openPriorLabel(person({ open: { priorOverdueReceivable: 100 } }), brl),
+    ).toContain('a receber')
     expect(
-      openPriorLabel(person({ open: { priorNet: -200 } }), brl),
-    ).toContain('a pagar de períodos anteriores')
+      openPriorLabel(person({ open: { priorOverdueDebt: 200 } }), brl),
+    ).toContain('a pagar')
+  })
+
+  it('sem nada de antes, não há linha', () => {
+    expect(openPriorLabel(person({}), brl)).toBeNull()
   })
 
   it('nunca deriva do universo do orçamento', () => {
@@ -183,7 +194,7 @@ describe('openPriorLabel', () => {
     */
     const paga = person({
       budget: { openDueInMonth: 300, debtTotal: 300 },
-      open: { priorNet: 0, itemCount: 0 },
+      open: { priorOverdueNet: 0, itemCount: 0 },
     })
     expect(openPriorLabel(paga, brl)).toBeNull()
   })
@@ -222,7 +233,7 @@ describe('budgetContextLabel — pendência anterior paga na competência', () =
     // Ela está viva; dizer "paga neste mês" seria falso.
     const aberta = person({
       budget: { currentOpenPrior: 300, debtTotal: 300 },
-      open: { priorDebt: 300, debtTotal: 300, net: -300, itemCount: 1 },
+      open: { priorOverdueDebt: 300, debtTotal: 300, net: -300, itemCount: 1 },
     })
     expect(budgetContextLabel(aberta, brl)).toBeNull()
   })
@@ -416,13 +427,13 @@ describe('summarizePeopleSettlements — o cabeçalho da seção', () => {
 
   it('item 50: prior não é contado duas vezes', () => {
     /*
-      `receivableTotal` JÁ é `receivableInMonth + priorReceivable`. Somar os
+      `receivableTotal` JÁ é `receivableInMonth + priorOverdueReceivable`. Somar os
       componentes de novo daria 600 onde existem 300.
     */
     const comPrior = person({
       open: {
         receivableInMonth: 200,
-        priorReceivable: 100,
+        priorOverdueReceivable: 100,
         receivableTotal: 300,
         net: 300,
         itemCount: 2,
@@ -605,7 +616,7 @@ describe('Projeção por pessoa dos três buckets do orçamento', () => {
     */
     const abertaAntiga = person({
       budget: { currentOpenPrior: 300, debtTotal: 300 },
-      open: { priorDebt: 300, debtTotal: 300, net: -300, itemCount: 1 },
+      open: { priorOverdueDebt: 300, debtTotal: 300, net: -300, itemCount: 1 },
     })
 
     expect(budgetContextLabel(abertaAntiga, brl)).toBeNull()
@@ -615,7 +626,7 @@ describe('Projeção por pessoa dos três buckets do orçamento', () => {
   it('item 17: a transição open → paid preserva a contribuição', () => {
     const antes = person({
       budget: { currentOpenPrior: 300, debtTotal: 300 },
-      open: { priorDebt: 300, debtTotal: 300, net: -300, itemCount: 1 },
+      open: { priorOverdueDebt: 300, debtTotal: 300, net: -300, itemCount: 1 },
     })
     const depois = person({
       budget: { paidInMonth: 300, debtTotal: 300 },

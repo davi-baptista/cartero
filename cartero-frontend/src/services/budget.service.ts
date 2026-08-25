@@ -123,14 +123,21 @@ export interface BudgetSummary {
     open: {
       receivableInMonth: number
       debtInMonth: number
-      priorReceivable: number
-      priorDebt: number
+      /**
+       * Pendências anteriores JÁ VENCIDAS hoje.
+       *
+       * `overdue` no nome de propósito: só `prior` sugeria qualquer item de
+       * mês anterior, e essa leitura projetava atraso futuro — navegar para
+       * setembro em 25/08 trazia um item que vence 30/08.
+       */
+      priorOverdueReceivable: number
+      priorOverdueDebt: number
       receivableTotal: number
       debtTotal: number
       /** `receivableTotal - debtTotal`. Informativo, sem compensação. */
       net: number
-      /** `priorReceivable - priorDebt`. Zero = nada trazido de antes. */
-      priorNet: number
+      /** `priorOverdueReceivable - priorOverdueDebt`. Zero = nada de antes. */
+      priorOverdueNet: number
       /**
        * Itens abertos.
        *

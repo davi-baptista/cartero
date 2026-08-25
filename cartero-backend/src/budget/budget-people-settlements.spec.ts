@@ -404,7 +404,7 @@ describe('Pendências anteriores da pessoa', () => {
       também. O antigo `monthNet` respondia 230 porque excluía o carry por
       construção; era a resposta certa para outra pergunta.
     */
-    expect(mariana.open.priorDebt).toBe(100);
+    expect(mariana.open.priorOverdueDebt).toBe(100);
     expect(mariana.open.net).toBe(130);
     expect(mariana.open.itemCount).toBe(3);
   });
@@ -573,10 +573,10 @@ describe('Em aberto: recebível anterior já recebido', () => {
       }).getBudget(USER_ID, 7, 2026);
 
       const mariana = budget.peopleSettlements[0];
-      expect(mariana.open.priorReceivable).toBe(0);
+      expect(mariana.open.priorOverdueReceivable).toBe(0);
       expect(mariana.open.receivableTotal).toBe(0);
       // Nunca "R$ 300 a receber de períodos anteriores".
-      expect(mariana.open.priorNet).toBe(0);
+      expect(mariana.open.priorOverdueNet).toBe(0);
     });
   }
 
@@ -594,7 +594,7 @@ describe('Em aberto: recebível anterior já recebido', () => {
     }).getBudget(USER_ID, 8, 2026);
 
     const mariana = budget.peopleSettlements[0];
-    expect(mariana.open.priorDebt).toBe(0);
+    expect(mariana.open.priorOverdueDebt).toBe(0);
     expect(mariana.open.debtTotal).toBe(0);
   });
 });
@@ -607,9 +607,9 @@ describe('Em aberto: anteriores realmente abertos', () => {
     }).getBudget(USER_ID, 9, 2026);
 
     const mariana = budget.peopleSettlements[0];
-    expect(mariana.open.priorReceivable).toBe(300);
-    expect(mariana.open.priorDebt).toBe(200);
-    expect(mariana.open.priorNet).toBe(100);
+    expect(mariana.open.priorOverdueReceivable).toBe(300);
+    expect(mariana.open.priorOverdueDebt).toBe(200);
+    expect(mariana.open.priorOverdueNet).toBe(100);
     expect(mariana.open.net).toBe(100);
   });
 
@@ -620,7 +620,7 @@ describe('Em aberto: anteriores realmente abertos', () => {
     }).getBudget(USER_ID, 9, 2026);
 
     const mariana = budget.peopleSettlements[0];
-    expect(mariana.open.priorNet).toBe(0);
+    expect(mariana.open.priorOverdueNet).toBe(0);
     expect(mariana.open.net).toBe(0);
 
     /*
@@ -646,9 +646,9 @@ describe('Em aberto: anteriores realmente abertos', () => {
     }).getBudget(USER_ID, 9, 2026);
 
     const mariana = budget.peopleSettlements[0];
-    expect(mariana.open.priorReceivable).toBe(300);
-    expect(mariana.open.priorDebt).toBe(250);
-    expect(mariana.open.priorNet).toBe(50);
+    expect(mariana.open.priorOverdueReceivable).toBe(300);
+    expect(mariana.open.priorOverdueDebt).toBe(250);
+    expect(mariana.open.priorOverdueNet).toBe(50);
     expect(mariana.open.itemCount).toBe(4);
   });
 });

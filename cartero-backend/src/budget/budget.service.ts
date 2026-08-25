@@ -21,6 +21,12 @@ const DIRECT_PAYMENT_TYPES: TransactionType[] = [
  * UTC, e comparar instantes marcaria como vencido algo que ainda está no
  * prazo durante a noite.
  */
+function civilDay(date: Date): string {
+  return new Date(date.getTime() - 3 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+}
+
 function isOverdueToday(
   dueDate: Date | null | undefined,
   now: Date = new Date(),
@@ -32,9 +38,22 @@ function isOverdueToday(
   */
   if (!dueDate) return false;
 
-  const civil = (date: Date) =>
-    new Date(date.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  return civil(dueDate) < civil(now);
+  return civilDay(dueDate) < civilDay(now);
+}
+
+/**
+ * Primeiro instante do dia civil de HOJE, para usar como limite no Prisma.
+ *
+ * `dueDate < overdueBound()` é a tradução exata de `isOverdueToday` para o
+ * banco: pega tudo que venceu ANTES de hoje, e deixa de fora o que vence
+ * hoje — no próprio dia do vencimento ainda há o dia inteiro para resolver.
+ *
+ * As duas formas precisam concordar: uma decide o que a consulta traz, a
+ * outra decide se o ícone fica vermelho. Definições temporais diferentes para
+ * a mesma pergunta é como o carry futuro nasceu.
+ */
+function overdueBound(now: Date = new Date()): Date {
+  return new Date(`${civilDay(now)}T00:00:00.000Z`);
 }
 
 /** Campos que as consultas de pendência anterior precisam. */
@@ -89,6 +108,18 @@ export class BudgetService {
       Fora do mês corrente a consulta nem é feita.
     */
     const isCurrentMonth = isCurrentCompetence(year, month);
+
+    /*
+      Limite das pendências ANTERIORES em aberto de "Acertos com pessoas".
+
+      O menor entre o início da competência e o começo de hoje. Navegar para
+      setembro em 25/08 não pode trazer um item que vence 30/08: ele ainda
+      está no prazo, e projetar esse atraso afirmaria um fato que não
+      aconteceu. Para meses passados o limite continua sendo `monthStart`.
+    */
+    const overdueLimit = overdueBound();
+    const priorOpenLimit =
+      overdueLimit < monthStart ? overdueLimit : monthStart;
 
     const [
       salary,
@@ -300,13 +331,24 @@ export class BudgetService {
         Sem `paidAt` de propósito — se já foi recebido ou pago, não falta
         acertar, independentemente de ter estado aberto numa competência
         passada. É exatamente aqui que nasciam os R$ 300 fantasmas.
+
+        ── Por que também `lt: overdueLimit` ──
+
+        `dueDate < monthStart` sozinho PROJETAVA atraso futuro: em 25/08,
+        olhando setembro, um item que vence 30/08 satisfaz `30/08 < 01/09` e
+        era trazido como pendência anterior — mas em 25/08 ele ainda está no
+        prazo, e afirmar o contrário é inventar um fato.
+
+        O menor dos dois limites resolve: para competência futura vale
+        `overdueLimit` (só o que JÁ venceu); para competência passada vale
+        `monthStart` (o recorte da própria competência).
       */
       this.prisma.receivable.findMany({
         where: {
           userId,
           personId: { not: null },
           isPaid: false,
-          dueDate: { lt: monthStart },
+          dueDate: { lt: priorOpenLimit },
         },
         select: {
           amount: true,
@@ -317,12 +359,13 @@ export class BudgetService {
           dueDate: true,
         },
       }),
+      // Simétrico ao recebível: a mesma regra dos dois lados.
       this.prisma.debt.findMany({
         where: {
           userId,
           personId: { not: null },
           isPaid: false,
-          dueDate: { lt: monthStart },
+          dueDate: { lt: priorOpenLimit },
         },
         select: {
           amount: true,
@@ -736,13 +779,18 @@ export class BudgetService {
           open: {
             receivableInMonth: entry.openReceivableInMonth,
             debtInMonth: entry.openDebtInMonth,
-            priorReceivable: entry.openPriorReceivable,
-            priorDebt: entry.openPriorDebt,
+            /*
+              `overdue` no nome, não só `prior`: estes campos trazem APENAS o
+              que já está vencido hoje. "Prior" sozinho sugeria qualquer item
+              de mês anterior, e foi essa leitura que produziu carry futuro.
+            */
+            priorOverdueReceivable: entry.openPriorReceivable,
+            priorOverdueDebt: entry.openPriorDebt,
             receivableTotal: openReceivableTotal,
             debtTotal: openDebtTotal,
             net: openReceivableTotal - openDebtTotal,
             /** `priorReceivable - priorDebt`. Zero = nada trazido. */
-            priorNet: entry.openPriorReceivable - entry.openPriorDebt,
+            priorOverdueNet: entry.openPriorReceivable - entry.openPriorDebt,
             itemCount: entry.openItemCount,
             /** Urgência: existe item vencido, de qualquer lado. */
             hasOverdue: entry.openHasOverdue,

@@ -26,6 +26,8 @@ import {
   summaryCompositionParts,
   summaryDirection,
   shouldRenderPeopleSettlement,
+  summarizePriorOverdue,
+  priorOverdueLabel,
   peopleRowView,
   peopleRowStatusLabel,
   peopleRowAriaLabel,
@@ -318,6 +320,17 @@ export default function BudgetPage() {
   const visiblePeople = peopleSettlements.filter(shouldRenderPeopleSettlement)
 
   const peopleSummary = summarizePeopleSettlements(visiblePeople)
+
+  /*
+    Pendências anteriores do cabeçalho: a soma dos mesmos buckets que as
+    linhas exibem, para o número e a explicação nunca divergirem.
+  */
+  const peoplePrior = summarizePriorOverdue(visiblePeople)
+  const peoplePriorLabel = priorOverdueLabel(
+    peoplePrior.receivable,
+    peoplePrior.debt,
+    formatCurrency,
+  )
   /*
     Resumo da seção Faturas — mesma anatomia do de pessoas. O bruto vem do
     agregado consolidado do backend, não de soma no JSX.
@@ -853,6 +866,19 @@ export default function BudgetPage() {
               </span>
             </p>
           </div>
+
+          {/*
+            Quanto do total acima veio de competências anteriores.
+
+            Só aparece quando existe carry — nunca "R$ 0,00". Agrega os
+            buckets já entregues por pessoa; nenhuma data é reinterpretada
+            aqui.
+          */}
+          {peoplePriorLabel && (
+            <p className="-mt-1 mb-2 text-xs text-muted-foreground">
+              {peoplePriorLabel}
+            </p>
+          )}
 
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
             {visiblePeople.map((person) => {

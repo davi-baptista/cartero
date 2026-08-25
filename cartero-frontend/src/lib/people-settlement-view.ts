@@ -95,15 +95,59 @@ export function openPriorLabel(
   person: PersonSettlement,
   formatCurrency: (value: number) => string,
 ): string | null {
-  const { priorNet } = person.open
+  return priorOverdueLabel(
+    person.open.priorOverdueReceivable,
+    person.open.priorOverdueDebt,
+    formatCurrency,
+  )
+}
 
-  if (priorNet > EPSILON) {
-    return `Inclui ${formatCurrency(priorNet)} a receber de períodos anteriores`
+/**
+ * Microcopy das pendências anteriores — os DOIS lados, sem netting.
+ *
+ * Com R$ 277,63 a receber e R$ 50 a pagar trazidos de antes, o líquido diria
+ * "+R$ 227,63" e esconderia que existem duas obrigações vivas. A composição é
+ * a informação; o líquido já está no valor em destaque da linha.
+ *
+ * `null` quando nada veio de antes — a linha simplesmente não aparece, em vez
+ * de exibir "R$ 0,00".
+ */
+export function priorOverdueLabel(
+  receivable: number,
+  debt: number,
+  formatCurrency: (value: number) => string,
+): string | null {
+  const partes: string[] = []
+
+  if (receivable > EPSILON) {
+    partes.push(`${formatCurrency(receivable)} a receber`)
   }
-  if (priorNet < -EPSILON) {
-    return `Inclui ${formatCurrency(Math.abs(priorNet))} a pagar de períodos anteriores`
+  if (debt > EPSILON) {
+    partes.push(`${formatCurrency(debt)} a pagar`)
   }
-  return null
+
+  if (partes.length === 0) return null
+  return `Pendências anteriores: ${partes.join(' · ')}`
+}
+
+/**
+ * Soma das pendências anteriores de TODAS as pessoas, para o cabeçalho.
+ *
+ * Agrega os buckets já entregues por pessoa — nenhuma data é reinterpretada
+ * aqui. Quem decide o que é anterior-e-vencido é o backend, com a mesma regra
+ * que alimenta as linhas.
+ */
+export function summarizePriorOverdue(people: readonly PersonSettlement[]): {
+  receivable: number
+  debt: number
+} {
+  return people.reduce(
+    (total, person) => ({
+      receivable: total.receivable + person.open.priorOverdueReceivable,
+      debt: total.debt + person.open.priorOverdueDebt,
+    }),
+    { receivable: 0, debt: 0 },
+  )
 }
 
 /**
@@ -432,6 +476,20 @@ export function peopleRowView(
         `${formatCurrency(person.open.receivableTotal)} a receber · ${formatCurrency(person.open.debtTotal)} a pagar`,
       )
     }
+
+    /*
+      Quanto veio de competências anteriores — e em qual direção.
+
+      Sem isto, a linha mostra um total sem dizer que parte dele é atraso
+      trazido de trás. A ordem importa: composição bilateral primeiro (é o
+      contexto do valor em destaque), depois a origem temporal.
+    */
+    const anterior = priorOverdueLabel(
+      person.open.priorOverdueReceivable,
+      person.open.priorOverdueDebt,
+      formatCurrency,
+    )
+    if (anterior) metadata.push(anterior)
 
     /*
       Pagamento feito na competência, com algo ainda aberto: sem isto o
