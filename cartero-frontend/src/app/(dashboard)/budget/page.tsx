@@ -567,34 +567,6 @@ export default function BudgetPage() {
                   tone={tone}
                   title={bankDisplayName(inv.bank, 'Banco')}
                   badge={{ label, className }}
-                  subtitle={
-                    /*
-                      Só a decomposição. "Fatura total R$ 144,55" aqui virou
-                      redundância assim que o próprio valor principal passou a
-                      ser o bruto.
-                    */
-                    view.showBreakdown ? (
-                      <>
-                        Sua parte {formatCurrency(view.own)}
-                        <span className="mx-1 text-muted-foreground/40" aria-hidden>
-                          ·
-                        </span>
-                        <span className="text-receivable">
-                          {formatCurrency(view.thirdParty)}
-                        </span>{' '}
-                        {/*
-                          "Outros" no mobile: a seção já diz que são faturas
-                          suas, e a forma longa empurrava o valor para uma
-                          segunda linha em telas estreitas. O `aria-label` da
-                          linha mantém a redação completa.
-                        */}
-                        <span className="sm:hidden">Outros</span>
-                        <span className="hidden sm:inline">
-                          de outras pessoas
-                        </span>
-                      </>
-                    ) : undefined
-                  }
                   amount={view.gross}
                 />
               )
@@ -705,7 +677,12 @@ export default function BudgetPage() {
                 <StatusListRow
                   key={person.personId}
                   onClick={() => setDrawerParam('personId', person.personId)}
-                  ariaLabel={`Abrir acertos com ${person.personName} em ${formatMonthYear(month, year)}`}
+                  /*
+                    O rótulo vem do helper, que carrega saldo E composição
+                    bilateral — a informação que saiu da linha não pode sumir
+                    para quem usa leitor de tela.
+                  */
+                  ariaLabel={`Abrir acertos com ${peopleRowAriaLabel(person, formatCurrency)}`}
                   icon={User}
                   /*
                     Dois eixos separados: o ÍCONE comunica urgência (algo
@@ -735,13 +712,6 @@ export default function BudgetPage() {
                       ? 'bg-paid/15 text-paid'
                       : 'bg-primary/15 text-primary',
                   }}
-                  subtitle={
-                    view.metadata.length > 0 ? (
-                      <span aria-label={peopleRowAriaLabel(person, formatCurrency)}>
-                        {view.metadata.join(' · ')}
-                      </span>
-                    ) : undefined
-                  }
                   amount={quitado ? view.amount : Math.abs(view.amount)}
                 />
               )

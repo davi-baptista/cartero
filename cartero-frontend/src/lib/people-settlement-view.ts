@@ -91,6 +91,22 @@ export function openCompositionParts(
  *
  * `null` também quando não há anteriores — a linha simplesmente não aparece.
  */
+/*
+  ── Helpers de metadata sem consumidor de produto ──
+
+  `openPriorLabel`, `budgetContextLabel`, `budgetContextParts` e
+  `openCompositionParts` descreviam a linha secundária das linhas de pessoa,
+  que saiu do Orçamento: a lista mostra entidade, status e valor, e a
+  composição vive no cabeçalho e no drawer.
+
+  Ficaram aqui, com os testes, em vez de serem apagados: eles codificam
+  decisões custosas de vocabulário — "sem netting", "saldo zero não é
+  quitação", "não repetir a competência" — e a próxima superfície que
+  precisar dessa metadata vai querer as mesmas regras, não reinventá-las.
+
+  Se em algumas semanas nenhuma superfície os tiver adotado, o certo é
+  removê-los junto com os testes, e não deixá-los apodrecer.
+*/
 export function openPriorLabel(
   person: PersonSettlement,
   formatCurrency: (value: number) => string,
@@ -577,5 +593,17 @@ export function peopleRowAriaLabel(
         ? 'a pagar'
         : 'zerado'
 
-  return `${person.personName}. Em aberto. Saldo de ${formatCurrency(Math.abs(view.amount))} ${direcao}.`
+  /*
+    A composição bilateral entra AQUI porque saiu da linha.
+
+    A lista visual mostra só o líquido; quem usa leitor de tela não deve
+    precisar abrir o drawer para saber que R$ 331,42 vêm de R$ 661,42 a
+    receber contra R$ 330,00 a pagar.
+  */
+  const composicao =
+    person.open.receivableTotal > EPSILON && person.open.debtTotal > EPSILON
+      ? ` ${formatCurrency(person.open.receivableTotal)} a receber, ${formatCurrency(person.open.debtTotal)} a pagar.`
+      : ''
+
+  return `${person.personName}. Em aberto.${composicao} Saldo de ${formatCurrency(Math.abs(view.amount))} ${direcao}.`
 }

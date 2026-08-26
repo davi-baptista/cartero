@@ -128,29 +128,6 @@ function NearestInvoiceAmount({
  * Quanto da fatura é do usuário. O valor principal continua bruto — esta tela
  * responde "quanto o cartão vai cobrar" —, então a divisão entra como apoio.
  */
-function NearestInvoiceSplit({
-  info,
-}: {
-  info: BankInvoiceSelection | null
-}) {
-  if (info === null || info.reimbursable <= 0) return null
-  return (
-    <span className="text-[11px] text-muted-foreground">
-      <span className="tabular-nums text-foreground/80">
-        {formatCurrency(info.ownAmount)}
-      </span>{' '}
-      sua parte
-      <span className="mx-1 text-muted-foreground/40" aria-hidden>
-        ·
-      </span>
-      <span className="tabular-nums text-receivable">
-        {formatCurrency(info.reimbursable)}
-      </span>{' '}
-      de outras pessoas
-    </span>
-  )
-}
-
 function BankRow({
   bank,
   nearest,
@@ -225,25 +202,18 @@ function BankRow({
         </div>
 
         {/*
-          FAIXA 2 — status e UMA metadata financeira, em largura cheia.
+          FAIXA 2 — só o status.
 
-          Fechamento e vencimento saíram: a lista é resumo, e as datas estão
-          no detalhe. Melhor não mostrar do que mostrar cortado.
+          A composição financeira (sua parte / de outras pessoas) saiu: ela
+          vive no detalhe da fatura, e repeti-la aqui punha dois números a
+          competir com o valor principal. Prazos de fechamento e vencimento
+          saíram pelo mesmo motivo — a lista identifica, o detalhe explica.
+
+          O status fica porque é identidade operacional do banco, não
+          composição: é ele que diz se há algo exigindo atenção.
         */}
-        <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 pl-13 text-[11px] leading-tight">
+        <div className="flex items-center pl-13 text-[11px] leading-tight">
           <NearestInvoiceBadge info={nearest} />
-          {nearest !== null && (
-            <>
-              <span className="text-muted-foreground/40" aria-hidden>
-                ·
-              </span>
-              {nearest.reimbursable > 0 ? (
-                <NearestInvoiceSplit info={nearest} />
-              ) : (
-                <span className="text-muted-foreground">Próxima fatura</span>
-              )}
-            </>
-          )}
         </div>
       </Link>
 

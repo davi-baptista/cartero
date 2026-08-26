@@ -24,6 +24,7 @@ const ler = (caminho: string) =>
 
 const ROW = ler('../components/ui/status-list-row.tsx')
 const BANKS = ler('../app/(dashboard)/banks/page.tsx')
+const BUDGET = ler('../app/(dashboard)/budget/page.tsx')
 
 describe('itens 2-3: o primitive tem duas faixas', () => {
   it('a metadata sai da coluna do título e ocupa a largura cheia', () => {
@@ -38,9 +39,14 @@ describe('itens 2-3: o primitive tem duas faixas', () => {
     expect(ROW).not.toContain('mt-0.5 truncate text-[11px]')
   })
 
-  it('item 5: as linhas têm altura mínima comparável', () => {
-    // Uma com metadata e outra sem não podem parecer tabelas diferentes.
-    expect(ROW).toContain('min-h-[62px]')
+  it('itens 44-45: sem metadata, a altura vem só do padding', () => {
+    /*
+      O `min-h` existia para igualar linhas com e sem faixa secundária. Sem
+      metadata nas três listas, ele virou espaço reservado para nada — e a
+      altura já é a mesma para todas.
+    */
+    expect(ROW).not.toContain('min-h-[62px]')
+    expect(ROW).toContain('items-center')
   })
 
   it('itens 44-45: há retorno de toque, onde não existe hover', () => {
@@ -97,23 +103,63 @@ describe('Parte C: a row de Banco segue o padrão de Pessoas', () => {
     expect(BANKS).toContain('Ações do ${bank.name}')
   })
 
-  it('item 61: sem próxima fatura, nenhum R$ 0 é inventado', () => {
-    // A metadata financeira só é montada quando existe fatura.
-    expect(BANKS).toContain('{nearest !== null && (')
+  it('item 34: sem próxima fatura, nenhum R$ 0 é inventado', () => {
+    /*
+      `NearestInvoiceAmount` devolve `null` quando não há fatura; o badge
+      "Em dia" carrega o estado sozinho.
+    */
+    expect(BANKS).toContain('if (info === null)')
   })
 
-  it('itens 36-37: o prazo truncado sai do mobile', () => {
+  it('itens 30-31: a composição financeira sai da linha do banco', () => {
     /*
-      Ele levava `truncate` e concorria com a metadata financeira na mesma
-      faixa — "Fecha em 3 di…" é informação pela metade. A data completa está
-      no detalhe; lista é resumo.
+      Sua parte, terceiros e prazos vivem no detalhe da fatura. Na lista eles
+      punham dois números a competir com o valor principal.
     */
-    expect(BANKS).toContain(
-      'hidden truncate text-[11px] text-muted-foreground sm:inline',
-    )
+    expect(BANKS).not.toContain('function NearestInvoiceSplit')
   })
 
   it('item 44: o alvo de toque do menu é confortável', () => {
     expect(BANKS).toContain('size-9 items-center justify-center')
+  })
+})
+
+describe('itens 7/17/47: a lista não repete o drawer', () => {
+  /**
+   * Desktop E mobile: entidade, status, valor, seta. A composição vive no
+   * cabeçalho (consolidado) e no drawer (detalhe) — repeti-la na linha punha
+   * números a competir e dava a cada registro uma altura.
+   */
+  const linhasDoOrcamento = BUDGET.slice(
+    BUDGET.indexOf('{visibleInvoices.map'),
+    BUDGET.indexOf('Pendências anteriores'),
+  )
+
+  it('nenhuma das três listas passa `subtitle`', () => {
+    expect(linhasDoOrcamento).not.toContain('subtitle=')
+  })
+
+  it('a composição da fatura saiu da linha', () => {
+    expect(linhasDoOrcamento).not.toContain('Sua parte')
+    expect(linhasDoOrcamento).not.toContain('de outras pessoas')
+  })
+
+  it('item 8: mas o CABEÇALHO continua consolidando', () => {
+    // O dado não sumiu do produto — mudou de camada.
+    expect(BUDGET).toContain('sua parte')
+    expect(BUDGET).toContain('de outras pessoas')
+  })
+
+  it('item 56: o aria da pessoa carrega o que a linha não mostra', () => {
+    expect(BUDGET).toContain('peopleRowAriaLabel(person, formatCurrency)')
+  })
+
+  it('itens 59-60: `subtitle` sobrevive só para pendências anteriores', () => {
+    /*
+      Ali o vencimento ORIGINAL é a razão de ser da seção — sem ele a linha
+      não se explica. É o único consumidor.
+    */
+    const usos = BUDGET.match(/subtitle=/g) ?? []
+    expect(usos.length).toBe(1)
   })
 })

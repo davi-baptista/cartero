@@ -48,9 +48,19 @@ export interface StatusListRowProps {
    * comportamento correto lá: o status É a única dimensão.
    */
   amountTone?: StatusRowTone
+  /**
+   * Linha secundária — use com parcimônia.
+   *
+   * Faturas, Acertos e Bancos NÃO usam: a lista mostra entidade, status e
+   * valor; a composição vive no cabeçalho e no drawer. Repeti-la na linha
+   * dava a cada registro uma altura diferente.
+   *
+   * Sobrevive para "Pendências anteriores", onde o vencimento ORIGINAL é a
+   * razão de ser da seção — sem ele a linha não se explica.
+   */
+  subtitle?: React.ReactNode
   title: string
   badge?: { label: string; className: string }
-  subtitle?: React.ReactNode
   amount: number
 }
 
@@ -66,9 +76,9 @@ export function StatusListRow({
   icon: Icon,
   tone,
   amountTone,
+  subtitle,
   title,
   badge,
-  subtitle,
   amount,
 }: StatusListRowProps) {
   const toneClasses = TONE_CLASSES[tone]
@@ -80,12 +90,20 @@ export function StatusListRow({
     graça — reimplementar isso numa `div` clicável perderia acessibilidade.
   */
   /*
-    `min-h` mantém as linhas comparáveis entre si: uma com metadata e outra
-    sem não podem parecer registros de tabelas diferentes. `active:` dá
-    retorno de toque no mobile, onde não existe hover.
+    Faixa ÚNICA: identidade · status · valor · seta.
+
+    A metadata secundária saiu de vez — desktop e mobile. Ela repetia na lista
+    o que o cabeçalho já consolida e o drawer detalha, e cada registro ganhava
+    uma altura diferente conforme o que tinha a dizer. Sem ela, as linhas
+    ficam previsíveis e o nome herda o espaço.
+
+    Sem `min-h`: a altura agora vem só do padding, e é a mesma para todas.
+    `active:` dá retorno de toque no mobile, onde não existe hover.
   */
-  const classes =
-    'group flex w-full min-h-[62px] flex-col justify-center gap-1 px-4 py-3 text-left transition-colors hover:bg-muted/30 active:bg-muted/50'
+  const classes = cn(
+    'group flex w-full cursor-pointer gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30 active:bg-muted/50',
+    subtitle ? 'flex-col justify-center gap-1' : 'items-center',
+  )
 
   const conteudo = (
     <>
@@ -144,21 +162,22 @@ export function StatusListRow({
     </>
   )
 
-  const linha = (
+  /*
+    Sem `subtitle` a linha é uma faixa só — o caso das três listas
+    simplificadas. Com ele, a metadata desce para a largura cheia, fora da
+    disputa com o valor e a seta.
+  */
+  const linha = subtitle ? (
     <>
       <div className="flex w-full items-center gap-3">{conteudo}</div>
-      {subtitle && (
-        /*
-          Largura cheia, fora da coluna do título: nenhum valor é truncado.
-          `leading-tight` segura a altura quando o texto quebra em telas
-          muito estreitas.
-        */
-        <p className="w-full text-[11px] leading-tight text-muted-foreground">
-          {subtitle}
-        </p>
-      )}
+      <p className="w-full text-[11px] leading-tight text-muted-foreground">
+        {subtitle}
+      </p>
     </>
+  ) : (
+    conteudo
   )
+
 
   if (onClick) {
     return (
