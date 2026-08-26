@@ -465,45 +465,51 @@ export function peopleRowView(
 
   if (temAberto) {
     /*
-      Composição bilateral só quando os DOIS lados existem: com um lado só, o
-      valor em destaque já diz tudo e a segunda linha seria eco.
+      ── UMA faixa secundária, por prioridade ──
+
+      Uma pessoa pode ter composição bilateral, pendência anterior, origem no
+      cartão e valor quitado no mês. Mostrar tudo empilhava três linhas e
+      fazia cada registro ter uma altura, quebrando a comparabilidade da
+      tabela — e a lista é resumo: o resto está no drawer.
+
+      A ordem responde "o que explica melhor o valor em destaque?":
+
+        1. composição bilateral — o líquido sozinho esconde os dois lados
+        2. pendência anterior   — explica de onde veio o que está aberto
+        3. origem no cartão     — contexto de um lado só
+
+      O rótulo acessível continua completo, independente do que é exibido.
     */
-    if (
+    const bilateral =
       person.open.receivableTotal > EPSILON &&
       person.open.debtTotal > EPSILON
-    ) {
-      metadata.push(
-        `${formatCurrency(person.open.receivableTotal)} a receber · ${formatCurrency(person.open.debtTotal)} a pagar`,
-      )
-    }
+        ? `${formatCurrency(person.open.receivableTotal)} a receber · ${formatCurrency(person.open.debtTotal)} a pagar`
+        : null
 
-    /*
-      Quanto veio de competências anteriores — e em qual direção.
-
-      Sem isto, a linha mostra um total sem dizer que parte dele é atraso
-      trazido de trás. A ordem importa: composição bilateral primeiro (é o
-      contexto do valor em destaque), depois a origem temporal.
-    */
     const anterior = priorOverdueLabel(
       person.open.priorOverdueReceivable,
       person.open.priorOverdueDebt,
       formatCurrency,
     )
-    if (anterior) metadata.push(anterior)
+
+    const noCartao =
+      person.open.automaticReceivable > EPSILON
+        ? `${formatCurrency(person.open.automaticReceivable)} vêm de compras no seu cartão`
+        : null
+
+    const escolhida = bilateral ?? anterior ?? noCartao
+    if (escolhida) metadata.push(escolhida)
 
     /*
-      Pagamento feito na competência, com algo ainda aberto: sem isto o
-      desembolso ficaria invisível justamente na linha que diz "falta pagar".
+      Exceção deliberada: quitação na competência com algo AINDA aberto.
+
+      Não é detalhe de terceiro nível — sem ela, a linha diz "falta pagar" e
+      omite que já houve desembolso no mês. As duas juntas são o único caso
+      de duas faixas, e só ocorre quando ambas existem.
     */
     if (person.budget.paidInMonth > EPSILON) {
       metadata.push(
         `${formatCurrency(person.budget.paidInMonth)} quitados neste mês`,
-      )
-    }
-
-    if (person.open.automaticReceivable > EPSILON) {
-      metadata.push(
-        `${formatCurrency(person.open.automaticReceivable)} vêm de compras no seu cartão`,
       )
     }
 

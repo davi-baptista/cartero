@@ -85,9 +85,18 @@ function NearestInvoiceBadge({
         )}
         {INVOICE_STATUS_LABEL[info.status]}
       </span>
-      <span className="truncate text-[11px] text-muted-foreground">
-        {/* Prazo a partir da data PERSISTIDA da fatura selecionada — o mesmo
-            registro que define a posição do banco na lista. */}
+      {/*
+        Prazo só no desktop.
+
+        No mobile ele levava `truncate` e concorria com a metadata financeira
+        na mesma faixa — "Fecha em 3 di…" é informação pela metade, que é
+        justamente o que o padrão evita. A data completa está no detalhe do
+        banco.
+
+        A data vem do registro PERSISTIDO da fatura selecionada — o mesmo que
+        define a posição do banco na lista.
+      */}
+      <span className="hidden truncate text-[11px] text-muted-foreground sm:inline">
         {info.status === InvoiceStatus.OPEN
           ? formatCloseTiming(info.referenceDate, undefined, 'short')
           : formatDueTiming(info.referenceDate, undefined, 'short')}
@@ -163,43 +172,95 @@ function BankRow({
 }) {
   const initial = bank.name[0]?.toUpperCase() ?? '?'
 
+  /*
+    Rótulo completo para leitor de tela: a metadata visual é compacta, mas a
+    informação não pode depender do que coube na tela.
+  */
+  const ariaLabel =
+    nearest !== null
+      ? `Abrir detalhes do ${bank.name}. Próxima fatura ${formatCurrency(nearest.amount)}.`
+      : `Abrir detalhes do ${bank.name}.`
+
   return (
-    <div className="group flex items-center gap-4 border-b border-border px-1 py-4 last:border-b-0">
-      {/* Monogram */}
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/40 text-sm font-semibold text-muted-foreground select-none">
-        {initial}
-      </div>
+    /*
+      ── Row inteira clicável, no padrão de Pessoas ──
 
-      {/* Name + status badge — same pairing as the invoice list rows */}
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[15px] font-medium">{bank.name}</span>
-          <NearestInvoiceBadge info={nearest} />
+      Antes era uma `div` inerte com QUATRO blocos disputando a linha: nome,
+      valor com rótulo, `⋮` e um link "Faturas" separado. No mobile as três
+      caixas `shrink-0` espremiam a coluna do nome, e `⋮` ao lado de `>`
+      fazia os dois parecerem ações concorrentes.
+
+      Agora: a row é um `Link` que ocupa a linha inteira, e o menu é IRMÃO
+      dele — não filho. Aninhar `button` dentro de `a` é HTML inválido e
+      quebra teclado; a sobreposição resolve sem isso.
+    */
+    <div className="group relative border-b border-border last:border-b-0">
+      <Link
+        href={`/banks/${bank.id}/invoices`}
+        aria-label={ariaLabel}
+        className="flex min-h-[68px] flex-col justify-center gap-1 py-3 pl-1 pr-12 transition-colors hover:bg-muted/30 active:bg-muted/50"
+      >
+        {/* FAIXA 1 — identidade, chevron e valor. */}
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/40 text-sm font-semibold text-muted-foreground select-none">
+            {initial}
+          </div>
+
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            <span className="truncate text-[15px] font-medium">
+              {bank.name}
+            </span>
+            {/*
+              Chevron junto do NOME, não no canto: ele é affordance de
+              "esta linha abre", não um botão. Decorativo — o `aria-label`
+              do Link já anuncia a ação.
+            */}
+            <ChevronRight
+              className="size-3.5 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-primary/60"
+              aria-hidden
+            />
+          </div>
+
+          <NearestInvoiceAmount info={nearest} />
         </div>
-        {/* Abaixo do nome, não da cifra: a coluna do valor é estreita e a
-            divisão é apoio, não o número principal da linha. */}
-        <NearestInvoiceSplit info={nearest} />
-      </div>
 
-      {/* Valor com rótulo: "Próxima fatura", não "Fatura atual".
-          `useNearestInvoice` escolhe por urgência — em atraso, depois fechada,
-          depois aberta — e nunca considera pagas. Uma fatura vencida de três
-          meses atrás ganha da que vence amanhã, então "atual" seria falso. */}
-      <div className="flex shrink-0 flex-col items-end">
-        {nearest !== null && (
-          <span className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70">
-            Próxima fatura
-          </span>
-        )}
-        <NearestInvoiceAmount info={nearest} />
-      </div>
+        {/*
+          FAIXA 2 — status e UMA metadata financeira, em largura cheia.
 
-      {/* Actions */}
-      <div className="flex shrink-0 items-center gap-1">
+          Fechamento e vencimento saíram: a lista é resumo, e as datas estão
+          no detalhe. Melhor não mostrar do que mostrar cortado.
+        */}
+        <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 pl-13 text-[11px] leading-tight">
+          <NearestInvoiceBadge info={nearest} />
+          {nearest !== null && (
+            <>
+              <span className="text-muted-foreground/40" aria-hidden>
+                ·
+              </span>
+              {nearest.reimbursable > 0 ? (
+                <NearestInvoiceSplit info={nearest} />
+              ) : (
+                <span className="text-muted-foreground">Próxima fatura</span>
+              )}
+            </>
+          )}
+        </div>
+      </Link>
+
+      {/*
+        Menu sobreposto à direita, fora do Link.
+
+        `stopPropagation` no wrapper impede que o toque no `⋮` navegue: o
+        menu é ação secundária, a row é navegação.
+      */}
+      <div
+        className="absolute right-0 top-1/2 -translate-y-1/2"
+        onClick={(event) => event.stopPropagation()}
+      >
         <DropdownMenu>
           <DropdownMenuTrigger
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            aria-label="Mais opções"
+            className="flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            aria-label={`Ações do ${bank.name}`}
           >
             <MoreVertical className="size-3.5" />
           </DropdownMenuTrigger>
@@ -228,24 +289,11 @@ function BankRow({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
-
-        {/* Ver faturas — always visible */}
-        <Link
-          href={`/banks/${bank.id}/invoices`}
-          className={buttonVariants({
-            variant: 'ghost',
-            size: 'sm',
-            className: 'gap-1 text-xs text-muted-foreground hover:text-foreground',
-          })}
-          title="Ver faturas"
-        >
-          <span className="hidden sm:inline">Faturas</span>
-          <ChevronRight className="size-3.5" />
-        </Link>
       </div>
     </div>
   )
 }
+
 
 function RowSkeleton() {
   return (

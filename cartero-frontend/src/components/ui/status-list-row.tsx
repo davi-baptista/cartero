@@ -79,8 +79,13 @@ export function StatusListRow({
     ser idêntica nos dois modos, e o `button` mantém Enter/Espaço e foco de
     graça — reimplementar isso numa `div` clicável perderia acessibilidade.
   */
+  /*
+    `min-h` mantém as linhas comparáveis entre si: uma com metadata e outra
+    sem não podem parecer registros de tabelas diferentes. `active:` dá
+    retorno de toque no mobile, onde não existe hover.
+  */
   const classes =
-    'group flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/30'
+    'group flex w-full min-h-[62px] flex-col justify-center gap-1 px-4 py-3 text-left transition-colors hover:bg-muted/30 active:bg-muted/50'
 
   const conteudo = (
     <>
@@ -93,6 +98,19 @@ export function StatusListRow({
         <Icon className={cn('size-4', toneClasses.icon)} aria-hidden />
       </div>
 
+      {/*
+        ── Padrão de duas faixas ──
+
+        FAIXA 1 (`flex`): identidade + badge · valor · seta.
+        FAIXA 2 (largura cheia): a metadata financeira.
+
+        Antes a metadata vivia DENTRO da coluna do título, dividindo espaço
+        com o valor e a seta, e levava `truncate`. No mobile a coluna fica
+        estreita e o número era cortado no meio — "R$ 35…" em vez de
+        R$ 350,46. Esconder metade de uma cifra é pior que não mostrá-la.
+
+        Agora ela ocupa a linha inteira abaixo, fora da disputa por largura.
+      */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
@@ -109,9 +127,6 @@ export function StatusListRow({
             </span>
           )}
         </div>
-        {subtitle && (
-          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{subtitle}</p>
-        )}
       </div>
 
       <span
@@ -129,17 +144,33 @@ export function StatusListRow({
     </>
   )
 
+  const linha = (
+    <>
+      <div className="flex w-full items-center gap-3">{conteudo}</div>
+      {subtitle && (
+        /*
+          Largura cheia, fora da coluna do título: nenhum valor é truncado.
+          `leading-tight` segura a altura quando o texto quebra em telas
+          muito estreitas.
+        */
+        <p className="w-full text-[11px] leading-tight text-muted-foreground">
+          {subtitle}
+        </p>
+      )}
+    </>
+  )
+
   if (onClick) {
     return (
       <button type="button" onClick={onClick} className={classes} aria-label={ariaLabel}>
-        {conteudo}
+        {linha}
       </button>
     )
   }
 
   return (
     <Link href={href ?? '#'} className={classes} aria-label={ariaLabel}>
-      {conteudo}
+      {linha}
     </Link>
   )
 }

@@ -118,7 +118,12 @@ describe('summarizePriorOverdue — agregação do cabeçalho', () => {
 })
 
 describe('A linha explica o que veio de trás', () => {
-  it('item 18: a metadata inclui as pendências anteriores', () => {
+  it('item 19: com os dois lados abertos, a bilateral tem prioridade', () => {
+    /*
+      Mudou com o padrão mobile: UMA faixa secundária, por prioridade. A
+      composição bilateral explica melhor o líquido em destaque; a pendência
+      anterior fica no drawer.
+    */
     const eva = person({
       priorOverdueReceivable: 277.63,
       receivableTotal: 1453.63,
@@ -128,11 +133,21 @@ describe('A linha explica o que veio de trás', () => {
     })
     const view = peopleRowView(eva, brl)
 
-    // Composição bilateral primeiro, origem temporal depois.
+    expect(view.metadata).toHaveLength(1)
     expect(view.metadata[0]).toContain('a receber')
-    expect(
-      view.metadata.some((m) => m.includes('Pendências anteriores')),
-    ).toBe(true)
+    expect(view.metadata[0]).toContain('a pagar')
+  })
+
+  it('item 19: sem bilateral, a pendência anterior aparece', () => {
+    const soAnterior = person({
+      priorOverdueDebt: 100,
+      debtTotal: 100,
+      net: -100,
+      itemCount: 1,
+    })
+    const view = peopleRowView(soAnterior, brl)
+
+    expect(view.metadata[0]).toContain('Pendências anteriores')
   })
 
   it('item 19: sem carry, a linha não ganha ruído', () => {

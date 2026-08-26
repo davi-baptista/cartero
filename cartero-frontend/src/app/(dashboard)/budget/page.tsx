@@ -582,7 +582,16 @@ export default function BudgetPage() {
                         <span className="text-receivable">
                           {formatCurrency(view.thirdParty)}
                         </span>{' '}
-                        de outras pessoas
+                        {/*
+                          "Outros" no mobile: a seção já diz que são faturas
+                          suas, e a forma longa empurrava o valor para uma
+                          segunda linha em telas estreitas. O `aria-label` da
+                          linha mantém a redação completa.
+                        */}
+                        <span className="sm:hidden">Outros</span>
+                        <span className="hidden sm:inline">
+                          de outras pessoas
+                        </span>
                       </>
                     ) : undefined
                   }
