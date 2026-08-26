@@ -13,7 +13,6 @@ import { upsertSalary } from '@/services/salary.service'
 import { SalaryDialog } from './salary-dialog'
 import { SalaryHistorySheet } from './salary-history-sheet'
 import { formatCurrency, formatMonthYear, formatDate } from '@/lib/formatters'
-import { Button } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
 import { toast } from 'sonner'
 import { bankDisplayName } from '@/lib/bank-display'
@@ -65,6 +64,23 @@ const SECTION_HEADER_CLASS =
   'mb-2 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3'
 
 const SECTION_TITLE_CLASS = 'text-[15px] font-semibold tracking-tight'
+
+/**
+ * Resumo financeiro inline, ao lado do título da seção.
+ *
+ * Vivia dentro do `h2` e herdava `text-[15px] font-semibold` — só o peso era
+ * sobrescrito, então "Faturas" e "R$ 888,74 sua parte · R$ 472,36 de outras
+ * pessoas" competiam pela mesma hierarquia e o cabeçalho ficava pesado.
+ *
+ * Agora usa a escala do bloco à direita (`SECTION_ASIDE_CLASS`), um degrau
+ * abaixo do título. Compartilhado entre Faturas e Acertos: estilos separados
+ * divergiriam na primeira mudança.
+ *
+ * `text-[12px]`, não `[11px]` do aside: aqui há valores monetários a ler, e
+ * um degrau a mais de legibilidade sem voltar a disputar com o título.
+ */
+const SECTION_SUMMARY_CLASS =
+  'text-[12px] font-normal leading-none text-muted-foreground'
 
 /** Bloco à direita: rótulo muted + valor. Empilha no desktop, inline no mobile. */
 const SECTION_ASIDE_CLASS =
@@ -352,12 +368,6 @@ export default function BudgetPage() {
     (row) => row.kind !== 'person',
   )
 
-  /*
-    Dois eventos distintos, nunca somados numa frase só: o que ainda está
-    aberto agora e o que foi efetivamente pago nesta competência.
-  */
-  const currentOpenPrior = budget?.debts.currentOpenPrior ?? 0
-  const priorPaidInMonth = budget?.debts.paidInMonth ?? 0
   const priorCarryItems = budget?.debts.priorItems ?? []
   /** Pendências anteriores SEM pessoa, pela mesma razão. */
   const standalonePriorItems = priorCarryItems.filter(
@@ -372,28 +382,8 @@ export default function BudgetPage() {
   const monthStart = `${monthKey}-01`
   const monthEnd = formatDateValue(new Date(year, month, 0))
 
-  const balance = budget?.remaining ?? null
   const hasMix = summary.totalPaid > 0 && summary.totalPending > 0
-  const pct = budget?.committedPct ?? null
 
-  /*
-    Rótulo acessível da barra de renda.
-
-    A barra sozinha comunica por posição, e `aria-valuenow` é travado em 100%
-    para não emitir valor inválido — então quem usa leitor de tela perderia
-    tanto o estouro quanto o dinheiro livre. O texto carrega os três fatos:
-    percentual REAL, renda total e quanto sobra (ou quanto excedeu).
-  */
-  const salaryProgressLabel = useMemo(() => {
-    if (salary == null || pct == null) return 'Percentual da renda comprometido'
-
-    const consumo = `${pct.toFixed(0)}% da renda de ${formatCurrency(salary)} comprometido`
-    if (balance == null) return consumo
-
-    return balance < 0
-      ? `${consumo}, ${formatCurrency(Math.abs(balance))} acima da renda`
-      : `${consumo}, ${formatCurrency(balance)} livres`
-  }, [salary, pct, balance])
 
   return (
     <div className="flex flex-col gap-6">
@@ -401,7 +391,7 @@ export default function BudgetPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Orçamento</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Planeje o que precisa sair do seu bolso neste mês
+          Quanto sai do seu bolso neste mês em faturas, pagamentos e dívidas.
         </p>
       </div>
 
@@ -418,69 +408,31 @@ export default function BudgetPage() {
             onRetry={() => void refetch()}
           />
         ) : isLoading ? (
-          <div className="space-y-2.5">
-            <Skeleton className="h-10 w-52" />
-            <Skeleton className="h-4 w-72" />
-            <Skeleton className="mt-1 h-1.5 w-full rounded-full" />
-            <Skeleton className="h-3 w-32" />
-          </div>
+          /* Só o total: o esqueleto acompanha o que a tela passou a mostrar. */
+          <Skeleton className="h-10 w-52" />
         ) : (
           <>
             {/* Hero: total a pagar no mês */}
             <div>
               {/*
-                Label da MÉTRICA, não da página. O subtítulo acima descreve o
-                que a tela faz; esta linha nomeia o número logo abaixo.
-              */}
-              <p className="text-sm text-muted-foreground">
-                Total a pagar no mês
-              </p>
-              {/*
                 Neutro de propósito — nunca `text-destructive`. O número não é
                 erro nem atraso: é o custo normal da competência.
               */}
-              <p className="mt-1 text-[38px] font-semibold tabular-nums tracking-[-0.025em] leading-none">
+              <p className="text-[38px] font-semibold tabular-nums tracking-[-0.025em] leading-none">
                 {formatCurrency(summary.totalToPay)}
               </p>
               {summary.totalToPay === 0 ? (
                 <p className="mt-2 text-sm text-muted-foreground">nada a pagar neste mês</p>
-              ) : (
-                /*
-                  Diz o que COMPÕE o número, e só isso.
+              ) : null}
+              {/*
+                As microcopies de pendência anterior saíram daqui.
 
-                  A frase "valores a receber não reduzem este total" saiu daqui:
-                  explicar uma ausência ao lado da métrica principal misturava
-                  duas seções e deixava a leitura ambígua. A independência entre
-                  os dois universos é assunto de "Acertos com pessoas", onde os
-                  valores a receber de fato aparecem.
-                */
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Inclui sua parte das faturas, pagamentos e dívidas.
-                </p>
-              )}
-              {/*
-                O total já INCLUI as pendências anteriores. Dizer isso aqui
-                evita a leitura de que o mês piorou sozinho.
+                Elas já são ditas onde os itens aparecem: a seção "Pendências
+                anteriores" lista as sem pessoa, e "Acertos com pessoas" traz
+                as vinculadas. Repetir no topo empilhava até três frases sob o
+                número principal para explicar algo que a página mostra logo
+                abaixo, item a item.
               */}
-              {currentOpenPrior > 0 && (
-                /* `mt-0.5` agrupa com a linha acima: as duas descrevem a mesma
-                   composição, não dois avisos independentes. */
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Inclui {formatCurrency(currentOpenPrior)} de pendências
-                  anteriores em aberto
-                </p>
-              )}
-              {/*
-                Duas microcopies curtas em vez de uma frase somando os dois:
-                "em aberto" e "paga neste mês" são estados diferentes, e
-                juntá-los num número só esconderia qual é qual.
-              */}
-              {priorPaidInMonth > 0 && (
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Inclui {formatCurrency(priorPaidInMonth)} de pendências
-                  anteriores pagas neste mês
-                </p>
-              )}
             </div>
 
             {/* Paid / pending — inline, without a separate card */}
@@ -492,157 +444,6 @@ export default function BudgetPage() {
               </p>
             )}
 
-            {/*
-              ── Renda do mês ──
-
-              Um bloco visual só, no lugar de três variações de frase. A barra
-              e o salário à direita já explicam a relação, então "Sobra
-              estimada de X sobre Y" virou redundância textual.
-
-              "renda válida desde <mês>" saiu daqui: o dado continua correto e
-              continua no fluxo de Histórico salarial, mas competia por
-              atenção no topo sem mudar nenhuma decisão.
-            */}
-            {/*
-              Delimitado pelos DOIS lados, com o mesmo divisor.
-
-              A linha de baixo encerra o bloco: sem ela, "Renda do mês" e
-              "Faturas" liam como uma seção contínua. O `py-4` mantém o
-              respiro simétrico — a barra e os textos não encostam nas linhas.
-            */}
-            <div className="border-y border-border/60 py-4">
-              <div className="flex items-baseline justify-between gap-3">
-                <p className="text-sm text-muted-foreground">Renda do mês</p>
-                {/*
-                  Ação terciária: corrigir uma competência cadastrada errada é
-                  raro, e não deve ter o peso de uma seção. Fica aqui porque
-                  vale nos três estados de renda — inclusive desconhecida,
-                  já que pode haver entrada em outro mês.
-                */}
-                <button
-                  type="button"
-                  onClick={() => setHistoryOpen(true)}
-                  className="shrink-0 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                >
-                  Histórico salarial
-                </button>
-              </div>
-
-              {/*
-                Renda desconhecida: a migration não inventou histórico, e
-                exibir "R$ 0,00" afirmaria que a pessoa não tinha renda — o
-                que é diferente de não sabermos.
-              */}
-              {!salaryKnown && (
-                <div className="mt-2">
-                  <p className="text-sm text-muted-foreground">
-                    Renda não registrada para {formatMonthYear(month, year)}.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-2.5 gap-1.5"
-                    onClick={() => setSalaryDialogOpen(true)}
-                  >
-                    <Wallet className="size-3.5" aria-hidden />
-                    Definir renda
-                  </Button>
-                </div>
-              )}
-
-              {/* Renda zero: a sobra existe, o percentual não. */}
-              {salaryKnown && salary === 0 && (
-                <div className="mt-2">
-                  <p className="text-sm text-muted-foreground">
-                    Renda registrada de{' '}
-                    <span className="font-semibold tabular-nums">
-                      {formatCurrency(0)}
-                    </span>{' '}
-                    para este período.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setSalaryDialogOpen(true)}
-                    className="mt-1.5 text-xs text-primary underline-offset-2 hover:underline"
-                  >
-                    Alterar renda
-                  </button>
-                </div>
-              )}
-
-              {salaryKnown && salary != null && salary > 0 && (
-                <div className="mt-2">
-                  {/*
-                    A barra representa UTILIZAÇÃO, não algo positivo — por isso
-                    a cor primária, e não verde. O âmbar e o vermelho entram só
-                    quando o comprometimento aperta ou estoura.
-                  */}
-                  <div className="flex items-center gap-3">
-                    <div
-                      role="progressbar"
-                      aria-valuenow={Math.min(Math.round(pct ?? 0), 100)}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-label={salaryProgressLabel}
-                      className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-muted/50"
-                    >
-                      <div
-                        aria-hidden
-                        className={cn(
-                          'absolute inset-y-0 left-0 rounded-full motion-safe:transition-[width] motion-safe:duration-700 motion-safe:ease-out',
-                          pct != null && pct > 100
-                            ? 'bg-destructive'
-                            : pct != null && pct > 70
-                              ? 'bg-pending'
-                              : 'bg-primary',
-                        )}
-                        /* Clamp em 100%: width acima disso é inválida. */
-                        style={{ width: `${Math.min(pct ?? 0, 100)}%` }}
-                      />
-                    </div>
-                    <p className="shrink-0 text-sm font-semibold tabular-nums">
-                      {formatCurrency(salary)}
-                    </p>
-                  </div>
-
-                  <div className="mt-1.5 flex items-baseline justify-between gap-3">
-                    {/*
-                      O percentual continua REAL mesmo com a barra travada em
-                      100%: travar o texto junto esconderia o estouro.
-                    */}
-                    <p
-                      className={cn(
-                        'text-[11px] tabular-nums',
-                        pct != null && pct > 100
-                          ? 'text-destructive'
-                          : pct != null && pct > 70
-                            ? 'text-pending'
-                            : 'text-muted-foreground',
-                      )}
-                    >
-                      {pct != null ? `${pct.toFixed(0)}% comprometido` : ' '}
-                    </p>
-                    {/*
-                      Sobra positiva é conquista (verde); estouro não vira
-                      "-R$ X livres", que seria contraditório — vira
-                      "R$ X acima da renda".
-                    */}
-                    {balance != null && (
-                      <p
-                        className={cn(
-                          'shrink-0 text-[13px] font-semibold tabular-nums',
-                          balance < 0 ? 'text-destructive' : 'text-receivable',
-                        )}
-                      >
-                        {balance < 0
-                          ? `${formatCurrency(Math.abs(balance))} acima da renda`
-                          : `${formatCurrency(balance)} livres`}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
           </>
         )}
       </div>
@@ -665,10 +466,7 @@ export default function BudgetPage() {
             */}
             {!isLoading &&
               invoiceParts.map((part) => (
-                <span
-                  key={part.kind}
-                  className="font-normal text-muted-foreground"
-                >
+                <span key={part.kind} className={SECTION_SUMMARY_CLASS}>
                   <span className="mx-1.5 text-muted-foreground/40" aria-hidden>
                     ·
                   </span>
@@ -823,7 +621,7 @@ export default function BudgetPage() {
             <h2 className={SECTION_TITLE_CLASS}>
               Acertos com pessoas
               {peopleSummaryParts.length > 0 && (
-                <span className="font-normal text-muted-foreground">
+                <span className={SECTION_SUMMARY_CLASS}>
                   {peopleSummaryParts.map((part) => (
                     <span key={part.side}>
                       <span className="mx-1.5 text-muted-foreground/40" aria-hidden>
