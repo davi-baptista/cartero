@@ -156,7 +156,7 @@ export function StatusListRow({
         {formatCurrency(amount)}
       </span>
       <ArrowRight
-        className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary/60"
+        className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-foreground"
         aria-hidden
       />
     </>

@@ -159,21 +159,24 @@ function InvoiceRow({
         aberta é a que precisa se distinguir.
       */
       className={cn(
-        'group flex w-full items-center gap-4 py-4 text-left transition-colors',
+        'group flex w-full items-center gap-4 py-3 text-left transition-colors',
         /*
-          A fatura ATUAL vira um card, não uma faixa.
+          A fatura ATUAL é destacada SEM sair do grid.
 
-          Antes era `ring-inset` sobre a linha em bleed: a borda corria colada
-          nas extremidades da lista e as margens pareciam desiguais. Agora ela
-          recolhe (`mx-1`), ganha raio próprio e uma sombra suave — a mesma
-          leitura de "item elevado" que os cards do app já usam.
+          A versão anterior usava `mx-1 px-3`: o conteúdo começava a 16px da
+          borda enquanto as outras linhas começavam a 8px, e o card parecia
+          deslocado para dentro — alinhado com a segunda linha do texto, não
+          com a primeira.
 
-          A cor continua translúcida: `bg-primary/[0.06]` com borda a 25% dá
-          presença sem virar faixa azul sólida.
+          Agora o `px-2` é o mesmo das demais e o destaque vem por FUNDO,
+          BORDA e SOMBRA, que não deslocam conteúdo. `-mx-px` compensa
+          exatamente a largura da borda, mantendo o texto na mesma coluna
+          vertical de todas as linhas.
         */
+        'px-2',
         isAtual && !isSelected
-          ? 'mx-1 rounded-xl border border-primary/25 bg-primary/[0.06] px-3 shadow-sm shadow-primary/5 hover:bg-primary/10'
-          : 'px-2 hover:bg-muted/30',
+          ? '-mx-px rounded-xl border border-primary/25 bg-primary/[0.06] shadow-sm shadow-primary/5 hover:bg-primary/10'
+          : 'hover:bg-muted/30',
       )}
       /*
         Selecionado tem precedência: enquanto o drawer está aberto, a linha
@@ -183,7 +186,11 @@ function InvoiceRow({
     >
       {/* Month + status + dates */}
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-y-1 gap-x-2">
+        {/*
+          `gap-x-1.5` aproxima as badges do mês: elas qualificam a fatura, e
+          o espaço maior as fazia parecer elementos soltos ao lado.
+        */}
+        <div className="flex flex-wrap items-center gap-y-1 gap-x-1.5">
           <span className="shrink-0 text-[15px] font-medium">{monthYear}</span>
           <StatusBadge status={invoice.status} />
           {isAtual && (
@@ -200,7 +207,12 @@ function InvoiceRow({
           )}
         </div>
         {bank && (
-          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+          /*
+            `mt-0.5`: as duas linhas descrevem a MESMA fatura, e o respiro
+            anterior as fazia ler como blocos separados. `leading-tight`
+            recupera a legibilidade que a proximidade custaria.
+          */
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-tight text-muted-foreground">
             <span className="shrink-0">Fecha {calcCloseDate(invoice)}</span>
             <span aria-hidden className="shrink-0 text-muted-foreground/40">·</span>
             <span className="shrink-0">Vence {calcDueDate(invoice)}</span>
@@ -220,7 +232,7 @@ function InvoiceRow({
 
       <ChevronRight
         aria-hidden="true"
-        className="size-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-muted-foreground/70"
+        className="size-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-foreground/70"
       />
     </button>
   )

@@ -202,7 +202,7 @@ function BankRow({
               um botão. Decorativo — o `aria-label` do Link já anuncia a ação.
             */}
             <ChevronRight
-              className="size-3.5 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-primary/60"
+              className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-foreground"
               aria-hidden
             />
             <NearestInvoiceBadge info={nearest} />

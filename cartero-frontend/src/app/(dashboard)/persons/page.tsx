@@ -360,7 +360,7 @@ export default function PersonsPage() {
                     onClick={() => setStatementPerson(person)}
                   >
                     <span className="truncate text-sm font-medium">{person.name}</span>
-                    <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-muted-foreground" />
+                    <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-foreground" />
                   </button>
 
                   {/* Actions — desktop hover */}

@@ -186,14 +186,28 @@ describe('Refinamento visual de Bancos', () => {
     expect(BANKS).not.toContain('flex-col justify-center gap-1 py-3')
   })
 
-  it('item 3: o chevron segue o padrão majoritário do site', () => {
+  it('item 6: o chevron é neutro, nunca azul', () => {
     /*
-      Auditado: `group-hover:text-primary/60` aparece em Budget, Overview e no
-      `StatusListRow` compartilhado; o neutro só em Pessoas. Bancos já seguia
-      a maioria — padronizar para o neutro criaria a exceção, não o contrário.
+      O padrão foi DECIDIDO como neutro e aplicado às sete setas do app —
+      Bancos, Faturas, Orçamento, Compromissos, Visão Geral, Pessoas e o
+      `StatusListRow` compartilhado.
+
+      O azul fica reservado a badge, botão primário e destaque; no chevron
+      ele competia com o conteúdo.
     */
-    expect(BANKS).toContain('group-hover:text-primary/60')
-    expect(ROW).toContain('group-hover:text-primary/60')
+    for (const arquivo of [BANKS, ROW]) {
+      expect(arquivo).toContain(
+        'text-muted-foreground/30 transition-colors group-hover:text-foreground',
+      )
+    }
+
+    /*
+      A asserção mira o CHEVRON. O título continua ganhando `text-primary` no
+      hover — ali o azul diz "esta linha abre", que é justamente o uso
+      reservado a ele.
+    */
+    const chevron = ROW.slice(ROW.indexOf('<ArrowRight'))
+    expect(chevron).not.toContain('group-hover:text-primary')
   })
 
   it('item 8: banco sem fatura não ganha destaque especial', () => {
@@ -205,13 +219,16 @@ describe('Refinamento visual de Bancos', () => {
 describe('Destaque da fatura atual', () => {
   const INVOICES = ler('../app/(dashboard)/banks/[id]/invoices/page.tsx')
 
-  it('item 4: vira card recolhido, não faixa em bleed', () => {
+  it('item 1: o destaque NÃO desloca o conteúdo do grid', () => {
     /*
-      `ring-inset` corria colado nas extremidades da lista e as margens
-      pareciam desiguais. `mx-1` + raio + sombra dão a leitura de item
-      elevado que os cards do app já usam.
+      O bug: `mx-1 px-3` punha o conteúdo a 16px da borda enquanto as outras
+      linhas começavam a 8px — o card parecia deslocado para dentro, alinhado
+      com a segunda linha do texto.
+
+      Agora o `px-2` é comum a todas as linhas e o destaque vem de fundo,
+      borda e sombra, que não movem conteúdo.
     */
-    expect(INVOICES).toContain('mx-1 rounded-xl border border-primary/25')
+    expect(INVOICES).not.toContain('px-3 shadow-sm')
     expect(INVOICES).toContain('shadow-sm shadow-primary/5')
     expect(INVOICES).not.toContain('ring-1 ring-inset ring-primary/15')
   })

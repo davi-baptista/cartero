@@ -853,7 +853,7 @@ export default function BudgetPage() {
                 <span className="shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]">
                   {formatCurrency(summary.totalDirectPayments)}
                 </span>
-                <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary/60" aria-hidden />
+                <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-foreground" aria-hidden />
               </Link>
             )}
           </div>
