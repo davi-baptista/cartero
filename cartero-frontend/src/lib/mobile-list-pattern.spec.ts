@@ -23,6 +23,7 @@ const ler = (caminho: string) =>
   readFileSync(new URL(caminho, import.meta.url), 'utf-8')
 
 const ROW = ler('../components/ui/status-list-row.tsx')
+const CHEVRON = ler('../components/ui/disclosure-chevron.tsx')
 const BANKS = ler('../app/(dashboard)/banks/page.tsx')
 const BUDGET = ler('../app/(dashboard)/budget/page.tsx')
 
@@ -71,36 +72,33 @@ describe('Parte C: a row de Banco segue o padrão de Pessoas', () => {
     )
   })
 
-  it('item 26: o chevron fica junto do NOME', () => {
-    // `pr-12` reserva a faixa do menu; o chevron não vai para o canto.
-    expect(BANKS).toContain('pr-12')
+  it('o chevron fica junto do NOME', () => {
+    // Depois da badge, na linha da identidade.
+    expect(BANKS).toContain('<DisclosureChevron />')
   })
 
-  it('item 27: o chevron é decorativo', () => {
-    const trecho = BANKS.slice(
-      BANKS.indexOf('<ChevronRight'),
-      BANKS.indexOf('<ChevronRight') + 260,
-    )
-    expect(trecho).toContain('aria-hidden')
-  })
-
-  it('itens 29/50: o menu é IRMÃO do link, não filho', () => {
+  it('a listagem NÃO tem mais menu administrativo', () => {
     /*
-      `button` dentro de `a` é HTML inválido e quebra teclado. A sobreposição
-      absoluta resolve sem aninhar, e `stopPropagation` impede que o toque no
-      menu navegue.
+      Editar e excluir passaram para a página do próprio banco. Na listagem o
+      kebab disputava largura com o valor e o rótulo "Fatura atual" no
+      mobile — e a lista existe para identificar e navegar, não gerenciar.
     */
-    expect(BANKS).toContain('absolute right-0 top-1/2')
-    expect(BANKS).toContain('event.stopPropagation()')
+    /*
+      Mira a row ATIVA. A seção de arquivados tem o menu próprio dela
+      (Restaurar / Excluir) e está fora deste escopo.
+    */
+    const rowAtiva = BANKS.slice(
+      BANKS.indexOf('function BankRow'),
+      BANKS.indexOf('function RowSkeleton'),
+    )
 
-    const linkFecha = BANKS.indexOf('</Link>')
-    const menu = BANKS.indexOf('absolute right-0 top-1/2')
-    expect(menu).toBeGreaterThan(linkFecha)
+    expect(rowAtiva).not.toContain('MoreVertical')
+    expect(rowAtiva).not.toContain('DropdownMenu')
   })
 
-  it('item 48: os rótulos acessíveis distinguem row e menu', () => {
-    expect(BANKS).toContain('Abrir detalhes do ${bank.name}')
-    expect(BANKS).toContain('Ações do ${bank.name}')
+  it('a row continua clicável, com o destino de sempre', () => {
+    expect(BANKS).toContain('href={')
+    expect(BANKS).toContain('invoiceId=')
   })
 
   it('item 34: sem próxima fatura, nenhum R$ 0 é inventado', () => {
@@ -119,8 +117,16 @@ describe('Parte C: a row de Banco segue o padrão de Pessoas', () => {
     expect(BANKS).not.toContain('function NearestInvoiceSplit')
   })
 
-  it('item 44: o alvo de toque do menu é confortável', () => {
-    expect(BANKS).toContain('size-9 items-center justify-center')
+  it('o lápis de gerenciamento vive na página do banco', () => {
+    /*
+      `>` entra no banco; o lápis administra o banco já aberto. Semânticas
+      distintas, ícones distintos, superfícies distintas.
+    */
+    const INVOICES_PAGE = ler('../app/(dashboard)/banks/[id]/invoices/page.tsx')
+
+    expect(INVOICES_PAGE).toContain('Gerenciar ${bank.name}')
+    expect(INVOICES_PAGE).toContain('Editar banco')
+    expect(INVOICES_PAGE).toContain('Excluir banco')
   })
 })
 
@@ -195,19 +201,20 @@ describe('Refinamento visual de Bancos', () => {
       O azul fica reservado a badge, botão primário e destaque; no chevron
       ele competia com o conteúdo.
     */
-    for (const arquivo of [BANKS, ROW]) {
-      expect(arquivo).toContain(
-        'text-muted-foreground/30 transition-colors group-hover:text-foreground',
-      )
-    }
-
     /*
-      A asserção mira o CHEVRON. O título continua ganhando `text-primary` no
-      hover — ali o azul diz "esta linha abre", que é justamente o uso
-      reservado a ele.
+      O estilo vive num componente ÚNICO agora — antes eram dois glyphs
+      (`ChevronRight` e `ArrowRight`) em quatro tamanhos e três tons, cada
+      tela resolvendo por conta própria.
     */
-    const chevron = ROW.slice(ROW.indexOf('<ArrowRight'))
-    expect(chevron).not.toContain('group-hover:text-primary')
+    expect(CHEVRON).toContain(
+      'text-muted-foreground/30 transition-colors group-hover:text-foreground',
+    )
+    expect(CHEVRON).not.toContain('group-hover:text-primary')
+
+    // As telas consomem o componente, não recriam o estilo.
+    for (const arquivo of [BANKS, ROW]) {
+      expect(arquivo).toContain('<DisclosureChevron />')
+    }
   })
 
   it('item 8: banco sem fatura não ganha destaque especial', () => {
@@ -285,5 +292,147 @@ describe('Destaque da fatura atual', () => {
     */
     expect(INVOICES).not.toContain('text-[15px] font-medium leading-tight')
     expect(INVOICES).toContain('gap-y-1 gap-x-1.5')
+  })
+})
+
+describe('Chevron unificado', () => {
+  const TELAS = {
+    bancos: ler('../app/(dashboard)/banks/page.tsx'),
+    faturas: ler('../app/(dashboard)/banks/[id]/invoices/page.tsx'),
+    orcamento: ler('../components/ui/status-list-row.tsx'),
+    extrato: ler('../app/(dashboard)/transactions/page.tsx'),
+    pessoas: ler('../app/(dashboard)/persons/page.tsx'),
+    compromissos: ler('../app/(dashboard)/commitments/page.tsx'),
+    overview: ler('../app/(dashboard)/overview/page.tsx'),
+  }
+
+  it('todas as listas consomem o MESMO componente', () => {
+    /*
+      Antes cada tela definia o seu: dois glyphs diferentes (`ChevronRight` e
+      `ArrowRight`), quatro tamanhos e três tons. Uma lista dizia `>` e a
+      vizinha `→` para exatamente a mesma coisa.
+    */
+    for (const [nome, fonte] of Object.entries(TELAS)) {
+      expect(fonte, `${nome} deveria usar DisclosureChevron`).toContain(
+        '<DisclosureChevron />',
+      )
+    }
+  })
+
+  it('nenhuma tela recria o estilo por conta própria', () => {
+    // O estilo vive num lugar só; recriá-lo é como a divergência voltaria.
+    for (const [nome, fonte] of Object.entries(TELAS)) {
+      expect(
+        fonte,
+        `${nome} não deveria repetir as classes do chevron`,
+      ).not.toContain('shrink-0 text-muted-foreground/30 transition-colors')
+    }
+  })
+
+  it('o Extrato ganhou o chevron que não tinha', () => {
+    // A row já era clicável, mas nada dizia isso visualmente.
+    expect(TELAS.extrato).toContain('<DisclosureChevron />')
+  })
+})
+
+describe('Gerenciamento do banco mudou de superfície', () => {
+  const LISTA = ler('../app/(dashboard)/banks/page.tsx')
+  const PAGINA_DO_BANCO = ler(
+    '../app/(dashboard)/banks/[id]/invoices/page.tsx',
+  )
+
+  const rowAtiva = LISTA.slice(
+    LISTA.indexOf('function BankRow'),
+    LISTA.indexOf('function RowSkeleton'),
+  )
+
+  it('item 33: a row com fatura mostra rótulo e valor, sem kebab', () => {
+    expect(rowAtiva).toContain('Fatura atual')
+    expect(rowAtiva).toContain('<NearestInvoiceAmount')
+    expect(rowAtiva).not.toContain('MoreVertical')
+  })
+
+  it('item 33: banco sem fatura não inventa rótulo nem valor', () => {
+    // Os dois vivem dentro do mesmo `nearest !== null`.
+    expect(rowAtiva).toContain('{nearest !== null && (')
+  })
+
+  it('item 35: "Fatura atual" NÃO é escondida no mobile', () => {
+    /*
+      Estava `hidden sm:inline` porque o kebab consumia a largura à direita.
+      Com ele fora, o rótulo cabe — e é na tela menor que o valor mais
+      precisa dizer o que representa.
+
+      A asserção mira a REGRA responsiva, não visibilidade de DOM.
+    */
+    // Mira o `<span>` que renderiza, não a menção no comentário acima.
+    expect(rowAtiva).toContain(
+      'shrink-0 whitespace-nowrap text-[10px] uppercase',
+    )
+    expect(rowAtiva).not.toContain('hidden shrink-0 text-[10px] uppercase')
+  })
+
+  it('item 34: o lápis abre Editar e Excluir na página do banco', () => {
+    expect(PAGINA_DO_BANCO).toContain('Gerenciar ${bank.name}')
+    expect(PAGINA_DO_BANCO).toContain('Editar banco')
+    expect(PAGINA_DO_BANCO).toContain('Excluir banco')
+  })
+
+  it('item 34: a ação destrutiva está marcada como tal', () => {
+    expect(PAGINA_DO_BANCO).toContain(
+      "className=\"text-destructive focus:text-destructive\"",
+    )
+  })
+
+  it('item 16: a distinção arquivar × excluir foi preservada', () => {
+    /*
+      Com histórico o backend recusa a exclusão, então oferecer "Excluir"
+      empurraria o usuário para um erro. A listagem já fazia essa distinção —
+      ela foi movida, não recriada com outra regra.
+    */
+    expect(PAGINA_DO_BANCO).toContain('bank.canDelete === false')
+    expect(PAGINA_DO_BANCO).toContain('Arquivar banco')
+  })
+
+  it('itens 15/30: formulário e confirmação são REUSADOS', () => {
+    // `BankSheet` e `ConfirmDialog` ganharam um segundo consumidor.
+    expect(PAGINA_DO_BANCO).toContain('<BankSheet')
+    expect(PAGINA_DO_BANCO).toContain('<ConfirmDialog')
+    expect(PAGINA_DO_BANCO).toContain("from '../../bank-sheet'")
+  })
+
+  it('item 17: excluir devolve o usuário para uma superfície válida', () => {
+    // Ficar na página de um banco que deixou de existir prenderia a tela.
+    expect(PAGINA_DO_BANCO).toContain("router.push('/banks')")
+  })
+})
+
+describe('Sem flicker de ordenação em Bancos', () => {
+  const LISTA = ler('../app/(dashboard)/banks/page.tsx')
+
+  it('itens 5/21: a lista espera as DUAS queries', () => {
+    /*
+      A ordem depende de `banks` E `invoices`. Renderizar quando só a
+      primeira chegou produzia ordem de API — todos os bancos sem
+      `selection`, logo na mesma prioridade — e a lista se reorganizava
+      sozinha ~1s depois.
+    */
+    expect(LISTA).toContain('isLoading: invoicesLoading')
+    expect(LISTA).toContain('isLoading || invoicesLoading ?')
+  })
+
+  it('item 6: nenhum delay artificial foi adicionado', () => {
+    // O skeleton é o mesmo; só passou a cobrir o dado que a ordem exige.
+    expect(LISTA).not.toContain('setTimeout')
+    expect(LISTA).not.toContain('minimumLoading')
+  })
+
+  it('itens 4/5: a ordem é derivada, sem estado intermediário', () => {
+    /*
+      `useMemo` a partir das duas respostas — não há `setSortedBanks` num
+      efeito, que renderizaria uma vez com a ordem errada antes de corrigir.
+    */
+    expect(LISTA).toContain('const bankRows = useMemo(')
+    expect(LISTA).not.toContain('setSortedBanks')
   })
 })

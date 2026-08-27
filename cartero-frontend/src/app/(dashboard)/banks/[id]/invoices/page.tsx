@@ -3,10 +3,10 @@
 import { useState, useMemo, useEffect } from 'react'
 import type React from 'react'
 import Link from 'next/link'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, ArrowLeft, ChevronRight, ChevronDown, CreditCard, Loader2, Archive, ArchiveRestore } from 'lucide-react'
+import { Trash2, Pencil, Plus, ArrowLeft, ChevronDown, CreditCard, Loader2, Archive, ArchiveRestore } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Button } from '@/components/ui/button'
@@ -44,6 +44,16 @@ import { InvoiceStatus, TransactionType} from '@/types'
 import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
 import { TransactionSheet, type TransactionFormData } from '@/app/(dashboard)/transactions/transaction-sheet'
 import { createTransaction } from '@/services/transactions.service'
+import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { BankSheet, type BankFormData } from '../../bank-sheet'
+import { updateBank, archiveBank, deleteBank } from '@/services/banks.service'
 import { cn } from '@/lib/utils'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -256,6 +266,8 @@ function InvoiceRow({
               Atual
             </span>
           )}
+          {/* Junto do título, como em Bancos — o valor fica sozinho à direita. */}
+          <DisclosureChevron />
         </div>
         {bank && (
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
@@ -276,10 +288,6 @@ function InvoiceRow({
         {formatCurrency(total)}
       </p>
 
-      <ChevronRight
-        aria-hidden="true"
-        className="size-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-foreground/70"
-      />
     </button>
   )
 }
@@ -309,10 +317,69 @@ function InvoiceRow({
 export default function BankInvoicesPage() {
   const qc = useQueryClient()
   const params = useParams()
+  const router = useRouter()
   const bankId = params.id as string
 
   /* Criação a partir do estado vazio — o banco já vem do contexto. */
   const [createOpen, setCreateOpen] = useState(false)
+
+  /*
+    ── Gerenciamento do banco ──
+
+    Estado e mutations vivem aqui porque o menu vive aqui. `BankSheet` e
+    `ConfirmDialog` são os MESMOS componentes usados na listagem — o
+    formulário e a confirmação não foram reimplementados.
+  */
+  const [editOpen, setEditOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
+
+  const invalidateBank = () => {
+    qc.invalidateQueries({ queryKey: ['banks'] })
+    qc.invalidateQueries({ queryKey: ['bank', bankId] })
+  }
+
+  const updateBankMut = useMutation({
+    mutationFn: (data: BankFormData) => updateBank(bankId, data),
+    onSuccess: () => {
+      invalidateBank()
+      setEditOpen(false)
+      toast.success('Banco atualizado')
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, 'Erro ao atualizar banco')),
+  })
+
+  const archiveMut = useMutation({
+    mutationFn: () => archiveBank(bankId),
+    onSuccess: () => {
+      invalidateBank()
+      setArchiveOpen(false)
+      toast.success('Banco arquivado')
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, 'Erro ao arquivar banco')),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: () => deleteBank(bankId),
+    onSuccess: () => {
+      invalidateBank()
+      toast.success('Banco excluído')
+      /*
+        O banco deixou de existir: ficar nesta página deixaria a tela presa
+        num registro inexistente. Volta para a listagem, que é a superfície
+        válida mais próxima.
+      */
+      router.push('/banks')
+    },
+    /*
+      Banco com histórico volta com BANK_HAS_HISTORY e uma mensagem que já
+      explica o bloqueio — o diálogo fica aberto para o usuário ler.
+    */
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, 'Erro ao excluir banco')),
+  })
 
   const createTxMut = useMutation({
     mutationFn: createTransaction,
@@ -464,6 +531,52 @@ export default function BankInvoicesPage() {
                 <Archive className="size-3" aria-hidden />
                 Arquivado
               </span>
+            )}
+
+            {/*
+              Gerenciamento do banco, agora AQUI.
+
+              Saiu do kebab da listagem, que disputava largura com o valor e o
+              rótulo "Fatura atual" no mobile. A lista identifica e navega; a
+              página do banco gerencia — cada superfície com um papel.
+
+              `>` entra no banco, o lápis administra o banco já aberto: são
+              semânticas distintas e por isso ícones distintos.
+            */}
+            {bank && (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  aria-label={`Gerenciar ${bank.name}`}
+                >
+                  <Pencil className="size-3.5" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                    <Pencil className="size-3.5" />
+                    Editar banco
+                  </DropdownMenuItem>
+                  {/*
+                    Com histórico o backend recusa a exclusão, então oferecer
+                    "Excluir" ali empurraria o usuário para um erro. A mesma
+                    distinção que a listagem fazia — preservada, não recriada.
+                  */}
+                  {bank.canDelete === false ? (
+                    <DropdownMenuItem onClick={() => setArchiveOpen(true)}>
+                      <Archive className="size-3.5" />
+                      Arquivar banco
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      onClick={() => setDeleteOpen(true)}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="size-3.5" />
+                      Excluir banco
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
           {bank ? (
@@ -655,6 +768,62 @@ export default function BankInvoicesPage() {
         open={detailOpen}
         onOpenChange={setDetailOpen}
       />
+      {/*
+        Mesmos componentes da listagem: `BankSheet` e `ConfirmDialog`. O
+        formulário de edição e a confirmação destrutiva não foram
+        reimplementados — só passaram a ter um segundo consumidor.
+      */}
+      {bank && (
+        <BankSheet
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          editTarget={bank}
+          onSubmit={async (data) => {
+            await updateBankMut.mutateAsync(data)
+          }}
+        />
+      )}
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Excluir banco"
+        description={
+          <>
+            Tem certeza que deseja excluir{' '}
+            <strong className="text-foreground">{bank?.name}</strong>? Esta
+            ação não pode ser desfeita.
+          </>
+        }
+        confirmLabel="Excluir"
+        variant="destructive"
+        isPending={deleteMut.isPending}
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={() => deleteMut.mutate()}
+      />
+
+      {/*
+        Arquivar diz o que PRESERVA, não só o que muda — a mesma redação da
+        listagem, porque a dúvida de quem clica é a mesma.
+      */}
+      <ConfirmDialog
+        open={archiveOpen}
+        title={`Arquivar ${bank?.name ?? 'banco'}?`}
+        description={
+          <>
+            Ele deixará de aparecer em novos lançamentos. Seu histórico,
+            faturas e parcelas existentes serão preservados.
+            <span className="mt-2 block text-xs">
+              As faturas continuam fechando, vencendo e podendo ser pagas — e
+              você pode restaurá-lo quando quiser.
+            </span>
+          </>
+        }
+        confirmLabel="Arquivar"
+        isPending={archiveMut.isPending}
+        onCancel={() => setArchiveOpen(false)}
+        onConfirm={() => archiveMut.mutate()}
+      />
+
       {/*
         Mesmo formulário usado em Transações e no drawer da fatura — o banco
         chega preenchido e o tipo já é crédito, que é o que gera fatura.

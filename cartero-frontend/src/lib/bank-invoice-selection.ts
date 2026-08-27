@@ -107,10 +107,17 @@ export function orderBanksByUrgency<T extends { id: string; name: string }>(
   banks: T[],
   invoices: Invoice[],
 ): Array<{ bank: T; selection: BankInvoiceSelection | null }> {
-  const rows = banks.map((bank) => ({
-    bank,
-    selection: selectBankInvoice(bank.id, invoices),
-  }))
+  /*
+    `map` já cria um array novo, então o `sort` abaixo não alcança a entrada.
+    O `[...]` explicita a intenção: nada que venha do cache do React Query
+    pode ser reordenado no lugar — dois consumidores veriam ordens diferentes.
+  */
+  const rows = [
+    ...banks.map((bank) => ({
+      bank,
+      selection: selectBankInvoice(bank.id, invoices),
+    })),
+  ]
 
   return rows.sort((a, b) => {
     const aPriority = a.selection

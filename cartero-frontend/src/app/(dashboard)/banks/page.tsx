@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Landmark, ChevronRight, MoreVertical, Archive, ArchiveRestore } from 'lucide-react'
+import { Plus, Trash2, Landmark, ChevronRight, MoreVertical, Archive, ArchiveRestore } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -30,6 +30,7 @@ import {
 import { getInvoices } from '@/services/invoices.service'
 import { formatCurrency } from '@/lib/formatters'
 import { apiErrorMessage } from '@/lib/api-error'
+import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
 import { cn } from '@/lib/utils'
 import { InvoiceStatus } from '@/types'
 import type { Bank } from '@/types'
@@ -115,9 +116,6 @@ function NearestInvoiceAmount({
 function BankRow({
   bank,
   nearest,
-  onEdit,
-  onDelete,
-  onArchive,
 }: {
   bank: Bank
   /**
@@ -127,9 +125,6 @@ function BankRow({
    * exibir os números de outra.
    */
   nearest: BankInvoiceSelection | null
-  onEdit: (b: Bank) => void
-  onDelete: (b: Bank) => void
-  onArchive: (b: Bank) => void
 }) {
   const initial = bank.name[0]?.toUpperCase() ?? '?'
 
@@ -174,7 +169,7 @@ function BankRow({
           Sem `min-h` nem `justify-center`: os dois só mascaravam o vazio
           herdado do avatar. A altura agora vem do conteúdo real.
         */
-        className="flex items-center gap-3 py-2.5 pl-1 pr-12 transition-colors hover:bg-muted/30 active:bg-muted/50"
+        className="flex items-center gap-3 py-2.5 pl-1 pr-2 transition-colors hover:bg-muted/30 active:bg-muted/50"
       >
         {/*
           ── A CAUSA do gap ──
@@ -208,23 +203,22 @@ function BankRow({
               <span className="truncate text-[15px] font-medium">
                 {bank.name}
               </span>
-              {/*
-                Chevron logo após o nome: affordance de "esta linha abre".
-                Decorativo — o `aria-label` do Link já anuncia a ação.
-              */}
-              <ChevronRight
-                className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-foreground"
-                aria-hidden
-              />
               <NearestInvoiceBadge info={nearest} />
+              {/* Depois da badge, na linha do nome — o padrão do app. */}
+              <DisclosureChevron />
             </div>
 
             {/*
               "Fatura atual" nomeia o número da linha de baixo — um valor
               solto no canto não diz o que representa.
+
+              Visível TAMBÉM no mobile: estava `hidden sm:inline` porque o
+              kebab consumia a largura à direita. Com ele fora da listagem o
+              rótulo cabe — e é justamente na tela menor que o valor mais
+              precisa dizer o que é.
             */}
             {nearest !== null && (
-              <span className="hidden shrink-0 text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70 sm:inline">
+              <span className="shrink-0 whitespace-nowrap text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70">
                 Fatura atual
               </span>
             )}
@@ -244,49 +238,6 @@ function BankRow({
         </div>
       </Link>
 
-      {/*
-        Menu sobreposto à direita, fora do Link.
-
-        `stopPropagation` no wrapper impede que o toque no `⋮` navegue: o
-        menu é ação secundária, a row é navegação.
-      */}
-      <div
-        className="absolute right-0 top-1/2 -translate-y-1/2"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            className="flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            aria-label={`Ações do ${bank.name}`}
-          >
-            <MoreVertical className="size-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onEdit(bank)}>
-              <Pencil className="size-3.5" />
-              Editar
-            </DropdownMenuItem>
-            {/* Com histórico a exclusão é sempre recusada pelo backend, então
-                oferecer "Excluir" ali seria empurrar o usuário para um erro.
-                Um cadastro criado por engano, sem nada ligado, continua
-                podendo ser apagado — ninguém precisa arquivar um typo. */}
-            {bank.canDelete === false ? (
-              <DropdownMenuItem onClick={() => onArchive(bank)}>
-                <Archive className="size-3.5" />
-                Arquivar
-              </DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem
-                onClick={() => onDelete(bank)}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="size-3.5" />
-                Excluir
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
     </div>
   )
 }
@@ -469,7 +420,15 @@ export default function BanksPage() {
     queryFn: () => getBanks('ARCHIVED'),
   })
 
-  const { data: invoices = [] } = useQuery({
+  /*
+    As faturas decidem a ORDEM da lista, não só os números exibidos.
+
+    `isLoading` é lido junto com o das contas porque uma lista renderizada
+    sem elas sai em ordem de API — todos os bancos caem na mesma prioridade
+    por falta de `selection` — e reordena quando a resposta chega. Era esse o
+    piscar de ~1s ao entrar na página.
+  */
+  const { data: invoices = [], isLoading: invoicesLoading } = useQuery({
     queryKey: ['invoices'],
     queryFn: () => getInvoices(),
   })
@@ -740,7 +699,14 @@ export default function BanksPage() {
             isFetching={isFetching}
             onRetry={() => void refetch()}
           />
-        ) : isLoading ? (
+        ) : /*
+          Espera as DUAS respostas: sem as faturas a ordem seria provisória, e
+          o usuário veria a lista se reorganizar sozinha.
+
+          O skeleton é o mesmo de sempre — nenhum delay artificial foi
+          acrescentado. Ele só passou a cobrir o dado que a ordenação exige.
+        */
+        isLoading || invoicesLoading ? (
           <div>
             {Array.from({ length: 4 }).map((_, i) => (
               <RowSkeleton key={i} />
@@ -772,16 +738,11 @@ export default function BanksPage() {
           <div>
             {bankRows.map(({ bank, selection }, i) => (
               <MotionRow key={bank.id} index={i}>
-                <BankRow
-                  bank={bank}
-                  nearest={selection}
-                  onEdit={(b) => {
-                    setEditBank(b)
-                    setSheetOpen(true)
-                  }}
-                  onDelete={setDeleteTarget}
-                  onArchive={setArchiveTarget}
-                />
+                {/*
+                  Sem ações administrativas: editar e excluir passaram a viver
+                  na página do próprio banco. A listagem identifica e navega.
+                */}
+                <BankRow bank={bank} nearest={selection} />
               </MotionRow>
             ))}
           </div>
