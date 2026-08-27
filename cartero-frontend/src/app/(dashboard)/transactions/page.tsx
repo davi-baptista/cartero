@@ -55,6 +55,7 @@ import { formatCurrency, formatDate, isExpense, TRANSACTION_TYPE_LABELS } from '
 import { bankDisplayName } from '@/lib/bank-display'
 import { API_ERROR_CODES, apiErrorMessage, apiErrorStatus, isApiErrorCode } from '@/lib/api-error'
 import { resolveCategoryIcon } from '@/lib/category-icons'
+import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
 import { cn } from '@/lib/utils'
 import { useHighlight } from '@/lib/use-highlight'
 import type { Transaction } from '@/types'
@@ -168,6 +169,11 @@ function TransactionRow({
             <span className="truncate text-sm font-medium leading-tight sm:text-[15px]">
               {tx.title}
             </span>
+            {/*
+              A row já era clicável, mas nada dizia isso — o chevron é o
+              reforço visual, no mesmo lugar e estilo das outras listas.
+            */}
+            <DisclosureChevron />
           </span>
 
           {/* Type · bank · invoice · person — inline, quiet */}

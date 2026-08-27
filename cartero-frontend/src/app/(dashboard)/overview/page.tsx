@@ -30,6 +30,7 @@ import {
   formatDueTiming,
   formatDueTimingFromISO,
 } from '@/lib/invoice-timing'
+import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
 import { cn } from '@/lib/utils'
 import {
   buildCalendarEvents,
@@ -406,7 +407,7 @@ function InvoiceAttentionRow({ invoice, banks }: { invoice: Invoice; banks: Bank
       >
         {formatCurrency(total)}
       </span>
-      <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-foreground" />
+      <DisclosureChevron />
     </Link>
   )
 }

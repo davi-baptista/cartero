@@ -6,7 +6,6 @@ import { useQuery } from '@tanstack/react-query'
 import {
   Layers,
   Repeat,
-  ArrowRight,
   CalendarClock,
   TriangleAlert,
   RotateCcw,
@@ -25,6 +24,7 @@ import {
   formatDate,
   TRANSACTION_TYPE_LABELS,
 } from '@/lib/formatters'
+import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
 import { cn } from '@/lib/utils'
 
 /** "set/26" — compacto o bastante para uma coluna estreita. */
@@ -438,12 +438,7 @@ export default function CommitmentsPage() {
                     <span className="shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em] text-destructive">
                       −{formatCurrency(Number(s.amount))}
                     </span>
-                    <ArrowRight
-                      className={cn(
-                        'size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-foreground',
-                      )}
-                      aria-hidden
-                    />
+                    <DisclosureChevron />
                   </Link>
                 ))}
               </div>

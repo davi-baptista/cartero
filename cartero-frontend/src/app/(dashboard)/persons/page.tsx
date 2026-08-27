@@ -27,6 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
 import { MotionRow } from '@/components/ui/motion-row'
 import {
   Sheet,
@@ -360,7 +361,7 @@ export default function PersonsPage() {
                     onClick={() => setStatementPerson(person)}
                   >
                     <span className="truncate text-sm font-medium">{person.name}</span>
-                    <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-foreground" />
+                    <DisclosureChevron />
                   </button>
 
                   {/* Actions — desktop hover */}

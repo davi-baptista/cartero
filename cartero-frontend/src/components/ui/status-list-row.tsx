@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 import Link from 'next/link'
-import { ArrowRight } from 'lucide-react'
+import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/formatters'
 
@@ -144,6 +144,11 @@ export function StatusListRow({
               {badge.label}
             </span>
           )}
+          {/*
+            Depois da badge, na linha do título — o mesmo lugar de Bancos e
+            Faturas. Antes vivia no fim da row, competindo com o valor.
+          */}
+          <DisclosureChevron />
         </div>
       </div>
 
@@ -155,10 +160,6 @@ export function StatusListRow({
       >
         {formatCurrency(amount)}
       </span>
-      <ArrowRight
-        className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-foreground"
-        aria-hidden
-      />
     </>
   )
 
