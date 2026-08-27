@@ -188,3 +188,90 @@ describe('A linha explica o que veio de trás', () => {
     expect(view.iconState).toBe('overdue')
   })
 })
+
+describe('Cor do valor: estado, não direção', () => {
+  /**
+   * A coluna monetária significava coisas diferentes em duas tabelas
+   * vizinhas: em Faturas a cor conta o ESTADO (aberta neutra, paga verde);
+   * aqui contava o SINAL do saldo (verde a receber, vermelho a pagar).
+   *
+   * Nesta tabela o número é o impacto da pessoa no Orçamento — e o estado é
+   * o que o qualifica. Atraso continua no ícone, camada à parte.
+   */
+  it('item 2: em aberto usa valor neutro, mesmo devendo', () => {
+    // O caso do Fabrício: R$ 1,00 a pagar deixa de ser vermelho.
+    const fabricio = person({
+      receivableTotal: 10,
+      debtTotal: 11,
+      net: -1,
+      itemCount: 2,
+    })
+    const view = peopleRowView(fabricio, brl)
+
+    expect(view.status).toBe('open')
+    expect(view.amountTone).toBe('neutral')
+  })
+
+  it('em aberto a receber também é neutro', () => {
+    // Nem verde por ser positivo: a cor não fala mais de direção.
+    const view = peopleRowView(
+      person({ receivableTotal: 500, net: 500, itemCount: 1 }),
+      brl,
+    )
+
+    expect(view.amountTone).toBe('neutral')
+  })
+
+  it('item 3: quitado usa verde, como fatura paga', () => {
+    const view = peopleRowView(
+      person({ itemCount: 0 }),
+      brl,
+    )
+
+    expect(view.status).toBe('settled')
+    expect(view.amountTone).toBe('positive')
+    expect(view.iconState).toBe('settled')
+  })
+
+  it('item 5: atraso pinta o ÍCONE, nunca o valor', () => {
+    /*
+      As duas camadas coexistem: ícone vermelho avisa que algo venceu, valor
+      neutro diz que a saída ainda não aconteceu.
+    */
+    const comAtraso = person({
+      priorOverdueDebt: 100,
+      debtTotal: 100,
+      net: -100,
+      itemCount: 1,
+    })
+    const view = peopleRowView(comAtraso, brl)
+
+    expect(view.iconState).toBe('overdue')
+    expect(view.amountTone).toBe('neutral')
+  })
+
+  it('item 4: a cor não deriva mais do sinal do saldo', () => {
+    // Duplo adversarial: saldos opostos, mesma cor de valor.
+    const aReceber = peopleRowView(
+      person({ receivableTotal: 300, net: 300, itemCount: 1 }),
+      brl,
+    )
+    const aPagar = peopleRowView(
+      person({ debtTotal: 300, net: -300, itemCount: 1 }),
+      brl,
+    )
+
+    expect(aReceber.amountTone).toBe(aPagar.amountTone)
+    // A direção continua exposta — o rótulo acessível a usa.
+    expect(aReceber.direction).not.toBe(aPagar.direction)
+  })
+
+  it('item 13.5: o valor numérico não muda', () => {
+    const view = peopleRowView(
+      person({ receivableTotal: 10, debtTotal: 11, net: -1, itemCount: 2 }),
+      brl,
+    )
+
+    expect(view.amount).toBe(-1)
+  })
+})

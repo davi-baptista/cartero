@@ -452,8 +452,31 @@ export interface PeopleRowView {
   status: PeopleRowStatus
   /** O número em destaque à direita. */
   amount: number
-  /** Direção do valor, para a cor. `neutral` quando não há sinal a dar. */
+  /**
+   * Direção financeira do saldo.
+   *
+   * NÃO governa mais a cor do valor — ver `amountTone`. Continua exposta
+   * porque o rótulo acessível a usa para dizer "a receber" ou "a pagar".
+   */
   direction: 'in' | 'out' | 'neutral'
+  /**
+   * Cor do valor em destaque, pelo mesmo princípio das Faturas.
+   *
+   * Antes vinha da DIREÇÃO do saldo (verde a receber, vermelho a pagar), o
+   * que fazia a mesma coluna significar coisas diferentes em duas tabelas
+   * vizinhas: em Faturas a cor conta o ESTADO (aberta neutra, paga verde),
+   * aqui contava o sinal.
+   *
+   * Nesta tabela o número é o impacto da pessoa no Orçamento, e o estado é o
+   * que o qualifica:
+   *
+   *   em aberto → neutro   (ainda vai sair)
+   *   quitado   → verde    (resolvido, como fatura paga)
+   *
+   * Atraso continua no ÍCONE, uma camada de urgência à parte: o valor não
+   * fica vermelho por causa dele.
+   */
+  amountTone: 'neutral' | 'positive'
   /**
    * Estado do ÍCONE — urgência, não direção.
    *
@@ -548,6 +571,7 @@ export function peopleRowView(
         dentro do prazo.
       */
       iconState: person.open.hasOverdue ? 'overdue' : 'neutral',
+      amountTone: 'neutral',
       metadata,
     }
   }
@@ -566,6 +590,7 @@ export function peopleRowView(
     */
     direction: 'neutral',
     iconState: 'settled',
+    amountTone: 'positive',
     metadata,
   }
 }

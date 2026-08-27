@@ -711,13 +711,12 @@ export default function BudgetPage() {
                         ? 'negative'
                         : 'neutral'
                   }
-                  amountTone={
-                    view.direction === 'in'
-                      ? 'positive'
-                      : view.direction === 'out'
-                        ? 'negative'
-                        : 'neutral'
-                  }
+                  /*
+                    Mesma leitura das Faturas: a cor conta o ESTADO, não a
+                    direção. Em aberto neutro, quitado verde — decidido no
+                    helper, para a regra não viver no JSX.
+                  */
+                  amountTone={view.amountTone}
                   title={person.personName}
                   badge={{
                     label: peopleRowStatusLabel(view.status),
