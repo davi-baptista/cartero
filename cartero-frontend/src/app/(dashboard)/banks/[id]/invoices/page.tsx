@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useParams, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ArrowLeft, ChevronRight, ChevronDown, CreditCard, Loader2, Archive, ArchiveRestore } from 'lucide-react'
+import { Plus, ArrowLeft, ChevronRight, ChevronDown, CreditCard, Loader2, Archive, ArchiveRestore } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Button } from '@/components/ui/button'
@@ -40,8 +40,10 @@ import {
   invoiceStatusConfig,
 } from '@/lib/invoice-status'
 import type { Invoice, Bank } from '@/types'
-import { InvoiceStatus } from '@/types'
+import { InvoiceStatus, TransactionType} from '@/types'
 import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
+import { TransactionSheet, type TransactionFormData } from '@/app/(dashboard)/transactions/transaction-sheet'
+import { createTransaction } from '@/services/transactions.service'
 import { cn } from '@/lib/utils'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -148,8 +150,25 @@ function InvoiceRow({
       onClick={onClick}
       aria-pressed={isSelected}
       aria-label={`${monthYear} — ${INVOICE_STATUS_LABEL[invoice.status]}${isAtual ? ' — Atual' : ''}`}
-      className="group flex w-full items-center gap-4 px-2 py-4 text-left transition-colors hover:bg-muted/30"
-      style={isSelected ? statusRowBg(invoice.status) : undefined}
+      /*
+        A fatura ATUAL ganha o mesmo tratamento translúcido do item
+        selecionado — `color-mix` a 7%, o padrão que a lista já usa. Um azul
+        sólido destoaria; o fundo discreto só diz "é esta aqui".
+
+        Selecionado tem precedência: enquanto o drawer está aberto, a linha
+        aberta é a que precisa se distinguir.
+      */
+      className={cn(
+        'group flex w-full items-center gap-4 px-2 py-4 text-left transition-colors hover:bg-muted/30',
+        isAtual && !isSelected && 'ring-1 ring-inset ring-primary/15',
+      )}
+      style={
+        isSelected
+          ? statusRowBg(invoice.status)
+          : isAtual
+            ? { backgroundColor: 'color-mix(in oklch, var(--primary) 7%, transparent)' }
+            : undefined
+      }
     >
       {/* Month + status + dates */}
       <div className="min-w-0 flex-1">
@@ -157,7 +176,11 @@ function InvoiceRow({
           <span className="shrink-0 text-[15px] font-medium">{monthYear}</span>
           <StatusBadge status={invoice.status} />
           {isAtual && (
-            <span className="inline-flex items-center rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+            /*
+              Translúcido em vez de sólido: com o fundo da linha já marcando
+              a fatura atual, um pill cheio de cor competiria com o status.
+            */
+            <span className="inline-flex items-center rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium text-primary">
               Atual
             </span>
           )}
@@ -215,6 +238,23 @@ export default function BankInvoicesPage() {
   const qc = useQueryClient()
   const params = useParams()
   const bankId = params.id as string
+
+  /* Criação a partir do estado vazio — o banco já vem do contexto. */
+  const [createOpen, setCreateOpen] = useState(false)
+
+  const createTxMut = useMutation({
+    mutationFn: createTransaction,
+    onSuccess: () => {
+      // As mesmas chaves que o drawer invalida: a fatura nasce deste lançamento.
+      qc.invalidateQueries({ queryKey: ['bank-invoices', bankId] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['budget'] })
+      setCreateOpen(false)
+      toast.success('Transação criada')
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, 'Não foi possível criar a transação')),
+  })
   const searchParams = useSearchParams()
   const invoiceIdParam = searchParams.get('invoiceId')
 
@@ -422,6 +462,15 @@ export default function BankInvoicesPage() {
           <p className="mt-1 max-w-xs text-xs text-muted-foreground">
             As faturas são criadas automaticamente ao registrar transações de crédito neste banco.
           </p>
+          {/*
+            O texto explicava o que fazer sem oferecer o caminho. O banco já
+            é conhecido aqui, então o formulário abre com ele preenchido —
+            mesmo `TransactionSheet` do resto do app, via `createDefaults`.
+          */}
+          <Button className="mt-5 gap-1.5" onClick={() => setCreateOpen(true)}>
+            <Plus className="size-4" aria-hidden />
+            Nova transação
+          </Button>
         </div>
       ) : (
         <div className="flex flex-col gap-6">
@@ -534,6 +583,20 @@ export default function BankInvoicesPage() {
         open={detailOpen}
         onOpenChange={setDetailOpen}
       />
+      {/*
+        Mesmo formulário usado em Transações e no drawer da fatura — o banco
+        chega preenchido e o tipo já é crédito, que é o que gera fatura.
+      */}
+      <TransactionSheet
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        editTarget={null}
+        onSubmit={async (data: TransactionFormData) => {
+          await createTxMut.mutateAsync(data)
+        }}
+        createDefaults={{ bankId, type: TransactionType.CREDIT_CARD }}
+      />
+
     </div>
   )
 }

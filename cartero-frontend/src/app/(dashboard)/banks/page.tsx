@@ -85,22 +85,6 @@ function NearestInvoiceBadge({
         )}
         {INVOICE_STATUS_LABEL[info.status]}
       </span>
-      {/*
-        Prazo só no desktop.
-
-        No mobile ele levava `truncate` e concorria com a metadata financeira
-        na mesma faixa — "Fecha em 3 di…" é informação pela metade, que é
-        justamente o que o padrão evita. A data completa está no detalhe do
-        banco.
-
-        A data vem do registro PERSISTIDO da fatura selecionada — o mesmo que
-        define a posição do banco na lista.
-      */}
-      <span className="hidden truncate text-[11px] text-muted-foreground sm:inline">
-        {info.status === InvoiceStatus.OPEN
-          ? formatCloseTiming(info.referenceDate, undefined, 'short')
-          : formatDueTiming(info.referenceDate, undefined, 'short')}
-      </span>
     </span>
   )
 }
@@ -173,7 +157,18 @@ function BankRow({
     */
     <div className="group relative border-b border-border last:border-b-0">
       <Link
-        href={`/banks/${bank.id}/invoices`}
+        /*
+          Vai DIRETO para a fatura atual quando existe uma.
+
+          `?invoiceId=` é o mesmo parâmetro que a página de faturas já lê para
+          abrir o drawer — não há navegação nova nem componente novo, só o
+          passo intermediário a menos.
+        */
+        href={
+          nearest
+            ? `/banks/${bank.id}/invoices?invoiceId=${nearest.invoice.id}`
+            : `/banks/${bank.id}/invoices`
+        }
         aria-label={ariaLabel}
         className="flex min-h-[68px] flex-col justify-center gap-1 py-3 pl-1 pr-12 transition-colors hover:bg-muted/30 active:bg-muted/50"
       >
@@ -198,23 +193,41 @@ function BankRow({
             />
           </div>
 
-          <NearestInvoiceAmount info={nearest} />
+          {/*
+            Badge na linha 1, junto da identidade: o estado do banco é o que
+            se lê ao varrer a lista.
+          */}
+          <NearestInvoiceBadge info={nearest} />
+
+          {/*
+            "Fatura atual" nomeia o número da linha de baixo. Sem ele, um
+            valor solto no canto não diz o que representa — e o rótulo só
+            existe quando existe fatura.
+          */}
+          {nearest !== null && (
+            <span className="hidden shrink-0 text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70 sm:inline">
+              Fatura atual
+            </span>
+          )}
         </div>
 
         {/*
-          FAIXA 2 — só o status.
+          FAIXA 2 — prazo à esquerda, valor à direita.
 
-          A composição financeira (sua parte / de outras pessoas) saiu: ela
-          vive no detalhe da fatura, e repeti-la aqui punha dois números a
-          competir com o valor principal. Prazos de fechamento e vencimento
-          saíram pelo mesmo motivo — a lista identifica, o detalhe explica.
-
-          O status fica porque é identidade operacional do banco, não
-          composição: é ele que diz se há algo exigindo atenção.
+          O prazo tinha saído na simplificação anterior, mas ele é o que
+          responde "preciso agir agora?" — e sem ele o banco vira só um nome.
+          Aqui não concorre com nada: a linha é dele e do valor.
         */}
-        <div className="flex items-center pl-13 text-[11px] leading-tight">
-          <NearestInvoiceBadge info={nearest} />
-        </div>
+        {nearest !== null && (
+          <div className="flex items-baseline justify-between gap-3 pl-13">
+            <span className="truncate text-[11px] leading-tight text-muted-foreground">
+              {nearest.status === InvoiceStatus.OPEN
+                ? formatCloseTiming(nearest.referenceDate, undefined, 'short')
+                : formatDueTiming(nearest.referenceDate, undefined, 'short')}
+            </span>
+            <NearestInvoiceAmount info={nearest} />
+          </div>
+        )}
       </Link>
 
       {/*
