@@ -247,9 +247,39 @@ describe('Destaque da fatura atual', () => {
     expect(INVOICES).toContain('text-background')
   })
 
-  it('selecionado continua tendo precedência sobre atual', () => {
-    // Com o drawer aberto, a linha aberta é a que precisa se distinguir.
-    expect(INVOICES).toContain('isAtual && !isSelected')
-    expect(INVOICES).toContain('isSelected ? statusRowBg(invoice.status)')
+  it('item 3: a geometria do card não depende da seleção', () => {
+    /*
+      A causa do flicker: a condição era `isAtual && !isSelected`, então ao
+      clicar a fatura atual PERDIA raio, borda e sombra e caía no fundo
+      quadrado de `statusRowBg` — o flash de outro shape por um instante.
+
+      Agora raio, borda e recuo pertencem a `isAtual` sozinho; só o FUNDO
+      reage ao clique.
+    */
+    /*
+      Mira o CÓDIGO, não o comentário: a explicação do bug cita a condição
+      antiga de propósito, para quem ler depois entender o porquê.
+    */
+    const semComentarios = INVOICES.replace(/\/\*[\s\S]*?\*\//g, '')
+
+    expect(semComentarios).not.toContain('isAtual && !isSelected')
+    expect(semComentarios).toContain('-mx-px rounded-xl border border-primary/25')
+  })
+
+  it('item 3: `statusRowBg` não alcança a fatura atual', () => {
+    // Ele sobrescreveria o fundo translúcido e traria o visual quadrado.
+    expect(INVOICES).toContain('isSelected && !isAtual ? statusRowBg')
+  })
+
+  it('item 2: a fatura atual respira acima e abaixo', () => {
+    expect(INVOICES).toContain("isAtual && 'my-2'")
+  })
+
+  it('item 1: a entrelinha é o que encosta as duas linhas', () => {
+    /*
+      O `mt-*` já estava mínimo — o espaço vinha da entrelinha padrão (~1.5)
+      do texto de 15px. Reduzir só a margem não tinha efeito visível.
+    */
+    expect(INVOICES).toContain('text-[15px] font-medium leading-tight')
   })
 })

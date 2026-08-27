@@ -174,15 +174,38 @@ function InvoiceRow({
           vertical de todas as linhas.
         */
         'px-2',
-        isAtual && !isSelected
-          ? '-mx-px rounded-xl border border-primary/25 bg-primary/[0.06] shadow-sm shadow-primary/5 hover:bg-primary/10'
+        /*
+          ── O flicker ao clicar ──
+
+          A condição era `isAtual && !isSelected`. Ao clicar, `isSelected`
+          virava true, a fatura atual PERDIA raio, borda e sombra, e caía no
+          fundo quadrado de `statusRowBg` — o flash de outro shape por um
+          instante.
+
+          Agora a geometria do card pertence a `isAtual` e não depende da
+          seleção: raio, borda e recuo permanecem em todos os estados. Só o
+          FUNDO reage ao clique, e a transição fica suave porque nada muda de
+          forma.
+        */
+        isAtual &&
+          '-mx-px rounded-xl border border-primary/25 shadow-sm shadow-primary/5',
+        /*
+          Respiro externo: a fatura atual salta um pouco mais da lista sem
+          quebrar o grid — o recuo horizontal continua o mesmo das demais.
+        */
+        isAtual && 'my-2',
+        isAtual
+          ? isSelected
+            ? 'bg-primary/15'
+            : 'bg-primary/[0.06] hover:bg-primary/10'
           : 'hover:bg-muted/30',
       )}
       /*
-        Selecionado tem precedência: enquanto o drawer está aberto, a linha
-        aberta é a que precisa se distinguir.
+        `statusRowBg` só para as linhas COMUNS: na fatura atual ele
+        sobrescreveria o fundo translúcido e traria de volta o visual
+        quadrado que o card evita.
       */
-      style={isSelected ? statusRowBg(invoice.status) : undefined}
+      style={isSelected && !isAtual ? statusRowBg(invoice.status) : undefined}
     >
       {/* Month + status + dates */}
       <div className="min-w-0 flex-1">
@@ -190,8 +213,17 @@ function InvoiceRow({
           `gap-x-1.5` aproxima as badges do mês: elas qualificam a fatura, e
           o espaço maior as fazia parecer elementos soltos ao lado.
         */}
-        <div className="flex flex-wrap items-center gap-y-1 gap-x-1.5">
-          <span className="shrink-0 text-[15px] font-medium">{monthYear}</span>
+        {/*
+          `leading-tight` na linha 1 é o que realmente encosta as duas.
+
+          O `mt-*` da segunda linha já estava mínimo — o espaço vinha da
+          ENTRELINHA padrão (~1.5) do texto de 15px, que reserva altura acima
+          e abaixo do glifo. Reduzir só a margem não tinha efeito visível.
+        */}
+        <div className="flex flex-wrap items-center gap-y-0.5 gap-x-1.5 leading-tight">
+          <span className="shrink-0 text-[15px] font-medium leading-tight">
+            {monthYear}
+          </span>
           <StatusBadge status={invoice.status} />
           {isAtual && (
             /*
@@ -212,7 +244,7 @@ function InvoiceRow({
             anterior as fazia ler como blocos separados. `leading-tight`
             recupera a legibilidade que a proximidade custaria.
           */
-          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-tight text-muted-foreground">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-tight text-muted-foreground">
             <span className="shrink-0">Fecha {calcCloseDate(invoice)}</span>
             <span aria-hidden className="shrink-0 text-muted-foreground/40">·</span>
             <span className="shrink-0">Vence {calcDueDate(invoice)}</span>
