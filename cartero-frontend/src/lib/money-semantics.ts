@@ -125,6 +125,21 @@ export function breakdownExpenses(
 }
 
 /** Soma das receitas de um conjunto de lançamentos. */
+/*
+  ── `sumIncome` e `breakdownExpenses` sem consumidor de produto ──
+
+  Alimentavam os cards de Receitas, Gastos e Saldo do Extrato, removidos
+  porque somavam um universo que não é o daquela tela: uma compra de R$ 122,90
+  em 5x aparecia inteira sob "Gastos", afirmando um desembolso que a fatura
+  divide em cinco.
+
+  Ficam aqui, com os testes: `financial-matrix.spec.ts` os usa para garantir
+  que as superfícies concordem entre si — em particular que nenhuma delas
+  desconte o recebível duas vezes. Apagá-los levaria essa proteção junto.
+
+  Se nenhuma superfície os adotar, o certo é removê-los COM os testes, e não
+  deixá-los apodrecer.
+*/
 export function sumIncome(
   transactions: readonly (ClassifiableTransaction & { amount: number })[],
 ): number {

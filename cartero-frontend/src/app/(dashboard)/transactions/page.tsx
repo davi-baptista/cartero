@@ -53,7 +53,6 @@ import { getBanks } from '@/services/banks.service'
 import { getCategories } from '@/services/categories.service'
 import { formatCurrency, formatDate, isExpense, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
 import { bankDisplayName } from '@/lib/bank-display'
-import { breakdownExpenses, sumIncome } from '@/lib/money-semantics'
 import { API_ERROR_CODES, apiErrorMessage, apiErrorStatus, isApiErrorCode } from '@/lib/api-error'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { cn } from '@/lib/utils'
@@ -834,26 +833,6 @@ export default function TransactionsPage() {
   }, [filteredTransactions])
 
   // ── Summary ──
-  // O Extrato responde "o que aconteceu": os Gastos são a movimentação bruta do
-  // período, incluindo compras feitas para outras pessoas — elas passaram pelo
-  // cartão de verdade. A decomposição em sua parte / de outras pessoas explica
-  // quanto daquilo é custo próprio, sem esconder a movimentação.
-  const summary = useMemo(() => {
-    const list = filteredTransactions ?? []
-    if (list.length === 0) {
-      return { receitas: 0, gastos: 0, suaParte: 0, deOutrasPessoas: 0, saldo: 0 }
-    }
-    const receitas = sumIncome(list)
-    const { movimentado, suaParte, deOutrasPessoas } = breakdownExpenses(list)
-    return {
-      receitas,
-      gastos: movimentado,
-      suaParte,
-      deOutrasPessoas,
-      saldo: receitas - movimentado,
-    }
-  }, [filteredTransactions])
-
   // ── Handlers ──
   /**
    * Editar abre o formulário direto, mesmo em parcelamento.
@@ -1081,52 +1060,21 @@ export default function TransactionsPage() {
         </div>
       </div>
 
-      {/* Summary tiles */}
-      {!txLoading && (displayItems?.items.length ?? 0) > 0 && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
-          <div className="min-w-0 rounded-xl bg-muted/30 px-3 py-3 sm:rounded-2xl sm:px-4">
-            <p className="text-xs font-medium text-muted-foreground">Receitas</p>
-            <p className="mt-1 whitespace-nowrap text-[15px] font-semibold tabular-nums tracking-[-0.02em] sm:text-base" style={{ color: INCOME_COLOR }}>
-              {formatCurrency(summary.receitas)}
-            </p>
-          </div>
-          <div className="min-w-0 rounded-xl bg-muted/30 px-3 py-3 sm:rounded-2xl sm:px-4">
-            <p className="text-xs font-medium text-muted-foreground">Gastos</p>
-            <p className="mt-1 whitespace-nowrap text-[15px] font-semibold tabular-nums tracking-[-0.02em] text-destructive sm:text-base">
-              {formatCurrency(summary.gastos)}
-            </p>
-            {/* Só aparece quando há compra de outra pessoa no período: o valor
-                acima é a movimentação, e esta linha diz quanto dela é seu. */}
-            {summary.deOutrasPessoas > 0 && (
-              <p className="mt-1 text-[11px] leading-tight text-muted-foreground">
-                <span className="tabular-nums text-foreground/80">
-                  {formatCurrency(summary.suaParte)}
-                </span>{' '}
-                seus
-                <span className="mx-1 text-muted-foreground/40" aria-hidden>
-                  ·
-                </span>
-                <span className="tabular-nums text-receivable">
-                  {formatCurrency(summary.deOutrasPessoas)}
-                </span>{' '}
-                de outras pessoas
-              </p>
-            )}
-          </div>
-          <div className="col-span-2 min-w-0 rounded-xl bg-muted/30 px-3 py-3 sm:col-span-1 sm:rounded-2xl sm:px-4">
-            <p className="text-xs font-medium text-muted-foreground">Saldo</p>
-            <p
-              className={cn(
-                'mt-1 whitespace-nowrap text-[15px] font-semibold tabular-nums tracking-[-0.02em] sm:text-base',
-                summary.saldo < 0 ? 'text-destructive' : '',
-              )}
-              style={summary.saldo >= 0 ? { color: INCOME_COLOR } : undefined}
-            >
-              {formatCurrency(summary.saldo)}
-            </p>
-          </div>
-        </div>
-      )}
+      {/*
+        ── Os cards de Receitas, Gastos e Saldo saíram ──
+
+        O Extrato responde "o que aconteceu, na data em que aconteceu". A
+        pergunta "quanto sai do bolso neste mês" é do Orçamento, e manter as
+        duas na mesma tela convidava a somar universos diferentes.
+
+        O caso que decidiu: uma compra de R$ 122,90 em 5x aparece aqui como
+        R$ 122,90 na data em que aconteceu — correto para o histórico. Mas
+        sob um card chamado "Gastos" ela afirmava que R$ 122,90 saíram do
+        bolso naquela competência, quando o desembolso é de R$ 24,58 por
+        fatura. O número estava certo; o rótulo é que mentia.
+
+        Nada foi movido para outro lugar: o Orçamento já responde isso.
+      */}
 
       {/* Transaction list */}
       <div className="border-t border-border">
