@@ -217,8 +217,15 @@ export async function getBudget(params: { month: number; year: number }): Promis
   return data
 }
 
-/** Mês que o orçamento deve abrir: o mais antigo com algo ainda a pagar. */
-export async function getBudgetFocus(): Promise<{ month: number; year: number }> {
-  const { data } = await api.get<{ month: number; year: number }>('/budget/focus')
-  return data
-}
+/*
+  `getBudgetFocus` (GET /budget/focus) foi REMOVIDO do cliente.
+
+  Ele existia para uma única finalidade: descobrir "o mês mais antigo com algo
+  ainda a pagar" e reposicionar o filtro do Orçamento nele. Isso é exatamente
+  o que não pode acontecer — o mês é escolha do usuário, e nenhum dado
+  financeiro tem autoridade sobre qual competência ele está olhando.
+
+  O endpoint continua existindo no backend, intocado. Não foi reaproveitado
+  como informação porque não há hoje onde exibi-lo sem sugerir a navegação
+  automática de volta.
+*/

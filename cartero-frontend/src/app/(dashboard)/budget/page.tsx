@@ -1,14 +1,14 @@
 'use client'
 
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CreditCard, PiggyBank, ArrowRight, Wallet, HandCoins, User } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusListRow, type StatusRowTone } from '@/components/ui/status-list-row'
-import { currentPeriod, useMonthPeriod } from '@/components/month-nav'
-import { getBudget, getBudgetFocus } from '@/services/budget.service'
+import { useMonthPeriod } from '@/components/month-nav'
+import { getBudget } from '@/services/budget.service'
 import { upsertSalary } from '@/services/salary.service'
 import { SalaryDialog } from './salary-dialog'
 import { SalaryHistorySheet } from './salary-history-sheet'
@@ -128,11 +128,35 @@ const DEBT_STATUS_CONFIG: Record<
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function BudgetPage() {
-  const [initialPeriod] = useState(currentPeriod)
-  // O mês é contexto do app, controlado pela barra superior.
-  const { period, setPeriod } = useMonthPeriod()
+  /*
+    ── O Orçamento NÃO escolhe o mês ──
+
+    A competência vem inteira de `useMonthPeriod`, o contexto global que a
+    barra superior controla e que Extrato, Dívidas, A Receber e Pessoas
+    compartilham. Esta página só LÊ.
+
+    Antes existia uma segunda query (`['budget', 'focus']` → `GET
+    /budget/focus`) que perguntava ao backend qual mês "exige atenção" —
+    olhando atrasos para trás e a próxima pendência para frente — e um effect
+    aplicava a resposta ao filtro via `setPeriod`.
+
+    Havia uma guarda para rodar só na chegada, mas ela comparava o período
+    atual com o mês civil: quem entrasse no Orçamento em agosto sem ter mexido
+    no seletor era jogado para outro mês assim que a resposta chegava. Como o
+    salto vinha DEPOIS do fetch e passava por `setTimeout`, ele aparecia como
+    uma troca silenciosa já com a tela montada — o conteúdo mudava debaixo de
+    quem estava lendo.
+
+    Nenhum dado financeiro pode decidir o que o usuário está olhando: "qual
+    mês eu vejo" é do filtro, "quais itens pertencem a este mês" é do cálculo.
+    A segunda pergunta nunca responde a primeira.
+
+    Sem fallback próprio aqui: o Provider já inicializa em `currentPeriod()`,
+    uma vez, no mount. Um segundo fallback nesta página seria justamente o
+    auto-reset que não pode existir.
+  */
+  const { period } = useMonthPeriod()
   const { month, year } = period
-  const focusApplied = useRef(false)
 
   const {
     data: budget,
@@ -144,29 +168,6 @@ export default function BudgetPage() {
     queryKey: ['budget', { month, year }],
     queryFn: () => getBudget({ month, year }),
   })
-
-  // O backend resolve em uma consulta qual mês exige atenção — olhando para
-  // trás (atrasos) e para frente (próxima pendência).
-  // Sob o prefixo `budget` de propósito: pagar uma fatura muda qual mês
-  // exige atenção, e as invalidações existentes já usam essa chave.
-  const { data: focus } = useQuery({
-    queryKey: ['budget', 'focus'],
-    queryFn: getBudgetFocus,
-  })
-
-  useEffect(() => {
-    if (!focus || focusApplied.current) return
-    // Só reposiciona na chegada: depois disso o mês é do usuário, e trocá-lo
-    // enquanto ele navega seria tirar o controle da mão dele.
-    if (year !== initialPeriod.year || month !== initialPeriod.month) {
-      focusApplied.current = true
-      return
-    }
-    focusApplied.current = true
-    if (focus.month !== month || focus.year !== year) {
-      window.setTimeout(() => setPeriod(focus), 0)
-    }
-  }, [focus, initialPeriod.month, initialPeriod.year, month, year, setPeriod])
 
   const qc = useQueryClient()
   const [salaryDialogOpen, setSalaryDialogOpen] = useState(false)
