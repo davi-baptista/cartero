@@ -104,6 +104,12 @@ function buildPrisma(universe: {
     receivable: {
       findMany: vi.fn(async ({ where }: any) => {
         seen.receivableWhere.push(where);
+        /*
+          A consulta de RECEBIDOS no mês (`paidAt` na janela) não é exercitada
+          aqui — devolver as mesmas linhas contaria o valor duas vezes no
+          netting por pessoa.
+        */
+        if (where?.paidAt?.gte) return [];
         return universe.receivables
           .filter((item) => inRange(item.dueDate, where))
           .map((item) => ({
@@ -247,12 +253,15 @@ describe('O Orçamento não consome PersonStatement', () => {
 
   it('a informação de A Receber usa só o mês consultado', async () => {
     /**
-     * Este teste protegia a COMPENSAÇÃO mensal: Eva devia R$ 900, tinha R$ 300
-     * a receber no mês, e o esperado era R$ 600 de dívida.
+     * A compensação VOLTOU, agora por pessoa: Eva deve R$ 900 e tem R$ 300 a
+     * receber em agosto, então agosto custa R$ 600 nessa relação.
      *
-     * A Fase 9B removeu a compensação — recebível não abate obrigação. O que
-     * continua valendo é o RECORTE: a informação de A Receber é do mês, e o
-     * recebível de julho não vaza para agosto.
+     * O recebível de julho (R$ 500) TAMBÉM entra: ele está vencido e aberto,
+     * então é carry anterior legítimo pela regra consolidada — a mesma que
+     * vale para dívidas. Daí 900 − 300 − 500 = 100.
+     *
+     * O que este arquivo protege permanece intacto: a informação de A Receber
+     * continua recortada pelo mês (R$ 300), sem o carry.
      */
     const { prisma } = buildPrisma({
       debts: [{ amount: 900, dueDate: '2026-08-10', personId: 'person-1' }],
@@ -265,8 +274,8 @@ describe('O Orçamento não consome PersonStatement', () => {
 
     const budget = await service.getBudget(USER_ID, 8, 2026);
 
-    // Valor íntegro: nada foi abatido.
-    expect(budget.totalDebts).toBe(900);
+    // 900 − 300 (agosto) − 500 (julho, vencido e aberto) = 100.
+    expect(budget.totalDebts).toBe(100);
     // Só o recebível de agosto entra na informação.
     expect(budget.receivables.dueInMonth).toBe(300);
   });

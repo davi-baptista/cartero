@@ -115,6 +115,16 @@ export interface BudgetSummary {
       currentOpenPrior: number
       /** Pagas nesta competência, qualquer vencimento. */
       paidInMonth: number
+      /** Recebíveis desta pessoa relevantes para a competência. */
+      receivableAmount: number
+      /**
+       * O que esta pessoa acrescenta ao `totalToPay`.
+       *
+       * `max(dívidas − recebíveis, 0)`. Netting POR PESSOA: quem me deve mais
+       * do que eu devo contribui com ZERO, nunca com crédito, e nunca reduz
+       * obrigações com terceiros.
+       */
+      payable: number
       /** `openDueInMonth + currentOpenPrior + paidInMonth`. */
       debtTotal: number
       automaticReceivable: number
@@ -166,7 +176,21 @@ export interface BudgetSummary {
     dueInMonth: number
     count: number
   }
-  /** `netAmount + totalDirectPayments + debts.total`. Sem recebíveis. */
+  /**
+   * De onde vem o total — a composição exibida sob o número.
+   *
+   * Os quatro componentes fecham exatamente com `totalToPay`, por construção
+   * no backend. O frontend só formata os maiores que zero.
+   */
+  breakdown: {
+    invoices: number
+    directPayments: number
+    /** Só dívidas SEM pessoa — as com pessoa vão em `peopleSettlements`. */
+    debts: number
+    /** Σ `max(dívidas − recebíveis, 0)` por pessoa. */
+    peopleSettlements: number
+  }
+  /** `breakdown.invoices + directPayments + debts + peopleSettlements`. */
   totalToPay: number
   totalPaid: number
   totalPending: number

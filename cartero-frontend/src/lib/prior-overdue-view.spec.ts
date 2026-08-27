@@ -60,6 +60,8 @@ function person(over: {
       openDueInMonth: 0,
       currentOpenPrior: 0,
       paidInMonth: 0,
+      receivableAmount: 0,
+      payable: 0,
       debtTotal: 0,
       automaticReceivable: 0,
     },

@@ -272,3 +272,75 @@ export function invoiceRowAriaLabel(
     view.thirdParty,
   )} de outras pessoas.`
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Composição do total do Orçamento
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * A linha discreta sob o número principal, dizendo de onde ele veio.
+ *
+ * O backend entrega os quatro agregados já fechados com `totalToPay` — aqui
+ * só escolhemos o que dizer. Somar dinheiro no JSX abriria espaço para a
+ * tela discordar do total por um centavo.
+ */
+export interface BudgetBreakdownPart {
+  key: 'invoices' | 'directPayments' | 'debts' | 'peopleSettlements'
+  amount: number
+  label: string
+}
+
+const BREAKDOWN_LABELS: Record<BudgetBreakdownPart['key'], string> = {
+  invoices: 'em faturas',
+  directPayments: 'em pagamentos',
+  debts: 'em dívidas',
+  peopleSettlements: 'em acertos',
+}
+
+/**
+ * Componentes com valor, na ordem de leitura.
+ *
+ * Zero é omitido: "R$ 0,00 em pagamentos" ocuparia espaço para dizer que algo
+ * não aconteceu. Com um componente só a linha permanece — ela ainda explica a
+ * origem do número.
+ */
+export function budgetBreakdownParts(breakdown: {
+  invoices: number
+  directPayments: number
+  debts: number
+  peopleSettlements: number
+}): BudgetBreakdownPart[] {
+  const ordem: BudgetBreakdownPart['key'][] = [
+    'invoices',
+    'directPayments',
+    'debts',
+    'peopleSettlements',
+  ]
+
+  return ordem
+    .map((key) => ({ key, amount: breakdown[key], label: BREAKDOWN_LABELS[key] }))
+    .filter((part) => part.amount > 0.005)
+}
+
+/**
+ * A composição em texto corrido, para leitor de tela.
+ *
+ * Os separadores visuais (`·`) não são lidos como estrutura — sem esta frase,
+ * a decomposição chegaria como uma sequência de números soltos.
+ */
+export function budgetBreakdownAriaLabel(
+  parts: readonly BudgetBreakdownPart[],
+  total: number,
+  formatCurrency: (value: number) => string,
+): string {
+  if (parts.length === 0) return formatCurrency(total)
+
+  const descritos = parts.map(
+    (part) => `${formatCurrency(part.amount)} ${part.label}`,
+  )
+  const ultimo = descritos.pop()
+  const composicao =
+    descritos.length > 0 ? `${descritos.join(', ')} e ${ultimo}` : ultimo
+
+  return `Total de ${formatCurrency(total)}, composto por ${composicao}.`
+}

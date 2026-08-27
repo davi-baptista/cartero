@@ -47,6 +47,8 @@ function person(overrides: {
       openDueInMonth: 0,
       currentOpenPrior: 0,
       paidInMonth: 0,
+      receivableAmount: 0,
+      payable: 0,
       debtTotal: 0,
       automaticReceivable: 0,
       ...overrides.budget,
@@ -566,8 +568,6 @@ describe('Projeção por pessoa dos três buckets do orçamento', () => {
 
     expect(budgetDebtContribution(dezembro)).toBe(300)
     expect(openBalanceLabel(dezembro, brl)).toBe('Nada em aberto')
-    // A linha continua visível, com o contexto explicando os R$ 300.
-    expect(shouldRenderPeopleSettlement(dezembro)).toBe(true)
   })
 
   it('item 18: dívida do mês ainda aberta não repete o número', () => {
@@ -643,7 +643,7 @@ describe('Projeção por pessoa dos três buckets do orçamento', () => {
 })
 
 describe('shouldRenderPeopleSettlement', () => {
-  it('itens 10/22/31/34: sem nada relevante, não renderiza', () => {
+  it('sem saída líquida, não renderiza', () => {
     /*
       O caso dos meses intermediários: a dívida de dezembro paga em agosto não
       contribui para março, e a pessoa não tem mais nada lá. Renderizar
@@ -652,27 +652,43 @@ describe('shouldRenderPeopleSettlement', () => {
     expect(shouldRenderPeopleSettlement(person({}))).toBe(false)
   })
 
-  it('item 35: pessoa só com recebível aberto continua visível', () => {
+  it('pessoa só com recebível NÃO aparece no Orçamento', () => {
+    /*
+      Mudou com o netting por pessoa: a seção virou decomposição das SAÍDAS.
+      Quem só tem a receber não representa gasto — continua em Pessoas, A
+      Receber e no drawer, que são as superfícies dessa pergunta.
+    */
     const soRecebivel = person({
       open: { receivableTotal: 300, net: 300, itemCount: 1 },
     })
-    expect(shouldRenderPeopleSettlement(soRecebivel)).toBe(true)
+    expect(shouldRenderPeopleSettlement(soRecebivel)).toBe(false)
   })
 
-  it('contribuição ao orçamento basta, mesmo sem nada em aberto', () => {
-    const soOrcamento = person({
-      budget: { openDueInMonth: 300, debtTotal: 300 },
+  it('só aparece quem tem saída líquida, mesmo sem nada em aberto', () => {
+    /*
+      O critério passou a ser `payable`: dívida bruta sozinha não basta, pois
+      pode estar inteiramente compensada por recebíveis da mesma pessoa.
+    */
+    const comSaida = person({
+      budget: { openDueInMonth: 300, payable: 300, debtTotal: 300 },
       open: { itemCount: 0 },
     })
-    expect(shouldRenderPeopleSettlement(soOrcamento)).toBe(true)
+    expect(shouldRenderPeopleSettlement(comSaida)).toBe(true)
+
+    const compensada = person({
+      budget: { openDueInMonth: 300, payable: 0, debtTotal: 300 },
+      open: { itemCount: 0 },
+    })
+    expect(shouldRenderPeopleSettlement(compensada)).toBe(false)
   })
 
-  it('recebível do orçamento também conta', () => {
+  it('recebível do orçamento sozinho NÃO basta', () => {
+    // Sem dívida, `payable` é zero: nenhuma saída a decompor.
     const recebivelDoMes = person({
       budget: { receivableDueInMonth: 480 },
       open: { itemCount: 0 },
     })
-    expect(shouldRenderPeopleSettlement(recebivelDoMes)).toBe(true)
+    expect(shouldRenderPeopleSettlement(recebivelDoMes)).toBe(false)
   })
 })
 

@@ -260,11 +260,15 @@ export function budgetContextLabel(
 export function shouldRenderPeopleSettlement(
   person: PersonSettlement,
 ): boolean {
-  return (
-    budgetDebtContribution(person) > EPSILON ||
-    person.open.itemCount > 0 ||
-    person.budget.receivableDueInMonth > EPSILON
-  )
+  /*
+    A seção passou a ser uma DECOMPOSIÇÃO das saídas do Orçamento, não um
+    consolidado de todos os saldos com pessoas.
+
+    Quem me deve mais do que eu devo não representa saída líquida e não
+    aparece aqui — continua visível em Pessoas, A Receber e no drawer, que
+    são as superfícies dessa pergunta.
+  */
+  return person.budget.payable > EPSILON
 }
 
 /**

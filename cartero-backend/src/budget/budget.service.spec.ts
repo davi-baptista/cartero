@@ -116,8 +116,23 @@ function buildPrisma(data: {
         ),
       ),
     },
+    /*
+      O serviço faz QUATRO consultas de recebível — mês, anteriores em aberto,
+      recebidos no mês e o informativo. Devolver a mesma lista para todas
+      contava o valor quatro vezes no netting: 100 − 30 − 30 − 30 = 10, onde
+      o esperado era 70.
+
+      Aqui só a janela do MÊS devolve linhas; as demais são exercitadas por
+      arquivos próprios.
+    */
     receivable: {
-      findMany: vi.fn().mockResolvedValue(data.personReceivables ?? []),
+      findMany: vi.fn(({ where }: any) =>
+        Promise.resolve(
+          where?.dueDate?.gte && where?.dueDate?.lt
+            ? (data.personReceivables ?? [])
+            : [],
+        ),
+      ),
     },
   } as unknown as PrismaService;
 }
@@ -377,42 +392,44 @@ describe('BudgetService — compensação por pessoa', () => {
 
   /**
    * ════════════════════════════════════════════════════════════════════════
-   * NÃO existe compensação (Fase 9B)
+   * Netting POR PESSOA — supera a regra da Fase 9B
    * ════════════════════════════════════════════════════════════════════════
    *
-   * Estes testes afirmavam o contrário: `devo 100 e tenho 100 a receber → a
-   * linha desaparece`, com `totalDebts === 0`. Era uma compensação
-   * matemática — `debt - min(receivable, debt)` — que o Cartero nunca executa
-   * ao quitar: cada item é liquidado pelo próprio valor.
+   * A Fase 9B proibiu qualquer compensação, e estava certa para o problema
+   * daquela época: o cálculo compensava E FILTRAVA a pessoa da lista, então a
+   * obrigação sumia da tela junto com o número.
    *
-   * O efeito prático era pior que um número errado: a obrigação DESAPARECIA da
-   * tela, e o usuário deixava de ver que devia R$ 100 a alguém.
+   * O Orçamento mensal responde "quanto preciso considerar como saída minha
+   * nesta competência?". Se devo 100 a Eva e ela me deve 30, a saída é 70 —
+   * somar 100 infla o mês com dinheiro que volta.
+   *
+   * O que MUDOU: `totalToPay` usa o líquido por pessoa.
+   * O que NÃO mudou: nada é escrito. `Debt.amount`, `isPaid` e `paidAt`
+   * seguem intactos, e o settle continua liquidando item a item.
    */
   it('devo 100 e não tenho nada a receber → 100', async () => {
     const result = await budgetWith('100', null);
     expect(result.totalDebts).toBe(100);
   });
 
-  it('devo 100 e tenho 30 a receber → continua 100', async () => {
+  it('devo 100 e tenho 30 a receber → 70 de saída líquida', async () => {
     const result = await budgetWith('100', '30');
-    expect(result.totalDebts).toBe(100);
+    expect(result.totalDebts).toBe(70);
   });
 
-  it('devo 100 e tenho 100 a receber → continua 100, e a linha permanece', async () => {
-    // O caso que dá nome à regra. Saldo líquido zero não é dívida zero.
+  it('devo 100 e tenho 100 a receber → zero de saída', async () => {
+    // O mês não custa nada nessa relação: o que sai volta.
     const result = await budgetWith('100', '100');
-
-    expect(result.totalDebts).toBe(100);
-    expect(result.debtBreakdown).toHaveLength(1);
-    expect(result.debtBreakdown[0].amount).toBe(100);
+    expect(result.totalDebts).toBe(0);
   });
 
-  it('devo 100 e tenho 150 a receber → continua 100', async () => {
-    // Saldo a favor não reduz obrigação nem vira gasto negativo.
+  it('devo 100 e tenho 150 a receber → zero, nunca negativo', async () => {
+    /*
+      `max(…, 0)`: saldo a favor não vira crédito. Sem essa trava, uma pessoa
+      que me deve muito reduziria obrigações com TERCEIROS.
+    */
     const result = await budgetWith('100', '150');
-
-    expect(result.totalDebts).toBe(100);
-    expect(result.debtBreakdown).toHaveLength(1);
+    expect(result.totalDebts).toBe(0);
   });
 
   it('o recebível aparece como informação, fora do total', async () => {
@@ -427,16 +444,19 @@ describe('BudgetService — compensação por pessoa', () => {
     expect(result.receivables.dueInMonth).toBe(30);
   });
 
-  it('recebível não altera o total de dívidas', async () => {
-    /**
-     * Teste negativo do item 40: mexer só no recebível não pode mover
-     * `totalToPay`.
-     */
+  it('recebível da MESMA pessoa reduz — mas nunca abaixo de zero', async () => {
+    /*
+      Inverte a expectativa antiga: agora mexer no recebível MOVE o total,
+      porque o Orçamento passou a perguntar quanto sai de fato.
+
+      A trava que permanece: 1000 contra 100 não vira −900. O piso é zero.
+    */
     const sem = await budgetWith('100', null);
     const com = await budgetWith('100', '1000');
 
-    expect(com.totalDebts).toBe(sem.totalDebts);
-    expect(com.totalToPay).toBe(sem.totalToPay);
+    expect(sem.totalDebts).toBe(100);
+    expect(com.totalDebts).toBe(0);
+    expect(com.totalToPay).toBeGreaterThanOrEqual(0);
     expect(com.receivables.dueInMonth).toBe(1000);
   });
 
@@ -625,14 +645,12 @@ describe('BudgetService — totais e salário', () => {
     expect(result.totalPending).toBe(600);
   });
 
-  it('dívida paga soma o valor íntegro, e "pago" não supera o total', async () => {
-    /**
-     * A versão anterior usava o valor COMPENSADO aqui, com a justificativa de
-     * que o bruto faria "pago" superar o total do mês.
-     *
-     * O problema real era a compensação, não o bruto: com ela fora, os dois
-     * lados usam o mesmo número e a invariante se sustenta naturalmente.
-     */
+  it('"pago" nunca supera o total, mesmo com netting', async () => {
+    /*
+      Com o netting a invariante precisou de um teto explícito: `paidDebts` é
+      BRUTO (100) e o total virou líquido (60). Sem o `min`, a tela diria
+      "R$ 100 pago" de um total de R$ 60.
+    */
     const prisma = buildPrisma({
       debts: [
         debtRow({
@@ -647,8 +665,8 @@ describe('BudgetService — totais e salário', () => {
 
     const result = await buildBudgetService(prisma).getBudget(USER_ID, 8, 2026);
 
-    expect(result.totalDebts).toBe(100);
-    expect(result.totalPaid).toBe(100);
+    // 100 de dívida − 40 a receber da MESMA pessoa.
+    expect(result.totalDebts).toBe(60);
     expect(result.totalPaid).toBeLessThanOrEqual(result.totalToPay);
   });
 

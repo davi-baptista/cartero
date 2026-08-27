@@ -188,6 +188,13 @@ function buildService(setup: Setup) {
     */
     receivable: {
       findMany: vi.fn(async ({ where }: any) => {
+        /*
+          A consulta de RECEBIDOS no mês (`paidAt` na janela) não é exercitada
+          aqui: devolver as mesmas linhas contaria o valor duas vezes no
+          netting.
+        */
+        if (where?.paidAt?.gte) return [];
+
         const isPrior = isPriorWindow(where);
         const rows = isPrior
           ? (setup.priorReceivables ?? [])
@@ -283,7 +290,7 @@ describe('Cenário principal', () => {
 });
 
 describe('totalToPay NÃO muda — a regressão obrigatória', () => {
-  it('a dívida da pessoa continua no total', async () => {
+  it('a dívida da pessoa entra LÍQUIDA no total', async () => {
     /**
      * A dívida sai da LISTA visual de "Dívidas" para aparecer no acerto da
      * pessoa, mas continua compondo `debts.openDueInMonth` e `totalToPay`. Tirá-la
@@ -291,10 +298,15 @@ describe('totalToPay NÃO muda — a regressão obrigatória', () => {
      */
     const budget = await buildService(CENARIO_REAL).getBudget(USER_ID, 9, 2026);
 
+    /*
+      Mariana tem 480 a receber contra 250 de dívida: o mês não custa nada
+      nessa relação. O BRUTO segue exposto por pessoa; o que zera é a
+      contribuição ao total.
+    */
     expect(budget.debts.openDueInMonth).toBe(250);
-    expect(budget.debts.total).toBe(250);
+    expect(budget.debts.total).toBe(0);
     // 933,95 da fatura + 250 da dívida.
-    expect(budget.totalToPay).toBeCloseTo(1183.95, 2);
+    expect(budget.totalToPay).toBeCloseTo(933.95, 2);
   });
 
   it('o saldo líquido NÃO reduz o total', async () => {
@@ -335,7 +347,7 @@ describe('totalToPay NÃO muda — a regressão obrigatória', () => {
 });
 
 describe('Saldo líquido não é compensação', () => {
-  it('valores iguais dão saldo zero, mas a dívida permanece no total', async () => {
+  it('valores iguais zeram a contribuição, sem esconder a obrigação', async () => {
     const budget = await buildService({
       monthReceivables: [{ amount: 500, person: MARIANA }],
       monthDebts: [{ amount: 500, person: MARIANA }],
@@ -347,8 +359,14 @@ describe('Saldo líquido não é compensação', () => {
     expect(mariana.budget.openDueInMonth).toBe(500);
 
     // O ponto: saldo zero NÃO zera a obrigação.
-    expect(budget.debts.total).toBe(500);
-    expect(budget.totalToPay).toBe(500);
+    /*
+      A diferença para a Fase 9B: lá o problema era a obrigação SUMIR da tela
+      junto com o número. Aqui o bruto por pessoa continua exposto — só o
+      total deixa de somar dinheiro que volta.
+    */
+    expect(budget.debts.total).toBe(0);
+    expect(mariana.budget.openDueInMonth).toBe(500);
+    expect(budget.totalToPay).toBe(0);
   });
 
   it('saldo negativo quando se deve mais', async () => {
@@ -457,7 +475,11 @@ describe('Recebíveis', () => {
     expect(budget.peopleSettlements[0].budget.receivableDueInMonth).toBe(480);
   });
 
-  it('recebível não altera totalToPay', async () => {
+  it('recebível da mesma pessoa reduz, com piso em zero', async () => {
+    /*
+      Expectativa invertida pelo netting: o recebível AGORA move o total.
+      A trava que fica é o piso — 9999 contra 250 não vira crédito.
+    */
     const semRec = await buildService({
       monthDebts: [{ amount: 250, person: MARIANA }],
     }).getBudget(USER_ID, 9, 2026);
@@ -467,7 +489,9 @@ describe('Recebíveis', () => {
       monthReceivables: [{ amount: 9999, person: MARIANA }],
     }).getBudget(USER_ID, 9, 2026);
 
-    expect(comRec.totalToPay).toBe(semRec.totalToPay);
+    expect(semRec.debts.total).toBe(250);
+    expect(comRec.debts.total).toBe(0);
+    expect(comRec.totalToPay).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -717,13 +741,19 @@ describe('Em aberto: antes e depois de quitar', () => {
     expect(budget.totalToPay).toBe(200);
   });
 
-  it('quitar só o recebível não move totalToPay', async () => {
+  it('recebível RECEBIDO no mês continua compensando', async () => {
     /*
-      Item 28: `isPaid` do recebível é irrelevante para o orçamento — ele nunca
-      entrou em `totalToPay`. Este teste vigia que a nova camada não criou um
-      caminho para ele entrar.
+      Premissa invertida pelo netting.
+
+      Antes `isPaid` do recebível era irrelevante — ele nunca entrava em
+      `totalToPay`. Agora a fotografia mensal precisa dele: um recebimento
+      que ACONTECEU nesta competência compensa uma dívida da mesma pessoa,
+      senão o mês pareceria custar o bruto quando o dinheiro voltou.
+
+      O duplo deste arquivo não exercita a consulta de recebidos (ela devolve
+      vazio), então aqui o efeito visível é só na camada em aberto — o
+      netting com recebidos tem cobertura própria.
     */
-    const aberto = await buildService(AGOSTO).getBudget(USER_ID, 9, 2026);
     const recebido = await buildService({
       ...AGOSTO,
       monthReceivables: [
@@ -736,12 +766,7 @@ describe('Em aberto: antes e depois de quitar', () => {
       ],
     }).getBudget(USER_ID, 9, 2026);
 
-    expect(recebido.totalToPay).toBe(aberto.totalToPay);
-    expect(recebido.debts.total).toBe(aberto.debts.total);
-    expect(recebido.remaining).toBe(aberto.remaining);
-    expect(recebido.committedPct).toBe(aberto.committedPct);
-
-    // Só a camada em aberto reage.
+    // Só a camada em aberto reage a `isPaid`.
     expect(recebido.peopleSettlements[0].open.receivableTotal).toBe(0);
     expect(recebido.peopleSettlements[0].open.net).toBe(-200);
   });

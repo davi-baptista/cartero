@@ -19,11 +19,6 @@ import { bankDisplayName } from '@/lib/bank-display'
 import { PersonStatementDrawer } from '@/components/person-statement-drawer'
 import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
 import {
-  summarizePeopleSettlements,
-  summaryAriaLabel,
-  summaryBalanceLabel,
-  summaryCompositionParts,
-  summaryDirection,
   shouldRenderPeopleSettlement,
   summarizePriorOverdue,
   priorOverdueLabel,
@@ -35,6 +30,8 @@ import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import { invoiceStatusConfig } from '@/lib/invoice-status'
 import {
+  budgetBreakdownAriaLabel,
+  budgetBreakdownParts,
   invoiceRowAriaLabel,
   invoiceRowView,
   invoiceSectionParts,
@@ -333,9 +330,29 @@ export default function BudgetPage() {
     aberto não tem o que dizer nesta competência. O backend já filtra por
     movimentação; isto impede a linha vazia mesmo se aquilo mudar.
   */
-  const visiblePeople = peopleSettlements.filter(shouldRenderPeopleSettlement)
+  const breakdownParts = budgetBreakdownParts(
+    budget?.breakdown ?? {
+      invoices: 0,
+      directPayments: 0,
+      debts: 0,
+      peopleSettlements: 0,
+    },
+  )
 
-  const peopleSummary = summarizePeopleSettlements(visiblePeople)
+  /* Ordenado pelo impacto no Orçamento — não por recebível escondido. */
+  const visiblePeople = peopleSettlements
+    .filter(shouldRenderPeopleSettlement)
+    .sort((a, b) => b.budget.payable - a.budget.payable)
+
+  /*
+    O total da seção é a soma dos payables EXIBIDOS — cabeçalho e linhas
+    fecham por construção, sem um agregado paralelo.
+  */
+  const peopleBudgetTotal = visiblePeople.reduce(
+    (total, person) => total + person.budget.payable,
+    0,
+  )
+
 
   /*
     Pendências anteriores do cabeçalho: a soma dos mesmos buckets que as
@@ -358,10 +375,6 @@ export default function BudgetPage() {
   })
   const invoiceParts = invoiceSectionParts(invoiceSummary)
 
-  const peopleSummaryParts = summaryCompositionParts(peopleSummary)
-  const peopleSummaryBalance = summaryBalanceLabel(peopleSummary, formatCurrency)
-  const peopleSummaryDirection = summaryDirection(peopleSummary)
-  const peopleSummaryAria = summaryAriaLabel(peopleSummary, formatCurrency)
 
   /** Dívidas do mês SEM pessoa — as vinculadas vivem nos acertos. */
   const standaloneDebtRows = debtBreakdown.filter(
@@ -423,7 +436,36 @@ export default function BudgetPage() {
               </p>
               {summary.totalToPay === 0 ? (
                 <p className="mt-2 text-sm text-muted-foreground">nada a pagar neste mês</p>
-              ) : null}
+              ) : (
+                /*
+                  De onde vem o número. Discreta de propósito: explica o
+                  total sem competir com ele.
+
+                  Os agregados vêm fechados do backend — somar aqui abriria
+                  espaço para a tela discordar do total por um centavo.
+                */
+                breakdownParts.length > 0 && (
+                  <p
+                    className="mt-2 text-xs text-muted-foreground"
+                    aria-label={budgetBreakdownAriaLabel(
+                      breakdownParts,
+                      summary.totalToPay,
+                      formatCurrency,
+                    )}
+                  >
+                    {breakdownParts.map((part, index) => (
+                      <span key={part.key}>
+                        {index > 0 && (
+                          <span className="mx-1 text-muted-foreground/40" aria-hidden>
+                            ·
+                          </span>
+                        )}
+                        {formatCurrency(part.amount)} {part.label}
+                      </span>
+                    ))}
+                  </p>
+                )
+              )}
               {/*
                 As microcopies de pendência anterior saíram daqui.
 
@@ -598,61 +640,32 @@ export default function BudgetPage() {
             não serve: o universo em aberto pode carregar pendências
             anteriores, então a frase seria imprecisa além de redundante.
           */}
+          {/*
+            Cabeçalho enxuto: a seção virou uma DECOMPOSIÇÃO das saídas.
+
+            "R$ X a receber · R$ Y a pagar" e "Saldo em aberto" saíram: com o
+            netting, a maioria das pessoas não representa gasto e não aparece
+            na lista — um agregado incluindo quem some seria um número sem
+            linhas que o expliquem.
+
+            O consolidado bilateral continua em Pessoas, que é a superfície
+            dessa pergunta.
+          */}
           <div className={SECTION_HEADER_CLASS}>
             <h2 className={SECTION_TITLE_CLASS}>
               Acertos com pessoas
-              {peopleSummaryParts.length > 0 && (
-                <span className={SECTION_SUMMARY_CLASS}>
-                  {peopleSummaryParts.map((part) => (
-                    <span key={part.side}>
-                      <span className="mx-1.5 text-muted-foreground/40" aria-hidden>
-                        ·
-                      </span>
-                      <span
-                        className={cn(
-                          'font-medium',
-                          part.side === 'receivable'
-                            ? 'text-receivable'
-                            : 'text-destructive',
-                        )}
-                      >
-                        {formatCurrency(part.amount)}
-                      </span>{' '}
-                      {part.side === 'receivable' ? 'a receber' : 'a pagar'}
-                    </span>
-                  ))}
+              <span className={SECTION_SUMMARY_CLASS}>
+                <span className="mx-1.5 text-muted-foreground/40" aria-hidden>
+                  ·
                 </span>
-              )}
+                <span className="font-medium">
+                  {formatCurrency(peopleBudgetTotal)}
+                </span>{' '}
+                no orçamento
+              </span>
             </h2>
-
-            {/*
-              O saldo é consolidado INFORMATIVO da relação com pessoas: não
-              abate `totalToPay` nem qualquer obrigação (Fase 9B).
-            */}
-            <p className={SECTION_ASIDE_CLASS} aria-label={peopleSummaryAria}>
-              <span className="sm:block">Saldo em aberto</span>
-              <span className="mx-1.5 text-muted-foreground/40 sm:hidden" aria-hidden>
-                ·
-              </span>
-              <span
-                className={cn(
-                  'font-medium tabular-nums',
-                  peopleSummaryDirection === 'receive' && 'text-receivable',
-                  peopleSummaryDirection === 'pay' && 'text-destructive',
-                )}
-              >
-                {peopleSummaryBalance}
-              </span>
-            </p>
           </div>
 
-          {/*
-            Quanto do total acima veio de competências anteriores.
-
-            Só aparece quando existe carry — nunca "R$ 0,00". Agrega os
-            buckets já entregues por pessoa; nenhuma data é reinterpretada
-            aqui.
-          */}
           {peoplePriorLabel && (
             <p className="-mt-1 mb-2 text-xs text-muted-foreground">
               {peoplePriorLabel}

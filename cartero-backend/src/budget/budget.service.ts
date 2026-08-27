@@ -132,6 +132,7 @@ export class BudgetService {
       openReceivablesInMonth,
       openDebtsInMonth,
       openPriorReceivables,
+      receivedInMonth,
       openPriorDebts,
     ] = await Promise.all([
       /*
@@ -359,6 +360,30 @@ export class BudgetService {
           dueDate: true,
         },
       }),
+      /*
+        Recebíveis de pessoa RECEBIDOS nesta competência.
+
+        Espelha `paidInMonth` do lado da dívida. Sem ele, o netting mensal
+        veria só o que continua aberto: uma dívida de 120 paga em agosto
+        contra um recebível de 100 recebido em agosto daria 120 de saída
+        líquida, quando o mês custou 20.
+
+        `paidAt` na janela, como no lado da dívida — recebimento de outro mês
+        não compensa esta competência.
+      */
+      this.prisma.receivable.findMany({
+        where: {
+          userId,
+          personId: { not: null },
+          paidAt: { gte: monthStart, lt: monthEnd },
+        },
+        select: {
+          amount: true,
+          personId: true,
+          person: { select: { id: true, name: true } },
+        },
+      }),
+
       // Simétrico ao recebível: a mesma regra dos dois lados.
       this.prisma.debt.findMany({
         where: {
@@ -494,17 +519,6 @@ export class BudgetService {
     }));
 
     /*
-      Total de dívidas = do mês + os dois eventos de pendência anterior.
-
-      Nenhum recebível entra como redução.
-    */
-    const totalDebts = dueInMonth + priorTotal;
-
-    // Faturas e dívidas já quitadas continuam somando: o número representa o
-    // custo real do mês, não só o que ainda falta desembolsar.
-    const totalToPay = netAmount + totalDirectPayments + totalDebts;
-
-    /*
       A Receber do mês — informativo puro.
 
       Fica FORA de `totalToPay` por definição: recebível é dinheiro esperado,
@@ -544,6 +558,13 @@ export class BudgetService {
       budgetCurrentOpenPrior: number;
       /** Anteriores pagas nesta competência. */
       budgetPriorPaidInMonth: number;
+      /**
+       * Recebíveis DESTA pessoa relevantes para a competência.
+       *
+       * Só compensam dívidas da MESMA pessoa — dinheiro que Eva me deve não
+       * paga uma obrigação com Fabrício.
+       */
+      budgetReceivableAmount: number;
       /** Parcela do "a receber" do orçamento que veio de compra no cartão. */
       budgetAutomaticReceivable: number;
       /*
@@ -583,6 +604,7 @@ export class BudgetService {
         budgetDebtDueInMonth: 0,
         budgetCurrentOpenPrior: 0,
         budgetPriorPaidInMonth: 0,
+        budgetReceivableAmount: 0,
         budgetAutomaticReceivable: 0,
         openReceivableInMonth: 0,
         openDebtInMonth: 0,
@@ -624,6 +646,21 @@ export class BudgetService {
       campo só faria a linha dizer "R$ 300 já quitados" para uma dívida que
       continua devendo.
     */
+    /*
+      Recebidos NESTA competência entram no netting mesmo já resolvidos.
+
+      A fotografia mensal precisa deles: um recebível de 100 recebido em
+      agosto compensa uma dívida de 120 paga em agosto — o mês custou 20, não
+      120. `open` não os vê, porque lá `isPaid: false`.
+    */
+    for (const receivable of receivedInMonth) {
+      if (!receivable.personId) continue;
+      settlementEntry(
+        receivable.personId,
+        receivable.person?.name ?? 'Pessoa',
+      ).budgetReceivableAmount += Number(receivable.amount);
+    }
+
     for (const debt of currentOpenPrior) {
       if (!debt.personId) continue;
       settlementEntry(
@@ -668,6 +705,7 @@ export class BudgetService {
       );
       const amount = Number(receivable.amount);
       entry.openReceivableInMonth += amount;
+      entry.budgetReceivableAmount += amount;
       entry.openItemCount += 1;
       if (isOverdueToday(receivable.dueDate)) entry.openHasOverdue = true;
       if (receivable.transactionId) entry.openAutomaticReceivable += amount;
@@ -692,6 +730,7 @@ export class BudgetService {
       );
       const amount = Number(receivable.amount);
       entry.openPriorReceivable += amount;
+      entry.budgetReceivableAmount += amount;
       entry.openItemCount += 1;
       if (isOverdueToday(receivable.dueDate)) entry.openHasOverdue = true;
       if (receivable.transactionId) entry.openAutomaticReceivable += amount;
@@ -723,6 +762,65 @@ export class BudgetService {
       entry.openDebtInMonth +
       entry.openPriorReceivable +
       entry.openPriorDebt;
+
+    /*
+      ══════════════════════════════════════════════════════════════════════
+      Netting POR PESSOA — supera deliberadamente a regra da Fase 9B
+      ══════════════════════════════════════════════════════════════════════
+
+      A Fase 9B proibiu qualquer compensação Debt × Receivable no
+      `totalToPay`, e estava certa para o problema daquela época: o cálculo
+      compensava e ainda FILTRAVA a pessoa da lista, então a obrigação sumia
+      da tela junto com o número.
+
+      A pergunta do Orçamento mensal, porém, é "quanto preciso considerar
+      como saída minha nesta competência?". Se Fabrício me deve 10 e eu devo
+      11 a ele, a saída é 1 — somar 11 brutos infla o mês com dinheiro que
+      volta.
+
+      As três travas que tornam isso seguro:
+
+        · a compensação é por `personId`, nunca entre pessoas diferentes;
+        · o resultado é `max(…, 0)` — a pessoa nunca vira crédito no total;
+        · nada é escrito: `Debt.amount`, `isPaid` e `paidAt` seguem intactos.
+          Isto é projeção de planejamento, não encontro de contas.
+
+      A dívida SEM pessoa não participa: não há com o que compensá-la, e ela
+      continua integral no bucket genérico.
+    */
+    const personDebtTotal = [
+      ...openDueInMonth,
+      ...currentOpenPrior,
+      ...paidInMonth,
+    ]
+      .filter((debt) => debt.personId)
+      .reduce((sum, debt) => sum + Number(debt.amount), 0);
+
+    /* Dívidas genéricas = o total de dívidas menos a parte com pessoa. */
+    const genericDebtTotal = dueInMonth + priorTotal - personDebtTotal;
+
+    const peopleBudgetPayableTotal = [...settlementByPerson.values()].reduce(
+      (sum, entry) =>
+        sum +
+        Math.max(
+          entry.budgetDebtDueInMonth +
+            entry.budgetCurrentOpenPrior +
+            entry.budgetPriorPaidInMonth -
+            entry.budgetReceivableAmount,
+          0,
+        ),
+      0,
+    );
+
+    /*
+      O bruto NÃO entra mais em `totalToPay`: somá-lo e depois adicionar o
+      líquido das pessoas contaria a dívida com pessoa duas vezes.
+    */
+    const totalDebts = genericDebtTotal + peopleBudgetPayableTotal;
+
+    // Faturas e dívidas já quitadas continuam somando: o número representa o
+    // custo real do mês, não só o que ainda falta desembolsar.
+    const totalToPay = netAmount + totalDirectPayments + totalDebts;
 
     const peopleSettlements = [...settlementByPerson.values()]
       /*
@@ -756,6 +854,21 @@ export class BudgetService {
             openDueInMonth: entry.budgetDebtDueInMonth,
             currentOpenPrior: entry.budgetCurrentOpenPrior,
             paidInMonth: entry.budgetPriorPaidInMonth,
+            /** Recebíveis desta pessoa relevantes para a competência. */
+            receivableAmount: entry.budgetReceivableAmount,
+            /**
+             * O que esta pessoa acrescenta ao `totalToPay`.
+             *
+             * `max(dívidas − recebíveis, 0)`: quem me deve mais do que eu
+             * devo contribui com ZERO, nunca com crédito.
+             */
+            payable: Math.max(
+              entry.budgetDebtDueInMonth +
+                entry.budgetCurrentOpenPrior +
+                entry.budgetPriorPaidInMonth -
+                entry.budgetReceivableAmount,
+              0,
+            ),
             /** `debtDueInMonth + priorDebtCarry` — o que compõe o orçamento. */
             debtTotal:
               entry.budgetDebtDueInMonth +
@@ -814,9 +927,22 @@ export class BudgetService {
     const paidDebts = paidInMonthTotal;
     const paidDebtsCount = paidInMonth.length;
 
-    // Pagamentos diretos já aconteceram por definição — a transação só existe
-    // porque o dinheiro saiu.
-    const totalPaid = paidInvoices + paidDebts + totalDirectPayments;
+    /*
+      Pagamentos diretos já aconteceram por definição — a transação só existe
+      porque o dinheiro saiu.
+
+      O `min` com `totalToPay` é necessário desde o netting: `paidDebts` é
+      BRUTO, e o total passou a ser líquido. Uma dívida de 100 paga com 40 a
+      receber da mesma pessoa daria "R$ 100 pago" de um total de R$ 60 — a
+      linha diria que se pagou mais do que havia a pagar.
+
+      O teto é o próprio total: acima dele o número deixaria de descrever
+      esta competência.
+    */
+    const totalPaid = Math.min(
+      paidInvoices + paidDebts + totalDirectPayments,
+      totalToPay,
+    );
 
     /*
       Sobra e percentual só existem se a renda for CONHECIDA.
@@ -879,6 +1005,19 @@ export class BudgetService {
         paidInMonth: paidInMonthTotal,
         total: totalDebts,
         priorItems: priorBreakdown,
+      },
+      /**
+       * De onde vem o `totalToPay` — a composição exibida sob o número.
+       *
+       * Montado aqui para o frontend não somar dinheiro no JSX: os quatro
+       * componentes fecham exatamente com o total, por construção.
+       */
+      breakdown: {
+        invoices: netAmount,
+        directPayments: totalDirectPayments,
+        /** Só dívidas SEM pessoa — as com pessoa vão em `peopleSettlements`. */
+        debts: genericDebtTotal,
+        peopleSettlements: peopleBudgetPayableTotal,
       },
       totalDebts,
       debtsCount: openDueInMonth.length,
