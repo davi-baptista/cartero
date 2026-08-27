@@ -30,14 +30,17 @@ import {
 import { getInvoices } from '@/services/invoices.service'
 import { formatCurrency } from '@/lib/formatters'
 import { apiErrorMessage } from '@/lib/api-error'
-import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
+import {
+  FinancialListRow,
+  ROW_AMOUNT_CLASS,
+  ROW_ICON_CLASS,
+} from '@/components/ui/financial-list-row'
 import { cn } from '@/lib/utils'
 import { InvoiceStatus } from '@/types'
 import type { Bank } from '@/types'
 import {
   INVOICE_STATUS_BADGE,
   INVOICE_STATUS_LABEL,
-  INVOICE_STATUS_TEXT,
 } from '@/lib/invoice-status'
 import { formatCloseTiming, formatDueTiming } from '@/lib/invoice-timing'
 import {
@@ -97,15 +100,21 @@ function NearestInvoiceAmount({
   info: BankInvoiceSelection | null
 }) {
   if (info === null) return null
+  /*
+    Tipografia canônica do `FinancialListRow`, em cor NEUTRA.
+
+    O valor seguia `INVOICE_STATUS_TEXT`, que o pintava conforme o status —
+    azul em fatura aberta, o caso mais comum. Mas o status já é dito pela
+    badge ao lado do nome, e dois elementos comunicando a mesma coisa faziam
+    o número competir com ela em vez de ser lido como o dado principal da
+    linha. Neutro, ele se lê como valor.
+
+    A cor vem do consumidor, pelo slot `trailing` — `ROW_AMOUNT_CLASS`
+    continua sem opinião sobre cor, então Extrato, Dívidas e A Receber
+    mantêm as delas.
+  */
   return (
-    <span
-      className={cn(
-        'text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
-        INVOICE_STATUS_TEXT[info.status],
-      )}
-    >
-      {formatCurrency(info.amount)}
-    </span>
+    <span className={ROW_AMOUNT_CLASS}>{formatCurrency(info.amount)}</span>
   )
 }
 
@@ -151,92 +160,56 @@ function BankRow({
       quebra teclado; a sobreposição resolve sem isso.
     */
     <div className="group relative border-b border-border last:border-b-0">
-      <Link
+      <FinancialListRow
         /*
-          Vai DIRETO para a fatura atual quando existe uma.
+          Vai para a PÁGINA do banco — nunca direto para o detalhe da fatura.
 
-          `?invoiceId=` é o mesmo parâmetro que a página de faturas já lê para
-          abrir o drawer — não há navegação nova nem componente novo, só o
-          passo intermediário a menos.
+          Antes o href carregava `?invoiceId=` da fatura atual, e o drawer
+          abria sozinho: entrar no banco e abrir uma fatura viravam a mesma
+          ação, sem o usuário ter pedido a segunda.
+
+          `?invoiceId=` continua sendo lido pela página de faturas; ele só
+          deixa de ser INJETADO aqui.
         */
-        href={
-          nearest
-            ? `/banks/${bank.id}/invoices?invoiceId=${nearest.invoice.id}`
-            : `/banks/${bank.id}/invoices`
+        href={`/banks/${bank.id}/invoices`}
+        ariaLabel={ariaLabel}
+        leading={
+          <div className={cn(ROW_ICON_CLASS, 'bg-muted/40 text-sm font-semibold text-muted-foreground select-none')}>
+            {initial}
+          </div>
         }
-        aria-label={ariaLabel}
+        title={bank.name}
+        /* A badge qualifica o banco, então acompanha o nome — nunca a coluna
+           de valores. Com nome longo quem cede espaço é o texto. */
+        titleAdornment={<NearestInvoiceBadge info={nearest} />}
+        meta={
+          nearest !== null ? (
+            <span className="truncate">
+              {nearest.status === InvoiceStatus.OPEN
+                ? formatCloseTiming(nearest.referenceDate, undefined, 'short')
+                : formatDueTiming(nearest.referenceDate, undefined, 'short')}
+            </span>
+          ) : null
+        }
         /*
-          Sem `min-h` nem `justify-center`: os dois só mascaravam o vazio
-          herdado do avatar. A altura agora vem do conteúdo real.
+          Onde o Extrato mostra a data, Bancos mostra o rótulo da fatura: mesma
+          hierarquia visual, dado diferente. Um valor solto no canto não diria
+          o que representa.
+
+          Banco sem fatura simplesmente não tem bloco direito — sem "R$ 0,00"
+          nem placeholder inventado.
         */
-        className="flex items-center gap-3 py-2.5 pl-1 pr-2 transition-colors hover:bg-muted/30 active:bg-muted/50"
-      >
-        {/*
-          ── A CAUSA do gap ──
-
-          O avatar tem 40px e o nome ~18px. Com as duas faixas empilhadas
-          DENTRO de um `flex-col`, a faixa 1 herdava a altura do avatar e
-          `items-center` centralizava o nome nela — sobrando ~11px de vazio
-          entre o nome e a linha de baixo.
-
-          Esse espaço estava DENTRO da faixa 1, então mexer no `gap-*` entre
-          as faixas não tinha como alcançá-lo. Foi por isso que as tentativas
-          anteriores não mudaram nada.
-
-          A correção é estrutural: o avatar saiu da coluna de texto e virou
-          irmão dela. As duas linhas se empilham sozinhas, coladas, e o
-          `pl-13` da faixa 2 deixou de ser necessário.
-        */}
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/40 text-sm font-semibold text-muted-foreground select-none">
-          {initial}
-        </div>
-
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          {/* FAIXA 1 — identidade e rótulo do valor. */}
-          <div className="flex items-center gap-3">
-            {/*
-              Nome, chevron e badge no MESMO grupo: a badge qualifica o banco,
-              não pertence à coluna de valores. Com nome longo quem cede
-              espaço é o texto (`truncate`), nunca a badge.
-            */}
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <span className="truncate text-[15px] font-medium">
-                {bank.name}
-              </span>
-              <NearestInvoiceBadge info={nearest} />
-              {/* Depois da badge, na linha do nome — o padrão do app. */}
-              <DisclosureChevron />
-            </div>
-
-            {/*
-              "Fatura atual" nomeia o número da linha de baixo — um valor
-              solto no canto não diz o que representa.
-
-              Visível TAMBÉM no mobile: estava `hidden sm:inline` porque o
-              kebab consumia a largura à direita. Com ele fora da listagem o
-              rótulo cabe — e é justamente na tela menor que o valor mais
-              precisa dizer o que é.
-            */}
-            {nearest !== null && (
-              <span className="shrink-0 whitespace-nowrap text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70">
+        trailing={
+          nearest !== null ? (
+            <>
+              <NearestInvoiceAmount info={nearest} />
+              <span className="whitespace-nowrap text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70">
                 Fatura atual
               </span>
-            )}
-          </div>
-
-          {/* FAIXA 2 — prazo à esquerda, valor à direita. */}
-          {nearest !== null && (
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="truncate text-[11px] leading-tight text-muted-foreground">
-                {nearest.status === InvoiceStatus.OPEN
-                  ? formatCloseTiming(nearest.referenceDate, undefined, 'short')
-                  : formatDueTiming(nearest.referenceDate, undefined, 'short')}
-              </span>
-              <NearestInvoiceAmount info={nearest} />
-            </div>
-          )}
-        </div>
-      </Link>
+            </>
+          ) : null
+        }
+      />
 
     </div>
   )

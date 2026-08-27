@@ -1,0 +1,339 @@
+import { readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Uma linguagem de lista, quatro telas
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Extrato, Bancos, Dívidas e A Receber escreviam a MESMA anatomia — avatar,
+ * título, chevron, metadata, valor, metadata secundária — cada uma por conta
+ * própria. E já haviam divergido no que menos se nota de perto: Extrato
+ * respirava `py-3.5` com avatar de 40px, Dívidas e A Receber usavam `py-3`
+ * com avatar de 32px.
+ *
+ * Junto com a padronização, Dívidas e A Receber deixaram de expor
+ * Editar/Excluir na row. A lista identifica; o detalhe administra.
+ *
+ * O risco dessa mudança não é visual — é de PERMISSÃO. Mover um botão de
+ * lugar não pode transformar entidade protegida em editável, e é isso que a
+ * segunda metade deste arquivo vigia.
+ *
+ * Sem DOM na suíte: o alvo é a composição dos arquivos, como em
+ * `statement-scope.spec.ts`.
+ */
+
+const ler = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf-8')
+
+const PRIMITIVE = ler('../components/ui/financial-list-row.tsx')
+const SHELL = ler('../components/ui/detail-drawer.tsx')
+
+const EXTRATO = ler('../app/(dashboard)/transactions/page.tsx')
+const BANCOS = ler('../app/(dashboard)/banks/page.tsx')
+const DIVIDAS = ler('../app/(dashboard)/debts/page.tsx')
+const RECEBER = ler('../app/(dashboard)/receivables/page.tsx')
+
+const DRAWER_DIVIDA = ler('../app/(dashboard)/debts/debt-detail-drawer.tsx')
+const DRAWER_RECEBER = ler(
+  '../app/(dashboard)/receivables/receivable-detail-drawer.tsx',
+)
+
+/** Remove comentários: vigiamos código, não a prosa que o explica. */
+const code = (s: string) =>
+  s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+
+const LISTAS = {
+  Extrato: EXTRATO,
+  Bancos: BANCOS,
+  Dívidas: DIVIDAS,
+  'A Receber': RECEBER,
+}
+
+describe('itens 3 e 5: uma fonte para a anatomia', () => {
+  it('as quatro listas renderizam pelo mesmo primitive', () => {
+    for (const [nome, fonte] of Object.entries(LISTAS)) {
+      expect(fonte, `${nome} deveria usar FinancialListRow`).toContain(
+        '<FinancialListRow',
+      )
+    }
+  })
+
+  it('nenhuma lista recria a geometria da row', () => {
+    /*
+      A combinação padding + gap + hover é a assinatura da row. Reescrevê-la
+      numa página é exatamente como a divergência voltaria — e desta vez sem
+      ninguém notar, porque as telas pareceriam iguais no dia da mudança.
+    */
+    const GEOMETRIA = 'py-3.5 text-left outline-none transition-colors'
+
+    expect(PRIMITIVE).toContain(GEOMETRIA)
+    for (const [nome, fonte] of Object.entries(LISTAS)) {
+      expect(code(fonte), `${nome} não deveria repetir a geometria`).not.toContain(
+        GEOMETRIA,
+      )
+    }
+  })
+
+  it('os tokens tipográficos têm uma definição só', () => {
+    // Mudar o tamanho do título passa por UM lugar, não por quatro páginas.
+    expect(PRIMITIVE).toContain('export const ROW_TITLE_CLASS')
+    expect(PRIMITIVE).toContain('export const ROW_AMOUNT_CLASS')
+    expect(PRIMITIVE).toContain('export const ROW_ICON_CLASS')
+
+    /*
+      O tamanho do valor era escrito à mão em Dívidas e A Receber. Agora as
+      duas importam a constante — a string literal não pode voltar.
+    */
+    for (const [nome, fonte] of [
+      ['Dívidas', DIVIDAS],
+      ['A Receber', RECEBER],
+    ] as const) {
+      expect(fonte).toContain('ROW_AMOUNT_CLASS')
+      expect(
+        code(fonte),
+        `${nome} não deveria repetir o tamanho do valor`,
+      ).not.toContain("'text-[17px] font-semibold tabular-nums")
+    }
+  })
+
+  it('item 4: o primitive não conhece domínio', () => {
+    /*
+      Ele fixa o ritmo e nada mais. Um `if (debt)` aqui dentro seria o começo
+      do monólito que a tarefa proíbe.
+    */
+    for (const dominio of ['Debt', 'Receivable', 'Transaction', 'Bank']) {
+      expect(code(PRIMITIVE)).not.toContain(dominio)
+    }
+  })
+})
+
+describe('itens 14 e 22: a row não administra mais', () => {
+  it('Dívidas e A Receber não têm Editar/Excluir na row', () => {
+    /*
+      Antes cada row carregava DUAS implementações da mesma coisa: ícones no
+      hover do desktop e um `DropdownMenu` no mobile.
+    */
+    const rows = {
+      Dívidas: DIVIDAS.slice(
+        DIVIDAS.indexOf('const DebtRow'),
+        DIVIDAS.indexOf('function RowSkeleton'),
+      ),
+      'A Receber': RECEBER.slice(
+        RECEBER.indexOf('const ReceivableRow'),
+        RECEBER.indexOf('function RowSkeleton'),
+      ),
+    }
+
+    for (const [nome, row] of Object.entries(rows)) {
+      for (const acao of ['Pencil', 'Trash2', 'DropdownMenu', 'MoreVertical']) {
+        expect(row, `${nome} não deveria ter ${acao} na row`).not.toContain(acao)
+      }
+    }
+  })
+
+  it('itens 40 e 41: a row é um alvo único, sem controle aninhado', () => {
+    /*
+      A row virou `button`. O `Link` para a compra que existia dentro da row
+      de A Receber saiu: âncora dentro de botão é HTML inválido, quebra
+      teclado e obrigava `stopPropagation`. O link vive no drawer, em "Origem".
+    */
+    const row = code(
+      RECEBER.slice(
+        RECEBER.indexOf('const ReceivableRow'),
+        RECEBER.indexOf('function RowSkeleton'),
+      ),
+    )
+
+    expect(row).not.toContain('<Link')
+    expect(row).not.toContain('stopPropagation')
+    expect(DRAWER_RECEBER).toContain('<Link')
+  })
+
+  it('a row abre o detalhe, e só', () => {
+    expect(DIVIDAS).toContain('onView={setDetailTarget}')
+    expect(RECEBER).toContain('onView={setDetailTarget}')
+  })
+})
+
+describe('itens 33 e 34: os drawers são da mesma família', () => {
+  it('os três usam a mesma casca', () => {
+    expect(DRAWER_DIVIDA).toContain('DetailDrawer')
+    expect(DRAWER_RECEBER).toContain('DetailDrawer')
+    expect(SHELL).toContain('export function DetailDrawer')
+  })
+
+  it('a casca não decide regra de domínio', () => {
+    /*
+      Ela renderiza o que recebe. Quem sabe se uma ação é permitida é a
+      página que já detinha a regra — por isso a casca não tem como
+      afrouxar uma proteção por descuido.
+    */
+    for (const dominio of ['Debt', 'Receivable', 'isPaid', 'transactionId']) {
+      expect(code(SHELL)).not.toContain(dominio)
+    }
+  })
+
+  it('o campo rótulo/valor tem uma implementação só', () => {
+    expect(SHELL).toContain('export function DetailRow')
+    expect(SHELL).toContain('grid grid-cols-[5.5rem_minmax(0,1fr)]')
+
+    // Os drawers de entidade consomem; não recriam a grade.
+    for (const [nome, fonte] of [
+      ['Dívida', DRAWER_DIVIDA],
+      ['Cobrança', DRAWER_RECEBER],
+    ] as const) {
+      expect(fonte).toContain('<DetailRow')
+      expect(fonte, `${nome} não deveria recriar a grade`).not.toContain(
+        'grid-cols-[5.5rem',
+      )
+    }
+  })
+})
+
+/*
+  ─────────────────────────────────────────────────────────────────────────
+  A parte que importa: permissões
+  ─────────────────────────────────────────────────────────────────────────
+
+  Item 47. Mover o botão de lugar não pode transformar entidade protegida em
+  editável ou excluível.
+*/
+describe('item 47: nenhuma proteção foi afrouxada', () => {
+  it('itens 26 e 28: cobrança automática não ganha Excluir', () => {
+    /*
+      Ela nasceu de uma compra no cartão. Excluí-la isolada apagaria a compra
+      junto — por isso o botão não é oferecido, e um aviso diz onde a
+      exclusão é feita.
+    */
+    expect(DRAWER_RECEBER).toContain('const isAutomatic = Boolean(receivable.transactionId)')
+    expect(DRAWER_RECEBER).toContain('{!isAutomatic && (')
+    expect(DRAWER_RECEBER).toContain('DetailNotice')
+  })
+
+  it('itens 18 e 19: as guardas continuam nos handlers da página', () => {
+    /*
+      O drawer chama os MESMOS handlers que a lista usava. Nenhum caminho
+      novo até o backend foi criado — se `handleDelete` deixasse de rotear
+      dívida com transação vinculada para o aviso, seria aqui que quebraria.
+    */
+    expect(DIVIDAS).toContain('if (debt.paymentTransactionId && !debt.parentId)')
+    expect(DIVIDAS).toContain('setLinkedWarningTarget(debt)')
+
+    expect(RECEBER).toContain(
+      '(receivable.transactionId || receivable.paymentTransactionId) && !receivable.parentId',
+    )
+    expect(RECEBER).toContain('setLinkedWarningTarget(receivable)')
+  })
+
+  it('o parcelamento continua pedindo escopo antes de editar/excluir', () => {
+    for (const [nome, fonte] of [
+      ['Dívidas', DIVIDAS],
+      ['A Receber', RECEBER],
+    ] as const) {
+      expect(fonte, `${nome} deveria manter o diálogo de escopo`).toContain(
+        "mode: 'edit' }",
+      )
+      expect(fonte).toContain("mode: 'delete' }")
+    }
+  })
+
+  it('itens 20 e 29: a correção de data reusa o helper e o diálogo', () => {
+    /*
+      Sem reimplementação: a regra de quando a ação existe (`canEditSettlementDate`)
+      e o diálogo são os que já existiam.
+    */
+    for (const [nome, fonte] of [
+      ['Dívida', DRAWER_DIVIDA],
+      ['Cobrança', DRAWER_RECEBER],
+    ] as const) {
+      expect(fonte, `${nome} deveria consultar o helper`).toContain(
+        'canEditSettlementDate(',
+      )
+      expect(fonte).toContain('settlementDateActionLabel(')
+    }
+
+    expect(DIVIDAS).toContain('SettlementDateDialog')
+    expect(RECEBER).toContain('SettlementDateDialog')
+  })
+
+  it('item 43: nenhuma ação ficou inalcançável', () => {
+    /*
+      Tudo que a row oferecia continua acessível — só mudou de superfície.
+      Marcar/desmarcar era o ícone de status; editar e excluir eram o hover
+      e o kebab.
+    */
+    for (const [nome, fonte] of [
+      ['Dívida', DRAWER_DIVIDA],
+      ['Cobrança', DRAWER_RECEBER],
+    ] as const) {
+      expect(fonte, `${nome}: faltou Editar`).toContain('Editar')
+      expect(fonte, `${nome}: faltou alternar pagamento`).toContain(
+        'Marcar como pendente',
+      )
+    }
+
+    expect(DRAWER_DIVIDA).toContain('Marcar como paga')
+    expect(DRAWER_RECEBER).toContain('Marcar como recebido')
+  })
+
+  it('itens 44 e 46: agir pelo drawer fecha o drawer', () => {
+    /*
+      Dois overlays empilhados disputariam foco, e o de baixo continuaria
+      exibindo o estado velho depois da ação — no delete, um item fantasma.
+    */
+    /*
+      Verifica CADA handler, não a mera presença de `closeDetail` no arquivo.
+      Uma asserção solta passaria com o delete quebrado desde que editar
+      ainda fechasse — e o delete é justamente onde a falha vira item
+      fantasma selecionado.
+    */
+    const handlers = {
+      Dívidas: { fonte: DIVIDAS, nomes: ['handleEdit', 'handleDelete', 'handleTogglePaid'] },
+      'A Receber': { fonte: RECEBER, nomes: ['handleEdit', 'handleDelete', 'handleToggleReceived'] },
+    }
+
+    for (const [tela, { fonte, nomes }] of Object.entries(handlers)) {
+      expect(fonte).toContain('function closeDetail()')
+
+      for (const handler of nomes) {
+        const inicio = fonte.indexOf(`function ${handler}(`)
+        expect(inicio, `${tela}: ${handler} não encontrado`).toBeGreaterThan(-1)
+
+        /* Só o começo do corpo: `closeDetail()` é a primeira instrução. */
+        const corpo = code(fonte.slice(inicio, inicio + 400))
+        expect(
+          corpo,
+          `${tela}: ${handler} deveria fechar o detalhe antes de agir`,
+        ).toContain('closeDetail()')
+      }
+    }
+  })
+})
+
+describe('itens 30 e 56: o que NÃO podia mudar', () => {
+  it('o Extrato manteve conteúdo e ações', () => {
+    // A extração de primitives não podia alterar a tela de referência.
+    expect(EXTRATO).toContain('AmountDisplay')
+    expect(EXTRATO).toContain('TRANSACTION_TYPE_LABELS')
+    expect(EXTRATO).toContain('fatura ')
+    expect(EXTRATO).toContain('a receber de ')
+    expect(EXTRATO).toContain('tx.description')
+  })
+
+  it('Bancos manteve ordenação, rótulo e a ausência de auto-open', () => {
+    expect(BANCOS).toContain('orderBanksByUrgency')
+    expect(BANCOS).toContain('Fatura atual')
+    expect(BANCOS).toContain('href={`/banks/${bank.id}/invoices`}')
+    expect(BANCOS).not.toContain('invoices?invoiceId=')
+  })
+
+  it('item 12: a fatura atual mantém o destaque próprio', () => {
+    /*
+      A padronização é tipográfica. O card azul da fatura vigente NÃO vira
+      row plana — ele comunica "é esta que importa agora".
+    */
+    const FATURAS = ler('../app/(dashboard)/banks/[id]/invoices/page.tsx')
+    expect(FATURAS).toContain('isAtual')
+    expect(FATURAS).toContain('border-primary/40')
+  })
+})

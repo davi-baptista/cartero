@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef, memo } from 'react'
 import { AnimatePresence, motion, animate } from 'motion/react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Check, Undo2, Wallet, Search, MoreVertical, X, Repeat2, TriangleAlert, RotateCcw, Loader2, ShoppingBag, CalendarDays } from 'lucide-react'
+import { Plus, Wallet, Search, X, Repeat2, TriangleAlert, RotateCcw, Loader2, ShoppingBag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { monthBounds, periodFromDate, useMonthPeriod } from '@/components/month-nav'
@@ -25,19 +25,19 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { MotionRow } from '@/components/ui/motion-row'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { ReceivableSheet, type ReceivableFormData } from './receivable-sheet'
 import { DeleteLinkedWarningDialog } from '../transactions/delete-linked-warning-dialog'
 import { InstallmentScopeDialog } from '../transactions/installment-scope-dialog'
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
 import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dialog'
 import { SettlementDateDialog } from '../transactions/settlement-date-dialog'
+import { ReceivableDetailDrawer } from './receivable-detail-drawer'
+import {
+  FinancialListRow,
+  ROW_AMOUNT_CLASS,
+  ROW_ICON_CLASS,
+  ROW_TRAILING_META_CLASS,
+} from '@/components/ui/financial-list-row'
 import {
   getReceivables,
   createReceivable,
@@ -48,11 +48,9 @@ import {
 import { useSearchParams } from 'next/navigation'
 import { getPersons } from '@/services/persons.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
-import Link from 'next/link'
 import { isOverdue, overdueCountLabel } from '@/lib/settlement-status'
 import { SettlementStatusDot } from '@/components/settlement-status-dot'
 import { apiErrorMessage } from '@/lib/api-error'
-import { canEditSettlementDate } from '@/lib/settlement-date-action'
 import { cn } from '@/lib/utils'
 import type { Receivable } from '@/types'
 import { InstallmentScope } from '@/types'
@@ -63,21 +61,15 @@ import { useAuth } from '@/providers/auth-provider'
 const ReceivableRow = memo(function ReceivableRow({
   receivable,
   isHighlighted,
-  onEdit,
-  onDelete,
-  onToggleReceived,
-  onEditSettlementDate,
+  onView,
 }: {
   receivable: Receivable
   isHighlighted?: boolean
-  onEdit: (r: Receivable) => void
-  onDelete: (r: Receivable) => void
-  onToggleReceived: (r: Receivable) => void
-  /** Só existe para item resolvido — correção de data de regularização. */
-  onEditSettlementDate?: (r: Receivable) => void
+  /** A row inteira é navegação: identifica e abre. Administrar é do drawer. */
+  onView: (r: Receivable) => void
 }) {
   const overdue = isOverdue(receivable)
-  const rowRef = useRef<HTMLDivElement>(null)
+  const rowRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!isHighlighted || !rowRef.current) return
@@ -94,181 +86,77 @@ const ReceivableRow = memo(function ReceivableRow({
     return () => clearTimeout(t)
   }, [isHighlighted])
 
-  return (
-    <div ref={rowRef} className="group flex items-center gap-3 px-1 py-3 rounded-lg">
-      {/* Status dot — clickable toggle */}
-      <motion.button
-        type="button"
-        whileTap={{ scale: 0.85 }}
-        transition={{ duration: 0.1 }}
-        onClick={() => onToggleReceived(receivable)}
-        aria-label={receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
-        title={receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
-        className="group/dot flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/50 ring-1 ring-border/50 transition-colors hover:bg-muted hover:ring-border"
-      >
-        {receivable.isPaid ? (
-          <Undo2 className="size-3.5 text-muted-foreground/50 transition-colors group-hover/dot:text-muted-foreground" />
-        ) : (
-          <>
-            <span className="block group-hover/dot:hidden">
-              <SettlementStatusDot item={receivable} domain="receivable" />
-            </span>
-            <span className="hidden group-hover/dot:block text-muted-foreground">
-              <Check className="size-3.5" />
-            </span>
-          </>
-        )}
-      </motion.button>
+  const amountClass = cn(
+    ROW_AMOUNT_CLASS,
+    receivable.isPaid ? 'text-muted-foreground line-through' : overdue ? 'text-destructive' : '',
+  )
 
-      {/* Title + debtor */}
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <span
-            className={cn(
-              'truncate text-[15px] font-medium leading-tight',
-              receivable.isPaid && 'text-muted-foreground line-through',
-            )}
-          >
-            {receivable.title}
-          </span>
+  return (
+    <FinancialListRow
+      ref={rowRef}
+      onView={() => onView(receivable)}
+      ariaLabel={`Ver detalhes de ${receivable.title}`}
+      leading={
+        <div className={cn(ROW_ICON_CLASS, 'bg-muted/50 ring-1 ring-border/50')}>
+          <SettlementStatusDot item={receivable} domain="receivable" />
+        </div>
+      }
+      title={
+        <span className={cn(receivable.isPaid && 'text-muted-foreground line-through')}>
+          {receivable.title}
+        </span>
+      }
+      titleAdornment={
+        <>
           {receivable.parentId && (
             <>
               <Repeat2 aria-hidden="true" className="size-3.5 shrink-0 text-primary/70" />
-              <span className="sr-only">Parcelado</span>
+              <span className="sr-only">Parcelada</span>
             </>
           )}
           {/*
-            Cobrança gerada por uma compra no cartão.
+            Marca de origem automática.
 
-            Sem essa marca as duas origens ficavam indistinguíveis na lista, e
-            o usuário só descobria que o valor era travado ao abrir o
-            formulário e não conseguir editá-lo.
+            Era um `Link` para a compra — mas a row virou `button`, e âncora
+            dentro de botão é HTML inválido: quebra teclado e obrigava a
+            `stopPropagation`. O ícone ficou como marca visual, e o drawer
+            passou a expor "Origem" com o link navegável.
           */}
           {receivable.transactionId && (
-            <Link
-              href={`/transactions?startDate=${receivable.occurredAt.slice(0, 10)}&endDate=${receivable.occurredAt.slice(0, 10)}&highlight=${receivable.transactionId}`}
-              onClick={(event) => event.stopPropagation()}
-              title="Ver a compra que gerou esta cobrança"
-              className="shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground"
-            >
-              <ShoppingBag aria-hidden="true" className="size-3.5" />
-              <span className="sr-only">Ver a compra que gerou esta cobrança</span>
-            </Link>
+            <>
+              <ShoppingBag
+                aria-hidden="true"
+                className="size-3.5 shrink-0 text-muted-foreground/60"
+              />
+              <span className="sr-only">Gerada por uma compra no cartão</span>
+            </>
           )}
-        </span>
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className="truncate">{receivable.person?.name ?? receivable.debtorName}{receivable.description ? <> · <i>{receivable.description}</i></> : ''}</span>
-          <span>·</span>
-          <span className="shrink-0">em {formatDate(receivable.occurredAt)}</span>
-        </div>
-      </div>
-
-      {/* Amount + due date */}
-      <div className="hidden shrink-0 flex-col items-end gap-1 sm:flex">
-        <span
-          className={cn(
-            'text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
-            receivable.isPaid ? 'text-receivable' : overdue ? 'text-destructive' : '',
-          )}
-        >
-          {formatCurrency(receivable.amount)}
-        </span>
-        {overdue ? (
-          <span className="inline-flex items-center rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-medium text-destructive">
-            Em atraso · {formatDate(receivable.dueDate)}
+        </>
+      }
+      meta={
+        <>
+          <span className="truncate">
+            {receivable.person?.name ?? receivable.debtorName}
+            {receivable.description ? <> · <i>{receivable.description}</i></> : ''}
           </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">{formatDate(receivable.dueDate)}</span>
-        )}
-      </div>
-
-      {/* Mobile: amount only */}
-      <div className="flex shrink-0 sm:hidden">
-        <span
-          className={cn(
-            'text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
-            receivable.isPaid ? 'text-receivable' : overdue ? 'text-destructive' : '',
+          <span aria-hidden>·</span>
+          <span className="shrink-0">em {formatDate(receivable.occurredAt)}</span>
+        </>
+      }
+      trailing={
+        <>
+          <span className={amountClass}>{formatCurrency(receivable.amount)}</span>
+          {overdue ? (
+            <span className="inline-flex items-center rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-medium text-destructive">
+              Em atraso · {formatDate(receivable.dueDate)}
+            </span>
+          ) : (
+            <span className={ROW_TRAILING_META_CLASS}>{formatDate(receivable.dueDate)}</span>
           )}
-        >
-          {formatCurrency(receivable.amount)}
-        </span>
-      </div>
-
-      {/* Desktop hover actions */}
-      <div className="hidden items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
-        {/*
-          Correção da data de acerto: só faz sentido em item resolvido, e é
-          ferramenta de regularização — mesmo peso visual das demais ações.
-        */}
-        {canEditSettlementDate(receivable) && onEditSettlementDate && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={() => onEditSettlementDate(receivable)}
-            aria-label="Alterar data do recebimento"
-            title="Alterar data do recebimento"
-          >
-            <CalendarDays className="size-3.5" />
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground hover:text-foreground"
-          onClick={() => onEdit(receivable)}
-          aria-label="Editar cobrança"
-        >
-          <Pencil className="size-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground hover:text-destructive"
-          onClick={() => onDelete(receivable)}
-          aria-label="Excluir cobrança"
-        >
-          <Trash2 className="size-3.5" />
-        </Button>
-      </div>
-
-      {/* Mobile dropdown */}
-      <div className="sm:hidden">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            aria-label="Mais opções"
-          >
-            <MoreVertical className="size-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onToggleReceived(receivable)}>
-              {receivable.isPaid ? <Undo2 className="size-3.5" /> : <Check className="size-3.5" />}
-              {receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
-            </DropdownMenuItem>
-            {/*
-              Correção de data: só faz sentido em item já resolvido, e é
-              ferramenta de regularização — fica no menu, nunca em destaque.
-            */}
-            {canEditSettlementDate(receivable) && onEditSettlementDate && (
-              <DropdownMenuItem onClick={() => onEditSettlementDate(receivable)}>
-                <CalendarDays className="size-3.5" />
-                Alterar data do recebimento
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onEdit(receivable)}>
-              <Pencil className="size-3.5" />
-              Editar
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onDelete(receivable)} className="text-destructive focus:text-destructive">
-              <Trash2 className="size-3.5" />
-              Excluir
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
+        </>
+      }
+      trailingCompact={<span className={amountClass}>{formatCurrency(receivable.amount)}</span>}
+    />
   )
 })
 
@@ -316,6 +204,12 @@ export default function ReceivablesPage() {
   const { startDate, endDate } = monthBounds(period)
   const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
+  /*
+    Cobrança cujo detalhe está aberto. Guarda o objeto, não o id: a lista
+    pode ser refiltrada com o drawer aberto, e reencontrar por id devolveria
+    `undefined` no meio do uso.
+  */
+  const [detailTarget, setDetailTarget] = useState<Receivable | null>(null)
   const [editReceivable, setEditReceivable] = useState<Receivable | null>(null)
   /** Item cuja data de acerto está sendo corrigida. */
   const [settlementDateItem, setSettlementDateItem] =
@@ -472,7 +366,20 @@ export default function ReceivablesPage() {
     return list
   }, [receivables, tab, search])
 
+  /*
+    Toda ação vinda do drawer o fecha antes de abrir o próprio diálogo —
+    dois overlays empilhados disputariam foco.
+
+    Os handlers são os MESMOS de antes, com as mesmas guardas: `handleDelete`
+    continua roteando cobrança vinculada para o aviso, e o formulário continua
+    com `financialLocked` para origem automática.
+  */
+  function closeDetail() {
+    setDetailTarget(null)
+  }
+
   function handleEdit(receivable: Receivable) {
+    closeDetail()
     if (receivable.parentId) {
       setScopeDialog({ receivable, mode: 'edit' })
     } else {
@@ -483,6 +390,7 @@ export default function ReceivablesPage() {
   }
 
   function handleDelete(receivable: Receivable) {
+    closeDetail()
     if ((receivable.transactionId || receivable.paymentTransactionId) && !receivable.parentId) {
       setLinkedWarningTarget(receivable)
       return
@@ -509,6 +417,7 @@ export default function ReceivablesPage() {
   }
 
   function handleToggleReceived(receivable: Receivable) {
+    closeDetail()
     if (!receivable.isPaid) {
       if (user?.createIncomeOnReceivablePaid === false) {
         updateMut.mutate({ id: receivable.id, payload: { isPaid: true } })
@@ -754,11 +663,8 @@ export default function ReceivablesPage() {
                   <ReceivableRow
                     receivable={receivable}
                     isHighlighted={receivable.id === highlightId}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                    onToggleReceived={handleToggleReceived}
-                  onEditSettlementDate={setSettlementDateItem}
-                />
+                    onView={setDetailTarget}
+                  />
                 </MotionRow>
               ))}
             </motion.div>
@@ -871,6 +777,18 @@ export default function ReceivablesPage() {
           onCancel={() => setSettlementDateItem(null)}
         />
       )}
+
+      <ReceivableDetailDrawer
+        receivable={detailTarget}
+        onOpenChange={(open) => !open && setDetailTarget(null)}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onToggleReceived={handleToggleReceived}
+        onEditSettlementDate={(receivable) => {
+          setDetailTarget(null)
+          setSettlementDateItem(receivable)
+        }}
+      />
 
     </div>
   )

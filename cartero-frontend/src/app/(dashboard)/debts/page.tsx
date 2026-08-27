@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef, memo } from 'react'
 import { AnimatePresence, motion, animate } from 'motion/react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Check, Undo2, HandCoins, BellOff, Search, MoreVertical, X, Repeat2, TriangleAlert, RotateCcw, Loader2, CalendarDays } from 'lucide-react'
+import { Plus, HandCoins, BellOff, Search, X, Repeat2, TriangleAlert, RotateCcw, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { monthBounds, periodFromDate, useMonthPeriod } from '@/components/month-nav'
@@ -25,18 +25,18 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { MotionRow } from '@/components/ui/motion-row'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { DebtSheet, type DebtFormData } from './debt-sheet'
 import { InstallmentScopeDialog } from '../transactions/installment-scope-dialog'
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
 import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dialog'
 import { SettlementDateDialog } from '../transactions/settlement-date-dialog'
+import { DebtDetailDrawer } from './debt-detail-drawer'
+import {
+  FinancialListRow,
+  ROW_AMOUNT_CLASS,
+  ROW_ICON_CLASS,
+  ROW_TRAILING_META_CLASS,
+} from '@/components/ui/financial-list-row'
 import { DeleteLinkedWarningDialog } from '../transactions/delete-linked-warning-dialog'
 import {
   getDebts,
@@ -51,7 +51,6 @@ import { formatCurrency, formatDate } from '@/lib/formatters'
 import { isOverdue, overdueCountLabel } from '@/lib/settlement-status'
 import { SettlementStatusDot } from '@/components/settlement-status-dot'
 import { apiErrorMessage } from '@/lib/api-error'
-import { canEditSettlementDate } from '@/lib/settlement-date-action'
 import { cn } from '@/lib/utils'
 import type { Debt, TransactionType } from '@/types'
 import { InstallmentScope } from '@/types'
@@ -62,21 +61,15 @@ import { useAuth } from '@/providers/auth-provider'
 const DebtRow = memo(function DebtRow({
   debt,
   isHighlighted,
-  onEdit,
-  onDelete,
-  onTogglePaid,
-  onEditSettlementDate,
+  onView,
 }: {
   debt: Debt
   isHighlighted?: boolean
-  onEdit: (d: Debt) => void
-  onDelete: (d: Debt) => void
-  onTogglePaid: (d: Debt) => void
-  /** Só existe para item resolvido — correção de data de regularização. */
-  onEditSettlementDate?: (d: Debt) => void
+  /** A row inteira é navegação: identifica e abre. Administrar é do drawer. */
+  onView: (d: Debt) => void
 }) {
   const overdue = isOverdue(debt)
-  const rowRef = useRef<HTMLDivElement>(null)
+  const rowRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!isHighlighted || !rowRef.current) return
@@ -93,53 +86,46 @@ const DebtRow = memo(function DebtRow({
     return () => clearTimeout(t)
   }, [isHighlighted])
 
-  return (
-    <div ref={rowRef} className="group flex items-center gap-3 px-1 py-3 rounded-lg">
-      {/* Status dot — clickable toggle */}
-      <motion.button
-        type="button"
-        whileTap={{ scale: 0.85 }}
-        transition={{ duration: 0.1 }}
-        onClick={() => onTogglePaid(debt)}
-        aria-label={debt.isPaid ? 'Marcar como pendente' : 'Marcar como paga'}
-        title={debt.isPaid ? 'Marcar como pendente' : 'Marcar como paga'}
-        className="group/dot flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/50 ring-1 ring-border/50 transition-colors hover:bg-muted hover:ring-border"
-      >
-        {debt.isPaid ? (
-          <Undo2 className="size-3.5 text-muted-foreground/50 transition-colors group-hover/dot:text-muted-foreground" />
-        ) : (
-          <>
-            <span className="block group-hover/dot:hidden">
-              <SettlementStatusDot item={debt} domain="debt" />
-            </span>
-            <span className="hidden group-hover/dot:block text-muted-foreground">
-              <Check className="size-3.5" />
-            </span>
-          </>
-        )}
-      </motion.button>
+  const amountClass = cn(
+    ROW_AMOUNT_CLASS,
+    debt.isPaid ? 'text-muted-foreground line-through' : overdue ? 'text-destructive' : '',
+  )
 
-      {/* Title + creditor */}
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <span
-            className={cn(
-              'truncate text-[15px] font-medium leading-tight',
-              debt.isPaid && 'text-muted-foreground line-through',
-            )}
-          >
-            {debt.title}
-          </span>
-          {debt.parentId && (
-            <>
-              <Repeat2 aria-hidden="true" className="size-3.5 shrink-0 text-primary/70" />
-              <span className="sr-only">Parcelado</span>
-            </>
-          )}
+  return (
+    <FinancialListRow
+      ref={rowRef}
+      onView={() => onView(debt)}
+      ariaLabel={`Ver detalhes de ${debt.title}`}
+      leading={
+        /*
+          O ícone deixou de ser botão de marcar-como-paga: a row inteira é
+          navegação agora, e um alvo clicável dentro de outro obrigava a
+          `stopPropagation` em toda a lista. A ação vive no drawer.
+        */
+        <div className={cn(ROW_ICON_CLASS, 'bg-muted/50 ring-1 ring-border/50')}>
+          <SettlementStatusDot item={debt} domain="debt" />
+        </div>
+      }
+      title={
+        <span className={cn(debt.isPaid && 'text-muted-foreground line-through')}>
+          {debt.title}
         </span>
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className="truncate">{debt.person?.name ?? debt.creditorName}{debt.description ? <> · <i>{debt.description}</i></> : ''}</span>
-          <span>·</span>
+      }
+      titleAdornment={
+        debt.parentId ? (
+          <>
+            <Repeat2 aria-hidden="true" className="size-3.5 shrink-0 text-primary/70" />
+            <span className="sr-only">Parcelada</span>
+          </>
+        ) : null
+      }
+      meta={
+        <>
+          <span className="truncate">
+            {debt.person?.name ?? debt.creditorName}
+            {debt.description ? <> · <i>{debt.description}</i></> : ''}
+          </span>
+          <span aria-hidden>·</span>
           <span className="shrink-0">em {formatDate(debt.occurredAt)}</span>
           {!debt.isAlertEnabled && (
             <>
@@ -148,115 +134,22 @@ const DebtRow = memo(function DebtRow({
               <span className="sr-only">Alerta desativado</span>
             </>
           )}
-        </div>
-      </div>
-
-      {/* Amount + due date */}
-      <div className="hidden shrink-0 flex-col items-end gap-1 sm:flex">
-        <span
-          className={cn(
-            'text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
-            debt.isPaid ? 'text-muted-foreground line-through' : overdue ? 'text-destructive' : '',
+        </>
+      }
+      trailing={
+        <>
+          <span className={amountClass}>{formatCurrency(debt.amount)}</span>
+          {overdue ? (
+            <span className="inline-flex items-center rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-medium text-destructive">
+              Em atraso · {formatDate(debt.dueDate)}
+            </span>
+          ) : (
+            <span className={ROW_TRAILING_META_CLASS}>{formatDate(debt.dueDate)}</span>
           )}
-        >
-          {formatCurrency(debt.amount)}
-        </span>
-        {overdue ? (
-          <span className="inline-flex items-center rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-medium text-destructive">
-            Em atraso · {formatDate(debt.dueDate)}
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">{formatDate(debt.dueDate)}</span>
-        )}
-      </div>
-
-      {/* Mobile: amount only */}
-      <div className="flex shrink-0 sm:hidden">
-        <span
-          className={cn(
-            'text-[17px] font-semibold tabular-nums tracking-[-0.02em]',
-            debt.isPaid ? 'text-muted-foreground line-through' : overdue ? 'text-destructive' : '',
-          )}
-        >
-          {formatCurrency(debt.amount)}
-        </span>
-      </div>
-
-      {/* Actions — hover only */}
-      <div className="hidden items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
-        {/*
-          Correção da data de acerto: só faz sentido em item resolvido, e é
-          ferramenta de regularização — mesmo peso visual das demais ações.
-        */}
-        {canEditSettlementDate(debt) && onEditSettlementDate && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={() => onEditSettlementDate(debt)}
-            aria-label="Alterar data do pagamento"
-            title="Alterar data do pagamento"
-          >
-            <CalendarDays className="size-3.5" />
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground hover:text-foreground"
-          onClick={() => onEdit(debt)}
-          aria-label="Editar dívida"
-        >
-          <Pencil className="size-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground hover:text-destructive"
-          onClick={() => onDelete(debt)}
-          aria-label="Excluir dívida"
-        >
-          <Trash2 className="size-3.5" />
-        </Button>
-      </div>
-
-      {/* Mobile dropdown */}
-      <div className="sm:hidden">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            aria-label="Mais opções"
-          >
-            <MoreVertical className="size-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onTogglePaid(debt)}>
-              {debt.isPaid ? <Undo2 className="size-3.5" /> : <Check className="size-3.5" />}
-              {debt.isPaid ? 'Marcar como pendente' : 'Marcar como paga'}
-            </DropdownMenuItem>
-            {/*
-              Correção de data: só faz sentido em item já resolvido, e é
-              ferramenta de regularização — fica no menu, nunca em destaque.
-            */}
-            {canEditSettlementDate(debt) && onEditSettlementDate && (
-              <DropdownMenuItem onClick={() => onEditSettlementDate(debt)}>
-                <CalendarDays className="size-3.5" />
-                Alterar data do pagamento
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onEdit(debt)}>
-              <Pencil className="size-3.5" />
-              Editar
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onDelete(debt)} className="text-destructive focus:text-destructive">
-              <Trash2 className="size-3.5" />
-              Excluir
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
+        </>
+      }
+      trailingCompact={<span className={amountClass}>{formatCurrency(debt.amount)}</span>}
+    />
   )
 })
 
@@ -308,6 +201,13 @@ export default function DebtsPage() {
   const { startDate, endDate } = monthBounds(period)
   const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
+  /*
+    Dívida cujo detalhe está aberto. A row abre; o drawer administra.
+
+    Guarda o objeto, não o id: a lista pode ser refiltrada enquanto o drawer
+    está aberto, e reencontrar por id devolveria `undefined` no meio do uso.
+  */
+  const [detailTarget, setDetailTarget] = useState<Debt | null>(null)
   const [editDebt, setEditDebt] = useState<Debt | null>(null)
   /** Item cuja data de acerto está sendo corrigida. */
   const [settlementDateItem, setSettlementDateItem] =
@@ -465,7 +365,20 @@ export default function DebtsPage() {
     return list
   }, [debts, tab, search])
 
+  /*
+    Toda ação disparada pelo drawer o fecha antes de abrir seu próprio
+    diálogo: dois overlays empilhados disputariam o foco, e o de baixo
+    continuaria mostrando o estado velho depois que a ação terminasse.
+
+    Os handlers abaixo permanecem os MESMOS que a lista já usava — com as
+    mesmas guardas. Mover o botão de lugar não muda o que ele pode fazer.
+  */
+  function closeDetail() {
+    setDetailTarget(null)
+  }
+
   function handleEdit(debt: Debt) {
+    closeDetail()
     if (debt.parentId) {
       setScopeDialog({ debt, mode: 'edit' })
     } else {
@@ -476,6 +389,7 @@ export default function DebtsPage() {
   }
 
   function handleDelete(debt: Debt) {
+    closeDetail()
     if (debt.paymentTransactionId && !debt.parentId) {
       setLinkedWarningTarget(debt)
       return
@@ -502,6 +416,7 @@ export default function DebtsPage() {
   }
 
   function handleTogglePaid(debt: Debt) {
+    closeDetail()
     if (!debt.isPaid) {
       if (user?.createExpenseOnDebtPaid === false) {
         updateMut.mutate({ id: debt.id, payload: { isPaid: true } })
@@ -758,11 +673,8 @@ export default function DebtsPage() {
                   <DebtRow
                     debt={debt}
                     isHighlighted={debt.id === highlightId}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                    onTogglePaid={handleTogglePaid}
-                  onEditSettlementDate={setSettlementDateItem}
-                />
+                    onView={setDetailTarget}
+                  />
                 </MotionRow>
               ))}
             </motion.div>
@@ -868,6 +780,17 @@ export default function DebtsPage() {
         />
       )}
 
+      <DebtDetailDrawer
+        debt={detailTarget}
+        onOpenChange={(open) => !open && setDetailTarget(null)}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onTogglePaid={handleTogglePaid}
+        onEditSettlementDate={(debt) => {
+          setDetailTarget(null)
+          setSettlementDateItem(debt)
+        }}
+      />
     </div>
   )
 }

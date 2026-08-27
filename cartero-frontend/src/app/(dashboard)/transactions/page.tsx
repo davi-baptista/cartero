@@ -55,7 +55,11 @@ import { formatCurrency, formatDate, isExpense, TRANSACTION_TYPE_LABELS } from '
 import { bankDisplayName } from '@/lib/bank-display'
 import { API_ERROR_CODES, apiErrorMessage, apiErrorStatus, isApiErrorCode } from '@/lib/api-error'
 import { resolveCategoryIcon } from '@/lib/category-icons'
-import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
+import {
+  FinancialListRow,
+  ROW_ICON_CLASS,
+  ROW_TRAILING_META_CLASS,
+} from '@/components/ui/financial-list-row'
 import { cn } from '@/lib/utils'
 import { useHighlight } from '@/lib/use-highlight'
 import type { Transaction } from '@/types'
@@ -139,96 +143,77 @@ function TransactionRow({
   const visibleBank = tx.bank?.isSystem ? undefined : tx.bank
 
   return (
-    <button
-      type="button"
+    <FinancialListRow
       ref={isHighlighted ? highlightRef : undefined}
-      onClick={() => onView(tx)}
-      className={cn(
-        'group flex w-full min-w-0 items-center gap-3 rounded-lg px-0 py-3.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4 sm:px-2 sm:py-4',
-        /*
-          Destaque discreto e temporário.
-
-          Um anel permanente seria lido como status do lançamento; este apaga
-          sozinho depois de alguns segundos.
-        */
-        isHighlighted && 'bg-primary/10 ring-2 ring-primary/40',
-      )}
-      aria-label={`Ver detalhes de ${tx.title}`}
-    >
-        {/* Type icon — green for income, neutral for all expenses */}
+      onView={() => onView(tx)}
+      ariaLabel={`Ver detalhes de ${tx.title}`}
+      /*
+        Destaque discreto e temporário. Um anel permanente seria lido como
+        status do lançamento; este apaga sozinho depois de alguns segundos.
+      */
+      className={cn(isHighlighted && 'bg-primary/10 ring-2 ring-primary/40')}
+      leading={
         <div
-          className="flex size-10 shrink-0 items-center justify-center rounded-xl sm:size-11 sm:rounded-2xl"
+          className={ROW_ICON_CLASS}
           style={{ backgroundColor: isExpense(tx.type, tx.isRefund) ? EXPENSE_BG : INCOME_BG }}
         >
           <Icon aria-hidden="true" className="size-4.5 sm:size-5" style={{ color: isExpense(tx.type, tx.isRefund) ? EXPENSE_ICON_CLR : INCOME_COLOR }} />
         </div>
-
-        {/* Title + badges + description */}
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm font-medium leading-tight sm:text-[15px]">
-              {tx.title}
-            </span>
-            {/*
-              A row já era clicável, mas nada dizia isso — o chevron é o
-              reforço visual, no mesmo lugar e estilo das outras listas.
-            */}
-            <DisclosureChevron />
-          </span>
-
-          {/* Type · bank · invoice · person — inline, quiet */}
-          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] text-muted-foreground">
-            <span className="shrink-0">{TRANSACTION_TYPE_LABELS[tx.type]}</span>
-            {tx.isRefund && <span className="shrink-0 text-primary">· reembolso</span>}
-            {visibleBank && <span aria-hidden>·</span>}
-            {visibleBank && <span className="truncate">{visibleBank.name}</span>}
-            {tx.invoice && (
-              <>
-                <span aria-hidden>·</span>
-                <span className="shrink-0 text-muted-foreground/70">
-                  fatura {formatInvoicePeriod(tx.invoice)}
-                </span>
-              </>
-            )}
-            {/* O nome sozinho era indistinguível do banco na mesma linha —
-                "Eva" e "Nubank" liam igual. O rótulo diz a relação. */}
-            {tx.person && (
-              <>
-                <span aria-hidden>·</span>
-                <span className="truncate text-receivable">
-                  a receber de {tx.person.name}
-                </span>
-              </>
-            )}
-            {tx.subscriptionId && (
-              <>
-                <span aria-hidden>·</span>
-                <span className="inline-flex shrink-0 items-center gap-1">
-                  <Repeat className="size-3" aria-hidden />
-                  assinatura
-                </span>
-              </>
-            )}
-          </div>
-
-          {tx.description && (
-            <p className="hidden truncate text-xs text-muted-foreground/60 sm:block">
-              {tx.description}
-            </p>
+      }
+      title={tx.title}
+      meta={
+        <>
+          <span className="shrink-0">{TRANSACTION_TYPE_LABELS[tx.type]}</span>
+          {tx.isRefund && <span className="shrink-0 text-primary">· reembolso</span>}
+          {visibleBank && <span aria-hidden>·</span>}
+          {visibleBank && <span className="truncate">{visibleBank.name}</span>}
+          {tx.invoice && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="shrink-0 text-muted-foreground/70">
+                fatura {formatInvoicePeriod(tx.invoice)}
+              </span>
+            </>
           )}
-        </div>
-
-        {/* Amount + date — desktop */}
-        <div className="hidden shrink-0 flex-col items-end gap-1 sm:flex">
+          {/* O nome sozinho era indistinguível do banco na mesma linha —
+              "Eva" e "Nubank" liam igual. O rótulo diz a relação. */}
+          {tx.person && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="truncate text-receivable">
+                a receber de {tx.person.name}
+              </span>
+            </>
+          )}
+          {tx.subscriptionId && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="inline-flex shrink-0 items-center gap-1">
+                <Repeat className="size-3" aria-hidden />
+                assinatura
+              </span>
+            </>
+          )}
+        </>
+      }
+      /* Só no desktop: no celular a metadata acima já ocupa a largura útil. */
+      belowMeta={
+        tx.description ? (
+          <p className="hidden truncate text-xs text-muted-foreground/60 sm:block">
+            {tx.description}
+          </p>
+        ) : null
+      }
+      trailing={
+        <>
           <AmountDisplay amount={tx.amount} type={tx.type} isRefund={tx.isRefund} />
-          <span className="text-xs text-muted-foreground">{formatDate(tx.date)}</span>
-        </div>
-
-        {/* Amount — mobile */}
-        <div className="flex shrink-0 sm:hidden">
-          <AmountDisplay amount={tx.amount} type={tx.type} isRefund={tx.isRefund} size="sm" />
-        </div>
-    </button>
+          <span className={ROW_TRAILING_META_CLASS}>{formatDate(tx.date)}</span>
+        </>
+      }
+      trailingCompact={
+        <AmountDisplay amount={tx.amount} type={tx.type} isRefund={tx.isRefund} size="sm" />
+      }
+    />
   )
 }
 
@@ -243,13 +228,11 @@ function InstallmentGroup({
   installments,
   onView,
   highlightedId,
-  highlightRef,
 }: {
   root: Transaction
   installments: Transaction[]
   onView: (tx: Transaction) => void
   highlightedId?: string | null
-  highlightRef?: (node: HTMLElement | null) => void
 }) {
   /*
     Quando o destaque aponta para uma parcela escondida, o grupo já abre
@@ -275,28 +258,20 @@ function InstallmentGroup({
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => onView(root)}
-        className="flex w-full min-w-0 items-center gap-3 rounded-lg px-0 py-3.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4 sm:px-2 sm:py-4"
-        aria-label={`Ver detalhes de ${baseTitle}`}
-      >
-        <div
-          className="flex size-10 shrink-0 items-center justify-center rounded-xl sm:size-11 sm:rounded-2xl"
-          style={{ backgroundColor: EXPENSE_BG }}
-        >
-          <Icon aria-hidden="true" className="size-4.5 sm:size-5" style={{ color: EXPENSE_ICON_CLR }} />
-        </div>
-
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm font-medium leading-tight sm:text-[15px]">
-              {baseTitle}
-            </span>
-            <span className="shrink-0 text-[11px] font-medium text-primary/70">{count}x</span>
-          </span>
-
-          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] text-muted-foreground">
+      <FinancialListRow
+        onView={() => onView(root)}
+        ariaLabel={`Ver detalhes de ${baseTitle}`}
+        leading={
+          <div className={ROW_ICON_CLASS} style={{ backgroundColor: EXPENSE_BG }}>
+            <Icon aria-hidden="true" className="size-4.5 sm:size-5" style={{ color: EXPENSE_ICON_CLR }} />
+          </div>
+        }
+        title={baseTitle}
+        titleAdornment={
+          <span className="shrink-0 text-[11px] font-medium text-primary/70">{count}x</span>
+        }
+        meta={
+          <>
             <span className="shrink-0">{TRANSACTION_TYPE_LABELS[root.type]}</span>
             {visibleBank && <span aria-hidden>·</span>}
             {visibleBank && <span className="truncate">{visibleBank.name}</span>}
@@ -308,18 +283,18 @@ function InstallmentGroup({
                 </span>
               </>
             )}
-          </div>
-        </div>
-
-        <div className="hidden shrink-0 flex-col items-end gap-1 sm:flex">
+          </>
+        }
+        trailing={
+          <>
+            <AmountDisplay amount={total} type={root.type} isRefund={root.isRefund} />
+            <span className={ROW_TRAILING_META_CLASS}>{formatDate(root.date)}</span>
+          </>
+        }
+        trailingCompact={
           <AmountDisplay amount={total} type={root.type} isRefund={root.isRefund} />
-          <span className="text-xs text-muted-foreground">{formatDate(root.date)}</span>
-        </div>
-
-        <div className="flex shrink-0 sm:hidden">
-          <AmountDisplay amount={total} type={root.type} isRefund={root.isRefund} />
-        </div>
-      </button>
+        }
+      />
 
       {/* Parcelas — subordinadas ao item, sempre visíveis */}
       <div className="ml-5 border-l border-border/50 pl-1 sm:ml-7 sm:pl-2">
@@ -1145,7 +1120,6 @@ export default function TransactionsPage() {
                     installments={installments}
                     onView={setDetailsTx}
                     highlightedId={highlightedId}
-                    highlightRef={highlightRef}
                   />
                 </MotionRow>
               )

@@ -23,6 +23,8 @@ const ler = (caminho: string) =>
   readFileSync(new URL(caminho, import.meta.url), 'utf-8')
 
 const ROW = ler('../components/ui/status-list-row.tsx')
+/** O primitive que passou a renderizar as rows das quatro listas. */
+const ROW_PRIMITIVE = ler('../components/ui/financial-list-row.tsx')
 const CHEVRON = ler('../components/ui/disclosure-chevron.tsx')
 const BANKS = ler('../app/(dashboard)/banks/page.tsx')
 const BUDGET = ler('../app/(dashboard)/budget/page.tsx')
@@ -73,8 +75,14 @@ describe('Parte C: a row de Banco segue o padrão de Pessoas', () => {
   })
 
   it('o chevron fica junto do NOME', () => {
-    // Depois da badge, na linha da identidade.
-    expect(BANKS).toContain('<DisclosureChevron />')
+    /*
+      O chevron deixou de ser escrito em cada página: ele vive dentro de
+      `FinancialListRow`, sempre na linha do título e sempre depois da badge.
+      A garantia migrou junto — vigiar o markup de Bancos afirmaria que a
+      seta some quando ela apenas mudou de casa.
+    */
+    expect(BANKS).toContain('<FinancialListRow')
+    expect(ROW_PRIMITIVE).toContain('<DisclosureChevron />')
   })
 
   it('a listagem NÃO tem mais menu administrativo', () => {
@@ -177,18 +185,23 @@ describe('Refinamento visual de Bancos', () => {
       lendo como elemento à parte. A badge qualifica o banco — pertence à
       identidade, não à coluna de valores.
     */
-    const grupo = BANKS.slice(
-      BANKS.indexOf('flex min-w-0 flex-1 items-center'),
-      BANKS.indexOf('"Fatura atual" nomeia'),
-    )
-
-    expect(grupo).toContain('{bank.name}')
-    expect(grupo).toContain('<NearestInvoiceBadge')
+    /*
+      `titleAdornment` É o grupo do nome: o primitive o renderiza entre o
+      título e o chevron. Passar a badge por esse slot é a afirmação de que
+      ela pertence à identidade, não à coluna de valores.
+    */
+    expect(BANKS).toContain('titleAdornment={<NearestInvoiceBadge info={nearest} />}')
+    expect(BANKS).toContain('title={bank.name}')
+    expect(ROW_PRIMITIVE).toContain('{titleAdornment}')
   })
 
   it('item 1: as duas faixas ficam próximas, sem colapsar', () => {
-    // `gap-0.5`: as duas descrevem o MESMO banco.
-    expect(BANKS).toContain('gap-0.5')
+    /*
+      O espaçamento entre título e metadata passou a ser do primitive —
+      `gap-1.5` na coluna de texto, o mesmo do Extrato. Antes cada tela
+      escolhia o seu, e era exatamente assim que as listas divergiam.
+    */
+    expect(ROW_PRIMITIVE).toContain('flex min-w-0 flex-1 flex-col gap-1.5')
     expect(BANKS).not.toContain('flex-col justify-center gap-1 py-3')
   })
 
@@ -211,15 +224,21 @@ describe('Refinamento visual de Bancos', () => {
     )
     expect(CHEVRON).not.toContain('group-hover:text-primary')
 
-    // As telas consomem o componente, não recriam o estilo.
-    for (const arquivo of [BANKS, ROW]) {
-      expect(arquivo).toContain('<DisclosureChevron />')
-    }
+    /*
+      Uma única definição, um único consumidor direto: o chevron é escrito
+      dentro de `FinancialListRow`, e as listas o recebem por tabela.
+      `StatusListRow` (Orçamento) segue usando o seu diretamente.
+    */
+    expect(ROW_PRIMITIVE).toContain('<DisclosureChevron />')
+    expect(ROW).toContain('<DisclosureChevron />')
   })
 
   it('item 8: banco sem fatura não ganha destaque especial', () => {
-    // Só os refinamentos de alinhamento; nenhum tratamento próprio.
-    expect(BANKS).toContain('{nearest !== null && (')
+    /*
+      Ausência de fatura é ausência de bloco direito — `null` nos slots, não
+      um ramo com tratamento próprio. Nada de "R$ 0,00" ou placeholder.
+    */
+    expect(BANKS).toContain('nearest !== null ? (')
   })
 })
 
@@ -311,12 +330,21 @@ describe('Chevron unificado', () => {
       Antes cada tela definia o seu: dois glyphs diferentes (`ChevronRight` e
       `ArrowRight`), quatro tamanhos e três tons. Uma lista dizia `>` e a
       vizinha `→` para exatamente a mesma coisa.
+
+      Agora há duas formas de consumir, ambas com UMA definição no fim:
+      diretamente, ou pelo primitive de row — que já embute o chevron. Bancos
+      e Extrato passaram para o segundo caminho ao adotar `FinancialListRow`.
     */
+    const VIA_PRIMITIVE = ['bancos', 'extrato']
+
     for (const [nome, fonte] of Object.entries(TELAS)) {
-      expect(fonte, `${nome} deveria usar DisclosureChevron`).toContain(
-        '<DisclosureChevron />',
-      )
+      const alvo = VIA_PRIMITIVE.includes(nome)
+        ? '<FinancialListRow'
+        : '<DisclosureChevron />'
+      expect(fonte, `${nome} deveria consumir o chevron canônico`).toContain(alvo)
     }
+
+    expect(ROW_PRIMITIVE).toContain('<DisclosureChevron />')
   })
 
   it('nenhuma tela recria o estilo por conta própria', () => {
@@ -330,8 +358,13 @@ describe('Chevron unificado', () => {
   })
 
   it('o Extrato ganhou o chevron que não tinha', () => {
-    // A row já era clicável, mas nada dizia isso visualmente.
-    expect(TELAS.extrato).toContain('<DisclosureChevron />')
+    /*
+      A row já era clicável, mas nada dizia isso visualmente. Hoje o chevron
+      chega pelo primitive — as três rows do Extrato (avulsa, grupo de
+      parcelamento e a de Bancos) o herdam do mesmo lugar.
+    */
+    expect(TELAS.extrato).toContain('<FinancialListRow')
+    expect(ROW_PRIMITIVE).toContain('<DisclosureChevron />')
   })
 })
 
@@ -353,8 +386,15 @@ describe('Gerenciamento do banco mudou de superfície', () => {
   })
 
   it('item 33: banco sem fatura não inventa rótulo nem valor', () => {
-    // Os dois vivem dentro do mesmo `nearest !== null`.
-    expect(rowAtiva).toContain('{nearest !== null && (')
+    /*
+      Rótulo e valor vivem no MESMO slot `trailing`, sob uma única condição:
+      ou o banco tem fatura e mostra os dois, ou não mostra nada. Não existe
+      ramo capaz de exibir um sem o outro, nem placeholder de R$ 0,00.
+    */
+    expect(rowAtiva).toContain('nearest !== null ? (')
+    const trailing = rowAtiva.slice(rowAtiva.indexOf('trailing={'))
+    expect(trailing).toContain('<NearestInvoiceAmount')
+    expect(trailing).toContain('Fatura atual')
   })
 
   it('item 35: "Fatura atual" NÃO é escondida no mobile', () => {
@@ -366,10 +406,21 @@ describe('Gerenciamento do banco mudou de superfície', () => {
       A asserção mira a REGRA responsiva, não visibilidade de DOM.
     */
     // Mira o `<span>` que renderiza, não a menção no comentário acima.
-    expect(rowAtiva).toContain(
-      'shrink-0 whitespace-nowrap text-[10px] uppercase',
-    )
+    expect(rowAtiva).toContain('whitespace-nowrap text-[10px] uppercase')
     expect(rowAtiva).not.toContain('hidden shrink-0 text-[10px] uppercase')
+
+    /*
+      A garantia real: o primitive só esconde o bloco direito no mobile
+      quando existe um `trailingCompact` para substituí-lo. Bancos não passa
+      nenhum — então rótulo e valor seguem visíveis a 390px.
+
+      É esta a asserção que falha se alguém adicionar um compacto a Bancos
+      sem perceber que estaria escondendo "Fatura atual".
+    */
+    expect(rowAtiva).not.toContain('trailingCompact')
+    expect(ROW_PRIMITIVE).toContain(
+      "trailingCompact ? 'hidden sm:flex' : 'flex',",
+    )
   })
 
   it('item 34: o lápis abre Editar e Excluir na página do banco', () => {
