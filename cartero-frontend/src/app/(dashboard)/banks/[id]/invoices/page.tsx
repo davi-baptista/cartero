@@ -159,7 +159,7 @@ function InvoiceRow({
         aberta é a que precisa se distinguir.
       */
       className={cn(
-        'group flex w-full items-center gap-4 py-3 text-left transition-colors',
+        'group flex w-full items-center gap-4 py-4 text-left transition-colors',
         /*
           A fatura ATUAL é destacada SEM sair do grid.
 
@@ -187,17 +187,35 @@ function InvoiceRow({
           FUNDO reage ao clique, e a transição fica suave porque nada muda de
           forma.
         */
+        /*
+          O destaque cobre a ROW INTEIRA — mês, badges, datas, valor e seta
+          estão todos dentro deste mesmo `<button>`, então o fundo alcança as
+          duas extremidades sem nenhum wrapper extra.
+
+          `-mx-px` compensa exatamente a largura da borda: o conteúdo fica na
+          mesma coluna vertical das linhas comuns, e as margens esquerda e
+          direita ficam simétricas.
+        */
         isAtual &&
-          '-mx-px rounded-xl border border-primary/25 shadow-sm shadow-primary/5',
+          '-mx-px rounded-xl border border-primary/40 shadow-md shadow-primary/10',
         /*
           Respiro externo: a fatura atual salta um pouco mais da lista sem
           quebrar o grid — o recuo horizontal continua o mesmo das demais.
         */
         isAtual && 'my-2',
+        /*
+          Fundo mais presente que antes (12% contra 6%), mas ainda
+          translúcido: a fatura atual precisa saltar aos olhos sem virar um
+          bloco pesado.
+
+          Todos os estados — normal, hover, aberta — usam o MESMO azul, só
+          variando a intensidade. Nada muda de forma, então não há flicker ao
+          clicar.
+        */
         isAtual
           ? isSelected
-            ? 'bg-primary/15'
-            : 'bg-primary/[0.06] hover:bg-primary/10'
+            ? 'bg-primary/20'
+            : 'bg-primary/[0.12] hover:bg-primary/[0.16]'
           : 'hover:bg-muted/30',
       )}
       /*
@@ -214,16 +232,17 @@ function InvoiceRow({
           o espaço maior as fazia parecer elementos soltos ao lado.
         */}
         {/*
-          `leading-tight` na linha 1 é o que realmente encosta as duas.
+          Entrelinha PADRÃO de volta.
 
-          O `mt-*` da segunda linha já estava mínimo — o espaço vinha da
-          ENTRELINHA padrão (~1.5) do texto de 15px, que reserva altura acima
-          e abaixo do glifo. Reduzir só a margem não tinha efeito visível.
+          A tentativa anterior apertou `leading-tight` no título de 15px para
+          simular proximidade — mas aqui a leitura pede respiro: são três
+          elementos na linha 1 (mês e duas badges) e uma linha de datas
+          abaixo. Comprimir a tipografia deixava o bloco denso demais.
+
+          `gap-x-1.5` fica: aproxima as badges do mês sem mexer no vertical.
         */}
-        <div className="flex flex-wrap items-center gap-y-0.5 gap-x-1.5 leading-tight">
-          <span className="shrink-0 text-[15px] font-medium leading-tight">
-            {monthYear}
-          </span>
+        <div className="flex flex-wrap items-center gap-y-1 gap-x-1.5">
+          <span className="shrink-0 text-[15px] font-medium">{monthYear}</span>
           <StatusBadge status={invoice.status} />
           {isAtual && (
             /*
@@ -239,12 +258,7 @@ function InvoiceRow({
           )}
         </div>
         {bank && (
-          /*
-            `mt-0.5`: as duas linhas descrevem a MESMA fatura, e o respiro
-            anterior as fazia ler como blocos separados. `leading-tight`
-            recupera a legibilidade que a proximidade custaria.
-          */
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-tight text-muted-foreground">
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
             <span className="shrink-0">Fecha {calcCloseDate(invoice)}</span>
             <span aria-hidden className="shrink-0 text-muted-foreground/40">·</span>
             <span className="shrink-0">Vence {calcDueDate(invoice)}</span>

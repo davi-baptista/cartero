@@ -228,13 +228,14 @@ describe('Destaque da fatura atual', () => {
       Agora o `px-2` é comum a todas as linhas e o destaque vem de fundo,
       borda e sombra, que não movem conteúdo.
     */
-    expect(INVOICES).not.toContain('px-3 shadow-sm')
-    expect(INVOICES).toContain('shadow-sm shadow-primary/5')
+    expect(INVOICES).not.toContain('px-3 shadow-md')
+    expect(INVOICES).toContain('-mx-px rounded-xl border border-primary/40')
     expect(INVOICES).not.toContain('ring-1 ring-inset ring-primary/15')
   })
 
-  it('item 4: o fundo continua translúcido, sem azul sólido', () => {
-    expect(INVOICES).toContain('bg-primary/[0.06]')
+  it('o fundo é mais presente, mas segue translúcido', () => {
+    // 12% contra os 6% anteriores: salta aos olhos sem virar bloco pesado.
+    expect(INVOICES).toContain('bg-primary/[0.12]')
     expect(INVOICES).not.toContain('bg-primary px-2 py-0.5')
   })
 
@@ -263,7 +264,7 @@ describe('Destaque da fatura atual', () => {
     const semComentarios = INVOICES.replace(/\/\*[\s\S]*?\*\//g, '')
 
     expect(semComentarios).not.toContain('isAtual && !isSelected')
-    expect(semComentarios).toContain('-mx-px rounded-xl border border-primary/25')
+    expect(semComentarios).toContain('-mx-px rounded-xl border border-primary/40')
   })
 
   it('item 3: `statusRowBg` não alcança a fatura atual', () => {
@@ -275,11 +276,14 @@ describe('Destaque da fatura atual', () => {
     expect(INVOICES).toContain("isAtual && 'my-2'")
   })
 
-  it('item 1: a entrelinha é o que encosta as duas linhas', () => {
+  it('a entrelinha padrão foi RESTAURADA nas linhas de fatura', () => {
     /*
-      O `mt-*` já estava mínimo — o espaço vinha da entrelinha padrão (~1.5)
-      do texto de 15px. Reduzir só a margem não tinha efeito visível.
+      Apertar `leading-tight` no título de 15px deixava o bloco denso demais:
+      são três elementos na linha 1 e uma linha de datas abaixo. Aqui a
+      leitura pede respiro — o oposto da lista principal de Bancos, onde o
+      problema era estrutural (o avatar) e não tipográfico.
     */
-    expect(INVOICES).toContain('text-[15px] font-medium leading-tight')
+    expect(INVOICES).not.toContain('text-[15px] font-medium leading-tight')
+    expect(INVOICES).toContain('gap-y-1 gap-x-1.5')
   })
 })
