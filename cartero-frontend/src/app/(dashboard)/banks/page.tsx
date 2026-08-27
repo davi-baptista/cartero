@@ -171,72 +171,77 @@ function BankRow({
         }
         aria-label={ariaLabel}
         /*
-          `gap-0.5` em vez de `gap-1`: as duas faixas descrevem o MESMO
-          banco, e o respiro anterior as fazia ler como dois blocos. Sem
-          colapsar — o prazo continua respirando abaixo do nome.
+          Sem `min-h` nem `justify-center`: os dois só mascaravam o vazio
+          herdado do avatar. A altura agora vem do conteúdo real.
         */
-        className="flex min-h-[64px] flex-col justify-center gap-0.5 py-2.5 pl-1 pr-12 transition-colors hover:bg-muted/30 active:bg-muted/50"
+        className="flex items-center gap-3 py-2.5 pl-1 pr-12 transition-colors hover:bg-muted/30 active:bg-muted/50"
       >
-        {/* FAIXA 1 — identidade, chevron e valor. */}
-        <div className="flex items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/40 text-sm font-semibold text-muted-foreground select-none">
-            {initial}
-          </div>
+        {/*
+          ── A CAUSA do gap ──
 
-          {/*
-            Nome, chevron e badge no MESMO grupo.
+          O avatar tem 40px e o nome ~18px. Com as duas faixas empilhadas
+          DENTRO de um `flex-col`, a faixa 1 herdava a altura do avatar e
+          `items-center` centralizava o nome nela — sobrando ~11px de vazio
+          entre o nome e a linha de baixo.
 
-            A badge vinha depois do `flex-1`, então era empurrada para o canto
-            direito e lia como um elemento à parte. Ela qualifica o banco —
-            pertence à identidade, não à coluna de valores.
+          Esse espaço estava DENTRO da faixa 1, então mexer no `gap-*` entre
+          as faixas não tinha como alcançá-lo. Foi por isso que as tentativas
+          anteriores não mudaram nada.
 
-            `min-w-0` no grupo e `truncate` no nome: com nome longo, quem cede
-            espaço é o texto, nunca a badge.
-          */}
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="truncate text-[15px] font-medium">
-              {bank.name}
-            </span>
-            {/*
-              Chevron logo após o nome: affordance de "esta linha abre", não
-              um botão. Decorativo — o `aria-label` do Link já anuncia a ação.
-            */}
-            <ChevronRight
-              className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-foreground"
-              aria-hidden
-            />
-            <NearestInvoiceBadge info={nearest} />
-          </div>
-
-          {/*
-            "Fatura atual" nomeia o número da linha de baixo. Sem ele, um
-            valor solto no canto não diz o que representa — e o rótulo só
-            existe quando existe fatura.
-          */}
-          {nearest !== null && (
-            <span className="hidden shrink-0 text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70 sm:inline">
-              Fatura atual
-            </span>
-          )}
+          A correção é estrutural: o avatar saiu da coluna de texto e virou
+          irmão dela. As duas linhas se empilham sozinhas, coladas, e o
+          `pl-13` da faixa 2 deixou de ser necessário.
+        */}
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/40 text-sm font-semibold text-muted-foreground select-none">
+          {initial}
         </div>
 
-        {/*
-          FAIXA 2 — prazo à esquerda, valor à direita.
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          {/* FAIXA 1 — identidade e rótulo do valor. */}
+          <div className="flex items-center gap-3">
+            {/*
+              Nome, chevron e badge no MESMO grupo: a badge qualifica o banco,
+              não pertence à coluna de valores. Com nome longo quem cede
+              espaço é o texto (`truncate`), nunca a badge.
+            */}
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span className="truncate text-[15px] font-medium">
+                {bank.name}
+              </span>
+              {/*
+                Chevron logo após o nome: affordance de "esta linha abre".
+                Decorativo — o `aria-label` do Link já anuncia a ação.
+              */}
+              <ChevronRight
+                className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-foreground"
+                aria-hidden
+              />
+              <NearestInvoiceBadge info={nearest} />
+            </div>
 
-          O prazo tinha saído na simplificação anterior, mas ele é o que
-          responde "preciso agir agora?" — e sem ele o banco vira só um nome.
-          Aqui não concorre com nada: a linha é dele e do valor.
-        */}
-        {nearest !== null && (
-          <div className="flex items-baseline justify-between gap-3 pl-13">
-            <span className="truncate text-[11px] leading-tight text-muted-foreground">
-              {nearest.status === InvoiceStatus.OPEN
-                ? formatCloseTiming(nearest.referenceDate, undefined, 'short')
-                : formatDueTiming(nearest.referenceDate, undefined, 'short')}
-            </span>
-            <NearestInvoiceAmount info={nearest} />
+            {/*
+              "Fatura atual" nomeia o número da linha de baixo — um valor
+              solto no canto não diz o que representa.
+            */}
+            {nearest !== null && (
+              <span className="hidden shrink-0 text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70 sm:inline">
+                Fatura atual
+              </span>
+            )}
           </div>
-        )}
+
+          {/* FAIXA 2 — prazo à esquerda, valor à direita. */}
+          {nearest !== null && (
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="truncate text-[11px] leading-tight text-muted-foreground">
+                {nearest.status === InvoiceStatus.OPEN
+                  ? formatCloseTiming(nearest.referenceDate, undefined, 'short')
+                  : formatDueTiming(nearest.referenceDate, undefined, 'short')}
+              </span>
+              <NearestInvoiceAmount info={nearest} />
+            </div>
+          )}
+        </div>
       </Link>
 
       {/*
