@@ -163,3 +163,76 @@ describe('itens 7/17/47: a lista não repete o drawer', () => {
     expect(usos.length).toBe(1)
   })
 })
+
+describe('Refinamento visual de Bancos', () => {
+  it('itens 2/6: a badge fica no grupo do NOME', () => {
+    /*
+      Ela vinha DEPOIS do `flex-1` e era empurrada para o canto direito,
+      lendo como elemento à parte. A badge qualifica o banco — pertence à
+      identidade, não à coluna de valores.
+    */
+    const grupo = BANKS.slice(
+      BANKS.indexOf('flex min-w-0 flex-1 items-center'),
+      BANKS.indexOf('"Fatura atual" nomeia'),
+    )
+
+    expect(grupo).toContain('{bank.name}')
+    expect(grupo).toContain('<NearestInvoiceBadge')
+  })
+
+  it('item 1: as duas faixas ficam próximas, sem colapsar', () => {
+    // `gap-0.5`: as duas descrevem o MESMO banco.
+    expect(BANKS).toContain('gap-0.5')
+    expect(BANKS).not.toContain('flex-col justify-center gap-1 py-3')
+  })
+
+  it('item 3: o chevron segue o padrão majoritário do site', () => {
+    /*
+      Auditado: `group-hover:text-primary/60` aparece em Budget, Overview e no
+      `StatusListRow` compartilhado; o neutro só em Pessoas. Bancos já seguia
+      a maioria — padronizar para o neutro criaria a exceção, não o contrário.
+    */
+    expect(BANKS).toContain('group-hover:text-primary/60')
+    expect(ROW).toContain('group-hover:text-primary/60')
+  })
+
+  it('item 8: banco sem fatura não ganha destaque especial', () => {
+    // Só os refinamentos de alinhamento; nenhum tratamento próprio.
+    expect(BANKS).toContain('{nearest !== null && (')
+  })
+})
+
+describe('Destaque da fatura atual', () => {
+  const INVOICES = ler('../app/(dashboard)/banks/[id]/invoices/page.tsx')
+
+  it('item 4: vira card recolhido, não faixa em bleed', () => {
+    /*
+      `ring-inset` corria colado nas extremidades da lista e as margens
+      pareciam desiguais. `mx-1` + raio + sombra dão a leitura de item
+      elevado que os cards do app já usam.
+    */
+    expect(INVOICES).toContain('mx-1 rounded-xl border border-primary/25')
+    expect(INVOICES).toContain('shadow-sm shadow-primary/5')
+    expect(INVOICES).not.toContain('ring-1 ring-inset ring-primary/15')
+  })
+
+  it('item 4: o fundo continua translúcido, sem azul sólido', () => {
+    expect(INVOICES).toContain('bg-primary/[0.06]')
+    expect(INVOICES).not.toContain('bg-primary px-2 py-0.5')
+  })
+
+  it('item 5: a badge "Atual" volta a ser clara e neutra', () => {
+    /*
+      Em azul translúcido ela se dissolvia no fundo do card — as duas badges
+      viravam a mesma mancha. O contraste é o que a faz ser lida de relance.
+    */
+    expect(INVOICES).toContain('bg-foreground px-2 py-0.5')
+    expect(INVOICES).toContain('text-background')
+  })
+
+  it('selecionado continua tendo precedência sobre atual', () => {
+    // Com o drawer aberto, a linha aberta é a que precisa se distinguir.
+    expect(INVOICES).toContain('isAtual && !isSelected')
+    expect(INVOICES).toContain('isSelected ? statusRowBg(invoice.status)')
+  })
+})

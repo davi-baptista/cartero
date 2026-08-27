@@ -170,7 +170,12 @@ function BankRow({
             : `/banks/${bank.id}/invoices`
         }
         aria-label={ariaLabel}
-        className="flex min-h-[68px] flex-col justify-center gap-1 py-3 pl-1 pr-12 transition-colors hover:bg-muted/30 active:bg-muted/50"
+        /*
+          `gap-0.5` em vez de `gap-1`: as duas faixas descrevem o MESMO
+          banco, e o respiro anterior as fazia ler como dois blocos. Sem
+          colapsar — o prazo continua respirando abaixo do nome.
+        */
+        className="flex min-h-[64px] flex-col justify-center gap-0.5 py-2.5 pl-1 pr-12 transition-colors hover:bg-muted/30 active:bg-muted/50"
       >
         {/* FAIXA 1 — identidade, chevron e valor. */}
         <div className="flex items-center gap-3">
@@ -178,26 +183,30 @@ function BankRow({
             {initial}
           </div>
 
-          <div className="flex min-w-0 flex-1 items-center gap-1">
+          {/*
+            Nome, chevron e badge no MESMO grupo.
+
+            A badge vinha depois do `flex-1`, então era empurrada para o canto
+            direito e lia como um elemento à parte. Ela qualifica o banco —
+            pertence à identidade, não à coluna de valores.
+
+            `min-w-0` no grupo e `truncate` no nome: com nome longo, quem cede
+            espaço é o texto, nunca a badge.
+          */}
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
             <span className="truncate text-[15px] font-medium">
               {bank.name}
             </span>
             {/*
-              Chevron junto do NOME, não no canto: ele é affordance de
-              "esta linha abre", não um botão. Decorativo — o `aria-label`
-              do Link já anuncia a ação.
+              Chevron logo após o nome: affordance de "esta linha abre", não
+              um botão. Decorativo — o `aria-label` do Link já anuncia a ação.
             */}
             <ChevronRight
               className="size-3.5 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-primary/60"
               aria-hidden
             />
+            <NearestInvoiceBadge info={nearest} />
           </div>
-
-          {/*
-            Badge na linha 1, junto da identidade: o estado do banco é o que
-            se lê ao varrer a lista.
-          */}
-          <NearestInvoiceBadge info={nearest} />
 
           {/*
             "Fatura atual" nomeia o número da linha de baixo. Sem ele, um

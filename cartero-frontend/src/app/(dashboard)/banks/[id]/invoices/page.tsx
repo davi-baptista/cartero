@@ -159,16 +159,27 @@ function InvoiceRow({
         aberta é a que precisa se distinguir.
       */
       className={cn(
-        'group flex w-full items-center gap-4 px-2 py-4 text-left transition-colors hover:bg-muted/30',
-        isAtual && !isSelected && 'ring-1 ring-inset ring-primary/15',
+        'group flex w-full items-center gap-4 py-4 text-left transition-colors',
+        /*
+          A fatura ATUAL vira um card, não uma faixa.
+
+          Antes era `ring-inset` sobre a linha em bleed: a borda corria colada
+          nas extremidades da lista e as margens pareciam desiguais. Agora ela
+          recolhe (`mx-1`), ganha raio próprio e uma sombra suave — a mesma
+          leitura de "item elevado" que os cards do app já usam.
+
+          A cor continua translúcida: `bg-primary/[0.06]` com borda a 25% dá
+          presença sem virar faixa azul sólida.
+        */
+        isAtual && !isSelected
+          ? 'mx-1 rounded-xl border border-primary/25 bg-primary/[0.06] px-3 shadow-sm shadow-primary/5 hover:bg-primary/10'
+          : 'px-2 hover:bg-muted/30',
       )}
-      style={
-        isSelected
-          ? statusRowBg(invoice.status)
-          : isAtual
-            ? { backgroundColor: 'color-mix(in oklch, var(--primary) 7%, transparent)' }
-            : undefined
-      }
+      /*
+        Selecionado tem precedência: enquanto o drawer está aberto, a linha
+        aberta é a que precisa se distinguir.
+      */
+      style={isSelected ? statusRowBg(invoice.status) : undefined}
     >
       {/* Month + status + dates */}
       <div className="min-w-0 flex-1">
@@ -177,10 +188,13 @@ function InvoiceRow({
           <StatusBadge status={invoice.status} />
           {isAtual && (
             /*
-              Translúcido em vez de sólido: com o fundo da linha já marcando
-              a fatura atual, um pill cheio de cor competiria com o status.
+              Clara e neutra, destacando-se do badge de status ao lado.
+
+              Translúcida em azul ela se dissolvia no fundo do card — as duas
+              badges viravam a mesma mancha. O contraste alto é o que faz
+              "Atual" ser lida de relance, que é a função dela.
             */
-            <span className="inline-flex items-center rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium text-primary">
+            <span className="inline-flex items-center rounded-full bg-foreground px-2 py-0.5 text-[10px] font-semibold text-background">
               Atual
             </span>
           )}
