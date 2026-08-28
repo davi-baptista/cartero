@@ -259,6 +259,180 @@ describe('itens 14 e 22: a row não administra mais', () => {
   })
 })
 
+describe('o círculo de status é um controle independente', () => {
+  const ROWS = {
+    Dívidas: DIVIDAS.slice(
+      DIVIDAS.indexOf('const DebtRow'),
+      DIVIDAS.indexOf('function RowSkeleton'),
+    ),
+    'A Receber': RECEBER.slice(
+      RECEBER.indexOf('const ReceivableRow'),
+      RECEBER.indexOf('function RowSkeleton'),
+    ),
+  }
+
+  it('itens 1 e 2: o círculo alterna o estado, sem abrir o detalhe', () => {
+    /*
+      A regressão: ao virar `leading`, o círculo passou a ser uma `div` DENTRO
+      do botão da row. Clicar nele abria o detalhe — o controle tinha sido
+      engolido pela área que o continha.
+    */
+    for (const [nome, row] of Object.entries(ROWS)) {
+      expect(row, `${nome} deveria usar leadingAction`).toContain(
+        'leadingAction={',
+      )
+      expect(row, `${nome} não deveria pôr o círculo dentro da row`).not.toContain(
+        'leading={',
+      )
+    }
+
+    expect(ROWS['Dívidas']).toContain('onTogglePaid(debt)')
+    expect(ROWS['A Receber']).toContain('onToggleReceived(receivable)')
+  })
+
+  it('item 3: o controle é IRMÃO da row, nunca aninhado', () => {
+    /*
+      `button` dentro de `button` é HTML inválido: quebra o teclado e é
+      exatamente a estrutura que causou o bug. O primitive renderiza o
+      `leadingAction` fora do elemento clicável.
+    */
+    expect(PRIMITIVE).toContain('{leadingAction ? null : leading}')
+    /* O controle e a área principal são irmãos dentro do wrapper. */
+    expect(PRIMITIVE).toContain('{leadingAction}')
+    expect(PRIMITIVE).toContain('{principal}')
+    expect(PRIMITIVE).toContain('ROW_SHELL_OUTER_CLASS')
+  })
+
+  it('itens 6 e 9: alvo confortável e acessível por teclado', () => {
+    /*
+      A área de toque é o container inteiro do ícone (40/44px), não o ponto
+      colorido. `button` real dá Enter/Espaço e foco de graça — uma `div`
+      com `onClick` perderia os dois.
+    */
+    for (const [nome, row] of Object.entries(ROWS)) {
+      expect(row, `${nome}: o controle deveria ser um button`).toContain(
+        'type="button"',
+      )
+      expect(row).toContain('ROW_ICON_CLASS')
+      expect(row, `${nome}: faltou foco visível`).toContain('focus-visible:ring')
+      expect(row, `${nome}: faltou rótulo`).toContain('aria-label={')
+    }
+  })
+
+  it('item 4: o primitive continua sem regra de domínio', () => {
+    for (const dominio of ['Debt', 'Receivable', 'isPaid', 'togglePaid']) {
+      expect(code(PRIMITIVE)).not.toContain(dominio)
+    }
+  })
+
+  it('item 5: quem não tem controle próprio não mudou', () => {
+    /*
+      Extrato, Bancos, Pessoas e Assinaturas seguem passando `leading`, e o
+      primitive continua tratando esse caso com um elemento clicável só.
+    */
+    for (const [nome, fonte] of [
+      ['Extrato', EXTRATO],
+      ['Bancos', BANCOS],
+      ['Pessoas', PESSOAS],
+      ['Assinaturas', ASSINATURAS],
+    ] as const) {
+      expect(fonte, `${nome} deveria seguir com leading`).toContain('leading={')
+      expect(code(fonte), `${nome} não deveria ter leadingAction`).not.toContain(
+        'leadingAction',
+      )
+    }
+  })
+})
+
+describe('itens 13 e 14: geometria das ações do drawer', () => {
+  it('todas as ações compartilham UMA definição', () => {
+    /*
+      Os botões traziam `h-11 flex-1 sm:h-9` inline — a altura sobrescrita,
+      mas o `px-2.5` do `size` default intacto. Rótulos longos como "Alterar
+      data do recebimento" ficavam espremidos enquanto "Editar" parecia
+      folgado.
+    */
+    /*
+      Mira a existência da constante, não a string exata: a geometria ainda
+      vai mudar, e congelá-la aqui faria o teste falhar por um ajuste que ele
+      não deveria vigiar. O que importa é ela ser única e compartilhada.
+    */
+    expect(SHELL).toContain('export const DETAIL_ACTION_CLASS')
+    expect(SHELL).toContain('h-11')
+
+    for (const [nome, fonte] of [
+      ['Dívida', DRAWER_DIVIDA],
+      ['Cobrança', DRAWER_RECEBER],
+    ] as const) {
+      expect(fonte, `${nome} deveria usar o token`).toContain(
+        'className={DETAIL_ACTION_CLASS}',
+      )
+      expect(
+        code(fonte),
+        `${nome} não deveria repetir a geometria inline`,
+      ).not.toContain('h-11 flex-1 sm:h-9')
+    }
+  })
+
+  it('a altura resiste ao container em coluna', () => {
+    /*
+      A regressão que `px-4` sozinho não resolveu.
+
+      `flex-1` é atalho de `flex: 1 1 0%` e inclui `flex-shrink: 1`. O
+      `shrink-0` da base do Button pertence ao mesmo grupo e some no
+      `tailwind-merge`. No footer auxiliar, que é `flex-col` no mobile,
+      `flex-1` passa a distribuir ALTURA — e os botões encolhiam até a altura
+      do conteúdo.
+
+      `min-h-*` é o que sobrevive: não pertence ao grupo `flex` nem ao grupo
+      `height`, então nenhum atalho a sobrescreve. Devolver `shrink-0` seria
+      inútil — o merge o removeria de novo.
+    */
+    expect(SHELL).toContain('min-h-11')
+    expect(SHELL).toContain('sm:min-h-9')
+
+    /* É o footer em coluna que torna a proteção necessária. */
+    for (const fonte of [DRAWER_DIVIDA, DRAWER_RECEBER]) {
+      expect(fonte).toContain('flex-col gap-2 sm:flex-row')
+    }
+  })
+
+  it('item 14: Debt e Receivable usam a MESMA geometria', () => {
+    /*
+      Uma constante, os dois drawers. Um ficar certo e o outro não é
+      exatamente o modo como este bug nasceu.
+    */
+    const usos = (fonte: string) =>
+      (fonte.match(/className=\{DETAIL_ACTION_CLASS\}/g) ?? []).length
+
+    expect(usos(DRAWER_DIVIDA)).toBe(4)
+    expect(usos(DRAWER_RECEBER)).toBe(4)
+  })
+
+  it('item 9: nenhuma escala de botão nova foi inventada', () => {
+    /*
+      Sem `size="sm"` nem valores mágicos: os botões usam o `size` default do
+      Button e só ajustam a geometria pela constante compartilhada.
+    */
+    for (const fonte of [DRAWER_DIVIDA, DRAWER_RECEBER]) {
+      expect(code(fonte)).not.toContain('size="sm"')
+      expect(code(fonte)).not.toContain('py-[')
+      expect(code(fonte)).not.toContain('min-h-[')
+    }
+  })
+
+  it('item 16: variant muda cor, nunca tamanho', () => {
+    /*
+      Marcar/desmarcar, corrigir data, editar e excluir têm cores diferentes
+      e a MESMA geometria. Nenhum recebe altura própria.
+    */
+    for (const fonte of [DRAWER_DIVIDA, DRAWER_RECEBER]) {
+      const alturas = code(fonte).match(/className="h-\d+/g) ?? []
+      expect(alturas).toEqual([])
+    }
+  })
+})
+
 describe('itens 33 e 34: os drawers são da mesma família', () => {
   it('os três usam a mesma casca', () => {
     expect(DRAWER_DIVIDA).toContain('DetailDrawer')

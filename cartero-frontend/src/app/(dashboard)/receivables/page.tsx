@@ -64,14 +64,23 @@ const ReceivableRow = memo(function ReceivableRow({
   receivable,
   isHighlighted,
   onView,
+  onToggleReceived,
 }: {
   receivable: Receivable
   isHighlighted?: boolean
-  /** A row inteira é navegação: identifica e abre. Administrar é do drawer. */
+  /** Abre o detalhe. É a ação de TODA a row, menos o círculo. */
   onView: (r: Receivable) => void
+  /**
+   * Alterna recebido/pendente pelo círculo de status.
+   *
+   * Controle próprio, irmão da área que abre o detalhe: quando a row virou
+   * um botão único, este alvo foi engolido por ela e parou de responder.
+   */
+  onToggleReceived: (r: Receivable) => void
 }) {
   const overdue = isOverdue(receivable)
-  const rowRef = useRef<HTMLButtonElement>(null)
+  /* A LINHA inteira — o pulso de destaque precisa incluir o círculo. */
+  const rowRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     if (!isHighlighted || !rowRef.current) return
@@ -102,10 +111,32 @@ const ReceivableRow = memo(function ReceivableRow({
       ref={rowRef}
       onView={() => onView(receivable)}
       ariaLabel={`Ver detalhes de ${receivable.title}`}
-      leading={
-        <div className={cn(ROW_ICON_CLASS, ROW_ICON_BG_CLASS, 'ring-1 ring-border/50')}>
+      leadingAction={
+        /*
+          Alvo independente: alterna o estado sem abrir o detalhe.
+
+          É IRMÃO do botão da row, não filho — aninhar um botão dentro de
+          outro é HTML inválido e foi exatamente o que quebrou este controle.
+          A área de toque é o container inteiro do ícone (40/44px), não o
+          ponto colorido.
+        */
+        <button
+          type="button"
+          onClick={() => onToggleReceived(receivable)}
+          aria-label={
+            receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'
+          }
+          title={
+            receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'
+          }
+          className={cn(
+            ROW_ICON_CLASS,
+            ROW_ICON_BG_CLASS,
+            'ring-1 ring-border/50 outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50',
+          )}
+        >
           <SettlementStatusDot item={receivable} domain="receivable" />
-        </div>
+        </button>
       }
       title={
         <span className={cn(receivable.isPaid && 'text-muted-foreground line-through')}>
@@ -670,6 +701,7 @@ export default function ReceivablesPage() {
                     receivable={receivable}
                     isHighlighted={receivable.id === highlightId}
                     onView={setDetailTarget}
+                    onToggleReceived={handleToggleReceived}
                   />
                 </MotionRow>
               ))}

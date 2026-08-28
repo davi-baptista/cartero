@@ -109,6 +109,41 @@ export function DetailRow({
 }
 
 /**
+ * Geometria das ações do drawer.
+ *
+ * `h-11` no mobile (alvo de toque confortável), `sm:h-9` no desktop, e `px-4`
+ * porque o `size` default do Button traz só `px-2.5`.
+ *
+ * ── Por que `min-h` e não só `h` ──
+ *
+ * Os botões auxiliares ficavam achatados, e a altura declarada NÃO era a
+ * causa: `tailwind-merge` resolve `h-8` do variant contra `h-11` do caller
+ * corretamente, e `h-11` vence.
+ *
+ * A causa são DUAS coisas juntas:
+ *
+ *   1. `flex-1` é atalho de `flex: 1 1 0%` — inclui `flex-shrink: 1`. O
+ *      `shrink-0` da base do Button pertence ao mesmo grupo e é descartado
+ *      por `tailwind-merge` como superado. O botão perde a proteção.
+ *
+ *   2. O footer auxiliar é `flex-col` no mobile. Em container de coluna,
+ *      `flex-1` distribui ALTURA, não largura — e, sem `shrink-0`, os botões
+ *      encolhem abaixo de `h-11` até a altura do conteúdo.
+ *
+ * `Editar`/`Excluir` nunca sofreram disso: vivem num footer `flex` normal,
+ * onde `flex-1` distribui largura.
+ *
+ * `min-h-*` é a correção porque nenhum atalho de `flex` a sobrescreve — ela
+ * não pertence ao grupo `flex` nem ao grupo `height`. Reintroduzir
+ * `shrink-0` não funcionaria: o merge o removeria de novo.
+ *
+ * Só GEOMETRIA. A cor continua vindo do `variant`: destrutivo, neutro e
+ * primário mudam de cor, nunca de tamanho.
+ */
+export const DETAIL_ACTION_CLASS =
+  'h-11 min-h-11 flex-1 px-4 sm:h-9 sm:min-h-9'
+
+/**
  * Rodapé de ações.
  *
  * Renderiza apenas o que recebe. Uma entidade protegida simplesmente não

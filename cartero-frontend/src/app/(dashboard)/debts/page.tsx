@@ -64,14 +64,23 @@ const DebtRow = memo(function DebtRow({
   debt,
   isHighlighted,
   onView,
+  onTogglePaid,
 }: {
   debt: Debt
   isHighlighted?: boolean
-  /** A row inteira é navegação: identifica e abre. Administrar é do drawer. */
+  /** Abre o detalhe. É a ação de TODA a row, menos o círculo. */
   onView: (d: Debt) => void
+  /**
+   * Alterna pago/pendente pelo círculo de status.
+   *
+   * Controle próprio, irmão da área que abre o detalhe: quando a row virou
+   * um botão único, este alvo foi engolido por ela e parou de responder.
+   */
+  onTogglePaid: (d: Debt) => void
 }) {
   const overdue = isOverdue(debt)
-  const rowRef = useRef<HTMLButtonElement>(null)
+  /* A LINHA inteira — o pulso de destaque precisa incluir o círculo. */
+  const rowRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     if (!isHighlighted || !rowRef.current) return
@@ -102,15 +111,30 @@ const DebtRow = memo(function DebtRow({
       ref={rowRef}
       onView={() => onView(debt)}
       ariaLabel={`Ver detalhes de ${debt.title}`}
-      leading={
+      leadingAction={
         /*
-          O ícone deixou de ser botão de marcar-como-paga: a row inteira é
-          navegação agora, e um alvo clicável dentro de outro obrigava a
-          `stopPropagation` em toda a lista. A ação vive no drawer.
+          Alvo independente: alterna o estado sem abrir o detalhe.
+
+          É IRMÃO do botão da row, não filho — aninhar um botão dentro de
+          outro é HTML inválido e foi exatamente o que quebrou este controle.
+          A área de toque é o container inteiro do ícone (40/44px), não o
+          ponto colorido.
         */
-        <div className={cn(ROW_ICON_CLASS, ROW_ICON_BG_CLASS, 'ring-1 ring-border/50')}>
+        <button
+          type="button"
+          onClick={() => onTogglePaid(debt)}
+          aria-label={
+            debt.isPaid ? 'Marcar como pendente' : 'Marcar como paga'
+          }
+          title={debt.isPaid ? 'Marcar como pendente' : 'Marcar como paga'}
+          className={cn(
+            ROW_ICON_CLASS,
+            ROW_ICON_BG_CLASS,
+            'ring-1 ring-border/50 outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50',
+          )}
+        >
           <SettlementStatusDot item={debt} domain="debt" />
-        </div>
+        </button>
       }
       title={
         <span className={cn(debt.isPaid && 'text-muted-foreground line-through')}>
@@ -680,6 +704,7 @@ export default function DebtsPage() {
                     debt={debt}
                     isHighlighted={debt.id === highlightId}
                     onView={setDetailTarget}
+                    onTogglePaid={handleTogglePaid}
                   />
                 </MotionRow>
               ))}

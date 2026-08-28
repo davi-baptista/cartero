@@ -10,6 +10,7 @@ import {
   DetailList,
   DetailNotice,
   DetailRow,
+  DETAIL_ACTION_CLASS,
 } from '@/components/ui/detail-drawer'
 import {
   ROW_AMOUNT_CLASS,
@@ -161,7 +162,7 @@ export function ReceivableDetailDrawer({
       <DetailFooter className="flex-col gap-2 sm:flex-row">
         <Button
           variant="outline"
-          className="h-11 flex-1 sm:h-9"
+          className={DETAIL_ACTION_CLASS}
           onClick={() => onToggleReceived(receivable)}
         >
           {receivable.isPaid ? (
@@ -174,7 +175,7 @@ export function ReceivableDetailDrawer({
         {canEditSettlementDate(receivable) && onEditSettlementDate && (
           <Button
             variant="outline"
-            className="h-11 flex-1 sm:h-9"
+            className={DETAIL_ACTION_CLASS}
             onClick={() => onEditSettlementDate(receivable)}
           >
             <CalendarDays className="size-4" />
@@ -186,7 +187,7 @@ export function ReceivableDetailDrawer({
       <DetailFooter className="border-t-0 pt-0">
         <Button
           variant="outline"
-          className="h-11 flex-1 sm:h-9"
+          className={DETAIL_ACTION_CLASS}
           onClick={() => onEdit(receivable)}
         >
           <Pencil className="size-4" />
@@ -200,7 +201,7 @@ export function ReceivableDetailDrawer({
         {!isAutomatic && (
           <Button
             variant="destructive"
-            className="h-11 flex-1 sm:h-9"
+            className={DETAIL_ACTION_CLASS}
             onClick={() => onDelete(receivable)}
           >
             <Trash2 className="size-4" />

@@ -9,6 +9,7 @@ import {
   DetailList,
   DetailNotice,
   DetailRow,
+  DETAIL_ACTION_CLASS,
 } from '@/components/ui/detail-drawer'
 import {
   ROW_AMOUNT_CLASS,
@@ -136,7 +137,7 @@ export function SubscriptionDetailDrawer({
       <DetailFooter>
         <Button
           variant="outline"
-          className="h-11 flex-1 sm:h-9"
+          className={DETAIL_ACTION_CLASS}
           onClick={() => onToggle(subscription)}
         >
           {inactive ? <Play className="size-4" /> : <Pause className="size-4" />}
@@ -147,7 +148,7 @@ export function SubscriptionDetailDrawer({
       <DetailFooter className="border-t-0 pt-0">
         <Button
           variant="outline"
-          className="h-11 flex-1 sm:h-9"
+          className={DETAIL_ACTION_CLASS}
           onClick={() => onEdit(subscription)}
         >
           <Pencil className="size-4" />
@@ -155,7 +156,7 @@ export function SubscriptionDetailDrawer({
         </Button>
         <Button
           variant="destructive"
-          className="h-11 flex-1 sm:h-9"
+          className={DETAIL_ACTION_CLASS}
           onClick={() => onDelete(subscription)}
         >
           <Trash2 className="size-4" />

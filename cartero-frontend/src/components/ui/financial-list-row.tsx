@@ -120,9 +120,46 @@ export const ROW_ICON_CLASS =
 const ROW_SHELL_CLASS =
   'group flex w-full min-w-0 items-center gap-3 rounded-lg px-0 py-3.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4 sm:px-2 sm:py-4'
 
+/*
+  ── Quando existe um controle independente à esquerda ──
+
+  A geometria se divide em dois: o WRAPPER carrega padding, gap e hover; o
+  botão principal fica só com o preenchimento da largura restante.
+
+  Somados, os dois reproduzem exatamente a altura e o respiro do
+  `ROW_SHELL_CLASS` — uma lista com controle e outra sem precisam parecer a
+  mesma coisa. O `group` mora no wrapper para o chevron reagir ao hover da
+  linha inteira, incluindo a passagem sobre o círculo.
+*/
+const ROW_SHELL_OUTER_CLASS =
+  'group flex w-full min-w-0 items-center gap-3 rounded-lg px-0 py-3.5 transition-colors hover:bg-muted/30 sm:gap-4 sm:px-2 sm:py-4'
+
+/*
+  O botão principal dentro do wrapper: sem padding vertical próprio (já veio
+  de fora) e sem hover próprio (idem). Mantém o anel de foco, porque ele é
+  deste controle e não da linha.
+*/
+const ROW_SHELL_INNER_CLASS =
+  'flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4'
+
 export interface FinancialListRowProps {
-  /** Ícone/avatar. Vem pronto: o símbolo é do domínio, o container é daqui. */
-  leading: ReactNode
+  /**
+   * Ícone/avatar NÃO interativo, dentro da área que abre o detalhe.
+   *
+   * Para um controle próprio no mesmo lugar, use `leadingAction`.
+   */
+  leading?: ReactNode
+  /**
+   * Controle INDEPENDENTE à esquerda, irmão da área principal.
+   *
+   * Dívidas e A Receber usam: o círculo de status alterna pago/pendente sem
+   * abrir o detalhe. Ele fica FORA do `button` da row — aninhar um botão
+   * dentro de outro é HTML inválido, quebra o teclado e foi o que fez o
+   * círculo parar de responder quando a row inteira virou botão.
+   *
+   * Passe `leading` OU `leadingAction`: os dois ocupam a mesma posição.
+   */
+  leadingAction?: ReactNode
   title: ReactNode
   /**
    * Badges e marcadores após o título, ANTES do chevron.
@@ -163,12 +200,19 @@ export interface FinancialListRowProps {
   /** Descrição para leitor de tela — a row é um `button` sem texto próprio. */
   ariaLabel: string
   className?: string
-  /** Destaque temporário de `?highlight=`. */
-  ref?: React.Ref<HTMLButtonElement>
+  /**
+   * Destaque temporário de `?highlight=`.
+   *
+   * Aponta para a LINHA inteira: com `leadingAction` o alvo é o wrapper, não
+   * o botão interno — senão o pulso pintaria só a área de texto e deixaria o
+   * círculo de fora, como se ele não fizesse parte da mesma linha.
+   */
+  ref?: React.Ref<HTMLElement>
 }
 
 export function FinancialListRow({
   leading,
+  leadingAction,
   title,
   titleAdornment,
   meta,
@@ -183,7 +227,8 @@ export function FinancialListRow({
 }: FinancialListRowProps) {
   const conteudo = (
     <>
-      {leading}
+      {/* Com `leadingAction`, o slot vive fora deste botão. */}
+      {leadingAction ? null : leading}
 
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <span className="flex min-w-0 items-center gap-1.5">
@@ -218,7 +263,19 @@ export function FinancialListRow({
     </>
   )
 
-  const classes = cn(ROW_SHELL_CLASS, className)
+  /*
+    Com um controle independente, a geometria da row passa para o WRAPPER e o
+    botão principal fica sem padding próprio: os dois juntos precisam somar
+    exatamente a mesma altura e o mesmo respiro de antes, ou as listas com
+    controle divergiriam das sem.
+
+    `group` fica no wrapper para o chevron continuar reagindo ao hover da
+    linha inteira.
+  */
+  const classes = cn(
+    leadingAction ? ROW_SHELL_INNER_CLASS : ROW_SHELL_CLASS,
+    className,
+  )
 
   /*
     `Link` ou `button` conforme o uso, com as MESMAS classes. O `button`
@@ -226,17 +283,18 @@ export function FinancialListRow({
     navegação. Reimplementar qualquer um dos dois numa `div` clicável perderia
     acessibilidade.
   */
-  if (href) {
-    return (
-      <Link href={href} aria-label={ariaLabel} className={classes}>
-        {conteudo}
-      </Link>
-    )
-  }
+  /* Sem controle independente, o ref é do próprio elemento clicável. */
+  const refPrincipal = leadingAction
+    ? undefined
+    : (ref as React.Ref<HTMLButtonElement>)
 
-  return (
+  const principal = href ? (
+    <Link href={href} aria-label={ariaLabel} className={classes}>
+      {conteudo}
+    </Link>
+  ) : (
     <button
-      ref={ref}
+      ref={refPrincipal}
       type="button"
       onClick={onView}
       aria-label={ariaLabel}
@@ -244,5 +302,24 @@ export function FinancialListRow({
     >
       {conteudo}
     </button>
+  )
+
+  if (!leadingAction) return principal
+
+  /*
+    Dois controles IRMÃOS, com aparência de uma row só.
+
+    O hover mora no wrapper para a linha inteira reagir junto — mas o
+    controle da esquerda tem o seu próprio, então tocar nele não parece que
+    vai abrir o detalhe.
+  */
+  return (
+    <div
+      ref={ref as React.Ref<HTMLDivElement>}
+      className={cn(ROW_SHELL_OUTER_CLASS, className)}
+    >
+      {leadingAction}
+      {principal}
+    </div>
   )
 }

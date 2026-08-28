@@ -9,6 +9,7 @@ import {
   DetailList,
   DetailNotice,
   DetailRow,
+  DETAIL_ACTION_CLASS,
 } from '@/components/ui/detail-drawer'
 import {
   ROW_AMOUNT_CLASS,
@@ -135,7 +136,7 @@ export function DebtDetailDrawer({
       <DetailFooter className="flex-col gap-2 sm:flex-row">
         <Button
           variant="outline"
-          className="h-11 flex-1 sm:h-9"
+          className={DETAIL_ACTION_CLASS}
           onClick={() => onTogglePaid(debt)}
         >
           {debt.isPaid ? (
@@ -148,7 +149,7 @@ export function DebtDetailDrawer({
         {canEditSettlementDate(debt) && onEditSettlementDate && (
           <Button
             variant="outline"
-            className="h-11 flex-1 sm:h-9"
+            className={DETAIL_ACTION_CLASS}
             onClick={() => onEditSettlementDate(debt)}
           >
             <CalendarDays className="size-4" />
@@ -160,7 +161,7 @@ export function DebtDetailDrawer({
       <DetailFooter className="border-t-0 pt-0">
         <Button
           variant="outline"
-          className="h-11 flex-1 sm:h-9"
+          className={DETAIL_ACTION_CLASS}
           onClick={() => onEdit(debt)}
         >
           <Pencil className="size-4" />
@@ -168,7 +169,7 @@ export function DebtDetailDrawer({
         </Button>
         <Button
           variant="destructive"
-          className="h-11 flex-1 sm:h-9"
+          className={DETAIL_ACTION_CLASS}
           onClick={() => onDelete(debt)}
         >
           <Trash2 className="size-4" />
