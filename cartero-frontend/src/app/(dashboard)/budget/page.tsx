@@ -392,11 +392,17 @@ export default function BudgetPage() {
     (row) => row.kind !== 'person',
   )
 
-  const priorCarryItems = budget?.debts.priorItems ?? []
-  /** Pendências anteriores SEM pessoa, pela mesma razão. */
-  const standalonePriorItems = priorCarryItems.filter(
-    (item) => !item.personId,
-  )
+  /*
+    Pendências anteriores — TODAS, com pessoa ou sem.
+
+    O `.filter(!personId)` saiu: uma dívida antiga vinculada a alguém sumia
+    daqui para dentro de "Acertos com pessoas", onde ficava compensada pelo
+    netting em vez de aparecer como a obrigação herdada que é.
+
+    A temporalidade tem precedência sobre a pessoa. O backend já classifica
+    assim — este conjunto só passou a mostrar o que ele devolve.
+  */
+  const standalonePriorItems = budget?.debts.priorItems ?? []
   const standalonePriorTotal = standalonePriorItems.reduce(
     (sum, item) => sum + item.amount,
     0,
@@ -818,7 +824,7 @@ export default function BudgetPage() {
             </span>
           </h2>
           <p className="mb-3 -mt-1.5 text-xs text-muted-foreground">
-            Venceram antes deste mês e ainda estavam abertas quando ele começou.
+            Venceram antes deste mês.
           </p>
 
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">

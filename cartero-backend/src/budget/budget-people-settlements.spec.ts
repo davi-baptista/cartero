@@ -411,9 +411,23 @@ describe('Pendências anteriores da pessoa', () => {
 
     const mariana = budget.peopleSettlements[0];
 
-    // Universo do orçamento: carry em campo próprio, para reconciliar o total.
-    expect(mariana.budget.currentOpenPrior).toBe(100);
-    expect(mariana.budget.debtTotal).toBe(350);
+    /*
+      ── REGRA NOVA: temporalidade tem precedência sobre pessoa ──
+
+      A dívida anterior NÃO entra mais no universo de orçamento da pessoa.
+      Ela pertence a "Pendências anteriores", e só a ele.
+
+      Antes ela vivia nos dois lugares ao mesmo tempo: compensada dentro dos
+      acertos E exibida como pendência anterior — a mesma obrigação
+      representada duas vezes. Este teste afirmava esse comportamento; ele
+      foi deliberadamente substituído.
+
+      O universo EM ABERTO (`open`) continua vendo os 100: lá a pergunta é
+      "quanto falta acertar com esta pessoa?", e falta acertar os 100 também.
+      São perguntas diferentes, e só a do orçamento mudou.
+    */
+    expect(mariana.budget.currentOpenPrior).toBe(0);
+    expect(mariana.budget.debtTotal).toBe(250);
 
     /*
       Universo em aberto: a dívida anterior está aberta, então ENTRA no saldo.
@@ -428,6 +442,15 @@ describe('Pendências anteriores da pessoa', () => {
   });
 
   it('a pendência anterior aberta entra no total do mês corrente', async () => {
+    /*
+      Ela mudou de BALDE, não de existência: saiu dos acertos da pessoa e foi
+      para "Pendências anteriores". O total do mês continua 350 — a dívida
+      não pode desaparecer da conta ao trocar de seção.
+
+      Foi exatamente isso que quebrou na primeira tentativa desta correção:
+      excluí-la do netting sem somá-la de volta em outro lugar derrubou o
+      total para 250.
+    */
     const budget = await buildService({
       monthDebts: [{ amount: 250, person: MARIANA }],
       priorDebts: [{ amount: 100, person: MARIANA }],
@@ -435,6 +458,9 @@ describe('Pendências anteriores da pessoa', () => {
 
     expect(budget.debts.currentOpenPrior).toBe(100);
     expect(budget.debts.total).toBe(350);
+
+    /* E não sobrou nada dela dentro do acerto da pessoa. */
+    expect(budget.peopleSettlements[0].budget.currentOpenPrior).toBe(0);
   });
 
   it('carry sem pessoa não vai para acertos', async () => {
@@ -1016,5 +1042,89 @@ describe('hasOverdue — urgência, não direção', () => {
     }).getBudget(USER_ID, 9, 2026);
 
     expect(budget.peopleSettlements[0].open.hasOverdue).toBe(false);
+  });
+});
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * O bug da tela: a mesma dívida em dois baldes
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * "Dívidas · R$ 600,00" e "Pendências anteriores · R$ 600,00" exibindo a
+ * MESMA entidade — Dentista, paga, R$ 600,00.
+ *
+ * A causa: o conjunto de pendências anteriores recebia toda dívida paga na
+ * competência, sem olhar o vencimento. Vencer 20/07 e pagar 28/07 caía lá
+ * como se viesse de outro mês.
+ *
+ * Estes testes exercitam o SERVIÇO inteiro, não só o classificador: é onde a
+ * duplicação aparecia.
+ */
+describe('duplicação de dívida entre baldes', () => {
+  const emJulho = (dia: number) => new Date(Date.UTC(2026, 6, dia, 12));
+
+  it('paga no mesmo mês do vencimento NÃO vira pendência anterior', async () => {
+    const budget = await buildService({
+      monthDebts: [
+        {
+          amount: 600,
+          isPaid: true,
+          dueDate: emJulho(20),
+          paidAt: emJulho(28),
+        },
+      ],
+    }).getBudget(USER_ID, 7, 2026);
+
+    /* O caso da screenshot: uma vez só, e fora das pendências. */
+    expect(budget.debts.priorItems).toHaveLength(0);
+    expect(budget.debts.total).toBe(600);
+  });
+
+  it('a dívida contribui UMA vez para o total', async () => {
+    /*
+      O sintoma financeiro do bug: R$ 600 entrando duas vezes produziria
+      R$ 1.200. O invariante é o total, não a contagem de linhas.
+    */
+    const budget = await buildService({
+      monthDebts: [
+        {
+          amount: 600,
+          isPaid: true,
+          dueDate: emJulho(20),
+          paidAt: emJulho(28),
+        },
+      ],
+    }).getBudget(USER_ID, 7, 2026);
+
+    expect(budget.totalToPay).toBe(600);
+  });
+
+  it('nenhum título aparece nos dois conjuntos ao mesmo tempo', async () => {
+    /*
+      O invariante do item 42, no nível da resposta: a interseção entre o que
+      alimenta as seções normais e o que alimenta as pendências é vazia.
+    */
+    const budget = await buildService({
+      monthDebts: [
+        {
+          amount: 600,
+          isPaid: true,
+          dueDate: emJulho(20),
+          paidAt: emJulho(28),
+        },
+        { amount: 250, person: MARIANA },
+      ],
+    }).getBudget(USER_ID, 7, 2026);
+
+    /*
+      A fixture gera títulos por índice, então o valor é o identificador
+      confiável aqui: os 600 da dívida paga no próprio mês não podem estar
+      nas pendências, e o total tem de fechar com a soma das seções.
+    */
+    const priorAmounts = budget.debts.priorItems.map((i) => i.amount);
+    expect(priorAmounts).not.toContain(600);
+
+    /* 600 (paga no mês) + 250 (pessoa) — cada uma contada uma vez. */
+    expect(budget.debts.total).toBe(850);
   });
 });

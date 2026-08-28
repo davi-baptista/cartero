@@ -2,6 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { TransactionType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SalaryService } from 'src/salary/salary.service';
+import { civilDay } from 'src/common/helpers/date-only.helper';
+import {
+  classifyDebtForBudget,
+  type BudgetPeriod,
+} from 'src/common/helpers/budget-debt-bucket';
 
 /**
  * Formas de pagamento que saem do bolso na própria data da transação —
@@ -13,20 +18,7 @@ const DIRECT_PAYMENT_TYPES: TransactionType[] = [
   TransactionType.BOLETO,
 ];
 
-/**
- * O item em aberto já está VENCIDO hoje?
- *
- * Dia civil de Fortaleza (UTC-3): no PRÓPRIO dia do vencimento o item ainda
- * não está atrasado — há o dia inteiro para resolvê-lo. O servidor roda em
- * UTC, e comparar instantes marcaria como vencido algo que ainda está no
- * prazo durante a noite.
- */
-function civilDay(date: Date): string {
-  return new Date(date.getTime() - 3 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
-}
-
+/** O item em aberto já está VENCIDO hoje? Dia civil de Fortaleza. */
 function isOverdueToday(
   dueDate: Date | null | undefined,
   now: Date = new Date(),
@@ -504,19 +496,42 @@ export class BudgetService {
       `.map` seguinte perde a checagem de cada campo.
     */
     type PriorRow = (typeof currentOpenPrior)[number];
+
+    /*
+      ── A CAUSA do bug de duplicação ──
+
+      Este conjunto recebia TODAS as dívidas pagas na competência, com
+      `settled: true`, sem olhar o vencimento. Uma dívida vencida em 20/07 e
+      paga em 28/07 entrava aqui como "pendência anterior" ao mesmo tempo que
+      `buildDebtBreakdown` a colocava em "Dívidas" — a mesma entidade nas duas
+      seções, cada uma somando R$ 600,00.
+
+      `paidAt > dueDate` não significa "veio de um mês anterior": pagar com
+      alguns dias de atraso dentro do próprio mês é atraso, não herança.
+
+      Agora quem decide é `classifyDebtForBudget`, o mesmo classificador que
+      o resto da tela usa. O balde é único por construção.
+    */
+    const selectedPeriod: BudgetPeriod = { year, month };
+
     const priorBreakdown = [
       ...currentOpenPrior.map((debt: PriorRow) => ({ debt, settled: false })),
       ...paidInMonth.map((debt: PriorRow) => ({ debt, settled: true })),
-    ].map(({ debt, settled }: { debt: PriorRow; settled: boolean }) => ({
-      title: debt.title,
-      amount: Number(debt.amount),
-      /** Vencimento ORIGINAL — não reescrito como se fosse deste mês. */
-      dueDate: debt.dueDate,
-      personId: debt.personId,
-      personName: debt.person?.name ?? null,
-      /** `true` quando o pagamento aconteceu NESTA competência. */
-      paidInMonth: settled,
-    }));
+    ]
+      .filter(
+        ({ debt }: { debt: PriorRow }) =>
+          classifyDebtForBudget(debt, selectedPeriod) === 'prior',
+      )
+      .map(({ debt, settled }: { debt: PriorRow; settled: boolean }) => ({
+        title: debt.title,
+        amount: Number(debt.amount),
+        /** Vencimento ORIGINAL — não reescrito como se fosse deste mês. */
+        dueDate: debt.dueDate,
+        personId: debt.personId,
+        personName: debt.person?.name ?? null,
+        /** `true` quando o pagamento aconteceu NESTA competência. */
+        paidInMonth: settled,
+      }));
 
     /*
       A Receber do mês — informativo puro.
@@ -661,8 +676,23 @@ export class BudgetService {
       ).budgetReceivableAmount += Number(receivable.amount);
     }
 
+    /*
+      ── Dívida ANTERIOR não participa do netting da pessoa ──
+
+      A temporalidade decide antes da pessoa: se a origem é de um mês
+      anterior, o balde é "Pendências anteriores", e só ele.
+
+      Deixá-la também aqui produziria a dupla representação que esta tarefa
+      fecha — compensada silenciosamente dentro de "Acertos com pessoas" E
+      exibida como pendência anterior, a mesma obrigação contando duas vezes.
+
+      `budgetPriorPaidInMonth` continua recebendo a dívida paga cuja ORIGEM é
+      deste mês (vence e paga em agosto, por exemplo): essa é do próprio
+      período e pertence ao netting normalmente.
+    */
     for (const debt of currentOpenPrior) {
       if (!debt.personId) continue;
+      if (classifyDebtForBudget(debt, selectedPeriod) === 'prior') continue;
       settlementEntry(
         debt.personId,
         debt.person?.name ?? 'Pessoa',
@@ -671,6 +701,7 @@ export class BudgetService {
 
     for (const debt of paidInMonth) {
       if (!debt.personId) continue;
+      if (classifyDebtForBudget(debt, selectedPeriod) === 'prior') continue;
       settlementEntry(
         debt.personId,
         debt.person?.name ?? 'Pessoa',
@@ -788,15 +819,37 @@ export class BudgetService {
       A dívida SEM pessoa não participa: não há com o que compensá-la, e ela
       continua integral no bucket genérico.
     */
+    /*
+      A parte com pessoa que REALMENTE foi para "Acertos com pessoas".
+
+      O `.filter(personId)` sozinho não basta desde que a temporalidade passou
+      a ter precedência: uma dívida anterior com pessoa vai para "Pendências
+      anteriores", não para os acertos. Subtraí-la aqui a removeria do bucket
+      genérico sem que nada a somasse de volta — ela desapareceria do total,
+      que foi exatamente o que aconteceu na primeira tentativa desta correção.
+
+      A condição é a mesma do laço que alimenta o netting: um único
+      classificador decide os dois lados.
+    */
     const personDebtTotal = [
       ...openDueInMonth,
       ...currentOpenPrior,
       ...paidInMonth,
     ]
-      .filter((debt) => debt.personId)
+      .filter(
+        (debt) =>
+          debt.personId &&
+          classifyDebtForBudget(debt, selectedPeriod) !== 'prior',
+      )
       .reduce((sum, debt) => sum + Number(debt.amount), 0);
 
-    /* Dívidas genéricas = o total de dívidas menos a parte com pessoa. */
+    /*
+      Dívidas genéricas = total de dívidas menos a parte que foi para acertos.
+
+      O que sobra inclui as pendências anteriores (com pessoa ou sem), que é
+      o balde onde elas agora vivem — e continuam somando no total uma única
+      vez.
+    */
     const genericDebtTotal = dueInMonth + priorTotal - personDebtTotal;
 
     const peopleBudgetPayableTotal = [...settlementByPerson.values()].reduce(
