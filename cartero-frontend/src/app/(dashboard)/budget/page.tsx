@@ -4,9 +4,16 @@ import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { CreditCard, PiggyBank, ArrowRight, Wallet, HandCoins, User } from 'lucide-react'
+import { CreditCard, PiggyBank, Wallet, HandCoins, User } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
-import { StatusListRow, type StatusRowTone } from '@/components/ui/status-list-row'
+import {
+  StatusListRow,
+  STATUS_ROW_AMOUNT_CLASS,
+  STATUS_ROW_TITLE_CLASS,
+  type StatusRowTone,
+} from '@/components/ui/status-list-row'
+import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
+import { ROW_ICON_CLASS } from '@/components/ui/financial-list-row'
 import { useMonthPeriod } from '@/components/month-nav'
 import { getBudget } from '@/services/budget.service'
 import { upsertSalary } from '@/services/salary.service'
@@ -436,7 +443,9 @@ export default function BudgetPage() {
                 {formatCurrency(summary.totalToPay)}
               </p>
               {summary.totalToPay === 0 ? (
-                <p className="mt-2 text-sm text-muted-foreground">nada a pagar neste mês</p>
+                /* Mesma escala da composição: as duas ocupam o mesmo lugar
+                   sob o total, uma no lugar da outra. */
+                <p className="mt-2 text-xs text-muted-foreground">nada a pagar neste mês</p>
               ) : (
                 /*
                   De onde vem o número. Discreta de propósito: explica o
@@ -554,8 +563,8 @@ export default function BudgetPage() {
         {isLoading ? (
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3 px-4 py-3.5">
-                <Skeleton className="size-8 shrink-0 rounded-lg" />
+              <div key={i} className="flex items-center gap-3 px-4 py-3.5 sm:gap-4 sm:py-4">
+                <Skeleton className="size-10 shrink-0 rounded-xl sm:size-11 sm:rounded-2xl" />
                 <div className="flex flex-1 flex-col gap-1.5">
                   <Skeleton className="h-4 w-28" />
                   <Skeleton className="h-3 w-16" />
@@ -738,9 +747,18 @@ export default function BudgetPage() {
         <div>
           {/* Mesmo padrão do cabeçalho de Faturas: o valor entra no título,
               em cinza. Sem badge agregado — cada linha já tem o seu. */}
-          <h2 className="mb-3 text-[15px] font-semibold tracking-tight">
+          {/*
+            Mesmo heading das outras seções, e o subtotal na mesma escala de
+            "sua parte" em Faturas.
+
+            Ele herdava o `text-[15px]` do título e se distinguia só por peso
+            e cor — do tamanho do nome da seção, competindo com ela. As duas
+            informações têm papéis diferentes: uma nomeia o grupo, a outra o
+            quantifica.
+          */}
+          <h2 className={cn(SECTION_TITLE_CLASS, 'mb-3')}>
             Dívidas
-            <span className="ml-1.5 font-normal text-muted-foreground">
+            <span className={cn(SECTION_SUMMARY_CLASS, 'ml-1.5')}>
               ·{' '}
               {formatCurrency(
                 standaloneDebtRows.reduce((sum, row) => sum + row.amount, 0),
@@ -790,9 +808,9 @@ export default function BudgetPage() {
       */}
       {!isLoading && standalonePriorItems.length > 0 && (
         <div>
-          <h2 className="mb-3 text-[15px] font-semibold tracking-tight">
+          <h2 className={cn(SECTION_TITLE_CLASS, 'mb-3')}>
             Pendências anteriores
-            <span className="ml-1.5 font-normal text-muted-foreground">
+            <span className={cn(SECTION_SUMMARY_CLASS, 'ml-1.5')}>
               · {formatCurrency(standalonePriorTotal)}
             </span>
           </h2>
@@ -833,28 +851,43 @@ export default function BudgetPage() {
       {/* Outros gastos do mês */}
       {!isLoading && summary.totalDirectPayments > 0 && (
         <div>
-          <h2 className="mb-3 text-[15px] font-semibold tracking-tight">Outros gastos do mês</h2>
+          <h2 className={cn(SECTION_TITLE_CLASS, 'mb-3')}>Outros gastos do mês</h2>
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
             {summary.totalDirectPayments > 0 && (
               <Link
                 href={`/transactions?startDate=${monthStart}&endDate=${monthEnd}&group=direct`}
-                className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30"
+                className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30 sm:gap-4 sm:py-4"
               >
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
-                  <Wallet className="size-4 text-muted-foreground" aria-hidden />
+                <div className={cn(ROW_ICON_CLASS, 'bg-muted/40')}>
+                  <Wallet
+                    className="size-4.5 text-muted-foreground sm:size-5"
+                    aria-hidden
+                  />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
-                    Débito, PIX e boleto
+                  {/*
+                    Mesmos tokens das outras rows do card — eram os mesmos
+                    valores escritos à mão, e bastaria mudar um lado para as
+                    linhas da mesma lista divergirem.
+                  */}
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className={STATUS_ROW_TITLE_CLASS}>
+                      Débito, PIX e boleto
+                    </span>
+                    {/*
+                      O chevron fica ao lado do título, como nas demais rows.
+                      Era um `ArrowRight` no extremo direito — a única seta
+                      desse tipo na página, e a única longe do título.
+                    */}
+                    <DisclosureChevron />
                   </span>
                   <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                     Ver no extrato
                   </p>
                 </div>
-                <span className="shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]">
+                <span className={STATUS_ROW_AMOUNT_CLASS}>
                   {formatCurrency(summary.totalDirectPayments)}
                 </span>
-                <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-foreground" aria-hidden />
               </Link>
             )}
           </div>
@@ -889,7 +922,7 @@ export default function BudgetPage() {
           Depois disso o drawer controla o próprio mês, sem snap-back — e sem
           alterar o mês global atrás.
         */
-        initialPeriod={{ month, year }}
+        period={{ month, year }}
       />
 
       <InvoiceDetailsDrawer

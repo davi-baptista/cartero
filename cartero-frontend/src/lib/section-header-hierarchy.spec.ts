@@ -27,10 +27,24 @@ describe('itens 36-37: título e resumo têm hierarquias distintas', () => {
     expect(PAGE).toContain('const SECTION_SUMMARY_CLASS')
   })
 
-  it('item 22: Faturas e Acertos compartilham a MESMA classe', () => {
-    // Uma definição, dois usos — nunca dois estilos paralelos.
+  it('item 22: todas as seções compartilham a MESMA classe de resumo', () => {
+    /*
+      Uma definição, vários usos — nunca estilos paralelos.
+
+      Eram três (a constante e os dois usos de Faturas/Acertos). Dívidas e
+      Pendências anteriores herdavam o `text-[15px]` do título e se
+      distinguiam só por peso e cor: o subtotal com o tamanho do nome da
+      seção, competindo com ela. Agora os quatro passam pela mesma classe.
+
+      A asserção conta o mínimo em vez de um número exato: adicionar uma
+      seção que use a classe é o comportamento desejado, não uma quebra.
+    */
     const usos = PAGE.match(/SECTION_SUMMARY_CLASS/g) ?? []
-    expect(usos.length).toBe(3)
+    expect(usos.length).toBeGreaterThanOrEqual(5)
+
+    // E nenhum heading escreve a escala à mão.
+    const literais = PAGE.match(/text-\[15px\] font-semibold tracking-tight/g) ?? []
+    expect(literais.length).toBe(1)
   })
 
   it('item 26: o resumo é menor que o título, não o contrário', () => {

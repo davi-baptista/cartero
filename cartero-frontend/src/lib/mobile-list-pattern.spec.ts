@@ -57,8 +57,20 @@ describe('itens 2-3: o primitive tem duas faixas', () => {
   })
 
   it('item 41: título trunca, valor e seta não encolhem', () => {
-    expect(ROW).toContain('truncate text-[13px] font-medium')
-    expect(ROW).toContain('shrink-0 text-[13px] font-semibold')
+    /*
+      A propriedade vigiada é o COMPORTAMENTO sob largura apertada: o título
+      cede espaço (`truncate`), o valor e a seta não (`shrink-0`).
+
+      A escala saiu da asserção: era `text-[13px]` fixo e hoje vem de
+      `ROW_TITLE_CLASS`/`ROW_AMOUNT_CLASS`, os tokens do Extrato. Congelar o
+      tamanho aqui faria este teste falhar a cada ajuste do design system,
+      sem que nada do que ele protege tivesse mudado.
+    */
+    expect(ROW).toContain('ROW_TITLE_CLASS')
+    expect(ROW).toContain("cn('shrink-0', ROW_AMOUNT_CLASS)")
+
+    const titulo = ROW_PRIMITIVE.match(/ROW_TITLE_CLASS =\s*'([^']+)'/)?.[1]
+    expect(titulo).toContain('truncate')
   })
 })
 
@@ -335,7 +347,8 @@ describe('Chevron unificado', () => {
       diretamente, ou pelo primitive de row — que já embute o chevron. Bancos
       e Extrato passaram para o segundo caminho ao adotar `FinancialListRow`.
     */
-    const VIA_PRIMITIVE = ['bancos', 'extrato']
+    // Pessoas entrou no primitive ao ganhar saldo mensal na row.
+    const VIA_PRIMITIVE = ['bancos', 'extrato', 'pessoas']
 
     for (const [nome, fonte] of Object.entries(TELAS)) {
       const alvo = VIA_PRIMITIVE.includes(nome)

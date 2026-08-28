@@ -77,6 +77,97 @@ export class PersonsService {
     });
   }
 
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   * Saldo mensal de TODOS os contatos, em lote
+   * ════════════════════════════════════════════════════════════════════════
+   *
+   * Responde, para a lista de Pessoas: "quanto está em aberto com cada
+   * contato nesta competência?".
+   *
+   * A regra NÃO é reimplementada aqui. `belongsToCompetence` e
+   * `buildPersonSummary` são exatamente os mesmos que `getStatement` usa —
+   * se as duas superfícies divergissem, o usuário veria um número na lista e
+   * outro ao abrir a pessoa, e nenhum dos dois seria obviamente o errado.
+   *
+   * TRÊS queries no total, independente do número de contatos: uma por
+   * tabela, agrupadas em memória. A alternativa óbvia — chamar o extrato por
+   * pessoa — seria N+1 numa tela que existe justamente para evitar abrir
+   * pessoa por pessoa.
+   *
+   * O `include` da transação de origem é obrigatório, não conveniência: sem
+   * ele `belongsToCompetence` resolveria o recebível automático pelo
+   * vencimento em vez da data da compra, e o item cairia no mês errado em
+   * silêncio.
+   *
+   * Contatos sem movimento entram com saldo zero. A página também é lista de
+   * contatos: sumir com alguém porque não deve nada neste mês esconderia
+   * justamente quem está em dia.
+   */
+  async monthlySummary(userId: string, competence: SettlementCompetence) {
+    const [persons, debts, receivables] = await Promise.all([
+      this.prisma.person.findMany({ where: { userId } }),
+      this.prisma.debt.findMany({
+        where: { userId, isPaid: false, personId: { not: null } },
+      }),
+      this.prisma.receivable.findMany({
+        where: { userId, isPaid: false, personId: { not: null } },
+        include: { transaction: { select: { date: true } } },
+      }),
+    ]);
+
+    /*
+      Um balde por pessoa, preenchido numa passada por lista.
+
+      Os tipos vêm das próprias consultas: as linhas satisfazem
+      `SettleableItem` (para decidir a competência) E `PendingItem` (para
+      somar o valor). Declarar um dos dois perderia o outro.
+    */
+    const porPessoa = new Map<
+      string,
+      {
+        debts: (typeof debts)[number][];
+        receivables: (typeof receivables)[number][];
+      }
+    >();
+
+    for (const person of persons) {
+      porPessoa.set(person.id, { debts: [], receivables: [] });
+    }
+
+    for (const debt of debts) {
+      if (!belongsToCompetence(debt, competence)) continue;
+      /*
+        `personId` não-nulo veio do `where`, mas a FK é `ON DELETE SET NULL`:
+        um contato excluído deixa o registro vivo e órfão. Ele não pertence a
+        nenhuma linha desta tela.
+      */
+      porPessoa.get(debt.personId!)?.debts.push(debt);
+    }
+
+    for (const receivable of receivables) {
+      if (!belongsToCompetence(receivable, competence)) continue;
+      porPessoa.get(receivable.personId!)?.receivables.push(receivable);
+    }
+
+    return persons.map((person) => {
+      const bucket = porPessoa.get(person.id)!;
+      const summary = buildPersonSummary(bucket.receivables, bucket.debts);
+
+      return {
+        id: person.id,
+        name: person.name,
+        /*
+          Positivo: a pessoa te deve. Negativo: você deve a ela.
+          Mesmo sinal de `buildPersonSummary` — a lista não inverte nada.
+        */
+        netBalance: summary.netBalance,
+        receivablePending: summary.receivablePending,
+        debtPending: summary.debtPending,
+      };
+    });
+  }
+
   async update(id: string, userId: string, dto: UpdatePersonDto) {
     await this.entityValidationService.validatePerson(id, userId);
 

@@ -113,10 +113,21 @@ function SidebarToggle() {
 }
 
 /**
- * Rotas cujo conteúdo é recortado pelo mês selecionado. Pessoas fica de fora:
- * o extrato abre num Sheet que cobre a barra, então ele tem o próprio seletor.
+ * Rotas cujo conteúdo é recortado pelo mês selecionado.
+ *
+ * Pessoas ficava de fora porque o extrato dela abria num Sheet que cobre a
+ * barra, e o drawer trazia o próprio seletor. Esse seletor foi removido — a
+ * competência passou a ser da superfície que abre o drawer —, então a razão
+ * da exceção deixou de existir e a página entrou no padrão das demais.
  */
-const MONTH_SCOPED_ROUTES = ['/overview', '/budget', '/transactions', '/debts', '/receivables']
+const MONTH_SCOPED_ROUTES = [
+  '/overview',
+  '/budget',
+  '/transactions',
+  '/debts',
+  '/receivables',
+  '/persons',
+]
 
 function HeaderMonthNav({ pathname }: { pathname: string }) {
   const { period, setPeriod } = useMonthPeriod()

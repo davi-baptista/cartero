@@ -4,14 +4,12 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Users, ChevronRight, Loader2, MoreVertical, TriangleAlert, RotateCcw } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, Loader2, MoreVertical, TriangleAlert, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  periodFromDate,
-} from '@/components/month-nav'
+import { periodFromDate, useMonthPeriod } from '@/components/month-nav'
 import {
   Dialog,
   DialogContent,
@@ -24,11 +22,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
 import { MotionRow } from '@/components/ui/motion-row'
+import {
+  FinancialListRow,
+  ROW_AMOUNT_CLASS,
+  ROW_ICON_CLASS,
+} from '@/components/ui/financial-list-row'
+import { formatCurrency } from '@/lib/formatters'
+import { cn } from '@/lib/utils'
 import {
   Sheet,
   SheetContent,
@@ -41,6 +44,7 @@ import {
 } from '@/services/debts.service'
 import {
   getPersons,
+  getPersonsMonthlySummary,
   createPerson,
   updatePerson,
   deletePerson,
@@ -182,11 +186,55 @@ export default function PersonsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Person | null>(null)
   const openedFromUrl = useRef(false)
 
-  // `?period=YYYY-MM`. Memoizado porque vira dependência de efeito no sheet.
-  const urlPeriod = useMemo(() => {
-    if (!periodParam) return undefined
-    return periodFromDate(`${periodParam}-01`)
-  }, [periodParam])
+  /*
+    ── A competência é GLOBAL ──
+
+    A mesma de Extrato, Orçamento, Dívidas e A Receber: quem governa é a barra
+    superior, e o seletor aparece lá porque `/persons` entrou em
+    `MONTH_SCOPED_ROUTES`.
+
+    A versão anterior mantinha um `useState` próprio aqui, com um `MonthNav`
+    dentro do conteúdo. Funcionava, mas criava uma segunda linha do tempo:
+    escolher agosto no Extrato e navegar para Pessoas caía no mês corrente de
+    novo, porque eram dois estados para a mesma pergunta.
+
+    Sem cópia local: a página LÊ a fonte canônica direto, e o drawer recebe
+    exatamente esse valor.
+  */
+  const { period, setPeriod } = useMonthPeriod()
+
+  /*
+    `?period=YYYY-MM` continua honrado — o Orçamento linka para cá levando a
+    competência que o usuário estava analisando.
+
+    Ele APLICA à fonte global em vez de alimentar um estado paralelo, e só na
+    chegada: reaplicar a cada render devolveria o usuário ao mês da URL toda
+    vez que ele tentasse navegar. Mesmo padrão do Extrato.
+  */
+  const urlPeriodApplied = useRef(false)
+
+  useEffect(() => {
+    if (urlPeriodApplied.current) return
+    if (!periodParam) return
+    urlPeriodApplied.current = true
+    const next = periodFromDate(`${periodParam}-01`)
+    if (next.month !== period.month || next.year !== period.year) setPeriod(next)
+  }, [periodParam, period.month, period.year, setPeriod])
+
+  /*
+    Saldos do mês, em UMA requisição para a lista inteira.
+
+    Chave por competência: trocar de mês busca o mês novo sem descartar o
+    anterior do cache.
+  */
+  const {
+    data: balances,
+    isLoading: balancesLoading,
+    isError: balancesError,
+  } = useQuery({
+    queryKey: ['persons', 'monthly-summary', period],
+    queryFn: () => getPersonsMonthlySummary(period),
+  })
 
   const {
     data: persons = [],
@@ -260,6 +308,35 @@ export default function PersonsPage() {
     setFormOpen(true)
   }
 
+  /* Acesso por id — a lista de contatos e a de saldos vêm de queries distintas. */
+  const balanceById = useMemo(
+    () => new Map((balances ?? []).map((b) => [b.id, b])),
+    [balances],
+  )
+
+  /*
+    ── O resumo sai das MESMAS linhas ──
+
+    Derivado no cliente, não pedido ao backend: todas as rows já chegaram
+    completas na mesma resposta, então somá-las é determinístico e um segundo
+    contrato só criaria uma fonte a mais para divergir.
+
+    Positivo entra em "a receber", negativo em "a pagar" pelo valor absoluto,
+    zero não move nada. É agregação VISUAL — não compensa pessoas entre si,
+    não quita e não escreve nada.
+  */
+  const summary = useMemo(() => {
+    let toReceive = 0
+    let toPay = 0
+
+    for (const { netBalance } of balances ?? []) {
+      if (netBalance > 0) toReceive += netBalance
+      else if (netBalance < 0) toPay += Math.abs(netBalance)
+    }
+
+    return { toReceive, toPay, net: toReceive - toPay }
+  }, [balances])
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
@@ -281,6 +358,56 @@ export default function PersonsPage() {
         </Button>
       </div>
 
+      {/*
+        Resumo do mês.
+
+        O seletor mensal NÃO vive aqui: ele está na barra superior, com o das
+        outras páginas mensais. O `sm:flex-row sm:justify-between` que este
+        bloco tinha existia só para acomodá-lo ao lado — sem ele, o resumo
+        ocupa a própria linha.
+      */}
+      <div>
+        <div>
+          <p className="text-xs font-medium text-muted-foreground">
+            Saldo com pessoas
+          </p>
+          {/*
+            "Saldo" sozinho seria confundido com saldo bancário; o rótulo diz
+            de qual universo estamos falando.
+          */}
+          {balancesLoading ? (
+            <Skeleton className="mt-1.5 h-7 w-32" />
+          ) : balancesError ? (
+            <p className="mt-1 text-sm text-muted-foreground">
+              Não foi possível calcular os saldos do mês.
+            </p>
+          ) : (
+            <>
+              <p
+                className={cn(
+                  'mt-0.5 text-[22px] font-semibold tabular-nums tracking-[-0.02em]',
+                  summary.net > 0 && 'text-receivable',
+                  summary.net < 0 && 'text-destructive',
+                )}
+              >
+                {formatCurrency(summary.net)}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {summary.toReceive === 0 && summary.toPay === 0 ? (
+                  'Sem valores em aberto neste mês'
+                ) : (
+                  <>
+                    {formatCurrency(summary.toReceive)} a receber ·{' '}
+                    {formatCurrency(summary.toPay)} a pagar
+                  </>
+                )}
+              </p>
+            </>
+          )}
+        </div>
+
+      </div>
+
       {/* List */}
       <div className="border-t border-border">
         {isLoading ? (
@@ -288,9 +415,10 @@ export default function PersonsPage() {
             {Array.from({ length: 4 }).map((_, i) => (
               <div
                 key={i}
-                className="flex items-center gap-3 border-b border-border px-1 py-3 last:border-b-0"
+                /* Mesma geometria da row real — senão a lista salta ao carregar. */
+                className="flex items-center gap-3 border-b border-border py-3.5 last:border-b-0 sm:gap-4 sm:px-2 sm:py-4"
               >
-                <Skeleton className="size-8 shrink-0 rounded-lg" />
+                <Skeleton className="size-10 shrink-0 rounded-xl sm:size-11 sm:rounded-2xl" />
                 <div className="flex flex-1 flex-col gap-1.5">
                   <Skeleton className="h-4 w-32" />
                 </div>
@@ -346,61 +474,88 @@ export default function PersonsPage() {
           </div>
         ) : (
           <div>
-            {persons.map((person, i) => (
+            {persons.map((person, i) => {
+              const balance = balanceById.get(person.id)
+              const net = balance?.netBalance ?? 0
+
+              /*
+                Três estados, três vocabulários. Saldo zero é neutro — nem
+                verde nem vermelho: não há nada em aberto a comemorar ou
+                temer.
+              */
+              const tone =
+                net > 0
+                  ? 'text-receivable'
+                  : net < 0
+                    ? 'text-destructive'
+                    : 'text-muted-foreground'
+
+              const label =
+                net > 0 ? 'A RECEBER' : net < 0 ? 'VOCÊ DEVE' : 'SEM SALDO'
+
+              return (
               <MotionRow key={person.id} index={i}>
-                <div className="group flex items-center gap-3 px-1 py-3">
-                  {/* Avatar */}
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold text-muted-foreground">
-                    {person.name[0].toUpperCase()}
-                  </div>
+                {/*
+                  Row e kebab são IRMÃOS, no padrão de Bancos: aninhar um
+                  `button` dentro de outro é HTML inválido e quebra teclado.
+                  O menu se sobrepõe à direita.
 
-                  {/* Name */}
-                  <button
-                    type="button"
-                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
-                    onClick={() => setStatementPerson(person)}
-                  >
-                    <span className="truncate text-sm font-medium">{person.name}</span>
-                    <DisclosureChevron />
-                  </button>
+                  Editar/Excluir de Pessoa continuam onde estavam — mover
+                  essas ações para um drawer não faz parte desta tarefa.
+                */}
+                <div className="group relative border-b border-border last:border-b-0">
+                  <FinancialListRow
+                    onView={() => setStatementPerson(person)}
+                    ariaLabel={`Ver extrato de ${person.name}`}
+                    /* Espaço à direita para o kebab sobreposto não cobrir o valor. */
+                    className="pr-10 sm:pr-12"
+                    leading={
+                      /*
+                        A inicial escala junto com o container, como o glyph
+                        do Extrato (`size-4.5 sm:size-5`). Era `text-sm` fixo:
+                        no desktop o container cresce para 44px e a letra
+                        ficava pequena dentro dele.
+                      */
+                      <div
+                        className={cn(
+                          ROW_ICON_CLASS,
+                          'bg-muted text-sm font-semibold text-muted-foreground sm:text-[15px]',
+                        )}
+                      >
+                        {person.name[0].toUpperCase()}
+                      </div>
+                    }
+                    title={person.name}
+                    trailing={
+                      /*
+                        Sem valor enquanto os saldos não chegaram: mostrar
+                        R$ 0,00 e trocar depois afirmaria um fato que ainda
+                        não sabemos — o mesmo flicker corrigido em Bancos.
+                      */
+                      balancesLoading ? (
+                        <Skeleton className="h-5 w-20" />
+                      ) : (
+                        <>
+                          <span className={cn(ROW_AMOUNT_CLASS, tone)}>
+                            {formatCurrency(net)}
+                          </span>
+                          <span className="whitespace-nowrap text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70">
+                            {label}
+                          </span>
+                        </>
+                      )
+                    }
+                  />
 
-                  {/* Actions — desktop hover */}
-                  <div className="hidden items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={() => handleEdit(person)}
-                      aria-label="Editar pessoa"
-                    >
-                      <Pencil className="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground hover:text-destructive"
-                      onClick={() => setDeleteTarget(person)}
-                      aria-label="Remover pessoa"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </div>
-
-                  {/* Mobile dropdown */}
-                  <div className="sm:hidden">
+                  <div className="absolute top-1/2 right-1 -translate-y-1/2">
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                        aria-label="Mais opções"
+                        aria-label={`Mais opções de ${person.name}`}
                       >
                         <MoreVertical className="size-3.5" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setStatementPerson(person)}>
-                          <ChevronRight className="size-3.5" />
-                          Ver extrato
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => handleEdit(person)}>
                           <Pencil className="size-3.5" />
                           Editar
@@ -414,7 +569,8 @@ export default function PersonsPage() {
                   </div>
                 </div>
               </MotionRow>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
@@ -435,7 +591,7 @@ export default function PersonsPage() {
         person={statementPerson}
         open={statementPerson !== null}
         onClose={() => setStatementPerson(null)}
-        initialPeriod={urlPeriod}
+        period={period}
       />
 
       {/* Delete confirm */}

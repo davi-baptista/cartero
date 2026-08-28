@@ -11,6 +11,35 @@ export async function getPersons(): Promise<Person[]> {
   return data
 }
 
+/**
+ * Saldo de cada contato na competência — em LOTE.
+ *
+ * Uma requisição para a lista inteira. Chamar o extrato por pessoa seria N+1
+ * numa tela que existe justamente para não abrir pessoa por pessoa.
+ *
+ * O backend aplica os mesmos helpers do extrato (`belongsToCompetence` +
+ * `buildPersonSummary`), então lista e drawer não têm como divergir.
+ */
+export interface PersonMonthlyBalance {
+  id: string
+  name: string
+  /** Positivo: a pessoa te deve. Negativo: você deve a ela. */
+  netBalance: number
+  receivablePending: number
+  debtPending: number
+}
+
+export async function getPersonsMonthlySummary(params: {
+  month: number
+  year: number
+}): Promise<PersonMonthlyBalance[]> {
+  const { data } = await api.get<PersonMonthlyBalance[]>(
+    '/persons/monthly-summary',
+    { params },
+  )
+  return data
+}
+
 export async function createPerson(payload: { name: string; phone?: string }): Promise<Person> {
   const { data } = await api.post<Person>('/persons', payload)
   return data

@@ -15,7 +15,7 @@
  * mostram exatamente o mesmo drawer.
  */
 
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
@@ -39,9 +39,7 @@ import {
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  MonthNav,
   monthBounds,
-  currentPeriod,
   type MonthPeriod,
 } from '@/components/month-nav'
 import { MarkAsPaidDialog } from '@/app/(dashboard)/transactions/mark-as-paid-dialog'
@@ -295,7 +293,7 @@ export function PersonStatementDrawer({
   person,
   open,
   onClose,
-  initialPeriod,
+  period,
 }: {
   /*
     Só o que o drawer realmente usa. Exigir a `Person` inteira obrigaria o
@@ -305,16 +303,22 @@ export function PersonStatementDrawer({
   person: Pick<Person, 'id' | 'name' | 'phone'> | null
   open: boolean
   onClose: () => void
-  /** Mês pedido pela URL; sem ele o extrato abre no mês corrente. */
-  initialPeriod?: MonthPeriod
+  /**
+   * Competência que o drawer exibe — CONTROLADA pela superfície que o abriu.
+   *
+   * Era state interno, com seletor próprio dentro do drawer. Isso permitia
+   * Pessoas em agosto e o drawer em setembro ao mesmo tempo: dois estados
+   * independentes para a mesma pergunta, e nada dizendo ao usuário que ele
+   * saiu do mês que estava analisando.
+   *
+   * Agora a página é a fonte única e o drawer só lê. Ele não escolhe mês,
+   * não corrige mês e não procura o mês "mais relevante".
+   */
+  period: MonthPeriod
 }) {
   const qc = useQueryClient()
   const { user } = useAuth()
 
-  // Mês próprio do extrato — independente do mês global das outras telas.
-  const [period, setPeriod] = useState<MonthPeriod>(
-    () => initialPeriod ?? currentPeriod(),
-  )
   const { startDate, endDate } = monthBounds(period)
   const [markPaidDebt, setMarkPaidDebt] = useState<Debt | null>(null)
   const [markReceivedReceivable, setMarkReceivedReceivable] = useState<Receivable | null>(null)
@@ -343,12 +347,6 @@ export function PersonStatementDrawer({
     debt?: Debt
     receivable?: Receivable
   } | null>(null)
-
-  // Cada pessoa abre no mês corrente — ou no que a URL pediu, quando a
-  // navegação veio do orçamento — e não no mês da pessoa anterior.
-  useEffect(() => {
-    if (person) setPeriod(initialPeriod ?? currentPeriod())
-  }, [person?.id, initialPeriod])
 
 
 
@@ -385,39 +383,14 @@ export function PersonStatementDrawer({
   const historyReceivables = data?.period.settledReceivables ?? []
 
   /*
-    Competência inteligente: o backend indica qual mês abrir.
+    `settlement.defaultCompetence` continua vindo do backend, mas NÃO é mais
+    aplicado ao período.
 
-    Enquanto existir item aberto originado no mês ANTERIOR que ainda não
-    venceu, o acerto daquele mês continua em andamento e é o que o usuário quer
-    conferir — o jantar de agosto que vence com a fatura em 10/09.
-
-    Aplicada UMA vez por pessoa (`appliedFor`): depois disso a navegação manual
-    manda, e reaplicar jogaria o usuário de volta para agosto a cada refetch.
-    A URL, quando presente, tem prioridade — foi uma escolha explícita.
+    Ele existia para o drawer se reposicionar sozinho ao abrir. Com a
+    competência governada pela página, isso viraria exatamente o salto que
+    removemos do Orçamento: o usuário escolhe agosto, clica numa pessoa, e a
+    tela decide mostrar outro mês.
   */
-  const defaultApplied = useRef<string | null>(null)
-  const defaultCompetence = data?.settlement.defaultCompetence
-  /*
-    O identificador estável, declarado à parte.
-
-    O efeito depende conceitualmente do ID — não do objeto `person`, que é
-    recriado a cada resposta da query. Extrair a string deixa a dependência
-    honesta: o que o efeito lê é exatamente o que ele declara, e ele não
-    reexecuta quando a mesma pessoa volta numa nova referência.
-  */
-  const personId = person?.id
-
-  useEffect(() => {
-    if (!personId || !defaultCompetence) return
-    if (initialPeriod) return
-    if (defaultApplied.current === personId) return
-
-    defaultApplied.current = personId
-    setPeriod({
-      year: defaultCompetence.year,
-      month: defaultCompetence.month,
-    })
-  }, [personId, defaultCompetence, initialPeriod])
 
   async function invalidateStatement() {
     await Promise.all([
@@ -1031,10 +1004,6 @@ export function PersonStatementDrawer({
             mais um segundo seletor no histórico — financeiramente correto, mas
             poluído. A competência mensal já responde a pergunta central.
           */}
-          <div className="-mx-6 flex justify-center border-y border-border/60 px-6 py-1">
-            <MonthNav period={period} onChange={setPeriod} />
-          </div>
-
           {isLoading ? (
             <div className="flex flex-col gap-3">
               <Skeleton className="h-24 w-full rounded-xl" />

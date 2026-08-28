@@ -32,6 +32,7 @@ const EXTRATO = ler('../app/(dashboard)/transactions/page.tsx')
 const BANCOS = ler('../app/(dashboard)/banks/page.tsx')
 const DIVIDAS = ler('../app/(dashboard)/debts/page.tsx')
 const RECEBER = ler('../app/(dashboard)/receivables/page.tsx')
+const PESSOAS = ler('../app/(dashboard)/persons/page.tsx')
 
 const DRAWER_DIVIDA = ler('../app/(dashboard)/debts/debt-detail-drawer.tsx')
 const DRAWER_RECEBER = ler(
@@ -47,6 +48,8 @@ const LISTAS = {
   Bancos: BANCOS,
   Dívidas: DIVIDAS,
   'A Receber': RECEBER,
+  /* Pessoas entrou ao ganhar saldo mensal na row. */
+  Pessoas: PESSOAS,
 }
 
 describe('itens 3 e 5: uma fonte para a anatomia', () => {
