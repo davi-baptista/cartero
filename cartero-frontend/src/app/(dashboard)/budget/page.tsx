@@ -13,7 +13,10 @@ import {
   type StatusRowTone,
 } from '@/components/ui/status-list-row'
 import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
-import { ROW_ICON_CLASS } from '@/components/ui/financial-list-row'
+import {
+  ROW_ICON_BG_CLASS,
+  ROW_ICON_CLASS,
+} from '@/components/ui/financial-list-row'
 import { useMonthPeriod } from '@/components/month-nav'
 import { getBudget } from '@/services/budget.service'
 import { upsertSalary } from '@/services/salary.service'
@@ -858,7 +861,7 @@ export default function BudgetPage() {
                 href={`/transactions?startDate=${monthStart}&endDate=${monthEnd}&group=direct`}
                 className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30 sm:gap-4 sm:py-4"
               >
-                <div className={cn(ROW_ICON_CLASS, 'bg-muted/40')}>
+                <div className={cn(ROW_ICON_CLASS, ROW_ICON_BG_CLASS)}>
                   <Wallet
                     className="size-4.5 text-muted-foreground sm:size-5"
                     aria-hidden

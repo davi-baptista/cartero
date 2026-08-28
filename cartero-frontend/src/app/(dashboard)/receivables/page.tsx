@@ -35,6 +35,8 @@ import { ReceivableDetailDrawer } from './receivable-detail-drawer'
 import {
   FinancialListRow,
   ROW_AMOUNT_CLASS,
+  ROW_AMOUNT_TONE,
+  ROW_ICON_BG_CLASS,
   ROW_ICON_CLASS,
   ROW_TRAILING_META_CLASS,
 } from '@/components/ui/financial-list-row'
@@ -88,7 +90,11 @@ const ReceivableRow = memo(function ReceivableRow({
 
   const amountClass = cn(
     ROW_AMOUNT_CLASS,
-    receivable.isPaid ? 'text-muted-foreground line-through' : overdue ? 'text-destructive' : '',
+    receivable.isPaid
+      ? cn(ROW_AMOUNT_TONE.muted, 'line-through')
+      : overdue
+        ? ROW_AMOUNT_TONE.out
+        : ROW_AMOUNT_TONE.neutral,
   )
 
   return (
@@ -97,7 +103,7 @@ const ReceivableRow = memo(function ReceivableRow({
       onView={() => onView(receivable)}
       ariaLabel={`Ver detalhes de ${receivable.title}`}
       leading={
-        <div className={cn(ROW_ICON_CLASS, 'bg-muted/50 ring-1 ring-border/50')}>
+        <div className={cn(ROW_ICON_CLASS, ROW_ICON_BG_CLASS, 'ring-1 ring-border/50')}>
           <SettlementStatusDot item={receivable} domain="receivable" />
         </div>
       }

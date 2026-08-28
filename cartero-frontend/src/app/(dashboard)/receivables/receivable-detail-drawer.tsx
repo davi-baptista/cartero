@@ -11,7 +11,10 @@ import {
   DetailNotice,
   DetailRow,
 } from '@/components/ui/detail-drawer'
-import { ROW_AMOUNT_CLASS } from '@/components/ui/financial-list-row'
+import {
+  ROW_AMOUNT_CLASS,
+  ROW_AMOUNT_TONE,
+} from '@/components/ui/financial-list-row'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import {
   canEditSettlementDate,
@@ -91,10 +94,10 @@ export function ReceivableDetailDrawer({
               expectativa.
             */
             receivable.isPaid
-              ? 'text-muted-foreground'
+              ? ROW_AMOUNT_TONE.muted
               : overdue
-                ? 'text-destructive'
-                : '',
+                ? ROW_AMOUNT_TONE.out
+                : ROW_AMOUNT_TONE.neutral,
           )}
         >
           {formatCurrency(receivable.amount)}

@@ -33,6 +33,10 @@ const BANCOS = ler('../app/(dashboard)/banks/page.tsx')
 const DIVIDAS = ler('../app/(dashboard)/debts/page.tsx')
 const RECEBER = ler('../app/(dashboard)/receivables/page.tsx')
 const PESSOAS = ler('../app/(dashboard)/persons/page.tsx')
+const ASSINATURAS = ler('../app/(dashboard)/subscriptions/page.tsx')
+const DRAWER_ASSINATURA = ler(
+  '../app/(dashboard)/subscriptions/subscription-detail-drawer.tsx',
+)
 
 const DRAWER_DIVIDA = ler('../app/(dashboard)/debts/debt-detail-drawer.tsx')
 const DRAWER_RECEBER = ler(
@@ -50,6 +54,7 @@ const LISTAS = {
   'A Receber': RECEBER,
   /* Pessoas entrou ao ganhar saldo mensal na row. */
   Pessoas: PESSOAS,
+  Assinaturas: ASSINATURAS,
 }
 
 describe('itens 3 e 5: uma fonte para a anatomia', () => {
@@ -106,6 +111,102 @@ describe('itens 3 e 5: uma fonte para a anatomia', () => {
     */
     for (const dominio of ['Debt', 'Receivable', 'Transaction', 'Bank']) {
       expect(code(PRIMITIVE)).not.toContain(dominio)
+    }
+  })
+})
+
+describe('o valor da row: um tamanho, uma cor', () => {
+  it('o Extrato não encolhe o valor no mobile', () => {
+    /*
+      O bug que motivou esta rodada. `AmountDisplay` tinha uma variante
+      `size="sm"` (`text-sm font-medium`) usada SÓ no bloco mobile: no
+      celular — onde a lista é mais consultada — o valor do Extrato aparecia
+      menor e mais fraco que o de todas as outras telas.
+    */
+    /*
+      Mira `AmountDisplay`: `size="sm"` ainda existe no `Button` de limpar
+      filtros, que é outro componente e outra escala.
+    */
+    const amount = code(
+      EXTRATO.slice(
+        EXTRATO.indexOf('function AmountDisplay'),
+        EXTRATO.indexOf('function TransactionRow'),
+      ),
+    )
+
+    expect(amount).not.toContain('size')
+    expect(amount).not.toContain('text-sm font-medium')
+    expect(amount).toContain('ROW_AMOUNT_CLASS')
+  })
+
+  it('todas as listas usam a mesma escala', () => {
+    for (const [nome, fonte] of Object.entries(LISTAS)) {
+      expect(fonte, `${nome} deveria usar ROW_AMOUNT_CLASS`).toContain(
+        'ROW_AMOUNT_CLASS',
+      )
+    }
+  })
+
+  it('a cor do valor vem do token, não de classe à mão', () => {
+    /*
+      O Extrato pintava a entrada com `--color-income` (oklch 0.700/0.170),
+      um verde mais claro e saturado que o `text-receivable` (0.600/0.150)
+      das demais listas. A mesma entrada de dinheiro tinha dois verdes.
+
+      Mira o VALOR: `text-destructive` segue legítimo em badge e aviso.
+    */
+    expect(PRIMITIVE).toContain('export const ROW_AMOUNT_TONE')
+
+    /*
+      Só o VALOR. `INCOME_COLOR` segue pintando o ÍCONE da receita, que tem
+      fundo colorido próprio e não faz parte desta padronização.
+    */
+    const amount = code(
+      EXTRATO.slice(
+        EXTRATO.indexOf('function AmountDisplay'),
+        EXTRATO.indexOf('function TransactionRow'),
+      ),
+    )
+    expect(amount).not.toContain('INCOME_COLOR')
+    expect(amount).toContain('ROW_AMOUNT_TONE')
+
+    for (const [nome, fonte] of Object.entries(LISTAS)) {
+      const usos = code(fonte).match(/ROW_AMOUNT_CLASS,\s*'[^']*'/g) ?? []
+      expect(usos, `${nome} não deveria colorir o valor à mão`).toEqual([])
+    }
+  })
+})
+
+describe('fundo do ícone: um tom para todas as listas', () => {
+  it('o token sai do Extrato e é theme-aware', () => {
+    /*
+      `--color-expense-bg` muda com o tema (preto a 5% no claro, branco a 5%
+      no escuro). Um `bg-muted/40` mantém o mesmo cinza nos dois — foi por
+      isso que o token virou classe compartilhada em vez de uma opacidade
+      qualquer sobre `muted`.
+    */
+    expect(PRIMITIVE).toContain(
+      "export const ROW_ICON_BG_CLASS = 'bg-[var(--color-expense-bg)]'",
+    )
+  })
+
+  it('nenhuma lista escolhe o próprio cinza', () => {
+    /*
+      Eram quatro tratamentos: `bg-muted` em Pessoas, `bg-muted/40` em Bancos
+      e Orçamento, `bg-muted/50` em Dívidas e A Receber. Diferenças pequenas
+      demais para apontar de memória, grandes o bastante para as listas nunca
+      parecerem a mesma família.
+
+      Mira o container do ícone: `bg-muted/60` segue legítimo em badge, e
+      `bg-muted/40` na ilustração de 64px do estado vazio.
+    */
+    for (const [nome, fonte] of Object.entries(LISTAS)) {
+      const usos = code(fonte).match(/ROW_ICON_CLASS,\s*(?:ROW_ICON_BG_CLASS|'[^']*')/g) ?? []
+      for (const uso of usos) {
+        expect(uso, `${nome} deveria usar o token compartilhado`).toContain(
+          'ROW_ICON_BG_CLASS',
+        )
+      }
     }
   })
 })
@@ -310,6 +411,82 @@ describe('item 47: nenhuma proteção foi afrouxada', () => {
         ).toContain('closeDetail()')
       }
     }
+  })
+})
+
+describe('Assinaturas entrou no sistema', () => {
+  it('a row usa o primitive e abre o detalhe', () => {
+    expect(ASSINATURAS).toContain('<FinancialListRow')
+    expect(ASSINATURAS).toContain('onView={setDetailTarget}')
+  })
+
+  it('as ações saíram da row', () => {
+    /*
+      A row expunha Pausar, Editar e Excluir — três ícones no hover do
+      desktop MAIS um `DropdownMenu` no mobile, duas implementações da mesma
+      coisa mantidas em paralelo.
+    */
+    const row = code(
+      ASSINATURAS.slice(
+        ASSINATURAS.indexOf('function SubscriptionRow'),
+        ASSINATURAS.indexOf('export default function'),
+      ),
+    )
+
+    for (const acao of ['Pencil', 'Trash2', 'Pause', 'DropdownMenu', 'MoreVertical']) {
+      expect(row, `${acao} não deveria estar na row`).not.toContain(acao)
+    }
+  })
+
+  it('o drawer usa a casca compartilhada, não uma cópia', () => {
+    expect(DRAWER_ASSINATURA).toContain('DetailDrawer')
+    expect(DRAWER_ASSINATURA).toContain('<DetailRow')
+    expect(code(DRAWER_ASSINATURA)).not.toContain('grid-cols-[5.5rem')
+  })
+
+  it('todas as ações continuam alcançáveis', () => {
+    for (const acao of ['Editar', 'Excluir', 'Pausar', 'Retomar']) {
+      expect(DRAWER_ASSINATURA, `faltou ${acao}`).toContain(acao)
+    }
+  })
+
+  it('agir pelo drawer fecha o drawer', () => {
+    /*
+      Sem isso, o ConfirmDialog de exclusão abriria sobre um detalhe que
+      continuaria exibindo a assinatura recém-apagada.
+    */
+    /*
+      Verifica CADA handler, não a contagem total: com `onOpenChange` e dois
+      handlers corretos, um terceiro quebrado ainda somaria três ocorrências
+      e passaria despercebido.
+    */
+    for (const handler of ['onEdit', 'onDelete', 'onToggle']) {
+      const inicio = ASSINATURAS.indexOf(`${handler}={(s) => {`)
+      expect(inicio, `${handler} não encontrado`).toBeGreaterThan(-1)
+
+      /*
+        Recorta até o FIM do handler (`}}`), não uma janela fixa: 200
+        caracteres a partir de `onDelete` atravessavam para dentro de
+        `onToggle`, e o teste passava lendo a chamada do vizinho.
+      */
+      const corpo = ASSINATURAS.slice(
+        inicio,
+        ASSINATURAS.indexOf('}}', inicio),
+      )
+      expect(corpo, `${handler} deveria fechar o detalhe`).toContain(
+        'setDetailTarget(null)',
+      )
+    }
+  })
+
+  it('pausada não inventa data de cobrança', () => {
+    /*
+      `nextCharge` vem do backend, pela mesma regra que decide a geração.
+      Mostrar uma data numa assinatura pausada esconderia justamente o fato
+      de que a geração parou.
+    */
+    expect(ASSINATURAS).toContain("? 'Pausada'")
+    expect(DRAWER_ASSINATURA).toContain('Sem cobranças enquanto estiver pausada')
   })
 })
 

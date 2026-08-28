@@ -33,6 +33,8 @@ import { apiErrorMessage } from '@/lib/api-error'
 import {
   FinancialListRow,
   ROW_AMOUNT_CLASS,
+  ROW_ICON_BG_CLASS,
+  ROW_TRAILING_LABEL_CLASS,
   ROW_ICON_CLASS,
 } from '@/components/ui/financial-list-row'
 import { cn } from '@/lib/utils'
@@ -174,7 +176,7 @@ function BankRow({
         href={`/banks/${bank.id}/invoices`}
         ariaLabel={ariaLabel}
         leading={
-          <div className={cn(ROW_ICON_CLASS, 'bg-muted/40 text-sm font-semibold text-muted-foreground select-none')}>
+          <div className={cn(ROW_ICON_CLASS, ROW_ICON_BG_CLASS, 'text-sm font-semibold text-muted-foreground select-none')}>
             {initial}
           </div>
         }
@@ -203,7 +205,7 @@ function BankRow({
           nearest !== null ? (
             <>
               <NearestInvoiceAmount info={nearest} />
-              <span className="whitespace-nowrap text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70">
+              <span className={ROW_TRAILING_LABEL_CLASS}>
                 Fatura atual
               </span>
             </>

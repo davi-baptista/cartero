@@ -49,8 +49,62 @@ export const ROW_META_CLASS =
 export const ROW_AMOUNT_CLASS =
   'text-[17px] font-semibold tabular-nums tracking-[-0.02em]'
 
-/** Informação secundária sob o valor (data, rótulo). */
+/** Informação secundária sob o valor — data, período. */
 export const ROW_TRAILING_META_CLASS = 'text-xs text-muted-foreground'
+
+/**
+ * Rótulo em versalete sob o valor: "A RECEBER", "FATURA ATUAL", "SEM SALDO".
+ *
+ * Alternativa ao `ROW_TRAILING_META_CLASS` quando a linha nomeia o que o
+ * número É, em vez de datá-lo. Pessoas e Bancos escreviam esta mesma string
+ * de sete classes cada uma por sua conta.
+ */
+export const ROW_TRAILING_LABEL_CLASS =
+  'whitespace-nowrap text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70'
+
+/**
+ * ── Cores do valor ──
+ *
+ * A direção do dinheiro, não o status. Ficam aqui porque eram o último
+ * pedaço da row decidido tela a tela — e o Extrato divergia de verdade:
+ * usava `--color-income` (oklch 0.700/0.170), um verde mais claro e saturado
+ * que o `--receivable` (0.600/0.150) de todas as outras listas. Lado a lado,
+ * a mesma entrada de dinheiro tinha dois verdes.
+ *
+ * `text-receivable` venceu por ser o que dez arquivos já usavam.
+ *
+ * NEUTRO é ausência de direção — saldo zero, valor informativo —, não um
+ * caso "sem cor definida": ele herda o `foreground` da row de propósito.
+ */
+export const ROW_AMOUNT_TONE = {
+  /** Sai do bolso. */
+  out: 'text-destructive',
+  /** Entra no bolso. */
+  in: 'text-receivable',
+  /** Sem direção: informativo ou zerado. */
+  neutral: '',
+  /** Resolvido — perde ênfase sem mudar de significado. */
+  muted: 'text-muted-foreground',
+} as const
+
+export type RowAmountTone = keyof typeof ROW_AMOUNT_TONE
+
+/**
+ * Fundo NEUTRO do container do ícone.
+ *
+ * `--color-expense-bg`, o mesmo do Extrato — e o motivo de ser um token e não
+ * um `bg-muted/*`: ele muda com o tema (preto a 5% no claro, branco a 5% no
+ * escuro), enquanto uma opacidade sobre `muted` mantém o mesmo cinza nos dois.
+ *
+ * Cada tela tinha escolhido o seu: `bg-muted` em Pessoas, `bg-muted/40` em
+ * Bancos e Orçamento, `bg-muted/50` em Dívidas e A Receber. Diferenças
+ * pequenas demais para alguém apontar de memória, grandes o bastante para as
+ * listas nunca parecerem a mesma família ao alternar entre elas.
+ *
+ * Fundo COLORIDO (receita, atraso) continua por conta do domínio: aqui mora
+ * só o neutro, que era o que estava divergindo.
+ */
+export const ROW_ICON_BG_CLASS = 'bg-[var(--color-expense-bg)]'
 
 /** Container do ícone/avatar. O conteúdo interno é livre. */
 export const ROW_ICON_CLASS =

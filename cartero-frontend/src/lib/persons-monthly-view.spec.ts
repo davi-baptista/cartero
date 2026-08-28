@@ -242,8 +242,13 @@ describe('itens 13, 40 e 57: a página entrou no design system', () => {
     expect(PAGINA).toContain("'VOCÊ DEVE'")
     expect(PAGINA).toContain("'SEM SALDO'")
 
-    // Zero é neutro: nem verde nem vermelho.
-    expect(PAGINA).toContain(": 'text-muted-foreground'")
+    /*
+      Zero é neutro: nem verde nem vermelho. A cor vem de `ROW_AMOUNT_TONE`,
+      a fonte única — as classes estavam escritas à mão em cada tela.
+    */
+    expect(PAGINA).toContain('ROW_AMOUNT_TONE.in')
+    expect(PAGINA).toContain('ROW_AMOUNT_TONE.out')
+    expect(PAGINA).toContain('ROW_AMOUNT_TONE.muted')
   })
 
   it('item 16: o kebab é IRMÃO da row, não filho', () => {

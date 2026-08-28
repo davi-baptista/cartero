@@ -57,6 +57,8 @@ import { API_ERROR_CODES, apiErrorMessage, apiErrorStatus, isApiErrorCode } from
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import {
   FinancialListRow,
+  ROW_AMOUNT_CLASS,
+  ROW_AMOUNT_TONE,
   ROW_ICON_CLASS,
   ROW_TRAILING_META_CLASS,
 } from '@/components/ui/financial-list-row'
@@ -110,17 +112,27 @@ function stripInstallmentSuffix(title: string): string {
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-function AmountDisplay({ amount, type, isRefund = false, size = 'md' }: { amount: number; type: TransactionType; isRefund?: boolean; size?: 'sm' | 'md' }) {
+/**
+ * O valor da row, na escala e nas cores canônicas.
+ *
+ * Tinha uma variante `size="sm"` (`text-sm font-medium`) usada só no bloco
+ * mobile: no celular — onde a lista é mais consultada — o valor do Extrato
+ * aparecia menor e mais fraco que o das outras telas. A variante saiu; o
+ * tamanho agora é um só.
+ *
+ * A cor da entrada também vinha de `--color-income`, um verde mais claro e
+ * saturado que o `text-receivable` das demais listas. Passou a usar o token
+ * compartilhado.
+ */
+function AmountDisplay({ amount, type, isRefund = false }: { amount: number; type: TransactionType; isRefund?: boolean }) {
   const expense = isExpense(type, isRefund)
   const formatted = formatCurrency(amount)
   return (
     <span
       className={cn(
-        'tabular-nums tracking-[-0.02em]',
-        size === 'md' ? 'text-[17px] font-semibold' : 'text-sm font-medium',
-        expense ? 'text-destructive' : '',
+        ROW_AMOUNT_CLASS,
+        expense ? ROW_AMOUNT_TONE.out : ROW_AMOUNT_TONE.in,
       )}
-      style={{ color: expense ? undefined : INCOME_COLOR }}
     >
       {expense ? `−${formatted}` : `+${formatted}`}
     </span>
@@ -211,7 +223,7 @@ function TransactionRow({
         </>
       }
       trailingCompact={
-        <AmountDisplay amount={tx.amount} type={tx.type} isRefund={tx.isRefund} size="sm" />
+        <AmountDisplay amount={tx.amount} type={tx.type} isRefund={tx.isRefund} />
       }
     />
   )

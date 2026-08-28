@@ -3,19 +3,22 @@
 import { useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Repeat, Pause, Play, MoreVertical } from 'lucide-react'
+import { Plus, Repeat } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { apiErrorMessage } from '@/lib/api-error'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { MotionRow } from '@/components/ui/motion-row'
+import {
+  FinancialListRow,
+  ROW_AMOUNT_CLASS,
+  ROW_AMOUNT_TONE,
+  ROW_ICON_BG_CLASS,
+  ROW_ICON_CLASS,
+  ROW_TRAILING_META_CLASS,
+} from '@/components/ui/financial-list-row'
+import { SubscriptionDetailDrawer } from './subscription-detail-drawer'
 import { SubscriptionSheet, type SubscriptionFormData } from './subscription-sheet'
 import {
   getSubscriptions,
@@ -29,46 +32,35 @@ import type { Subscription } from '@/types'
 
 function SubscriptionRow({
   subscription,
-  onEdit,
-  onToggle,
-  onDelete,
+  onView,
 }: {
   subscription: Subscription
-  onEdit: () => void
-  onToggle: () => void
-  onDelete: () => void
+  /** A row inteira é navegação: identifica e abre. Administrar é do drawer. */
+  onView: (s: Subscription) => void
 }) {
   const inactive = !subscription.isActive
 
   return (
-    <div
-      className={cn(
-        'group flex min-w-0 items-center gap-3 border-b border-border/60 py-3.5 last:border-b-0 sm:gap-4',
-        inactive && 'opacity-55',
-      )}
-    >
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/40 sm:size-11">
-        <Repeat className="size-4.5 text-muted-foreground" aria-hidden />
-      </div>
-
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-medium leading-tight sm:text-[15px]">
-            {subscription.title}
-          </span>
-          {inactive && (
-            <span className="inline-flex shrink-0 items-center rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-              Pausada
-            </span>
-          )}
+    <FinancialListRow
+      onView={() => onView(subscription)}
+      ariaLabel={`Ver detalhes de ${subscription.title}`}
+      /* Pausada perde ênfase — a lista inteira, não só um campo. */
+      className={cn(inactive && 'opacity-55')}
+      leading={
+        <div className={cn(ROW_ICON_CLASS, ROW_ICON_BG_CLASS)}>
+          <Repeat className="size-4.5 text-muted-foreground sm:size-5" aria-hidden />
         </div>
-        {/*
-          Duas linhas com papéis distintos: primeiro o que a cobrança É (forma,
-          banco, categoria), depois QUANDO acontece. Tudo numa linha só deixava
-          o metadado mais consequente — a próxima cobrança — perdido no meio de
-          texto do mesmo peso.
-        */}
-        <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] text-muted-foreground">
+      }
+      title={subscription.title}
+      titleAdornment={
+        inactive ? (
+          <span className="inline-flex shrink-0 items-center rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            Pausada
+          </span>
+        ) : null
+      }
+      meta={
+        <>
           <span className="shrink-0">{TRANSACTION_TYPE_LABELS[subscription.type]}</span>
           {subscription.bank && (
             <>
@@ -82,68 +74,32 @@ function SubscriptionRow({
               <span className="truncate">{subscription.category.name}</span>
             </>
           )}
-        </div>
-
-        {/*
-          `nextCharge` vem do BACKEND, calculada pela mesma regra que decide a
-          geração. Pausada não mostra data: inventar uma seria mentir sobre o
-          estado — e esta era a informação que faltava para alguém notar que a
-          geração havia parado.
-        */}
-        <div className="text-[11px] text-muted-foreground/80">
-          {inactive ? (
-            <span>Sem cobranças enquanto estiver pausada</span>
-          ) : subscription.nextCharge ? (
-            <span>
-              Próxima cobrança{' '}
-              <span className="text-foreground/80">
-                {formatDate(subscription.nextCharge)}
-              </span>
-            </span>
-          ) : (
-            <span>Todo dia {subscription.dayOfMonth}</span>
-          )}
-        </div>
-      </div>
-
-      <span className="shrink-0 text-[15px] font-semibold tabular-nums tracking-[-0.02em] text-destructive">
-        −{formatCurrency(Number(subscription.amount))}
-      </span>
-
-      {/* Ações — visíveis no hover em desktop, sempre acessíveis no mobile */}
-      <div className="flex shrink-0 items-center gap-0.5">
-        <div className="hidden gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
-          <Button variant="ghost" size="icon-sm" onClick={onToggle} aria-label={inactive ? 'Retomar' : 'Pausar'} title={inactive ? 'Retomar' : 'Pausar'}>
-            {inactive ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
-          </Button>
-          <Button variant="ghost" size="icon-sm" onClick={onEdit} aria-label="Editar" title="Editar">
-            <Pencil className="size-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon-sm" onClick={onDelete} aria-label="Excluir" title="Excluir" className="text-muted-foreground hover:text-destructive">
-            <Trash2 className="size-3.5" />
-          </Button>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="sm:hidden" aria-label="Ações" />}>
-            <MoreVertical className="size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onToggle}>
-              {inactive ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
-              {inactive ? 'Retomar' : 'Pausar'}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onEdit}>
-              <Pencil className="size-3.5" />
-              Editar
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onDelete} className="text-destructive">
-              <Trash2 className="size-3.5" />
-              Excluir
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
+        </>
+      }
+      trailing={
+        <>
+          <span className={cn(ROW_AMOUNT_CLASS, ROW_AMOUNT_TONE.out)}>
+            −{formatCurrency(Number(subscription.amount))}
+          </span>
+          {/*
+            `nextCharge` vem do BACKEND, pela mesma regra que decide a geração.
+            Pausada não mostra data: inventar uma seria mentir sobre o estado.
+          */}
+          <span className={ROW_TRAILING_META_CLASS}>
+            {inactive
+              ? 'Pausada'
+              : subscription.nextCharge
+                ? formatDate(subscription.nextCharge)
+                : `Todo dia ${subscription.dayOfMonth}`}
+          </span>
+        </>
+      }
+      trailingCompact={
+        <span className={cn(ROW_AMOUNT_CLASS, ROW_AMOUNT_TONE.out)}>
+          −{formatCurrency(Number(subscription.amount))}
+        </span>
+      }
+    />
   )
 }
 
@@ -152,6 +108,12 @@ export default function SubscriptionsPage() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Subscription | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Subscription | null>(null)
+  /*
+    Assinatura cujo detalhe está aberto. Guarda o objeto, não o id: a lista
+    pode ser refiltrada com o drawer aberto, e reencontrar por id devolveria
+    `undefined` no meio do uso.
+  */
+  const [detailTarget, setDetailTarget] = useState<Subscription | null>(null)
 
   const {
     data: subscriptions = [],
@@ -401,14 +363,7 @@ export default function SubscriptionsPage() {
         <div>
           {subscriptions.map((s, i) => (
             <MotionRow key={s.id} index={i}>
-              <SubscriptionRow
-                subscription={s}
-                onEdit={() => { setEditTarget(s); setSheetOpen(true) }}
-                onToggle={() =>
-                  updateMut.mutate({ id: s.id, payload: { isActive: !s.isActive } })
-                }
-                onDelete={() => setDeleteTarget(s)}
-              />
+              <SubscriptionRow subscription={s} onView={setDetailTarget} />
             </MotionRow>
           ))}
         </div>
@@ -436,6 +391,32 @@ export default function SubscriptionsPage() {
         isPending={deleteMut.isPending}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+      />
+
+      {/*
+        Toda ação fecha o detalhe antes de abrir o próprio diálogo: dois
+        overlays empilhados disputariam o foco, e o de baixo continuaria
+        mostrando o estado velho depois que a ação terminasse.
+
+        Os handlers são os MESMOS que a row usava — pausar segue direto pela
+        mutation, excluir continua passando pelo ConfirmDialog.
+      */}
+      <SubscriptionDetailDrawer
+        subscription={detailTarget}
+        onOpenChange={(open) => !open && setDetailTarget(null)}
+        onEdit={(s) => {
+          setDetailTarget(null)
+          setEditTarget(s)
+          setSheetOpen(true)
+        }}
+        onDelete={(s) => {
+          setDetailTarget(null)
+          setDeleteTarget(s)
+        }}
+        onToggle={(s) => {
+          setDetailTarget(null)
+          updateMut.mutate({ id: s.id, payload: { isActive: !s.isActive } })
+        }}
       />
     </div>
   )

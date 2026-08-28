@@ -28,6 +28,9 @@ import { MotionRow } from '@/components/ui/motion-row'
 import {
   FinancialListRow,
   ROW_AMOUNT_CLASS,
+  ROW_AMOUNT_TONE,
+  ROW_ICON_BG_CLASS,
+  ROW_TRAILING_LABEL_CLASS,
   ROW_ICON_CLASS,
 } from '@/components/ui/financial-list-row'
 import { formatCurrency } from '@/lib/formatters'
@@ -483,12 +486,13 @@ export default function PersonsPage() {
                 verde nem vermelho: não há nada em aberto a comemorar ou
                 temer.
               */
+              /* Direção do dinheiro, pelos tons compartilhados. */
               const tone =
                 net > 0
-                  ? 'text-receivable'
+                  ? ROW_AMOUNT_TONE.in
                   : net < 0
-                    ? 'text-destructive'
-                    : 'text-muted-foreground'
+                    ? ROW_AMOUNT_TONE.out
+                    : ROW_AMOUNT_TONE.muted
 
               const label =
                 net > 0 ? 'A RECEBER' : net < 0 ? 'VOCÊ DEVE' : 'SEM SALDO'
@@ -519,7 +523,8 @@ export default function PersonsPage() {
                       <div
                         className={cn(
                           ROW_ICON_CLASS,
-                          'bg-muted text-sm font-semibold text-muted-foreground sm:text-[15px]',
+                          ROW_ICON_BG_CLASS,
+                          'text-sm font-semibold text-muted-foreground sm:text-[15px]',
                         )}
                       >
                         {person.name[0].toUpperCase()}
@@ -539,7 +544,7 @@ export default function PersonsPage() {
                           <span className={cn(ROW_AMOUNT_CLASS, tone)}>
                             {formatCurrency(net)}
                           </span>
-                          <span className="whitespace-nowrap text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70">
+                          <span className={ROW_TRAILING_LABEL_CLASS}>
                             {label}
                           </span>
                         </>

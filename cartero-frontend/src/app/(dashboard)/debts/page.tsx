@@ -34,6 +34,8 @@ import { DebtDetailDrawer } from './debt-detail-drawer'
 import {
   FinancialListRow,
   ROW_AMOUNT_CLASS,
+  ROW_AMOUNT_TONE,
+  ROW_ICON_BG_CLASS,
   ROW_ICON_CLASS,
   ROW_TRAILING_META_CLASS,
 } from '@/components/ui/financial-list-row'
@@ -88,7 +90,11 @@ const DebtRow = memo(function DebtRow({
 
   const amountClass = cn(
     ROW_AMOUNT_CLASS,
-    debt.isPaid ? 'text-muted-foreground line-through' : overdue ? 'text-destructive' : '',
+    debt.isPaid
+      ? cn(ROW_AMOUNT_TONE.muted, 'line-through')
+      : overdue
+        ? ROW_AMOUNT_TONE.out
+        : ROW_AMOUNT_TONE.neutral,
   )
 
   return (
@@ -102,7 +108,7 @@ const DebtRow = memo(function DebtRow({
           navegação agora, e um alvo clicável dentro de outro obrigava a
           `stopPropagation` em toda a lista. A ação vive no drawer.
         */
-        <div className={cn(ROW_ICON_CLASS, 'bg-muted/50 ring-1 ring-border/50')}>
+        <div className={cn(ROW_ICON_CLASS, ROW_ICON_BG_CLASS, 'ring-1 ring-border/50')}>
           <SettlementStatusDot item={debt} domain="debt" />
         </div>
       }

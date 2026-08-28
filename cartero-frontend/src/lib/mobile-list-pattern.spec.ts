@@ -418,8 +418,13 @@ describe('Gerenciamento do banco mudou de superfície', () => {
 
       A asserção mira a REGRA responsiva, não visibilidade de DOM.
     */
-    // Mira o `<span>` que renderiza, não a menção no comentário acima.
-    expect(rowAtiva).toContain('whitespace-nowrap text-[10px] uppercase')
+    /*
+      O rótulo passou a vir de `ROW_TRAILING_LABEL_CLASS`: Pessoas e Bancos
+      escreviam a mesma string de sete classes cada uma por sua conta.
+    */
+    expect(rowAtiva).toContain('ROW_TRAILING_LABEL_CLASS')
+    expect(ROW_PRIMITIVE).toContain('ROW_TRAILING_LABEL_CLASS')
+    expect(ROW_PRIMITIVE).toContain('text-[10px] uppercase')
     expect(rowAtiva).not.toContain('hidden shrink-0 text-[10px] uppercase')
 
     /*
