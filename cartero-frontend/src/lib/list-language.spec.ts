@@ -391,9 +391,13 @@ describe('itens 13 e 14: geometria das ações do drawer', () => {
     expect(SHELL).toContain('min-h-11')
     expect(SHELL).toContain('sm:min-h-9')
 
-    /* É o footer em coluna que torna a proteção necessária. */
+    /*
+      É o footer em COLUNA que torna a proteção necessária — hoje pelo
+      `DETAIL_ACTION_STACK_CLASS`, que empilha em qualquer largura.
+    */
+    expect(SHELL).toContain("DETAIL_ACTION_STACK_CLASS = 'flex-col")
     for (const fonte of [DRAWER_DIVIDA, DRAWER_RECEBER]) {
-      expect(fonte).toContain('flex-col gap-2 sm:flex-row')
+      expect(fonte).toContain('DETAIL_ACTION_STACK_CLASS')
     }
   })
 
@@ -419,6 +423,59 @@ describe('itens 13 e 14: geometria das ações do drawer', () => {
       expect(code(fonte)).not.toContain('py-[')
       expect(code(fonte)).not.toContain('min-h-[')
     }
+  })
+
+  it('as ações auxiliares ficam em UMA coluna', () => {
+    /*
+      O overflow que apareceu depois da correção de altura.
+
+      `max-w-md` são 448px; menos `px-5` dos dois lados e o `gap-2`, sobram
+      400px — 200px por botão em `sm:flex-row`. "Alterar data do recebimento"
+      precisa de ~240px com ícone e `px-4`, e a base do Button traz
+      `whitespace-nowrap`: o texto não quebra, o botão não encolhe, e o
+      conteúdo empurra o modal até virar scroll horizontal.
+
+      Uma coluna é a correção certa: comprimir fonte ou padding desfaria a
+      geometria confortável recém-aprovada.
+    */
+    expect(SHELL).toContain(
+      "export const DETAIL_ACTION_STACK_CLASS = 'flex-col gap-2'",
+    )
+
+    for (const [nome, fonte] of [
+      ['Dívida', DRAWER_DIVIDA],
+      ['Cobrança', DRAWER_RECEBER],
+    ] as const) {
+      expect(fonte, `${nome} deveria empilhar`).toContain(
+        'className={DETAIL_ACTION_STACK_CLASS}',
+      )
+      /* O breakpoint que colocava os dois lado a lado não pode voltar. */
+      expect(code(fonte), `${nome} não deveria usar sm:flex-row`).not.toContain(
+        'sm:flex-row',
+      )
+      expect(code(fonte)).not.toContain('sm:grid-cols-2')
+    }
+  })
+
+  it('o overflow NÃO foi mascarado com overflow-hidden', () => {
+    /*
+      O modal precisa caber naturalmente. Esconder o transbordo deixaria o
+      segundo botão cortado em vez de visível.
+    */
+    expect(code(SHELL)).not.toContain('overflow-x-hidden')
+    for (const fonte of [DRAWER_DIVIDA, DRAWER_RECEBER]) {
+      expect(code(fonte)).not.toContain('overflow-hidden')
+    }
+  })
+
+  it('o conteúdo longo quebra em vez de alargar o modal', () => {
+    /*
+      `min-w-0` deixa a coluna ENCOLHER; `break-words` a faz QUEBRAR. Sem o
+      segundo, um título sem espaços teria largura intrínseca maior que o
+      container — o mesmo mecanismo do overflow dos botões.
+    */
+    expect(SHELL).toContain('min-w-0 text-sm break-words')
+    expect(SHELL).toContain('leading-relaxed text-muted-foreground break-words')
   })
 
   it('item 16: variant muda cor, nunca tamanho', () => {

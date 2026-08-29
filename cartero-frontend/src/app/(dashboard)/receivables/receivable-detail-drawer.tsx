@@ -11,6 +11,7 @@ import {
   DetailNotice,
   DetailRow,
   DETAIL_ACTION_CLASS,
+  DETAIL_ACTION_STACK_CLASS,
 } from '@/components/ui/detail-drawer'
 import {
   ROW_AMOUNT_CLASS,
@@ -159,7 +160,7 @@ export function ReceivableDetailDrawer({
         </DetailNotice>
       )}
 
-      <DetailFooter className="flex-col gap-2 sm:flex-row">
+      <DetailFooter className={DETAIL_ACTION_STACK_CLASS}>
         <Button
           variant="outline"
           className={DETAIL_ACTION_CLASS}

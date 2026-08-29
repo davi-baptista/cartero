@@ -51,7 +51,10 @@ export function DetailDrawer({
       <DialogContent className="top-auto bottom-0 left-0 max-h-[88dvh] max-w-none translate-x-0 translate-y-0 gap-0 overflow-y-auto rounded-b-none rounded-t-2xl p-0 sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl">
         {/* `pr-12` reserva o espaço do botão de fechar. */}
         <DialogHeader className="border-b border-border px-5 py-5 pr-12">
-          <DialogTitle className="text-lg leading-snug">{title}</DialogTitle>
+          {/* Título longo quebra em vez de alargar o diálogo. */}
+          <DialogTitle className="text-lg leading-snug break-words">
+            {title}
+          </DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
         {children}
@@ -103,7 +106,13 @@ export function DetailRow({
   return (
     <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-4 py-3">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-sm">{children}</dd>
+      {/*
+        `min-w-0` deixa a coluna ENCOLHER; `break-words` a faz QUEBRAR. Sem o
+        segundo, um título sem espaços — ou uma descrição colada — teria
+        largura intrínseca maior que o modal e o empurraria, que é o mesmo
+        mecanismo do overflow dos botões.
+      */}
+      <dd className="min-w-0 text-sm break-words">{children}</dd>
     </div>
   )
 }
@@ -141,7 +150,29 @@ export function DetailRow({
  * primário mudam de cor, nunca de tamanho.
  */
 export const DETAIL_ACTION_CLASS =
-  'h-11 min-h-11 flex-1 px-4 sm:h-9 sm:min-h-9'
+  'h-11 min-h-11 w-full flex-1 px-4 sm:h-9 sm:min-h-9'
+
+/**
+ * Empilhamento das ações AUXILIARES — marcar/desmarcar, corrigir data.
+ *
+ * Uma coluna, sempre, inclusive no desktop.
+ *
+ * Era `flex-col gap-2 sm:flex-row`, e a partir de `sm` os dois botões
+ * disputavam a largura do modal. A conta não fecha: `max-w-md` são 448px,
+ * menos `px-5` dos dois lados e o `gap-2` sobram 400px — 200px por botão.
+ * "Alterar data do recebimento" precisa de ~240px com o ícone e o `px-4`, e
+ * a base do Button traz `whitespace-nowrap`: o texto não quebra, o botão não
+ * encolhe, e o conteúdo empurra o modal até aparecer scroll horizontal.
+ *
+ * Poderia caber comprimindo fonte ou padding — mas isso desfaria a geometria
+ * confortável recém-corrigida. Rótulos desta altura simplesmente não cabem
+ * lado a lado aqui, e a decisão segue a largura REAL do container, não o
+ * breakpoint.
+ *
+ * As ações do rodapé principal (Editar/Excluir) continuam lado a lado: são
+ * rótulos curtos, e nunca estouraram.
+ */
+export const DETAIL_ACTION_STACK_CLASS = 'flex-col gap-2'
 
 /**
  * Rodapé de ações.
@@ -177,7 +208,8 @@ export function DetailFooter({
 export function DetailNotice({ children }: { children: ReactNode }) {
   return (
     <div className="border-t border-border bg-muted/20 px-5 py-3">
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
+      {/* Quebra naturalmente: o aviso não pode definir a largura do modal. */}
+      <p className="text-[11px] leading-relaxed text-muted-foreground break-words">
         {children}
       </p>
     </div>
