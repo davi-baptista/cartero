@@ -24,6 +24,10 @@ import {
 } from '@/lib/settlement-date-action'
 import { settlementStatus } from '@/lib/settlement-status'
 import { cn } from '@/lib/utils'
+import {
+  canDeleteReceivable,
+  resolveReceivableDeletePolicy,
+} from '@/lib/receivable-delete-policy'
 import type { Receivable } from '@/types'
 
 /**
@@ -70,6 +74,7 @@ export function ReceivableDetailDrawer({
   const status = settlementStatus(receivable)
   const overdue = status === 'overdue'
   const isAutomatic = Boolean(receivable.transactionId)
+  const policy = resolveReceivableDeletePolicy(receivable)
   const counterparty = receivable.person?.name ?? receivable.debtorName
 
   /** Deep link para a compra de origem, no dia em que ela aconteceu. */
@@ -121,11 +126,12 @@ export function ReceivableDetailDrawer({
             Editar
           </Button>
           {/*
-            Sem Excluir para a automática: o delete cascatearia para a compra.
-            O aviso acima diz onde a exclusão é feita — esconder o botão sem
-            explicar deixaria o usuário procurando.
+            Quem decide é o resolver canônico, não `isAutomatic`: uma cobrança
+            automática simples e pendente PODE ser excluída — pela compra de
+            origem. Os modos orientativos escondem o botão, e o aviso acima diz
+            o que destrava.
           */}
-          {!isAutomatic && (
+          {canDeleteReceivable(policy) && (
             <Button
               variant="destructive"
               className={DETAIL_ACTION_CLASS}
@@ -206,11 +212,30 @@ export function ReceivableDetailDrawer({
       </DetailList>
 
       {isAutomatic && (
+        /*
+          A frase antiga dizia que "apagar só a cobrança removeria as duas" —
+          descrevia a cascata invertida que a guarda do backend já eliminou.
+          Cada motivo agora diz o que é verdade para AQUELE estado.
+        */
         <DetailNotice>
-          Cobrança gerada por uma compra no cartão. Valor, contraparte e datas
-          são definidos pela compra — alterá-los aqui não teria efeito. Excluir
-          também é feito pela compra, porque apagar só a cobrança removeria as
-          duas.
+          {policy.mode === 'manage-from-source' ? (
+            <>
+              Cobrança gerada por uma compra parcelada. Para excluir, abra a
+              compra de origem e escolha o escopo da exclusão.
+            </>
+          ) : policy.mode === 'unmark-first' ? (
+            <>
+              Cobrança gerada por uma compra. Para excluí-la, desmarque o
+              recebimento primeiro — depois a compra de origem também poderá
+              ser excluída.
+            </>
+          ) : (
+            <>
+              Cobrança gerada por uma compra. Valor, contraparte e datas são
+              definidos pela compra de origem. Ao excluir esta cobrança, a
+              compra de origem também será excluída.
+            </>
+          )}
         </DetailNotice>
       )}
     </DetailDrawer>

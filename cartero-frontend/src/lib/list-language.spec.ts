@@ -712,14 +712,17 @@ describe('itens 33 e 34: os drawers são da mesma família', () => {
   editável ou excluível.
 */
 describe('item 47: nenhuma proteção foi afrouxada', () => {
-  it('itens 26 e 28: cobrança automática não ganha Excluir', () => {
+  it('O3.1: quem decide o Excluir é o resolver, não `isAutomatic`', () => {
     /*
-      Ela nasceu de uma compra no cartão. Excluí-la isolada apagaria a compra
-      junto — por isso o botão não é oferecido, e um aviso diz onde a
-      exclusão é feita.
+      REGRA SUBSTITUÍDA. Antes o botão nunca aparecia para cobrança
+      automática; agora uma automática simples e pendente PODE ser excluída —
+      pela compra de origem, com a cascata do backend removendo as duas.
+
+      A condição `!isAutomatic` era correta para o modelo anterior e virou
+      grossa demais: ela também escondia o caso que hoje é seguro.
     */
-    expect(DRAWER_RECEBER).toContain('const isAutomatic = Boolean(receivable.transactionId)')
-    expect(DRAWER_RECEBER).toContain('{!isAutomatic && (')
+    expect(DRAWER_RECEBER).toContain('canDeleteReceivable(policy)')
+    expect(code(DRAWER_RECEBER)).not.toContain('{!isAutomatic && (')
     expect(DRAWER_RECEBER).toContain('DetailNotice')
   })
 
@@ -732,10 +735,18 @@ describe('item 47: nenhuma proteção foi afrouxada', () => {
     expect(DIVIDAS).toContain('if (debt.paymentTransactionId && !debt.parentId)')
     expect(DIVIDAS).toContain('setLinkedWarningTarget(debt)')
 
-    expect(RECEBER).toContain(
-      '(receivable.transactionId || receivable.paymentTransactionId) && !receivable.parentId',
-    )
+    /*
+      O predicate `transactionId || paymentTransactionId` SAIU: tratava origem
+      e comprovante como a mesma coisa, e mandava cobrança automática para um
+      aviso cujas duas opções o backend recusava com 409.
+
+      A guarda continua existindo — agora no resolver canônico.
+    */
+    expect(RECEBER).toContain('resolveReceivableDeletePolicy(receivable)')
     expect(RECEBER).toContain('setLinkedWarningTarget(receivable)')
+    expect(code(RECEBER)).not.toContain(
+      'receivable.transactionId || receivable.paymentTransactionId',
+    )
   })
 
   it('o parcelamento continua pedindo escopo antes de editar/excluir', () => {

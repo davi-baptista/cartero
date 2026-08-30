@@ -27,6 +27,9 @@ import {
 import { MotionRow } from '@/components/ui/motion-row'
 import { ReceivableSheet, type ReceivableFormData } from './receivable-sheet'
 import { DeleteLinkedWarningDialog } from '../transactions/delete-linked-warning-dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { resolveReceivableDeletePolicy } from '@/lib/receivable-delete-policy'
+import { useDeleteSourceTransaction } from '@/lib/use-delete-source-transaction'
 import { InstallmentScopeDialog } from '../transactions/installment-scope-dialog'
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
 import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dialog'
@@ -255,6 +258,15 @@ export default function ReceivablesPage() {
   const [scopeDialog, setScopeDialog] = useState<{ receivable: Receivable; mode: 'edit' | 'delete' } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Receivable | null>(null)
   const [linkedWarningTarget, setLinkedWarningTarget] = useState<Receivable | null>(null)
+  /** Cobrança automática cuja COMPRA de origem será excluída. */
+  const [sourceDeleteTarget, setSourceDeleteTarget] = useState<Receivable | null>(null)
+  /*
+    A MESMA mutation do Extrato, com as mesmas invalidações — uma requisição
+    só, e a cascata do backend remove a cobrança junto.
+  */
+  const sourceDeleteMut = useDeleteSourceTransaction({
+    onSuccess: () => setSourceDeleteTarget(null),
+  })
   const [markPaidTarget, setMarkPaidTarget] = useState<Receivable | null>(null)
   const [unmarkPaidTarget, setUnmarkPaidTarget] = useState<Receivable | null>(null)
 
@@ -428,14 +440,32 @@ export default function ReceivablesPage() {
 
   function handleDelete(receivable: Receivable) {
     closeDetail()
-    if ((receivable.transactionId || receivable.paymentTransactionId) && !receivable.parentId) {
-      setLinkedWarningTarget(receivable)
-      return
-    }
-    if (receivable.parentId) {
-      setScopeDialog({ receivable, mode: 'delete' })
-    } else {
-      setDeleteTarget(receivable)
+
+    /*
+      Quem decide é o resolver canônico. Antes a condição era
+      `transactionId || paymentTransactionId`, que tratava origem e
+      comprovante como a mesma coisa: cobrança automática caía no aviso de
+      vínculo e recebia 409 em qualquer das duas opções.
+    */
+    const policy = resolveReceivableDeletePolicy(receivable)
+
+    switch (policy.mode) {
+      case 'source-transaction':
+        setSourceDeleteTarget(receivable)
+        return
+      case 'linked-payment':
+        setLinkedWarningTarget(receivable)
+        return
+      case 'unmark-first':
+      case 'manage-from-source':
+        /* Sem ação executável: o botão nem é oferecido nessas situações. */
+        return
+      case 'direct':
+        if (receivable.parentId) {
+          setScopeDialog({ receivable, mode: 'delete' })
+        } else {
+          setDeleteTarget(receivable)
+        }
     }
   }
 
@@ -735,6 +765,37 @@ export default function ReceivablesPage() {
         linkedWarning={Boolean(
           scopeDialog?.receivable.transactionId || scopeDialog?.receivable.paymentTransactionId,
         )}
+      />
+
+      {/*
+        Exclusão de cobrança AUTOMÁTICA: a operação é sobre a compra.
+
+        Não usa `delete-linked-warning` de propósito — aquele oferece "Manter a
+        transação", que aqui deixaria a compra atribuída a alguém sem a
+        cobrança correspondente. Aqui não há escolha a fazer: as duas somem.
+      */}
+      <ConfirmDialog
+        open={sourceDeleteTarget !== null}
+        title="Excluir compra e cobrança?"
+        description={
+          <>
+            Esta cobrança foi gerada pela compra{' '}
+            <strong className="text-foreground">
+              {sourceDeleteTarget?.title}
+            </strong>
+            . Para excluir a cobrança, a compra de origem também será excluída.
+            Esta ação não pode ser desfeita.
+          </>
+        }
+        confirmLabel="Excluir compra e cobrança"
+        variant="destructive"
+        isPending={sourceDeleteMut.isPending}
+        onCancel={() => setSourceDeleteTarget(null)}
+        onConfirm={() => {
+          if (sourceDeleteTarget?.transactionId) {
+            sourceDeleteMut.mutate(sourceDeleteTarget.transactionId)
+          }
+        }}
       />
 
       {/* Cascade-delete warning — receivable linked to a transaction */}
