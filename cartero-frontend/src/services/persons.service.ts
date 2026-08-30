@@ -12,6 +12,18 @@ export async function getPersons(): Promise<Person[]> {
 }
 
 /**
+ * Uma pessoa pelo id.
+ *
+ * Só para resolver o extrato quando ele chega pela URL — link direto ou
+ * refresh — e a lista ainda não está em cache. O clique numa linha resolve
+ * pela coleção já carregada, sem requisição.
+ */
+export async function getPerson(id: string): Promise<Person> {
+  const { data } = await api.get<Person>(`/persons/${id}`)
+  return data
+}
+
+/**
  * Saldo de cada contato na competência — em LOTE.
  *
  * Uma requisição para a lista inteira. Chamar o extrato por pessoa seria N+1

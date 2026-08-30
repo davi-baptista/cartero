@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Users, Loader2, MoreVertical, TriangleAlert, RotateCcw } from 'lucide-react'
@@ -47,11 +47,14 @@ import {
 } from '@/services/debts.service'
 import {
   getPersons,
+  getPerson,
   getPersonsMonthlySummary,
   createPerson,
   updatePerson,
   deletePerson,
 } from '@/services/persons.service'
+import { detailHref } from '@/lib/detail-navigation'
+import { useDetailEntity } from '@/lib/use-detail-entity'
 import {
 } from '@/services/receivables.service'
 import {
@@ -180,14 +183,48 @@ function PersonFormSheet({
 export default function PersonsPage() {
   const qc = useQueryClient()
   const searchParams = useSearchParams()
-  const personIdParam = searchParams.get('personId')
   const periodParam = searchParams.get('period')
 
   const [formOpen, setFormOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Person | null>(null)
-  const [statementPerson, setStatementPerson] = useState<Person | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Person | null>(null)
-  const openedFromUrl = useRef(false)
+
+  /*
+    ══════════════════════════════════════════════════════════════════════
+    A pessoa aberta vive na URL — mas `personId` NÃO é detail param global
+    ══════════════════════════════════════════════════════════════════════
+
+    O mesmo nome tem dois significados no Cartero. AQUI ele identifica o
+    extrato aberto; em Dívidas ele FILTRA a lista por contraparte. Pôr
+    `personId` em `DETAIL_PARAMS` faria a foundation apagá-lo ao abrir uma
+    dívida — o filtro sumiria sozinho, e a O4.1 validou justamente o
+    contrário.
+
+    Por isso a navegação daqui é local, sem `useDetailNavigation`. É o mesmo
+    caminho que o Orçamento já seguia para os drawers de pessoa e fatura:
+    exclusividade contextual, decidida pela rota que conhece a semântica.
+
+    O resto do contrato é idêntico ao das outras cinco entidades — abrir com
+    `push` (o Voltar precisa fechar), fechar com `replace` (senão o Voltar
+    logo após fechar reabriria o que o usuário dispensou), `scroll: false`
+    nos dois, e todos os demais params preservados.
+  */
+  const router = useRouter()
+  const pathname = usePathname()
+  const openPersonId = searchParams.get('personId')
+
+  const openPerson = (id: string) => {
+    const next = new URLSearchParams(searchParams.toString())
+    next.set('personId', id)
+    router.push(detailHref(pathname, next), { scroll: false })
+  }
+
+  const closePerson = () => {
+    if (!openPersonId) return
+    const next = new URLSearchParams(searchParams.toString())
+    next.delete('personId')
+    router.replace(detailHref(pathname, next), { scroll: false })
+  }
 
   /*
     ── A competência é GLOBAL ──
@@ -251,16 +288,25 @@ export default function PersonsPage() {
     queryFn: getPersons,
   })
 
-  // Abre o extrato já na pessoa e no mês que a navegação pediu — usado pelo
-  // card de dívidas do orçamento. Só na chegada: depois o controle é do
-  // usuário, e reabrir o sheet a cada render seria prendê-lo ali.
-  useEffect(() => {
-    if (openedFromUrl.current || !personIdParam || persons.length === 0) return
-    const target = persons.find((p) => p.id === personIdParam)
-    if (!target) return
-    openedFromUrl.current = true
-    setStatementPerson(target)
-  }, [personIdParam, persons])
+  /*
+    A pessoa do extrato, resolvida a partir do id da URL.
+
+    Isto substitui o efeito de chegada que copiava o param para um
+    `statementPerson` local e marcava `openedFromUrl` para nunca mais olhar.
+    Aquilo abria o extrato UMA vez: o param virava semente e parava de
+    mandar, então Voltar não fechava, refresh perdia a pessoa e clicar numa
+    linha não escrevia a URL.
+
+    A lista já carregada resolve o clique sem requisição; a busca por id
+    cobre link direto e refresh. Id que não resolve limpa o param.
+  */
+  const { entity: statementPerson } = useDetailEntity({
+    openId: openPersonId,
+    fromList: persons.find((p) => p.id === openPersonId),
+    fetchById: getPerson,
+    queryKey: 'person',
+    onNotFound: closePerson,
+  })
 
   const createMut = useMutation({
     mutationFn: ({ name, phone }: { name: string; phone: string }) =>
@@ -509,7 +555,7 @@ export default function PersonsPage() {
                 */}
                 <div className="group relative border-b border-border last:border-b-0">
                   <FinancialListRow
-                    onView={() => setStatementPerson(person)}
+                    onView={() => openPerson(person.id)}
                     ariaLabel={`Ver extrato de ${person.name}`}
                     /* Espaço à direita para o kebab sobreposto não cobrir o valor. */
                     className="pr-10 sm:pr-12"
@@ -591,11 +637,18 @@ export default function PersonsPage() {
         onSubmit={handleFormSubmit}
       />
 
-      {/* Statement sheet */}
+      {/*
+        Remonta ao trocar de pessoa (e ao fechar): as tarefas do extrato —
+        quitar pendências, marcar item como pago — vivem dentro do drawer,
+        que é router-agnostic e não reporta "tarefa aberta" para cá. Sem a
+        `key`, o Voltar tiraria o `personId` da URL e o diálogo continuaria
+        sobre a lista, preso a uma pessoa que já não está aberta.
+      */}
       <PersonStatementDrawer
+        key={openPersonId ?? 'none'}
         person={statementPerson}
-        open={statementPerson !== null}
-        onClose={() => setStatementPerson(null)}
+        open={openPersonId !== null}
+        onClose={closePerson}
         period={period}
       />
 

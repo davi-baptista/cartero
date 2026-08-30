@@ -240,6 +240,12 @@ describe('itens 8 e 52: o deep link explícito continua suportado', () => {
       A mudança foi só parar de INJETAR o param na origem. Quem chega por
       uma URL que já o contém continua com o drawer aberto — inclusive
       após refresh (item 53), porque a leitura vem da URL, não de state.
+
+      A O4.3 REFORÇOU esse contrato: o param deixou de ser semente copiada
+      para um `selectedInvoiceId` local e virou a própria identidade do
+      painel. Por isso a asserção mudou de `setSelectedInvoiceId(param)`
+      para o hook de navegação — o deep link continua honrado, agora sem a
+      segunda fonte de verdade que o abria uma vez só.
     */
     const invoices = code(
       readFileSync(
@@ -247,7 +253,8 @@ describe('itens 8 e 52: o deep link explícito continua suportado', () => {
         'utf-8',
       ),
     )
-    expect(invoices).toContain("searchParams.get('invoiceId')")
-    expect(invoices).toContain('setSelectedInvoiceId(invoiceIdParam)')
+    expect(invoices).toContain("useDetailNavigation('invoiceId')")
+    /* E não voltou a existir state local como autoridade do painel. */
+    expect(invoices).not.toContain('setSelectedInvoiceId')
   })
 })

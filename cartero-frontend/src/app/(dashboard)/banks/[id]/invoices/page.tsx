@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import type React from 'react'
 import Link from 'next/link'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Trash2, Pencil, Plus, ArrowLeft, ChevronDown, CreditCard, Loader2, Archive, ArchiveRestore } from 'lucide-react'
@@ -24,7 +24,10 @@ import {
 import { apiErrorMessage } from '@/lib/api-error'
 import {
   getBankInvoices,
+  getInvoice,
 } from '@/services/invoices.service'
+import { useDetailNavigation } from '@/lib/detail-navigation'
+import { useDetailEntity } from '@/lib/use-detail-entity'
 import { getBank, restoreBank } from '@/services/banks.service'
 import {
   formatCurrency,
@@ -394,11 +397,16 @@ export default function BankInvoicesPage() {
     onError: (error) =>
       toast.error(apiErrorMessage(error, 'Não foi possível criar a transação')),
   })
-  const searchParams = useSearchParams()
-  const invoiceIdParam = searchParams.get('invoiceId')
+  /*
+    A identidade da fatura aberta vem da URL.
 
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null)
-  const [detailOpen, setDetailOpen] = useState(false)
+    Antes o `?invoiceId=` era só SEMENTE de chegada: um efeito o copiava para
+    `selectedInvoiceId` e a partir dali o param não mandava mais nada. Clicar
+    numa fatura não escrevia a URL, então não havia link direto para o painel,
+    o refresh perdia o que estava aberto e o Voltar saía da página.
+  */
+  const detail = useDetailNavigation('invoiceId')
+
   const [activeExpanded, setActiveExpanded] = useState(false)
   const [historyExpanded, setHistoryExpanded] = useState(false)
 
@@ -463,22 +471,43 @@ export default function BankInvoicesPage() {
 
   const isEmpty = overdueInvoices.length === 0 && activeInvoices.length === 0 && paidInvoices.length === 0
 
-  // Open sheet when arriving via ?invoiceId=
+  /*
+    Revela a seção onde a fatura aberta está.
+
+    Este efeito NÃO abre mais o painel — quem manda nisso é a URL. Ele resolve
+    só o problema visual: a lista mostra 3 ativas e 1 paga por padrão, e uma
+    fatura fora desse corte ficaria com o painel aberto e a linha invisível
+    atrás dele. Expandir é estado de apresentação, não identidade.
+  */
   useEffect(() => {
-    if (!invoiceIdParam || !invoices) return
-    const inv = invoices.find((i) => i.id === invoiceIdParam)
+    if (!detail.openId || !invoices) return
+    const inv = invoices.find((i) => i.id === detail.openId)
     if (!inv) return
     if (inv.status === InvoiceStatus.PAID) {
-      const idx = paidInvoices.findIndex((i) => i.id === invoiceIdParam)
+      const idx = paidInvoices.findIndex((i) => i.id === detail.openId)
       if (idx >= PAID_VISIBLE) setHistoryExpanded(true)
     } else if (inv.status === InvoiceStatus.OPEN || inv.status === InvoiceStatus.CLOSED) {
-      const idx = activeInvoices.findIndex((i) => i.id === invoiceIdParam)
+      const idx = activeInvoices.findIndex((i) => i.id === detail.openId)
       if (idx >= ACTIVE_VISIBLE) setActiveExpanded(true)
     }
-    setSelectedInvoiceId(invoiceIdParam)
-    setDetailOpen(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoiceIdParam, invoices])
+  }, [detail.openId, invoices])
+
+  /*
+    A lista já carregada resolve o clique sem requisição; a busca por id cobre
+    link direto e refresh. Id que não resolve limpa o param em vez de deixar o
+    painel vazio.
+
+    O drawer busca a fatura completa por conta própria (com transações); esta
+    resolução existe para VALIDAR que o id aponta para algo real.
+  */
+  useDetailEntity({
+    openId: detail.openId,
+    fromList: invoices?.find((i) => i.id === detail.openId),
+    fetchById: getInvoice,
+    queryKey: 'invoice',
+    onNotFound: detail.close,
+  })
 
   const activeHidden = Math.max(0, activeInvoices.length - ACTIVE_VISIBLE)
   const paidHidden = Math.max(0, paidInvoices.length - PAID_VISIBLE)
@@ -504,8 +533,7 @@ export default function BankInvoicesPage() {
   }
 
   function handleClick(id: string) {
-    setSelectedInvoiceId(id)
-    setDetailOpen(true)
+    detail.open(id)
   }
 
   return (
@@ -674,7 +702,7 @@ export default function BankInvoicesPage() {
                     <InvoiceRow
                       invoice={invoice}
                       bank={bank}
-                      isSelected={selectedInvoiceId === invoice.id && detailOpen}
+                      isSelected={detail.openId === invoice.id}
                       onClick={() => handleClick(invoice.id)}
                     />
                   </MotionRow>
@@ -693,7 +721,7 @@ export default function BankInvoicesPage() {
                     <InvoiceRow
                       invoice={invoice}
                       bank={bank}
-                      isSelected={selectedInvoiceId === invoice.id && detailOpen}
+                      isSelected={detail.openId === invoice.id}
                       isAtual={isAtual(invoice)}
                       onClick={() => handleClick(invoice.id)}
                     />
@@ -705,7 +733,7 @@ export default function BankInvoicesPage() {
                       <InvoiceRow
                         invoice={invoice}
                         bank={bank}
-                        isSelected={selectedInvoiceId === invoice.id && detailOpen}
+                        isSelected={detail.openId === invoice.id}
                         isAtual={isAtual(invoice)}
                         onClick={() => handleClick(invoice.id)}
                       />
@@ -732,7 +760,7 @@ export default function BankInvoicesPage() {
                     <InvoiceRow
                       invoice={invoice}
                       bank={bank}
-                      isSelected={selectedInvoiceId === invoice.id && detailOpen}
+                      isSelected={detail.openId === invoice.id}
                       onClick={() => handleClick(invoice.id)}
                     />
                   </MotionRow>
@@ -743,7 +771,7 @@ export default function BankInvoicesPage() {
                       <InvoiceRow
                         invoice={invoice}
                         bank={bank}
-                        isSelected={selectedInvoiceId === invoice.id && detailOpen}
+                        isSelected={detail.openId === invoice.id}
                         onClick={() => handleClick(invoice.id)}
                       />
                     </MotionRow>
@@ -762,11 +790,27 @@ export default function BankInvoicesPage() {
       )}
 
       {/* Detail sheet */}
+      {/*
+        ── Por que `key` e não um task anchor ──
+
+        As tarefas desta fatura (reabrir, editar lançamento, escopo de
+        parcelamento, confirmar exclusão) vivem DENTRO do drawer, que é
+        router-agnostic e não expõe nenhum sinal de "tarefa aberta" para cá.
+        Sem isso, o Voltar tirava o `invoiceId` da URL, o painel fechava — e o
+        diálogo de reabrir continuava sobre a lista, ancorado a uma fatura que
+        já não estava aberta.
+
+        Remontar por id resolve os dois casos de uma vez: quando o id sai
+        (Voltar, X) ou troca por outro, o componente é recriado e todo estado
+        transiente morre junto. Ensinar o drawer a falar de rota só para
+        reportar isso quebraria a separação que O4.1/O4.2 preservaram.
+      */}
       <InvoiceDetailsDrawer
-        invoiceId={selectedInvoiceId}
+        key={detail.openId ?? 'none'}
+        invoiceId={detail.openId}
         bankId={bankId}
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
+        open={detail.openId !== null}
+        onOpenChange={(open) => !open && detail.close()}
       />
       {/*
         Mesmos componentes da listagem: `BankSheet` e `ConfirmDialog`. O
