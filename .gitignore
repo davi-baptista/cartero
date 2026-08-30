@@ -11,3 +11,9 @@ build
 
 # Relatórios de auditoria gerados — artefato de análise, não código-fonte.
 auditoria-*.html
+
+# Integracao gerada pelo instalador de skills: symlink para
+# .agents/skills/agent-browser (a instalacao canonica, essa sim versionada).
+# Com core.symlinks=false o Git versionaria uma COPIA do SKILL.md, e o target
+# e um caminho absoluto desta maquina. Regra precisa: so este path.
+/.claude/skills/agent-browser

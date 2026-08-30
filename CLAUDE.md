@@ -4,6 +4,117 @@
 
 - **Não mexa no backend sem permissão explícita do usuário.** Toda alteração em `cartero-backend/` precisa ser solicitada diretamente. O usuário cuida do backend.
 
+## Browser Automation
+
+Use `agent-browser` for browser-based validation whenever a task changes
+navigation, overlays, URL state, Back/Forward behavior, responsive UI, or another
+interaction that cannot be fully proven by unit/integration tests.
+
+Browser validation **complementa** os testes automatizados, nunca os substitui:
+roda como quality gate adicional, depois de `test` / `typecheck` / `build`.
+
+Core workflow:
+
+1. Suba o Chrome dedicado e conecte (ver "Launch local" abaixo) — nesta maquina
+   o auto-launch do `agent-browser open` nao e confiavel.
+2. `agent-browser open <url>`
+3. `agent-browser snapshot -i`
+4. Interaja usando os refs (`@eN`) devolvidos pelo snapshot.
+5. Re-snapshot apos navegacao ou mudanca significativa de UI.
+6. Valide o **estado visivel real e a URL real** — nunca apenas presenca no DOM.
+
+Numa rodada diagnostica, nao corrigir achados incidentais. Reporte-os
+separadamente, salvo se bloquearem a tarefa em andamento.
+
+### Launch local (workaround desta maquina)
+
+O auto-launch falha aqui: o Chrome for Testing delega a sessao a um processo-filho
+e sai sem escrever `DevToolsActivePort`. Suba uma instancia **dedicada** com CDP e
+conecte o agent-browser a ela.
+
+```powershell
+$chrome = "$env:USERPROFILE\.agent-browser\browsers\chrome-152.0.7977.64\chrome.exe"
+$prof   = "$env:LOCALAPPDATA\Temp\cartero-agent-browser-validation"
+$port   = 9333   # confira que esta livre; resto de sessao anterior pode ocupar 9222
+
+if (Test-Path $prof) { Remove-Item -Recurse -Force $prof -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Force -Path $prof | Out-Null
+
+Start-Process -FilePath $chrome -NoNewWindow -ArgumentList `
+  "--headless=new","--no-sandbox","--disable-gpu","--no-first-run",`
+  "--no-default-browser-check","--user-data-dir=$prof",`
+  "--remote-debugging-address=127.0.0.1","--remote-debugging-port=$port","about:blank"
+Start-Sleep -Seconds 10
+
+# ATENCAO: o processo lancado DELEGA e sai. O PID real da sessao e quem
+# detem o socket CDP — nunca o `.Id` devolvido por Start-Process.
+$owned = (Get-NetTCPConnection -State Listen -LocalPort $port | Select-Object -First 1).OwningProcess
+$owned | Out-File "$prof\OWNED_PID"
+```
+
+```bash
+agent-browser connect 9333   # uma vez por sessao de Chrome
+```
+
+Antes de conectar, confirme que o dono da porta usa o perfil dedicado — porta
+ocupada por resto de sessao anterior faria o agent-browser conectar na instancia
+errada:
+
+```powershell
+(Get-CimInstance Win32_Process -Filter "ProcessId = $owned").CommandLine `
+  -like '*cartero-agent-browser-validation*'   # precisa ser True
+```
+
+Regras da instancia de validacao:
+
+- CDP escuta **somente em `127.0.0.1`**, em porta dedicada (9333). Nunca expor a
+  interfaces externas; nunca alterar firewall ou rede por causa disso.
+- `--user-data-dir` **exclusivo** de validacao
+  (`cartero-agent-browser-validation`), fora do repositorio.
+- **Nunca** reutilizar perfil pessoal de Chrome ou de Brave, e nunca anexar a uma
+  sessao de navegador pessoal ja aberta.
+
+### Cleanup — encerrar somente a sessao que voce iniciou
+
+Encerre **apenas** a process tree do PID registrado em `OWNED_PID` (o dono do
+socket CDP, capturado no launch):
+
+```powershell
+$owned = [int](Get-Content "$prof\OWNED_PID" | Select-Object -First 1)
+
+# Arvore descendente do PID owned — ownership, nao matching por nome/path.
+$all = Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe'"
+$ids = [System.Collections.Generic.List[int]]@($owned)
+$q   = [System.Collections.Generic.Queue[int]]@($owned)
+while ($q.Count -gt 0) {
+  $cur = $q.Dequeue()
+  foreach ($c in $all) {
+    if ($c.ParentProcessId -eq $cur -and -not $ids.Contains([int]$c.ProcessId)) {
+      $ids.Add([int]$c.ProcessId); $q.Enqueue([int]$c.ProcessId)
+    }
+  }
+}
+foreach ($id in $ids) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+```
+
+O `Win32_Process` acima e usado apenas para **caminhar a arvore a partir do PID
+owned**, nunca para selecionar processos por nome ou perfil.
+
+**PROIBIDO** encerrar browsers por matching amplo. Nunca use descoberta de
+processos por:
+
+- nome (`chrome`, `chromium`, `brave`, `msedge`);
+- `Path` generico — processos-filho herdam o caminho do pai e o filtro **nao**
+  isola instancias;
+- substring de command-line, wildcard, `grep`/`pkill` amplo.
+
+Exemplos proibidos: `Get-Process chrome | Stop-Process`, `pkill -f chrome`,
+`taskkill /IM chrome.exe`.
+
+O `--user-data-dir` identificavel serve para **diagnostico**, nao como
+autorizacao para matar processos: ownership por PID e a fonte primaria do
+cleanup. Sem o PID, prefira deixar a instancia rodando e reportar.
+
 ## Stack
 
 - **Backend:** Nest.js · PostgreSQL (Docker local / Neon prod) · Prisma
