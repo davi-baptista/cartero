@@ -61,6 +61,7 @@ import { resolveCategoryIcon } from '@/lib/category-icons'
 import {
   INVOICE_STATUS_COLOR,
 } from '@/lib/invoice-status'
+import { invalidateInvoiceDependents } from '@/lib/invoice-dependent-queries'
 import type { Transaction } from '@/types'
 import { InvoiceStatus, TransactionType, InstallmentScope } from '@/types'
 import type { LucideIcon } from 'lucide-react'
@@ -404,8 +405,12 @@ export function InvoiceDetailsDrawer({
   const markPaidMut = useMutation({
     mutationFn: () => updateInvoiceStatus(invoiceId!, InvoiceStatus.PAID),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['invoice', invoiceId] })
-      qc.invalidateQueries({ queryKey: ['bank-invoices', bankId] })
+      /*
+        Pagar muda `Invoice.status`, e disso dependem o orçamento e a
+        capability de exclusão que A Receber e o extrato da pessoa carregam.
+        A lista era menor aqui do que em reabrir — as duas mexem no mesmo fato.
+      */
+      invalidateInvoiceDependents(qc, { invoiceId, bankId })
       toast.success('Fatura marcada como paga')
     },
     onError: () => toast.error('Erro ao atualizar fatura'),
@@ -414,9 +419,8 @@ export function InvoiceDetailsDrawer({
   const reopenMut = useMutation({
     mutationFn: () => reopenInvoice(invoiceId!),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['invoice', invoiceId] })
-      qc.invalidateQueries({ queryKey: ['bank-invoices', bankId] })
-      qc.invalidateQueries({ queryKey: ['budget'] })
+      /* Reabrir devolve a compra ao estado excluível — mesma dependência. */
+      invalidateInvoiceDependents(qc, { invoiceId, bankId })
       setReopenConfirm(false)
       toast.success('Fatura reaberta')
     },
