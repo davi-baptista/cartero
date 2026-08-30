@@ -8,6 +8,7 @@ import {
   createReceivablePaymentTransaction,
   resolveSettlementDate,
 } from 'src/common/helpers/settlement.core';
+import { resolveSourceDeleteBlockReason } from 'src/common/helpers/receivable-source-capability';
 import {
   buildPersonSummary,
   HISTORY_ORDER,
@@ -445,8 +446,17 @@ export class PersonsService {
             A compra de origem define a COMPETÊNCIA do recebível automático:
             um jantar de 16/08 que vence com a fatura em 10/09 pertence ao
             acerto de agosto. Um `include` em lote — nunca um fetch por item.
+
+            O `status` da fatura entra no MESMO select: é o que permite ao
+            drawer não oferecer a exclusão de uma compra que a guarda vai
+            recusar. Só as PENDÊNCIAS precisam dele — o histórico já está
+            resolvido e não tem essa ação.
           */
-          include: { transaction: { select: { date: true } } },
+          include: {
+            transaction: {
+              select: { date: true, invoice: { select: { status: true } } },
+            },
+          },
         }),
         this.prisma.debt.findMany({
           where: historyWhere,
@@ -513,7 +523,17 @@ export class PersonsService {
       summary,
 
       /** As pendências que o `summary` soma. Também all-time. */
-      pending: { debts: pendingDebts, receivables: pendingReceivables },
+      pending: {
+        debts: pendingDebts,
+        /*
+          A capability acompanha cada cobrança: é a partir desta lista que o
+          drawer decide se oferece a exclusão pela compra de origem.
+        */
+        receivables: pendingReceivables.map((receivable) => ({
+          ...receivable,
+          sourceDeleteBlockReason: resolveSourceDeleteBlockReason(receivable),
+        })),
+      },
 
       /**
        * Universo MENSAL do acerto com a pessoa.

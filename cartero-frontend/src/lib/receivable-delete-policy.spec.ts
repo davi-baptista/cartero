@@ -78,6 +78,28 @@ describe('item 70: os modos', () => {
       resolveReceivableDeletePolicy(r, { sourceLocked: true }),
     ).toEqual({ mode: 'manage-from-source' })
   })
+
+  it('O3.2: a trava vem do próprio recebível, sem precisar informar', () => {
+    /*
+      Antes o botão aparecia, o usuário confirmava e só então o backend
+      recusava. `sourceDeleteBlockReason` chega do servidor na mesma consulta
+      — nenhuma superfície precisa lembrar de passar a informação.
+    */
+    const r = receivable({
+      transactionId: 'tx-1',
+      sourceDeleteBlockReason: 'PAID_INVOICE',
+    })
+
+    expect(resolveReceivableDeletePolicy(r)).toEqual({
+      mode: 'manage-from-source',
+    })
+    expect(canDeleteReceivable(resolveReceivableDeletePolicy(r))).toBe(false)
+  })
+
+  it('sem trava, o campo não atrapalha', () => {
+    const r = receivable({ transactionId: 'tx-1', sourceDeleteBlockReason: null })
+    expect(resolveReceivableDeletePolicy(r).mode).toBe('source-transaction')
+  })
 })
 
 describe('item 24: a série é reconhecida sem buscar a transação', () => {
@@ -135,6 +157,46 @@ describe('item 71: precedência — nunca mandar o usuário a um beco', () => {
       continua inexcluível depois de desmarcar.
     */
     expect(policy.mode).not.toBe('unmark-first')
+  })
+})
+
+describe('item 7: a trava permanente ganha das removíveis', () => {
+  it('recebida + fatura paga → trava, não "desmarque"', () => {
+    /*
+      Desmarcar o recebimento não faz a compra voltar a ser deletável: a
+      fatura continua paga. Prometer o contrário mandaria o usuário executar
+      uma ação que não destrava nada.
+    */
+    const r = receivable({
+      transactionId: 'tx-1',
+      isPaid: true,
+      sourceDeleteBlockReason: 'PAID_INVOICE',
+    })
+
+    expect(resolveReceivableDeletePolicy(r).mode).toBe('manage-from-source')
+    expect(resolveReceivableDeletePolicy(r).mode).not.toBe('unmark-first')
+  })
+
+  it('parcelada + fatura paga → a copy diz a trava, não o escopo', () => {
+    /*
+      O modo é o mesmo (`manage-from-source`), mas o motivo exibido difere:
+      "abra a compra e escolha o escopo" seria falso — lá a exclusão também
+      será recusada. A copy lê `sourceDeleteBlockReason` direto.
+    */
+    const r = receivable({
+      transactionId: 'tx-1',
+      title: 'Jantar 3/10',
+      sourceDeleteBlockReason: 'PAID_INVOICE',
+    })
+
+    expect(resolveReceivableDeletePolicy(r).mode).toBe('manage-from-source')
+    expect(canDeleteReceivable(resolveReceivableDeletePolicy(r))).toBe(false)
+  })
+
+  it('item 5: manual sem origem nunca inventa PAID_INVOICE', () => {
+    const manual = receivable()
+    expect(manual.sourceDeleteBlockReason).toBeUndefined()
+    expect(resolveReceivableDeletePolicy(manual).mode).toBe('direct')
   })
 })
 
@@ -286,6 +348,17 @@ describe('item 40: a copy antiga descrevia a cascata invertida', () => {
   it('a frase contraditória saiu', () => {
     /* "apagar só a cobrança removeria as duas" — se removia as duas, não era só. */
     expect(code(DRAWER)).not.toContain('removeria as')
+  })
+
+  it('O3.2: fatura paga tem orientação PRÓPRIA', () => {
+    /*
+      "abra a compra e escolha o escopo" seria falso aqui: a compra também
+      não pode ser excluída. O motivo é permanente, e a copy precisa dizer
+      isso em vez de mandar o usuário a um caminho sem saída.
+    */
+    expect(DRAWER).toContain("=== 'PAID_INVOICE'")
+    expect(DRAWER).toContain('fatura já paga')
+    expect(DRAWER).toContain('não pode mais ser excluída')
   })
 
   it('cada motivo tem a sua orientação', () => {

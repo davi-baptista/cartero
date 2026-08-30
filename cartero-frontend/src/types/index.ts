@@ -364,6 +364,14 @@ export interface Receivable {
   person?: Person
   transactionId?: string
   paymentTransactionId?: string
+  /**
+   * Por que a COMPRA de origem não pode ser excluída — resolvido no servidor.
+   *
+   * `null`/ausente quando a exclusão está liberada, ou quando a cobrança nem é
+   * automática. Só a leitura das pendências o devolve: histórico já está
+   * resolvido e não tem essa ação.
+   */
+  sourceDeleteBlockReason?: 'PAID_INVOICE' | null
   debtorName: string
   title: string
   amount: number

@@ -218,7 +218,18 @@ export function ReceivableDetailDrawer({
           Cada motivo agora diz o que é verdade para AQUELE estado.
         */
         <DetailNotice>
-          {policy.mode === 'manage-from-source' ? (
+          {policy.mode === 'manage-from-source' &&
+          receivable.sourceDeleteBlockReason === 'PAID_INVOICE' ? (
+            /*
+              Trava PERMANENTE: a fatura já foi paga, e excluir a compra
+              alteraria o total de algo quitado. Não mandar "abra a compra" —
+              lá a exclusão também será recusada.
+            */
+            <>
+              Cobrança gerada por uma compra de uma fatura já paga. A compra de
+              origem não pode mais ser excluída.
+            </>
+          ) : policy.mode === 'manage-from-source' ? (
             <>
               Cobrança gerada por uma compra parcelada. Para excluir, abra a
               compra de origem e escolha o escopo da exclusão.

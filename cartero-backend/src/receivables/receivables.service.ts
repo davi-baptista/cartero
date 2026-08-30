@@ -2,6 +2,10 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma, Receivable } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
+import {
+  SOURCE_INVOICE_SELECT,
+  resolveSourceDeleteBlockReason,
+} from 'src/common/helpers/receivable-source-capability';
 import { findOrCreateSystemReceivableBank } from 'src/common/helpers/invoice.helper';
 import {
   createReceivablePaymentTransaction,
@@ -98,7 +102,7 @@ export class ReceivablesService {
   }
 
   async findAll(userId: string, filters: FindReceivablesDto = {}) {
-    return await this.prisma.receivable.findMany({
+    const receivables = await this.prisma.receivable.findMany({
       where: {
         userId,
         debtorName: filters.debtorName,
@@ -108,8 +112,28 @@ export class ReceivablesService {
           lte: filters.endDate ? parseDateFilterEnd(filters.endDate) : undefined,
         },
       },
-      include: { person: true },
+      /*
+        A fatura da compra de origem entra no MESMO `findMany`.
+
+        Sem ela o frontend oferecia "Excluir compra e cobrança" para uma
+        compra de fatura paga, e a recusa só aparecia depois de confirmar.
+        Buscar a transação por linha seria N+1 — a relação já existe, então é
+        um join, e cem cobranças continuam sendo uma consulta.
+      */
+      include: { person: true, transaction: SOURCE_INVOICE_SELECT },
     });
+
+    return receivables.map(({ transaction, ...receivable }) => ({
+      ...receivable,
+      /*
+        Só a capability sai; a transação carregada fica no servidor. O
+        frontend não precisa da compra para saber que não pode excluí-la.
+      */
+      sourceDeleteBlockReason: resolveSourceDeleteBlockReason({
+        ...receivable,
+        transaction,
+      }),
+    }));
   }
 
   async update(

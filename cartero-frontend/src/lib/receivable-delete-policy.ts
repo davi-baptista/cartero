@@ -62,15 +62,21 @@ function belongsToInstallmentSeries(receivable: Receivable): boolean {
 }
 
 /**
- * `sourceLocked` é informado por quem conhece a compra.
+ * A trava da compra vem do PRÓPRIO recebível.
  *
- * A cobrança não carrega a fatura da origem, e buscá-la por linha seria N+1.
- * Quem tiver o dado — hoje ninguém, no fluxo atual — passa `true`; sem ele, o
- * backend continua sendo a autoridade e recusa com a mensagem própria.
+ * `sourceDeleteBlockReason` é resolvido no servidor, na mesma consulta que já
+ * traz a cobrança — a relação `transaction → invoice` existe, então é um join,
+ * e cem linhas continuam sendo uma consulta.
  *
- * Isto NÃO é um bypass: o atalho chama o mesmo `DELETE /transactions/:id`, com
- * as mesmas guardas de fatura paga e comprovante. O frontend antecipa o que
- * consegue e nunca decide sozinho.
+ * Ler do campo em vez de exigir que cada superfície informe evita justamente
+ * o que aconteceu antes: uma tela passando a informação e a outra esquecendo.
+ *
+ * `sourceLocked` sobrevive como override para quem souber da trava por outro
+ * caminho, mas o padrão é o campo.
+ *
+ * Isto NÃO é a autoridade: o atalho chama o mesmo `DELETE /transactions/:id`,
+ * com as mesmas guardas. Se o estado mudar entre a leitura e a confirmação, o
+ * backend recusa igual — o campo só evita oferecer o que será negado.
  */
 export function resolveReceivableDeletePolicy(
   receivable: Receivable,
@@ -104,7 +110,9 @@ export function resolveReceivableDeletePolicy(
     ela continua inexcluível. Devolver `unmark-first` aqui mandaria o usuário
     executar uma ação que não destrava o que ele quer.
   */
-  if (options.sourceLocked) return { mode: 'manage-from-source' }
+  if (options.sourceLocked ?? Boolean(receivable.sourceDeleteBlockReason)) {
+    return { mode: 'manage-from-source' }
+  }
 
   /*
     Recebida: apagar a compra removeria a cobrança e deixaria a transação de
