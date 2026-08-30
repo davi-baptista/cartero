@@ -422,12 +422,46 @@ describe('O1: o detalhe é um painel lateral', () => {
     }
   })
 
-  it('item 17: Transaction NÃO foi migrado', () => {
+  it('O2: Transaction também usa a casca canônica', () => {
     /*
-      Fica para O2: parcelamento acoplado ao markup, caminho crítico.
+      Era o último detalhe em modal central — e a casca compartilhada nasceu
+      justamente dele: as duas eram quase idênticas (`sm:max-w-md`, header
+      `px-5 py-5 pr-12`, footer com safe-area).
+
+      A asserção é invertida em relação à de O1: agora falha se Transaction
+      voltar a montar um diálogo próprio para o detalhe.
     */
-    expect(EXTRATO).toContain('<DialogContent')
-    expect(code(EXTRATO)).not.toContain('<DetailDrawer')
+    expect(EXTRATO).toContain('<DetailDrawer')
+    expect(code(EXTRATO)).not.toContain('<DialogContent')
+    expect(code(EXTRATO)).not.toContain("from '@/components/ui/dialog'")
+  })
+
+  it('a lógica de parcelamento NÃO subiu para a casca', () => {
+    /*
+      `seriesInfo` já era calculado antes do markup, então a migração foi
+      estrutural: a casca continua sem saber o que é uma transação.
+    */
+    expect(EXTRATO).toContain('const seriesInfo')
+    expect(EXTRATO).toContain("transaction.parentId ?? transaction.id")
+
+    for (const dominio of ['seriesInfo', 'installment', 'parentId', 'invoice']) {
+      expect(code(SHELL), `casca não deveria conhecer ${dominio}`).not.toContain(
+        dominio,
+      )
+    }
+  })
+
+  it('os quatro detalhes de entidade usam a MESMA casca', () => {
+    for (const [nome, fonte] of [
+      ['Extrato', EXTRATO],
+      ['Dívida', DRAWER_DIVIDA],
+      ['Cobrança', DRAWER_RECEBER],
+      ['Assinatura', DRAWER_ASSINATURA],
+    ] as const) {
+      expect(fonte, `${nome} deveria usar DetailDrawer`).toContain(
+        '<DetailDrawer',
+      )
+    }
   })
 })
 

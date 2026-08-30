@@ -30,13 +30,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { MotionRow } from '@/components/ui/motion-row'
 import { TransactionSheet, type TransactionFormData } from './transaction-sheet'
@@ -55,6 +48,11 @@ import { formatCurrency, formatDate, isExpense, TRANSACTION_TYPE_LABELS } from '
 import { bankDisplayName } from '@/lib/bank-display'
 import { API_ERROR_CODES, apiErrorMessage, apiErrorStatus, isApiErrorCode } from '@/lib/api-error'
 import { resolveCategoryIcon } from '@/lib/category-icons'
+import {
+  DETAIL_ACTION_CLASS,
+  DetailDrawer,
+  DetailFooter,
+} from '@/components/ui/detail-drawer'
 import {
   FinancialListRow,
   ROW_AMOUNT_CLASS,
@@ -417,15 +415,43 @@ function TransactionDetailsDialog({
   })()
 
   return (
-    <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="top-auto bottom-0 left-0 max-h-[88dvh] max-w-none translate-x-0 translate-y-0 gap-0 overflow-y-auto rounded-b-none rounded-t-2xl p-0 sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl">
-        <DialogHeader className="border-b border-border px-5 py-5 pr-12">
-          <DialogTitle className="text-lg leading-snug">{transaction.title}</DialogTitle>
-          <DialogDescription>
-            {TRANSACTION_TYPE_LABELS[transaction.type]} · {formatDate(transaction.date)}
-          </DialogDescription>
-        </DialogHeader>
+    /*
+      A MESMA casca de Dívida, Cobrança e Assinatura — painel lateral.
 
+      Aqui vivia um `DialogContent` central com bottom sheet no mobile, e foi
+      dele que a casca compartilhada nasceu: as duas eram quase idênticas
+      (`sm:max-w-md`, header `px-5 py-5 pr-12`, footer com safe-area). Este
+      era o último detalhe fora do padrão.
+
+      A lógica de parcelamento não se moveu: `seriesInfo` já era calculado
+      antes do markup, e a casca continua sem saber o que é uma transação.
+    */
+    <DetailDrawer
+      open
+      onOpenChange={onOpenChange}
+      title={transaction.title}
+      description={`${TRANSACTION_TYPE_LABELS[transaction.type]} · ${formatDate(transaction.date)}`}
+      footer={
+        <DetailFooter>
+          <Button
+            variant="outline"
+            className={DETAIL_ACTION_CLASS}
+            onClick={() => onEdit(transaction)}
+          >
+            <Pencil className="size-4" />
+            Editar
+          </Button>
+          <Button
+            variant="destructive"
+            className={DETAIL_ACTION_CLASS}
+            onClick={() => onDelete(transaction)}
+          >
+            <Trash2 className="size-4" />
+            Excluir
+          </Button>
+        </DetailFooter>
+      }
+    >
         <div className="border-b border-border bg-muted/20 px-5 py-4">
           {/* "Valor pago" não descrevia um estorno nem uma parcela; o rótulo
               agora diz exatamente qual valor é este. */}
@@ -506,26 +532,7 @@ function TransactionDetailsDialog({
           )}
         </dl>
 
-        <div className="flex gap-2 border-t border-border px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <Button
-            variant="outline"
-            className="h-11 flex-1 sm:h-9"
-            onClick={() => onEdit(transaction)}
-          >
-            <Pencil className="size-4" />
-            Editar
-          </Button>
-          <Button
-            variant="destructive"
-            className="h-11 flex-1 sm:h-9"
-            onClick={() => onDelete(transaction)}
-          >
-            <Trash2 className="size-4" />
-            Excluir
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+    </DetailDrawer>
   )
 }
 
