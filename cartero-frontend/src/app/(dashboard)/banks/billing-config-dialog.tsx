@@ -1,6 +1,7 @@
 'use client'
 
 import { Loader2 } from 'lucide-react'
+import { DIALOG_ROOMY_CLASS } from '@/components/ui/confirm-dialog'
 import {
   Dialog,
   DialogContent,
@@ -71,7 +72,7 @@ export function BillingConfigDialog({
         if (!next && !isPending) onCancel()
       }}
     >
-      <DialogContent showCloseButton={false} className="sm:max-w-md">
+      <DialogContent showCloseButton={false} className={DIALOG_ROOMY_CLASS}>
         <DialogHeader>
           <DialogTitle>Alterar o ciclo de {bankName}?</DialogTitle>
           <DialogDescription>

@@ -1,5 +1,6 @@
 'use client'
 
+import { DIALOG_ROOMY_CLASS } from '@/components/ui/confirm-dialog'
 import {
   Dialog,
   DialogContent,
@@ -66,7 +67,7 @@ export function DeleteLinkedWarningDialog({
         if (!o && !isPending) onCancel()
       }}
     >
-      <DialogContent showCloseButton={false} className="sm:max-w-md">
+      <DialogContent showCloseButton={false} className={DIALOG_ROOMY_CLASS}>
         <DialogHeader>
           <DialogTitle>Excluir {noun}</DialogTitle>
           <DialogDescription>

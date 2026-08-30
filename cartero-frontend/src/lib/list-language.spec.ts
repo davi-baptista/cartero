@@ -926,3 +926,112 @@ describe('itens 30 e 56: o que NÃO podia mudar', () => {
     expect(FATURAS).toContain('border-primary/40')
   })
 })
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * O3 — a família dos diálogos de decisão
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Dialog central significa UMA coisa no Cartero: decisão ou tarefa curta.
+ * Painel lateral significa consultar. A distinção só se sustenta se os
+ * diálogos parecerem entre si.
+ */
+
+const CONFIRM = ler('../components/ui/confirm-dialog.tsx')
+const D_UNMARK = ler('../app/(dashboard)/transactions/unmark-paid-warning-dialog.tsx')
+const D_LINKED = ler('../app/(dashboard)/transactions/delete-linked-warning-dialog.tsx')
+const D_SCOPE = ler('../app/(dashboard)/transactions/installment-scope-dialog.tsx')
+const D_MARK = ler('../app/(dashboard)/transactions/mark-as-paid-dialog.tsx')
+const D_SETTLE_DATE = ler('../app/(dashboard)/transactions/settlement-date-dialog.tsx')
+const D_SALARY = ler('../app/(dashboard)/budget/salary-dialog.tsx')
+const D_SETTLE_PERSON = ler('../app/(dashboard)/persons/settle-person-dialog.tsx')
+const D_BILLING = ler('../app/(dashboard)/banks/billing-config-dialog.tsx')
+
+describe('O3: confirmação binária tem uma casca só', () => {
+  it('o aviso de desmarcar virou adapter de ConfirmDialog', () => {
+    /*
+      Era uma reimplementação byte a byte: mesmo `sm:max-w-sm`, mesmo rodapé
+      Cancelar/destrutivo, mesma guarda de `isPending` no `onOpenChange` e o
+      mesmo spinner. Só o texto era próprio.
+    */
+    expect(D_UNMARK).toContain('<ConfirmDialog')
+    expect(code(D_UNMARK)).not.toContain('DialogFooter')
+    expect(code(D_UNMARK)).not.toContain('DialogContent')
+  })
+
+  it('o domínio ficou no adapter, não na casca', () => {
+    /* `kind` decide substantivo e particípio; a casca não sabe o que é dívida. */
+    expect(D_UNMARK).toContain("kind === 'debt'")
+
+    for (const dominio of ['debt', 'receivable', 'transaction', 'installment']) {
+      expect(code(CONFIRM), `casca conhece ${dominio}`).not.toContain(dominio)
+    }
+  })
+
+  it('a ação destrutiva usa a variant canônica', () => {
+    expect(CONFIRM).toContain("variant?: 'destructive' | 'default'")
+    expect(D_UNMARK).toContain('variant="destructive"')
+  })
+})
+
+describe('O3: uma geometria nomeada para os diálogos centrais', () => {
+  it('as duas larguras vivem em UM lugar', () => {
+    expect(CONFIRM).toContain("export const DIALOG_COMPACT_CLASS = 'sm:max-w-sm'")
+    expect(CONFIRM).toContain("export const DIALOG_ROOMY_CLASS = 'sm:max-w-md'")
+  })
+
+  it('nenhum diálogo escolhe a largura no olho', () => {
+    /*
+      Eram sete valores escritos à mão. Já seguiam a divisão na prática —
+      compacto para binário, largo para quem lista opções —, mas nada a
+      nomeava, e o próximo diálogo escolheria de novo.
+    */
+    const DIALOGS = {
+      'delete-linked': D_LINKED,
+      'installment-scope': D_SCOPE,
+      'mark-as-paid': D_MARK,
+      'settlement-date': D_SETTLE_DATE,
+      salary: D_SALARY,
+      'settle-person': D_SETTLE_PERSON,
+      'billing-config': D_BILLING,
+    }
+
+    for (const [nome, fonte] of Object.entries(DIALOGS)) {
+      expect(fonte, `${nome} deveria usar o token`).toMatch(
+        /DIALOG_(COMPACT|ROOMY)_CLASS/,
+      )
+      expect(
+        code(fonte),
+        `${nome} não deveria escrever a largura à mão`,
+      ).not.toContain('className="sm:max-w-')
+    }
+  })
+})
+
+describe('O3: o que NÃO foi unificado, e por quê', () => {
+  it('o aviso de vínculo mantém rodapé próprio: a ação primária não destrói', () => {
+    /*
+      Três ações, e a primária é "Manter a transação" — a que PRESERVA o
+      registro do dinheiro. `ConfirmDialog` põe o botão de confirmar por
+      último, então migrá-lo inverteria uma ênfase deliberada.
+
+      Compartilha a geometria; a semântica do rodapé continua própria.
+    */
+    expect(D_LINKED).toContain('Manter a transação')
+    expect(D_LINKED).toContain('DIALOG_ROOMY_CLASS')
+  })
+
+  it('escopo e formulários curtos mantêm corpo próprio', () => {
+    /*
+      Escopo lista opções; marcar-como-pago tem campos. Espremê-los em
+      `ConfirmDialog` exigiria conditionals de domínio na casca — o monstro
+      que o item 26 proíbe.
+    */
+    expect(D_SCOPE).toContain('DIALOG_ROOMY_CLASS')
+    expect(D_MARK).toContain('DIALOG_COMPACT_CLASS')
+
+    for (const fonte of [D_SCOPE, D_MARK]) {
+      expect(code(fonte)).not.toContain('<ConfirmDialog')
+    }
+  })
+})

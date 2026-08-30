@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check, Loader2, Lock } from 'lucide-react'
 import { InstallmentScope, type Transaction } from '@/types'
+import { DIALOG_ROOMY_CLASS } from '@/components/ui/confirm-dialog'
 import {
   Dialog,
   DialogContent,
@@ -166,7 +167,7 @@ export function InstallmentScopeDialog({
         if (!next && !isPending) onCancel()
       }}
     >
-      <DialogContent showCloseButton={false} className="sm:max-w-md">
+      <DialogContent showCloseButton={false} className={DIALOG_ROOMY_CLASS}>
         <DialogHeader>
           <DialogTitle>
             {isEdit ? 'Editar compra parcelada' : 'Excluir compra parcelada'}

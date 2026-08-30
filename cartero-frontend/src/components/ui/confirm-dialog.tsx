@@ -12,6 +12,26 @@ import {
 import { Button } from '@/components/ui/button'
 
 /**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Geometria dos diálogos centrais de decisão
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Duas larguras, e a escolha é objetiva:
+ *
+ *   COMPACT — decisão binária ou formulário de poucos campos. O conteúdo é
+ *             uma frase e dois botões; mais largura só afasta o texto do olho.
+ *
+ *   ROOMY   — quando o corpo LISTA opções ou explica consequências, e cada
+ *             linha precisa caber sem quebrar no meio.
+ *
+ * Eram sete valores escritos à mão pelos diálogos. Já seguiam essa divisão na
+ * prática, mas nada a nomeava — e o próximo diálogo escolheria de novo no
+ * olho.
+ */
+export const DIALOG_COMPACT_CLASS = 'sm:max-w-sm'
+export const DIALOG_ROOMY_CLASS = 'sm:max-w-md'
+
+/**
  * Confirmação de uma ação única, geralmente destrutiva.
  *
  * Existe porque o mesmo diálogo estava reescrito em oito telas, e cada cópia
@@ -61,7 +81,7 @@ export function ConfirmDialog({
         if (!next && !isPending) onCancel()
       }}
     >
-      <DialogContent showCloseButton={false} className="sm:max-w-sm">
+      <DialogContent showCloseButton={false} className={DIALOG_COMPACT_CLASS}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>

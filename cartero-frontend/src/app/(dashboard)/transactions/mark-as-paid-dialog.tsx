@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { DIALOG_COMPACT_CLASS } from '@/components/ui/confirm-dialog'
 import {
   Dialog,
   DialogContent,
@@ -69,7 +70,7 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPendi
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && !isPending && onCancel()}>
-      <DialogContent showCloseButton={false} className="sm:max-w-sm">
+      <DialogContent showCloseButton={false} className={DIALOG_COMPACT_CLASS}>
         <DialogHeader>
           <DialogTitle>
             {kind === 'debt' ? 'Marcar dívida como paga' : 'Marcar cobrança como recebida'}

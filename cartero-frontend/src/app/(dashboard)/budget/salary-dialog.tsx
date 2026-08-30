@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
+import { DIALOG_COMPACT_CLASS } from '@/components/ui/confirm-dialog'
 import {
   Dialog,
   DialogContent,
@@ -69,7 +70,7 @@ function SalaryDialogForm({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && !isPending && onCancel()}>
-      <DialogContent showCloseButton={false} className="sm:max-w-sm">
+      <DialogContent showCloseButton={false} className={DIALOG_COMPACT_CLASS}>
         <DialogHeader>
           <DialogTitle>
             {currentAmount != null ? 'Alterar renda' : 'Definir renda'}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { DIALOG_COMPACT_CLASS } from '@/components/ui/confirm-dialog'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -141,7 +142,7 @@ export function SettlePersonDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onCancel()}>
-      <DialogContent showCloseButton={false} className="sm:max-w-sm">
+      <DialogContent showCloseButton={false} className={DIALOG_COMPACT_CLASS}>
         <DialogHeader>
           <DialogTitle>
             {competenceLabel
