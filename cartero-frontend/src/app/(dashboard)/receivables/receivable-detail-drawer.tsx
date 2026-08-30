@@ -197,7 +197,7 @@ export function ReceivableDetailDrawer({
           <DetailRow label="Parcelamento">Parcelada</DetailRow>
         )}
         {receivable.description && (
-          <DetailRow label="Descrição">
+          <DetailRow label="Descrição" align="start">
             <span className="whitespace-pre-wrap">
               {receivable.description}
             </span>

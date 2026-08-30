@@ -451,6 +451,63 @@ describe('O1: o detalhe é um painel lateral', () => {
     }
   })
 
+  it('O2.5: uma só implementação de campo, sem cópia local', () => {
+    /*
+      Transação mantinha um `DetailRow` local: mesma geometria, três classes
+      diferentes (`text-right`, `font-medium`, `text-foreground`). Mesma casca,
+      duas linguagens internas.
+
+      Venceu a direita — é o que a maioria dos campos pede, e o que Fatura e
+      Pessoa já fazem nos blocos deles. O rótulo perdeu o `font-medium`: a
+      hierarquia vem da cor e da posição, e com peso ele disputava ênfase com
+      o valor.
+    */
+    expect(SHELL).toContain("align === 'end' ? 'text-right' : 'text-left'")
+    expect(SHELL).toContain("<dt className=\"text-xs text-muted-foreground\">")
+
+    /* Nenhum detalhe recria a grade nem o markup de campo. */
+    for (const [nome, fonte] of [
+      ['Extrato', EXTRATO],
+      ['Dívida', DRAWER_DIVIDA],
+      ['Cobrança', DRAWER_RECEBER],
+      ['Assinatura', DRAWER_ASSINATURA],
+    ] as const) {
+      expect(fonte, `${nome} deveria usar DetailRow`).toContain('<DetailRow')
+      expect(code(fonte), `${nome} recriou a grade`).not.toContain(
+        'grid-cols-[5.5rem',
+      )
+      expect(code(fonte), `${nome} recriou o campo`).not.toContain('<dt ')
+    }
+  })
+
+  it('o variant de alinhamento é VISUAL, não de domínio', () => {
+    /*
+      `align="start"` existe para texto corrido — uma descrição de três linhas
+      alinhada à direita fica com a margem esquerda irregular. A casca não
+      sabe que existe descrição, só que aquele valor é longo.
+    */
+    expect(SHELL).toContain("align?: 'start' | 'end'")
+
+    /*
+      Mira acoplamento REAL, sobre o código sem comentários: `description` é
+      prop genérica da casca (o subtítulo), e os nomes de entidade aparecem só
+      na prosa que explica de onde ela veio.
+    */
+    const codigo = code(SHELL)
+    for (const dominio of [
+      'isPaid',
+      'transaction.',
+      'debt.',
+      'receivable.',
+      'subscription.',
+      'installment',
+    ]) {
+      expect(codigo, `casca não deveria conhecer ${dominio}`).not.toContain(
+        dominio,
+      )
+    }
+  })
+
   it('os quatro detalhes de entidade usam a MESMA casca', () => {
     for (const [nome, fonte] of [
       ['Extrato', EXTRATO],

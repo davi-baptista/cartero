@@ -151,7 +151,7 @@ export function SubscriptionDetailDrawer({
           </DetailRow>
         )}
         {subscription.description && (
-          <DetailRow label="Descrição">
+          <DetailRow label="Descrição" align="start">
             <span className="whitespace-pre-wrap">
               {subscription.description}
             </span>

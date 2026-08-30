@@ -125,26 +125,65 @@ export function DetailList({ children }: { children: ReactNode }) {
 }
 
 /**
- * Um campo. A coluna fixa do rótulo mantém os valores alinhados entre si —
- * com largura automática, cada linha começaria num ponto diferente.
+ * Um campo do detalhe — a anatomia canônica.
+ *
+ * A coluna fixa do rótulo mantém os valores alinhados entre si; com largura
+ * automática, cada linha começaria num ponto diferente.
+ *
+ * ── Por que o valor à DIREITA ──
+ *
+ * Existiam duas linguagens: esta casca alinhava à esquerda, e o detalhe de
+ * Transação mantinha uma cópia local com `text-right`. Mesma geometria, três
+ * classes de diferença.
+ *
+ * Venceu a direita porque é o que a maioria dos campos pede: status, datas,
+ * banco, categoria e contraparte são valores CURTOS, e encostá-los na mesma
+ * borda cria uma coluna que o olho percorre de cima a baixo. Alinhados à
+ * esquerda, cada um começa onde o rótulo terminou e a leitura vira zigue-zague.
+ *
+ * É também o que Fatura e Pessoa já fazem nos blocos deles
+ * (`flex justify-between`) — não por acaso, é a leitura natural de
+ * rótulo/valor.
+ *
+ * ── E por que existe `align="start"` ──
+ *
+ * Texto livre e multilinha é a exceção real: uma descrição de três linhas
+ * alinhada à direita fica com a margem esquerda irregular e custa a ler. O
+ * variant é VISUAL, não de domínio — a casca não sabe que existe descrição,
+ * só que aquele valor é longo.
  */
 export function DetailRow({
   label,
   children,
+  align = 'end',
 }: {
   label: string
   children: ReactNode
+  /** `end` para valores curtos (padrão); `start` para texto corrido. */
+  align?: 'start' | 'end'
 }) {
   return (
     <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-4 py-3">
+      {/*
+        Rótulo em peso normal: a hierarquia vem da COR (`muted`) e da posição.
+        Com `font-medium` ele disputava ênfase com o próprio valor, que é a
+        informação que se veio buscar.
+      */}
       <dt className="text-xs text-muted-foreground">{label}</dt>
       {/*
         `min-w-0` deixa a coluna ENCOLHER; `break-words` a faz QUEBRAR. Sem o
         segundo, um título sem espaços — ou uma descrição colada — teria
-        largura intrínseca maior que o modal e o empurraria, que é o mesmo
+        largura intrínseca maior que o painel e o empurraria, que é o mesmo
         mecanismo do overflow dos botões.
       */}
-      <dd className="min-w-0 text-sm break-words">{children}</dd>
+      <dd
+        className={cn(
+          'min-w-0 text-sm break-words',
+          align === 'end' ? 'text-right' : 'text-left',
+        )}
+      >
+        {children}
+      </dd>
     </div>
   )
 }

@@ -52,6 +52,7 @@ import {
   DETAIL_ACTION_CLASS,
   DetailDrawer,
   DetailFooter,
+  DetailRow,
 } from '@/components/ui/detail-drawer'
 import {
   FinancialListRow,
@@ -526,7 +527,7 @@ function TransactionDetailsDialog({
             </DetailRow>
           )}
           {transaction.description && (
-            <DetailRow label="Descrição">
+            <DetailRow label="Descrição" align="start">
               <span className="whitespace-pre-wrap">{transaction.description}</span>
             </DetailRow>
           )}
@@ -536,20 +537,6 @@ function TransactionDetailsDialog({
   )
 }
 
-function DetailRow({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-4 py-3">
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-right text-sm text-foreground">{children}</dd>
-    </div>
-  )
-}
 
 function RowSkeleton() {
   return (

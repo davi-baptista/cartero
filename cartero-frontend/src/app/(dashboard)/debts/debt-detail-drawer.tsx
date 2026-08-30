@@ -168,7 +168,7 @@ export function DebtDetailDrawer({
           <DetailRow label="Alerta">Desativado</DetailRow>
         )}
         {debt.description && (
-          <DetailRow label="Descrição">
+          <DetailRow label="Descrição" align="start">
             <span className="whitespace-pre-wrap">{debt.description}</span>
           </DetailRow>
         )}
