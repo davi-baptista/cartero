@@ -69,6 +69,43 @@ export function SubscriptionDetailDrawer({
       onOpenChange={onOpenChange}
       title={subscription.title}
       description={`Assinatura · todo dia ${subscription.dayOfMonth}`}
+      footer={
+        <>
+          {/*
+            Pausar/retomar vem primeiro: é a ação corriqueira, e a única que a
+            row oferecia sem passar por confirmação.
+          */}
+        <DetailFooter>
+          <Button
+            variant="outline"
+            className={DETAIL_ACTION_CLASS}
+            onClick={() => onToggle(subscription)}
+          >
+            {inactive ? <Play className="size-4" /> : <Pause className="size-4" />}
+            {inactive ? 'Retomar' : 'Pausar'}
+          </Button>
+        </DetailFooter>
+
+        <DetailFooter className="border-t-0 pt-0">
+          <Button
+            variant="outline"
+            className={DETAIL_ACTION_CLASS}
+            onClick={() => onEdit(subscription)}
+          >
+            <Pencil className="size-4" />
+            Editar
+          </Button>
+          <Button
+            variant="destructive"
+            className={DETAIL_ACTION_CLASS}
+            onClick={() => onDelete(subscription)}
+          >
+            <Trash2 className="size-4" />
+            Excluir
+          </Button>
+        </DetailFooter>
+        </>
+      }
     >
       <DetailAmount label="Valor por cobrança">
         {/* Saída recorrente — mesma cor de gasto da row. */}
@@ -130,39 +167,6 @@ export function SubscriptionDetailDrawer({
         </DetailNotice>
       )}
 
-      {/*
-        Pausar/retomar vem primeiro: é a ação corriqueira, e a única que a row
-        oferecia sem passar por confirmação.
-      */}
-      <DetailFooter>
-        <Button
-          variant="outline"
-          className={DETAIL_ACTION_CLASS}
-          onClick={() => onToggle(subscription)}
-        >
-          {inactive ? <Play className="size-4" /> : <Pause className="size-4" />}
-          {inactive ? 'Retomar' : 'Pausar'}
-        </Button>
-      </DetailFooter>
-
-      <DetailFooter className="border-t-0 pt-0">
-        <Button
-          variant="outline"
-          className={DETAIL_ACTION_CLASS}
-          onClick={() => onEdit(subscription)}
-        >
-          <Pencil className="size-4" />
-          Editar
-        </Button>
-        <Button
-          variant="destructive"
-          className={DETAIL_ACTION_CLASS}
-          onClick={() => onDelete(subscription)}
-        >
-          <Trash2 className="size-4" />
-          Excluir
-        </Button>
-      </DetailFooter>
     </DetailDrawer>
   )
 }

@@ -84,6 +84,60 @@ export function ReceivableDetailDrawer({
       onOpenChange={onOpenChange}
       title={receivable.title}
       description={`Cobrança · vence em ${formatDate(receivable.dueDate)}`}
+      footer={
+        <>
+        <DetailFooter className={DETAIL_ACTION_STACK_CLASS}>
+          <Button
+            variant="outline"
+            className={DETAIL_ACTION_CLASS}
+            onClick={() => onToggleReceived(receivable)}
+          >
+            {receivable.isPaid ? (
+              <Undo2 className="size-4" />
+            ) : (
+              <Check className="size-4" />
+            )}
+            {receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
+          </Button>
+          {canEditSettlementDate(receivable) && onEditSettlementDate && (
+            <Button
+              variant="outline"
+              className={DETAIL_ACTION_CLASS}
+              onClick={() => onEditSettlementDate(receivable)}
+            >
+              <CalendarDays className="size-4" />
+              {settlementDateActionLabel('receivable')}
+            </Button>
+          )}
+        </DetailFooter>
+
+        <DetailFooter className="border-t-0 pt-0">
+          <Button
+            variant="outline"
+            className={DETAIL_ACTION_CLASS}
+            onClick={() => onEdit(receivable)}
+          >
+            <Pencil className="size-4" />
+            Editar
+          </Button>
+          {/*
+            Sem Excluir para a automática: o delete cascatearia para a compra.
+            O aviso acima diz onde a exclusão é feita — esconder o botão sem
+            explicar deixaria o usuário procurando.
+          */}
+          {!isAutomatic && (
+            <Button
+              variant="destructive"
+              className={DETAIL_ACTION_CLASS}
+              onClick={() => onDelete(receivable)}
+            >
+              <Trash2 className="size-4" />
+              Excluir
+            </Button>
+          )}
+        </DetailFooter>
+        </>
+      }
     >
       <DetailAmount label="Valor">
         <span
@@ -159,57 +213,6 @@ export function ReceivableDetailDrawer({
           duas.
         </DetailNotice>
       )}
-
-      <DetailFooter className={DETAIL_ACTION_STACK_CLASS}>
-        <Button
-          variant="outline"
-          className={DETAIL_ACTION_CLASS}
-          onClick={() => onToggleReceived(receivable)}
-        >
-          {receivable.isPaid ? (
-            <Undo2 className="size-4" />
-          ) : (
-            <Check className="size-4" />
-          )}
-          {receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
-        </Button>
-        {canEditSettlementDate(receivable) && onEditSettlementDate && (
-          <Button
-            variant="outline"
-            className={DETAIL_ACTION_CLASS}
-            onClick={() => onEditSettlementDate(receivable)}
-          >
-            <CalendarDays className="size-4" />
-            {settlementDateActionLabel('receivable')}
-          </Button>
-        )}
-      </DetailFooter>
-
-      <DetailFooter className="border-t-0 pt-0">
-        <Button
-          variant="outline"
-          className={DETAIL_ACTION_CLASS}
-          onClick={() => onEdit(receivable)}
-        >
-          <Pencil className="size-4" />
-          Editar
-        </Button>
-        {/*
-          Sem Excluir para a automática: o delete cascatearia para a compra.
-          O aviso acima diz onde a exclusão é feita — esconder o botão sem
-          explicar deixaria o usuário procurando.
-        */}
-        {!isAutomatic && (
-          <Button
-            variant="destructive"
-            className={DETAIL_ACTION_CLASS}
-            onClick={() => onDelete(receivable)}
-          >
-            <Trash2 className="size-4" />
-            Excluir
-          </Button>
-        )}
-      </DetailFooter>
     </DetailDrawer>
   )
 }

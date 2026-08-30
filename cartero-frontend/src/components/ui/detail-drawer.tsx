@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 
 /**
@@ -13,9 +13,17 @@ import { cn } from '@/lib/utils'
  * Casca do drawer de detalhe financeiro
  * ══════════════════════════════════════════════════════════════════════════
  *
- * Extraída do drawer de Transaction, que já era a referência. Ela carrega
- * geometria e ritmo — largura, sheet no mobile e diálogo centrado no
- * desktop, padding, divisores, tipografia de rótulo e valor.
+ * PAINEL LATERAL DIREITO — o padrão de DETAIL do app, o mesmo de Invoice e
+ * Pessoa.
+ *
+ * Nasceu extraída do detalhe de Transaction e herdou dele um diálogo CENTRAL
+ * no desktop com bottom sheet no mobile. O nome dizia "drawer" e o
+ * comportamento era outro, e conviviam duas linguagens de detalhe: clicar
+ * numa fatura abria painel lateral, clicar numa dívida abria modal central —
+ * a mesma pergunta, superfícies diferentes.
+ *
+ * `sm:max-w-md` porque estes detalhes são fichas compactas. Invoice e Pessoa
+ * usam `lg` por listarem conteúdo — é diferença de densidade, não de padrão.
  *
  * NÃO é um drawer universal com condicionais por entidade. Cada domínio monta
  * o próprio corpo: Debt e Receivable têm campos, estados e restrições que não
@@ -33,6 +41,7 @@ export function DetailDrawer({
   title,
   description,
   children,
+  footer,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -40,26 +49,49 @@ export function DetailDrawer({
   /** Linha de contexto sob o título: tipo, data, status. */
   description?: ReactNode
   children: ReactNode
+  /**
+   * Ações, ancoradas ao pé do painel.
+   *
+   * Slot próprio porque a altura agora é cheia: dentro do `children` o rodapé
+   * rolaria junto com o conteúdo e ficaria no meio do vazio quando a ficha
+   * fosse curta. Fora dele, encosta no fim do painel em qualquer altura.
+   */
+  footer?: ReactNode
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={onOpenChange}>
       {/*
-        Sheet colado embaixo no mobile, diálogo centrado no desktop — o
-        polegar alcança o rodapé no celular, e no desktop o conteúdo não
-        atravessa a tela inteira.
+        Lateral no desktop, tela cheia no mobile — o responsivo que o `Sheet`
+        já resolve, e que Invoice e Pessoa usam. Sem `rounded-t-*` nem
+        `bottom-0`: eram do bottom sheet anterior e não pertencem a este
+        padrão.
       */}
-      <DialogContent className="top-auto bottom-0 left-0 max-h-[88dvh] max-w-none translate-x-0 translate-y-0 gap-0 overflow-y-auto rounded-b-none rounded-t-2xl p-0 sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl">
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 p-0 sm:max-w-md"
+        showCloseButton
+      >
         {/* `pr-12` reserva o espaço do botão de fechar. */}
-        <DialogHeader className="border-b border-border px-5 py-5 pr-12">
-          {/* Título longo quebra em vez de alargar o diálogo. */}
-          <DialogTitle className="text-lg leading-snug break-words">
+        <SheetHeader className="shrink-0 gap-1 border-b border-border px-5 py-5 pr-12">
+          {/* Título longo quebra em vez de alargar o painel. */}
+          <SheetTitle className="text-lg leading-snug break-words">
             {title}
-          </DialogTitle>
-          {description && <DialogDescription>{description}</DialogDescription>}
-        </DialogHeader>
-        {children}
-      </DialogContent>
-    </Dialog>
+          </SheetTitle>
+          {description && <SheetDescription>{description}</SheetDescription>}
+        </SheetHeader>
+
+        {/*
+          ── Um único dono do scroll ──
+
+          O corpo rola; cabeçalho e rodapé ficam fixos. `min-h-0` é o que
+          permite isso: sem ele o filho de um flex não encolhe abaixo do
+          conteúdo, e o scroll escaparia para o painel inteiro.
+        */}
+        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+
+        {footer && <div className="shrink-0">{footer}</div>}
+      </SheetContent>
+    </Sheet>
   )
 }
 

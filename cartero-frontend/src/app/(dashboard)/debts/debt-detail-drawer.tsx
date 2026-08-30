@@ -69,6 +69,58 @@ export function DebtDetailDrawer({
       onOpenChange={onOpenChange}
       title={debt.title}
       description={`Dívida · vence em ${formatDate(debt.dueDate)}`}
+      footer={
+        <>
+          {/*
+            Marcar/desmarcar era a ação do ícone de status na row — que saiu
+            junto com o resto. Ela reaparece aqui, antes das administrativas:
+            é a que o usuário mais usa.
+          */}
+        <DetailFooter className={DETAIL_ACTION_STACK_CLASS}>
+          <Button
+            variant="outline"
+            className={DETAIL_ACTION_CLASS}
+            onClick={() => onTogglePaid(debt)}
+          >
+            {debt.isPaid ? (
+              <Undo2 className="size-4" />
+            ) : (
+              <Check className="size-4" />
+            )}
+            {debt.isPaid ? 'Marcar como pendente' : 'Marcar como paga'}
+          </Button>
+          {canEditSettlementDate(debt) && onEditSettlementDate && (
+            <Button
+              variant="outline"
+              className={DETAIL_ACTION_CLASS}
+              onClick={() => onEditSettlementDate(debt)}
+            >
+              <CalendarDays className="size-4" />
+              {settlementDateActionLabel('debt')}
+            </Button>
+          )}
+        </DetailFooter>
+
+        <DetailFooter className="border-t-0 pt-0">
+          <Button
+            variant="outline"
+            className={DETAIL_ACTION_CLASS}
+            onClick={() => onEdit(debt)}
+          >
+            <Pencil className="size-4" />
+            Editar
+          </Button>
+          <Button
+            variant="destructive"
+            className={DETAIL_ACTION_CLASS}
+            onClick={() => onDelete(debt)}
+          >
+            <Trash2 className="size-4" />
+            Excluir
+          </Button>
+        </DetailFooter>
+        </>
+      }
     >
       <DetailAmount label="Valor">
         <span
@@ -129,54 +181,6 @@ export function DebtDetailDrawer({
         </DetailNotice>
       )}
 
-      {/*
-        Marcar/desmarcar era a ação do ícone de status na row — que saiu junto
-        com o resto. Ela reaparece aqui, antes das administrativas: é a que o
-        usuário mais usa.
-      */}
-      <DetailFooter className={DETAIL_ACTION_STACK_CLASS}>
-        <Button
-          variant="outline"
-          className={DETAIL_ACTION_CLASS}
-          onClick={() => onTogglePaid(debt)}
-        >
-          {debt.isPaid ? (
-            <Undo2 className="size-4" />
-          ) : (
-            <Check className="size-4" />
-          )}
-          {debt.isPaid ? 'Marcar como pendente' : 'Marcar como paga'}
-        </Button>
-        {canEditSettlementDate(debt) && onEditSettlementDate && (
-          <Button
-            variant="outline"
-            className={DETAIL_ACTION_CLASS}
-            onClick={() => onEditSettlementDate(debt)}
-          >
-            <CalendarDays className="size-4" />
-            {settlementDateActionLabel('debt')}
-          </Button>
-        )}
-      </DetailFooter>
-
-      <DetailFooter className="border-t-0 pt-0">
-        <Button
-          variant="outline"
-          className={DETAIL_ACTION_CLASS}
-          onClick={() => onEdit(debt)}
-        >
-          <Pencil className="size-4" />
-          Editar
-        </Button>
-        <Button
-          variant="destructive"
-          className={DETAIL_ACTION_CLASS}
-          onClick={() => onDelete(debt)}
-        >
-          <Trash2 className="size-4" />
-          Excluir
-        </Button>
-      </DetailFooter>
     </DetailDrawer>
   )
 }

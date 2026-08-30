@@ -344,6 +344,93 @@ describe('o círculo de status é um controle independente', () => {
   })
 })
 
+describe('O1: o detalhe é um painel lateral', () => {
+  it('a casca usa o Sheet canônico, não um diálogo central', () => {
+    /*
+      `DetailDrawer` tinha nome de gaveta e renderizava modal central: nasceu
+      extraída do detalhe de Transaction e herdou dele a geometria. Conviviam
+      duas linguagens — fatura abria painel lateral, dívida abria modal.
+    */
+    expect(SHELL).toContain("from '@/components/ui/sheet'")
+    expect(SHELL).toContain('side="right"')
+    expect(code(SHELL)).not.toContain('DialogContent')
+  })
+
+  it('nenhum resto do bottom sheet anterior', () => {
+    /* `rounded-t-*` e `bottom-0` eram do padrão antigo. */
+    for (const residuo of ['rounded-t-2xl', 'bottom-0', 'top-auto', 'max-h-[88dvh]']) {
+      expect(code(SHELL), `sobrou ${residuo}`).not.toContain(residuo)
+    }
+  })
+
+  it('largura de ficha compacta: md, não lg', () => {
+    /*
+      Invoice e Pessoa usam `lg` por listarem conteúdo. Debt, Receivable e
+      Subscription são fichas — é diferença de densidade, não de padrão.
+    */
+    expect(SHELL).toContain('sm:max-w-md')
+  })
+
+  it('os TRÊS consumers usam a mesma casca', () => {
+    for (const [nome, fonte] of [
+      ['Dívida', DRAWER_DIVIDA],
+      ['Cobrança', DRAWER_RECEBER],
+      ['Assinatura', DRAWER_ASSINATURA],
+    ] as const) {
+      expect(fonte, `${nome} deveria usar DetailDrawer`).toContain(
+        '<DetailDrawer',
+      )
+      /* Nenhum recria geometria lateral própria. */
+      expect(code(fonte), `${nome} não deveria montar Sheet`).not.toContain(
+        'SheetContent',
+      )
+      expect(code(fonte)).not.toContain('side="right"')
+    }
+  })
+
+  it('item 13: um único dono do scroll', () => {
+    /*
+      Cabeçalho e rodapé fixos, corpo rolando. `min-h-0` é o que permite:
+      sem ele o filho de um flex não encolhe abaixo do conteúdo e o scroll
+      escaparia para o painel inteiro.
+    */
+    expect(SHELL).toContain('min-h-0 flex-1 overflow-y-auto')
+  })
+
+  it('item 12: o rodapé fica FORA da área que rola', () => {
+    /*
+      Com altura cheia, um rodapé dentro do corpo rolaria junto e ficaria no
+      meio do vazio quando a ficha fosse curta.
+    */
+    expect(SHELL).toContain('footer?: ReactNode')
+    expect(SHELL).toContain('{footer && <div className="shrink-0">{footer}</div>}')
+
+    for (const fonte of [DRAWER_DIVIDA, DRAWER_RECEBER, DRAWER_ASSINATURA]) {
+      expect(fonte).toContain('footer={')
+    }
+  })
+
+  it('itens 10 e 11: a correção de overflow sobreviveu', () => {
+    /*
+      Mais altura disponível não é razão para voltar a pôr as auxiliares lado
+      a lado: a largura do painel continua sendo `md`.
+    */
+    expect(SHELL).toContain('DETAIL_ACTION_STACK_CLASS')
+    for (const fonte of [DRAWER_DIVIDA, DRAWER_RECEBER]) {
+      expect(fonte).toContain('DETAIL_ACTION_STACK_CLASS')
+      expect(code(fonte)).not.toContain('sm:flex-row')
+    }
+  })
+
+  it('item 17: Transaction NÃO foi migrado', () => {
+    /*
+      Fica para O2: parcelamento acoplado ao markup, caminho crítico.
+    */
+    expect(EXTRATO).toContain('<DialogContent')
+    expect(code(EXTRATO)).not.toContain('<DetailDrawer')
+  })
+})
+
 describe('itens 13 e 14: geometria das ações do drawer', () => {
   it('todas as ações compartilham UMA definição', () => {
     /*
