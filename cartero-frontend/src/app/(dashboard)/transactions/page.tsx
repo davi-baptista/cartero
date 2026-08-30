@@ -38,10 +38,14 @@ import type { PreviewUpdatePayload } from '@/services/transactions.service'
 import { belongsToSeries as belongsToInstallmentSeries } from '@/lib/installment-series'
 import {
   getTransactions,
+  getTransaction,
   createTransaction,
   updateTransaction,
   deleteTransaction,
 } from '@/services/transactions.service'
+import { useDetailNavigation } from '@/lib/detail-navigation'
+import { useDetailEntity } from '@/lib/use-detail-entity'
+import { useDetailTaskAnchor } from '@/lib/use-detail-task-anchor'
 import { getBanks } from '@/services/banks.service'
 import { getCategories } from '@/services/categories.service'
 import { formatCurrency, formatDate, isExpense, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
@@ -628,7 +632,15 @@ export default function TransactionsPage() {
 
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editTx, setEditTx] = useState<Transaction | null>(null)
-  const [detailsTx, setDetailsTx] = useState<Transaction | null>(null)
+
+  /*
+    A identidade do detalhe vem da URL, nunca de um state local.
+
+    `highlight` continua sendo outra coisa: ele leva a lista até a linha e a
+    realça, sem abrir painel nenhum. Os dois podem coexistir na mesma URL —
+    chegar destacando uma compra e abrir o detalhe de outra é legítimo.
+  */
+  const detail = useDetailNavigation('transactionId')
 
   const [scopeDialog, setScopeDialog] = useState<{ tx: Transaction; mode: 'edit' | 'delete' } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null)
@@ -668,6 +680,56 @@ export default function TransactionsPage() {
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'],
     queryFn: getCategories,
+  })
+
+  /*
+    A lista já carregada resolve o clique sem requisição; a busca por id cobre
+    link direto e refresh — e também a transação que o recorte de período ou
+    os filtros deixaram de fora. Id que não resolve limpa o param.
+  */
+  const { entity: detailEntity } = useDetailEntity({
+    openId: detail.openId,
+    fromList: transactions?.find((t) => t.id === detail.openId),
+    fetchById: getTransaction,
+    queryKey: 'transaction',
+    onNotFound: detail.close,
+  })
+
+  /*
+    Toda tarefa transiente da página, derivada dos states reais.
+
+    O escopo de parcelamento e a confirmação de exclusão contam junto com o
+    formulário: são etapas do mesmo fluxo, e deixar qualquer uma de fora faria
+    o anchor ser zerado no meio da cadeia Detalhe → Escopo → Edição.
+  */
+  const taskOpen =
+    sheetOpen || scopeDialog !== null || deleteTarget !== null
+
+  /*
+    Fecha SOMENTE as tarefas transientes. Nada de filtro, busca, período ou
+    URL: a navegação que disparou isto já aconteceu.
+  */
+  const closeTransientTasks = () => {
+    setSheetOpen(false)
+    setEditTx(null)
+    setScopeDialog(null)
+    setPendingEdit(null)
+    setDeleteTarget(null)
+  }
+
+  /*
+    ── A tarefa lembra de qual detalhe nasceu ──
+
+    Sem isto, o Back apaga o `?transactionId=` e o formulário fica flutuando
+    sobre a lista, ancorado a uma transação que já não está aberta.
+
+    "Nova transação" não passa por aqui: ela é standalone, e a regra ingênua
+    "sumiu o id, feche tudo" fecharia o formulário de criação.
+  */
+  const taskAnchor = useDetailTaskAnchor({
+    detailId: detail.openId,
+    taskOpen,
+    onOrphaned: closeTransientTasks,
   })
 
   // ── Mutations ──
@@ -743,6 +805,13 @@ export default function TransactionsPage() {
       qc.invalidateQueries({ queryKey: ['budget'] })
       setDeleteTarget(null)
       setScopeDialog(null)
+      /*
+        Só o SUCESSO limpa a URL. Falha mantém o param: a transação continua
+        existindo — recusa por fatura paga ou por recebível já liquidado é o
+        caso comum aqui — e o usuário volta ao detalhe dela, não a uma lista
+        sem contexto.
+      */
+      detail.close()
       toast.success(
         variables.hasPerson
           ? 'Transação excluída — o recebível vinculado também foi removido'
@@ -828,14 +897,22 @@ export default function TransactionsPage() {
    * diálogo consegue dizer o que cada escopo faria. Perguntar primeiro exigia
    * escolher entre "esta" e "todas" sem saber o que estava mudando.
    */
+  /*
+    O detalhe NÃO é fechado ao abrir a tarefa.
+
+    Antes daqui saía um `setDetailsTx(null)`, inofensivo enquanto a identidade
+    era local. Com ela na URL, isso jogaria fora o `transactionId` — cancelar
+    a edição devolveria à lista em vez de à transação. O painel some da tela
+    por `taskOpen`; a URL continua dizendo qual transação está aberta.
+  */
   function handleEdit(tx: Transaction) {
-    setDetailsTx(null)
+    taskAnchor.beginFromDetail()
     setEditTx(tx)
     setSheetOpen(true)
   }
 
   function handleDelete(tx: Transaction) {
-    setDetailsTx(null)
+    taskAnchor.beginFromDetail()
     if (belongsToInstallmentSeries(tx)) {
       setScopeDialog({ tx, mode: 'delete' })
     } else {
@@ -942,7 +1019,15 @@ export default function TransactionsPage() {
             Histórico do que aconteceu, na data em que aconteceu
           </p>
         </div>
-        <Button onClick={() => { setEditTx(null); setSheetOpen(true) }}>
+        <Button
+          onClick={() => {
+            /* Criar não nasce de detalhe nenhum: sem anchor, a ausência de
+               `transactionId` não fecha o formulário. */
+            taskAnchor.beginStandalone()
+            setEditTx(null)
+            setSheetOpen(true)
+          }}
+        >
           <Plus className="size-4" />
           Nova transação
         </Button>
@@ -1092,7 +1177,13 @@ export default function TransactionsPage() {
             {!hasActiveFilters(filters) && !search && !typeGroup && (
               <Button
                 className="mt-5"
-                onClick={() => { setEditTx(null); setSheetOpen(true) }}
+                onClick={() => {
+                  /* Criar não nasce de detalhe nenhum: sem anchor, a
+                     ausência de `transactionId` não fecha o formulário. */
+                  taskAnchor.beginStandalone()
+                  setEditTx(null)
+                  setSheetOpen(true)
+                }}
               >
                 <Plus className="size-4" />
                 Nova transação
@@ -1107,7 +1198,7 @@ export default function TransactionsPage() {
                   <MotionRow key={item.tx.id} index={i}>
                     <TransactionRow
                       tx={item.tx}
-                      onView={setDetailsTx}
+                      onView={(tx) => detail.open(tx.id)}
                       isHighlighted={item.tx.id === highlightedId}
                       highlightRef={highlightRef}
                     />
@@ -1124,7 +1215,7 @@ export default function TransactionsPage() {
                   <InstallmentGroup
                     root={root}
                     installments={installments}
-                    onView={setDetailsTx}
+                    onView={(tx) => detail.open(tx.id)}
                     highlightedId={highlightedId}
                   />
                 </MotionRow>
@@ -1135,11 +1226,13 @@ export default function TransactionsPage() {
       </div>
 
       {/* Sheets & Dialogs */}
+      {/* Enquanto uma tarefa está aberta o painel sai da tela, mas a URL
+          continua apontando para a transação — é dela que o Cancelar volta. */}
       <TransactionDetailsDialog
-        transaction={detailsTx}
+        transaction={taskOpen ? null : detailEntity}
         siblings={transactions ?? []}
         onOpenChange={(open) => {
-          if (!open) setDetailsTx(null)
+          if (!open) detail.close()
         }}
         onEdit={handleEdit}
         onDelete={handleDelete}
