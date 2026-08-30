@@ -30,6 +30,9 @@ import { InstallmentScopeDialog } from '../transactions/installment-scope-dialog
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
 import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dialog'
 import { SettlementDateDialog } from '../transactions/settlement-date-dialog'
+import { useDetailNavigation } from '@/lib/detail-navigation'
+import { useDetailEntity } from '@/lib/use-detail-entity'
+import { useDetailTaskAnchor } from '@/lib/use-detail-task-anchor'
 import { DebtDetailDrawer } from './debt-detail-drawer'
 import {
   FinancialListRow,
@@ -41,6 +44,7 @@ import {
 } from '@/components/ui/financial-list-row'
 import { DeleteLinkedWarningDialog } from '../transactions/delete-linked-warning-dialog'
 import {
+  getDebt,
   getDebts,
   createDebt,
   updateDebt,
@@ -237,7 +241,16 @@ export default function DebtsPage() {
     Guarda o objeto, não o id: a lista pode ser refiltrada enquanto o drawer
     está aberto, e reencontrar por id devolveria `undefined` no meio do uso.
   */
-  const [detailTarget, setDetailTarget] = useState<Debt | null>(null)
+  /*
+    A identidade do detalhe vem da URL — `?debtId=`. Antes era um `useState`
+    com a entidade inteira: o Back saía da página e o refresh perdia o painel.
+
+    Em Dívidas, `personId` continua sendo FILTRO por pessoa — os dois params
+    coexistem e significam coisas diferentes.
+  */
+  const detail = useDetailNavigation('debtId')
+
+
   const [editDebt, setEditDebt] = useState<Debt | null>(null)
   /** Item cuja data de acerto está sendo corrigida. */
   const [settlementDateItem, setSettlementDateItem] =
@@ -270,6 +283,18 @@ export default function DebtsPage() {
       personId: personFilter,
       endDate,
     }),
+  })
+
+  /*
+    A lista já carregada resolve o clique sem requisição; a busca por id cobre
+    link direto e refresh. Id que não resolve limpa o param.
+  */
+  const { entity: detailEntity } = useDetailEntity({
+    openId: detail.openId,
+    fromList: (allDebts ?? []).find((item) => item.id === detail.openId),
+    fetchById: getDebt,
+    queryKey: 'debt',
+    onNotFound: detail.close,
   })
 
   const debts = useMemo(() => {
@@ -360,6 +385,12 @@ export default function DebtsPage() {
       qc.invalidateQueries({ queryKey: ['bank-invoices'] })
       qc.invalidateQueries({ queryKey: ['invoices'] })
       qc.invalidateQueries({ queryKey: ['budget'] })
+      /*
+        Só o SUCESSO limpa a URL. Falha mantém o param: o registro continua
+        existindo, e o usuário volta ao detalhe dele em vez de a uma lista sem
+        contexto nenhum.
+      */
+      detail.close()
       toast.success('Dívida excluída')
     },
     onError: () => toast.error('Erro ao excluir dívida — tente novamente'),
@@ -403,12 +434,65 @@ export default function DebtsPage() {
     Os handlers abaixo permanecem os MESMOS que a lista já usava — com as
     mesmas guardas. Mover o botão de lugar não muda o que ele pode fazer.
   */
-  function closeDetail() {
-    setDetailTarget(null)
+  /*
+    ── Suspender o painel NÃO é fechar o detalhe ──
+
+    Este helper nasceu na O1 para evitar dois overlays empilhados, quando o
+    detalhe vivia em state local — limpá-lo era inofensivo. A O4.1 apontou o
+    mesmo nome para a URL, e ele passou a DESTRUIR a identidade navegável:
+    clicar em Editar apagava o `?debtId=` e fechar o formulário devolvia o
+    usuário à lista, não ao item que ele estava vendo.
+
+    Agora só o painel se recolhe. O id continua na URL, então cancelar volta
+    ao mesmo detalhe e o refresh restaura o contexto.
+
+    Fechar de verdade continua sendo X, Escape e backdrop, pelo `onOpenChange`.
+  */
+
+  const taskOpen =
+    sheetOpen ||
+    scopeDialog !== null ||
+    deleteTarget !== null ||
+    markPaidTarget !== null ||
+    unmarkPaidTarget !== null ||
+    linkedWarningTarget !== null ||
+    settlementDateItem !== null
+
+  /*
+    Fecha SOMENTE as tarefas transientes desta página.
+
+    Nada de filtro, período, busca, `highlight`, cache ou URL: a navegação que
+    disparou isto já aconteceu, e mexer nela de novo atropelaria o usuário.
+  */
+  const closeTransientTasks = () => {
+    setSheetOpen(false)
+    setEditDebt(null)
+    setEditScope(null)
+    setScopeDialog(null)
+    setDeleteTarget(null)
+    setMarkPaidTarget(null)
+    setUnmarkPaidTarget(null)
+    setLinkedWarningTarget(null)
+    setSettlementDateItem(null)
   }
 
+  /*
+    ── A tarefa lembra de qual detalhe nasceu ──
+
+    Sem isto, o Back apaga o `?debtId=` e o formulário de edição fica
+    flutuando sobre a lista, ancorado a uma dívida que já não está aberta.
+
+    A regra ingênua — "sumiu o id, feche tudo" — não serve: "Nova dívida" abre
+    o mesmo `sheetOpen` sem nenhum id, e fecharia na cara do usuário.
+  */
+  const taskAnchor = useDetailTaskAnchor({
+    detailId: detail.openId,
+    taskOpen,
+    onOrphaned: closeTransientTasks,
+  })
+
   function handleEdit(debt: Debt) {
-    closeDetail()
+    taskAnchor.beginFromDetail()
     if (debt.parentId) {
       setScopeDialog({ debt, mode: 'edit' })
     } else {
@@ -419,7 +503,7 @@ export default function DebtsPage() {
   }
 
   function handleDelete(debt: Debt) {
-    closeDetail()
+    taskAnchor.beginFromDetail()
     if (debt.paymentTransactionId && !debt.parentId) {
       setLinkedWarningTarget(debt)
       return
@@ -446,7 +530,7 @@ export default function DebtsPage() {
   }
 
   function handleTogglePaid(debt: Debt) {
-    closeDetail()
+    taskAnchor.beginFromDetail()
     if (!debt.isPaid) {
       if (user?.createExpenseOnDebtPaid === false) {
         updateMut.mutate({ id: debt.id, payload: { isPaid: true } })
@@ -529,6 +613,7 @@ export default function DebtsPage() {
           </div>
           <Button
             onClick={() => {
+              taskAnchor.beginStandalone()
               setEditDebt(null)
               setEditScope(null)
               setSheetOpen(true)
@@ -703,7 +788,7 @@ export default function DebtsPage() {
                   <DebtRow
                     debt={debt}
                     isHighlighted={debt.id === highlightId}
-                    onView={setDetailTarget}
+                    onView={(item) => detail.open(item.id)}
                     onTogglePaid={handleTogglePaid}
                   />
                 </MotionRow>
@@ -812,13 +897,13 @@ export default function DebtsPage() {
       )}
 
       <DebtDetailDrawer
-        debt={detailTarget}
-        onOpenChange={(open) => !open && setDetailTarget(null)}
+        debt={taskOpen ? null : detailEntity}
+        onOpenChange={(open) => !open && detail.close()}
         onEdit={handleEdit}
         onDelete={handleDelete}
         onTogglePaid={handleTogglePaid}
         onEditSettlementDate={(debt) => {
-          setDetailTarget(null)
+          taskAnchor.beginFromDetail()
           setSettlementDateItem(debt)
         }}
       />

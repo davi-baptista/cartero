@@ -34,6 +34,9 @@ import { InstallmentScopeDialog } from '../transactions/installment-scope-dialog
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
 import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dialog'
 import { SettlementDateDialog } from '../transactions/settlement-date-dialog'
+import { useDetailNavigation } from '@/lib/detail-navigation'
+import { useDetailEntity } from '@/lib/use-detail-entity'
+import { useDetailTaskAnchor } from '@/lib/use-detail-task-anchor'
 import { ReceivableDetailDrawer } from './receivable-detail-drawer'
 import {
   FinancialListRow,
@@ -44,6 +47,7 @@ import {
   ROW_TRAILING_META_CLASS,
 } from '@/components/ui/financial-list-row'
 import {
+  getReceivable,
   getReceivables,
   createReceivable,
   updateReceivable,
@@ -249,7 +253,13 @@ export default function ReceivablesPage() {
     pode ser refiltrada com o drawer aberto, e reencontrar por id devolveria
     `undefined` no meio do uso.
   */
-  const [detailTarget, setDetailTarget] = useState<Receivable | null>(null)
+  /*
+    A identidade do detalhe vem da URL — `?receivableId=`. Antes era um `useState`
+    com a entidade inteira: o Back saía da página e o refresh perdia o painel.
+  */
+  const detail = useDetailNavigation('receivableId')
+
+
   const [editReceivable, setEditReceivable] = useState<Receivable | null>(null)
   /** Item cuja data de acerto está sendo corrigida. */
   const [settlementDateItem, setSettlementDateItem] =
@@ -291,6 +301,18 @@ export default function ReceivablesPage() {
       personId: personFilter,
       endDate,
     }),
+  })
+
+  /*
+    A lista já carregada resolve o clique sem requisição; a busca por id cobre
+    link direto e refresh. Id que não resolve limpa o param.
+  */
+  const { entity: detailEntity } = useDetailEntity({
+    openId: detail.openId,
+    fromList: (allReceivables ?? []).find((item) => item.id === detail.openId),
+    fetchById: getReceivable,
+    queryKey: 'receivable',
+    onNotFound: detail.close,
   })
 
   const receivables = useMemo(() => {
@@ -380,6 +402,12 @@ export default function ReceivablesPage() {
       qc.invalidateQueries({ queryKey: ['bank-invoices'] })
       qc.invalidateQueries({ queryKey: ['invoices'] })
       qc.invalidateQueries({ queryKey: ['budget'] })
+      /*
+        Só o SUCESSO limpa a URL. Falha mantém o param: o registro continua
+        existindo, e o usuário volta ao detalhe dele em vez de a uma lista sem
+        contexto nenhum.
+      */
+      detail.close()
       toast.success('Cobrança excluída')
     },
     onError: () => toast.error('Erro ao excluir cobrança — tente novamente'),
@@ -423,12 +451,84 @@ export default function ReceivablesPage() {
     continua roteando cobrança vinculada para o aviso, e o formulário continua
     com `financialLocked` para origem automática.
   */
-  function closeDetail() {
-    setDetailTarget(null)
+  /*
+    ── Suspender o painel NÃO é fechar o detalhe ──
+
+    Este helper nasceu na O1 para evitar dois overlays empilhados, quando o
+    detalhe vivia em state local — limpá-lo era inofensivo. A O4.1 apontou o
+    mesmo nome para a URL, e ele passou a DESTRUIR a identidade navegável:
+    clicar em Editar apagava o `?debtId=` e fechar o formulário devolvia o
+    usuário à lista, não ao item que ele estava vendo.
+
+    Agora só o painel se recolhe. O id continua na URL, então cancelar volta
+    ao mesmo detalhe e o refresh restaura o contexto.
+
+    Fechar de verdade continua sendo X, Escape e backdrop, pelo `onOpenChange`.
+  */
+
+  /*
+    ── Uma tarefa está sobreposta ao detalhe ──
+
+    DERIVADO, nunca um flag próprio: as tarefas fecham por muitos caminhos —
+    cancelar, salvar, erro, Escape, backdrop — e bastaria esquecer um para o
+    painel nunca mais reaparecer.
+
+    Isto só ESCONDE o painel. A identidade continua na URL, então cancelar
+    volta à mesma cobrança e o refresh restaura o contexto. Fechar de verdade
+    é só X, Escape e backdrop, pelo `onOpenChange`.
+
+    `sourceDeleteTarget` entra na conta: é a confirmação de excluir a compra de
+    origem, e o `receivableId` precisa sobreviver até o sucesso (O3.1).
+  */
+
+
+  const taskOpen =
+    sheetOpen ||
+    scopeDialog !== null ||
+    deleteTarget !== null ||
+    linkedWarningTarget !== null ||
+    sourceDeleteTarget !== null ||
+    markPaidTarget !== null ||
+    unmarkPaidTarget !== null ||
+    settlementDateItem !== null
+
+  /*
+    Fecha SOMENTE as tarefas transientes desta página.
+
+    Nada de filtro, período, busca, `highlight`, cache ou URL: a navegação que
+    disparou isto já aconteceu, e mexer nela de novo atropelaria o usuário.
+  */
+  const closeTransientTasks = () => {
+    setSheetOpen(false)
+    setEditReceivable(null)
+    setEditScope(null)
+    setScopeDialog(null)
+    setDeleteTarget(null)
+    setLinkedWarningTarget(null)
+    setSourceDeleteTarget(null)
+    setMarkPaidTarget(null)
+    setUnmarkPaidTarget(null)
+    setSettlementDateItem(null)
   }
 
+  /*
+    ── A tarefa lembra de qual detalhe nasceu ──
+
+    Sem isto, o Back apaga o `?receivableId=` e a tarefa fica flutuando sobre
+    a lista, ancorada a uma cobrança que já não está aberta. A V1.1 observou
+    isso tanto em "Editar" quanto em "Alterar data do recebimento".
+
+    A regra ingênua — "sumiu o id, feche tudo" — não serve: "Nova cobrança"
+    abre o mesmo `sheetOpen` sem nenhum id, e fecharia na cara do usuário.
+  */
+  const taskAnchor = useDetailTaskAnchor({
+    detailId: detail.openId,
+    taskOpen,
+    onOrphaned: closeTransientTasks,
+  })
+
   function handleEdit(receivable: Receivable) {
-    closeDetail()
+    taskAnchor.beginFromDetail()
     if (receivable.parentId) {
       setScopeDialog({ receivable, mode: 'edit' })
     } else {
@@ -439,7 +539,7 @@ export default function ReceivablesPage() {
   }
 
   function handleDelete(receivable: Receivable) {
-    closeDetail()
+    taskAnchor.beginFromDetail()
 
     /*
       Quem decide é o resolver canônico. Antes a condição era
@@ -484,7 +584,7 @@ export default function ReceivablesPage() {
   }
 
   function handleToggleReceived(receivable: Receivable) {
-    closeDetail()
+    taskAnchor.beginFromDetail()
     if (!receivable.isPaid) {
       if (user?.createIncomeOnReceivablePaid === false) {
         updateMut.mutate({ id: receivable.id, payload: { isPaid: true } })
@@ -556,6 +656,7 @@ export default function ReceivablesPage() {
           </div>
           <Button
             onClick={() => {
+              taskAnchor.beginStandalone()
               setEditReceivable(null)
               setEditScope(null)
               setSheetOpen(true)
@@ -730,7 +831,7 @@ export default function ReceivablesPage() {
                   <ReceivableRow
                     receivable={receivable}
                     isHighlighted={receivable.id === highlightId}
-                    onView={setDetailTarget}
+                    onView={(item) => detail.open(item.id)}
                     onToggleReceived={handleToggleReceived}
                   />
                 </MotionRow>
@@ -878,13 +979,13 @@ export default function ReceivablesPage() {
       )}
 
       <ReceivableDetailDrawer
-        receivable={detailTarget}
-        onOpenChange={(open) => !open && setDetailTarget(null)}
+        receivable={taskOpen ? null : detailEntity}
+        onOpenChange={(open) => !open && detail.close()}
         onEdit={handleEdit}
         onDelete={handleDelete}
         onToggleReceived={handleToggleReceived}
         onEditSettlementDate={(receivable) => {
-          setDetailTarget(null)
+          taskAnchor.beginFromDetail()
           setSettlementDateItem(receivable)
         }}
       />

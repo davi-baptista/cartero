@@ -19,8 +19,12 @@ import {
   ROW_TRAILING_META_CLASS,
 } from '@/components/ui/financial-list-row'
 import { SubscriptionDetailDrawer } from './subscription-detail-drawer'
+import { useDetailNavigation } from '@/lib/detail-navigation'
+import { useDetailEntity } from '@/lib/use-detail-entity'
+import { useDetailTaskAnchor } from '@/lib/use-detail-task-anchor'
 import { SubscriptionSheet, type SubscriptionFormData } from './subscription-sheet'
 import {
+  getSubscription,
   getSubscriptions,
   createSubscription,
   updateSubscription,
@@ -113,7 +117,55 @@ export default function SubscriptionsPage() {
     pode ser refiltrada com o drawer aberto, e reencontrar por id devolveria
     `undefined` no meio do uso.
   */
-  const [detailTarget, setDetailTarget] = useState<Subscription | null>(null)
+  /*
+    A identidade do detalhe vem da URL — `?subscriptionId=`. Antes era um
+    `useState` com a assinatura inteira: o Back saía da página, o refresh
+    perdia o painel, e o link não podia ser compartilhado.
+  */
+  const detail = useDetailNavigation('subscriptionId')
+
+  /*
+    ── Uma tarefa está sobreposta ao detalhe ──
+
+    DERIVADO dos states de tarefa: um flag próprio precisaria ser limpo em
+    cada saída — cancelar, salvar, erro, Escape — e esquecer uma delas
+    deixaria o painel invisível para sempre.
+
+    Só esconde. A identidade segue na URL, então cancelar volta à mesma
+    assinatura e o refresh restaura o contexto.
+  */
+
+
+  const taskOpen = sheetOpen || deleteTarget !== null
+
+  /*
+    Fecha SOMENTE as tarefas transientes desta página.
+
+    Nada de filtro, busca, cache ou URL: a navegação que disparou isto já
+    aconteceu, e mexer nela de novo atropelaria o usuário.
+  */
+  const closeTransientTasks = () => {
+    setSheetOpen(false)
+    setEditTarget(null)
+    setDeleteTarget(null)
+  }
+
+  /*
+    ── A tarefa lembra de qual detalhe nasceu ──
+
+    Sem isto, o Back apaga o `?subscriptionId=` e o formulário fica flutuando
+    sobre a lista, ancorado a uma assinatura que já não está aberta.
+
+    A regra ingênua — "sumiu o id, feche tudo" — não serve: "Nova assinatura"
+    abre o mesmo `sheetOpen` sem nenhum id, e fecharia na cara do usuário.
+  */
+  const taskAnchor = useDetailTaskAnchor({
+    detailId: detail.openId,
+    taskOpen,
+    onOrphaned: closeTransientTasks,
+  })
+
+
 
   const {
     data: subscriptions = [],
@@ -124,6 +176,18 @@ export default function SubscriptionsPage() {
   } = useQuery({
     queryKey: ['subscriptions'],
     queryFn: getSubscriptions,
+  })
+  /*
+    A lista já carregada resolve o clique sem requisição; a busca por id cobre
+    link direto e refresh. Id que não resolve limpa o param em vez de deixar o
+    painel vazio.
+  */
+  const { entity: detailEntity } = useDetailEntity({
+    openId: detail.openId,
+    fromList: subscriptions.find((s) => s.id === detail.openId),
+    fetchById: getSubscription,
+    queryKey: 'subscription',
+    onNotFound: detail.close,
   })
 
   /** Mutações em assinatura geram transações — o resto do app precisa saber. */
@@ -254,6 +318,12 @@ export default function SubscriptionsPage() {
     onSuccess: () => {
       invalidateAll()
       setDeleteTarget(null)
+      /*
+        Só o SUCESSO limpa a URL. Falha mantém o param: o registro continua
+        existindo, e o usuário volta ao detalhe dele em vez de a uma lista sem
+        contexto nenhum.
+      */
+      detail.close()
       toast.success('Assinatura excluída')
     },
     onError: (error) =>
@@ -305,7 +375,11 @@ export default function SubscriptionsPage() {
               Cobranças que se repetem todo mês
             </p>
           </div>
-          <Button onClick={() => { setEditTarget(null); setSheetOpen(true) }}>
+          <Button onClick={() => {
+            taskAnchor.beginStandalone()
+            setEditTarget(null)
+            setSheetOpen(true)
+          }}>
             <Plus className="size-4" />
             Nova assinatura
           </Button>
@@ -354,7 +428,11 @@ export default function SubscriptionsPage() {
             Cadastre o que você paga todo mês — Netflix, Spotify, academia — e o
             lançamento aparece sozinho na data certa.
           </p>
-          <Button className="mt-5" onClick={() => { setEditTarget(null); setSheetOpen(true) }}>
+          <Button className="mt-5" onClick={() => {
+            taskAnchor.beginStandalone()
+            setEditTarget(null)
+            setSheetOpen(true)
+          }}>
             <Plus className="size-4" />
             Nova assinatura
           </Button>
@@ -363,7 +441,10 @@ export default function SubscriptionsPage() {
         <div>
           {subscriptions.map((s, i) => (
             <MotionRow key={s.id} index={i}>
-              <SubscriptionRow subscription={s} onView={setDetailTarget} />
+              <SubscriptionRow
+                subscription={s}
+                onView={(sub) => detail.open(sub.id)}
+              />
             </MotionRow>
           ))}
         </div>
@@ -402,19 +483,18 @@ export default function SubscriptionsPage() {
         mutation, excluir continua passando pelo ConfirmDialog.
       */}
       <SubscriptionDetailDrawer
-        subscription={detailTarget}
-        onOpenChange={(open) => !open && setDetailTarget(null)}
+        subscription={taskOpen ? null : detailEntity}
+        onOpenChange={(open) => !open && detail.close()}
         onEdit={(s) => {
-          setDetailTarget(null)
+          taskAnchor.beginFromDetail()
           setEditTarget(s)
           setSheetOpen(true)
         }}
         onDelete={(s) => {
-          setDetailTarget(null)
+          taskAnchor.beginFromDetail()
           setDeleteTarget(s)
         }}
         onToggle={(s) => {
-          setDetailTarget(null)
           updateMut.mutate({ id: s.id, payload: { isActive: !s.isActive } })
         }}
       />

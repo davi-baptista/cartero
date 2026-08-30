@@ -254,8 +254,13 @@ describe('itens 14 e 22: a row não administra mais', () => {
   })
 
   it('a row abre o detalhe, e só', () => {
-    expect(DIVIDAS).toContain('onView={setDetailTarget}')
-    expect(RECEBER).toContain('onView={setDetailTarget}')
+    /*
+      A identidade do painel passou a viver na URL (O4.1): a row pede a
+      abertura pelo id, e a navegação decide o resto. Antes guardava a
+      entidade inteira num state local.
+    */
+    expect(DIVIDAS).toContain('onView={(item) => detail.open(item.id)}')
+    expect(RECEBER).toContain('onView={(item) => detail.open(item.id)}')
   })
 })
 
@@ -800,16 +805,19 @@ describe('item 47: nenhuma proteção foi afrouxada', () => {
     expect(DRAWER_RECEBER).toContain('Marcar como recebido')
   })
 
-  it('itens 44 e 46: agir pelo drawer fecha o drawer', () => {
+  it('itens 44 e 46: agir pelo drawer não empilha dois overlays', () => {
     /*
-      Dois overlays empilhados disputariam foco, e o de baixo continuaria
-      exibindo o estado velho depois da ação — no delete, um item fantasma.
-    */
-    /*
-      Verifica CADA handler, não a mera presença de `closeDetail` no arquivo.
-      Uma asserção solta passaria com o delete quebrado desde que editar
-      ainda fechasse — e o delete é justamente onde a falha vira item
-      fantasma selecionado.
+      Dois overlays disputariam foco, e o de baixo continuaria exibindo o
+      estado velho depois da ação — no delete, um item fantasma.
+
+      A regra ANTERIOR deste teste exigia `closeDetail()` no começo de cada
+      handler, e era a própria O4.1.1: quando a identidade do detalhe passou
+      para a URL, "esconder o painel" virou "apagar o endereço". Editar uma
+      dívida levava `?debtId=x` de volta para `/debts`, e cancelar deixava o
+      usuário numa lista sem contexto nenhum.
+
+      Agora o painel some por `taskOpen`, derivado dos states de tarefa. Some
+      da tela sem sumir da URL — e é isso que este teste passou a fixar.
     */
     const handlers = {
       Dívidas: { fonte: DIVIDAS, nomes: ['handleEdit', 'handleDelete', 'handleTogglePaid'] },
@@ -817,18 +825,20 @@ describe('item 47: nenhuma proteção foi afrouxada', () => {
     }
 
     for (const [tela, { fonte, nomes }] of Object.entries(handlers)) {
-      expect(fonte).toContain('function closeDetail()')
+      /* O painel é escondido pela derivação, não por navegação. */
+      expect(fonte, `${tela}: o painel deveria ceder a vez à tarefa`).toContain(
+        'taskOpen ? null :',
+      )
 
       for (const handler of nomes) {
         const inicio = fonte.indexOf(`function ${handler}(`)
         expect(inicio, `${tela}: ${handler} não encontrado`).toBeGreaterThan(-1)
 
-        /* Só o começo do corpo: `closeDetail()` é a primeira instrução. */
         const corpo = code(fonte.slice(inicio, inicio + 400))
         expect(
           corpo,
-          `${tela}: ${handler} deveria fechar o detalhe antes de agir`,
-        ).toContain('closeDetail()')
+          `${tela}: ${handler} não pode apagar a identidade da URL`,
+        ).not.toContain('detail.close()')
       }
     }
   })
@@ -837,7 +847,7 @@ describe('item 47: nenhuma proteção foi afrouxada', () => {
 describe('Assinaturas entrou no sistema', () => {
   it('a row usa o primitive e abre o detalhe', () => {
     expect(ASSINATURAS).toContain('<FinancialListRow')
-    expect(ASSINATURAS).toContain('onView={setDetailTarget}')
+    expect(ASSINATURAS).toContain('detail.open(sub.id)')
   })
 
   it('as ações saíram da row', () => {
@@ -870,16 +880,17 @@ describe('Assinaturas entrou no sistema', () => {
     }
   })
 
-  it('agir pelo drawer fecha o drawer', () => {
+  it('agir pelo drawer não empilha dois overlays', () => {
     /*
-      Sem isso, o ConfirmDialog de exclusão abriria sobre um detalhe que
-      continuaria exibindo a assinatura recém-apagada.
+      Sem ceder a vez, o ConfirmDialog de exclusão abriria sobre um detalhe
+      que continuaria exibindo a assinatura recém-apagada.
+
+      Mas ceder a vez é ESCONDER, não navegar: `detail.close()` aqui apagava
+      `?subscriptionId=` da URL, e cancelar a exclusão devolvia o usuário a
+      uma lista sem contexto. Ver o teste irmão em Dívidas/A Receber.
     */
-    /*
-      Verifica CADA handler, não a contagem total: com `onOpenChange` e dois
-      handlers corretos, um terceiro quebrado ainda somaria três ocorrências
-      e passaria despercebido.
-    */
+    expect(ASSINATURAS).toContain('taskOpen ? null :')
+
     for (const handler of ['onEdit', 'onDelete', 'onToggle']) {
       const inicio = ASSINATURAS.indexOf(`${handler}={(s) => {`)
       expect(inicio, `${handler} não encontrado`).toBeGreaterThan(-1)
@@ -893,8 +904,8 @@ describe('Assinaturas entrou no sistema', () => {
         inicio,
         ASSINATURAS.indexOf('}}', inicio),
       )
-      expect(corpo, `${handler} deveria fechar o detalhe`).toContain(
-        'setDetailTarget(null)',
+      expect(corpo, `${handler} não pode apagar a identidade da URL`).not.toContain(
+        'detail.close()',
       )
     }
   })

@@ -12,6 +12,18 @@ export async function getSubscriptions(): Promise<Subscription[]> {
   return data
 }
 
+/**
+ * Uma assinatura pelo id.
+ *
+ * Só para resolver o detalhe quando ele chega pela URL — link direto ou
+ * refresh — e a lista ainda não está em cache. O clique numa linha resolve
+ * pela coleção já carregada, sem requisição.
+ */
+export async function getSubscription(id: string): Promise<Subscription> {
+  const { data } = await api.get<Subscription>(`/subscriptions/${id}`)
+  return data
+}
+
 export interface CreateSubscriptionPayload {
   title: string
   bankId: string
