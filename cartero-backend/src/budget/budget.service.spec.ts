@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BudgetService } from './budget.service';
 import type { PrismaService } from 'src/prisma/prisma.service';
 import { SalaryService } from 'src/salary/salary.service';
@@ -528,6 +528,29 @@ describe('BudgetService — compensação por pessoa', () => {
 describe('BudgetService — status das dívidas no breakdown', () => {
   const personEva = { id: 'person-1', name: 'Eva' };
 
+  /*
+    ── Por que o relógio é congelado aqui ──
+
+    O status de uma dívida é derivado de HOJE (`dueDate < today` → OVERDUE), e
+    `getBudget` usa o relógio real. Com fixtures de data absoluta, o teste
+    envelhece: a linha chamada "Pendente" vencia em 28/08/2026 e passou a ser
+    OVERDUE em 30/08, sem ninguém tocar no código.
+
+    As duas viraram OVERDUE, o desempate por valor colocou 30 antes de 20, e a
+    ordenação — que estava certa — pareceu quebrada.
+
+    `vi.setSystemTime` é o padrão da suíte (`budget-carry-over.spec.ts`,
+    `app.scheduler.spec.ts`). Meio-dia UTC evita ambiguidade na virada do dia
+    civil de Fortaleza (UTC-3).
+  */
+  const HOJE = utcDate(2026, 8, 19);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(HOJE);
+  });
+  afterEach(() => vi.useRealTimers());
+
   it('dívida que vence hoje ainda não está vencida', async () => {
     const today = utcDate(2026, 8, 19, 0);
     const prisma = buildPrisma({
@@ -592,9 +615,8 @@ describe('BudgetService — status das dívidas no breakdown', () => {
           dueDate: utcDate(2020, 1, 1),
         }),
         /*
-          Vence DENTRO do mês consultado e ainda não venceu de fato: é o caso
-          "Pendente". Uma data de 2099 cairia fora da janela de agosto e a
-          linha nem existiria.
+          Vence DEPOIS de `HOJE` e dentro do mês consultado: é PENDING de
+          verdade, e continuará sendo em qualquer dia que a suíte rodar.
         */
         debtRow({
           amount: '30',
@@ -606,10 +628,41 @@ describe('BudgetService — status das dívidas no breakdown', () => {
 
     const result = await buildBudgetService(prisma).getBudget(USER_ID, 8, 2026);
 
-    expect(result.debtBreakdown.map((line) => line.name)).toEqual([
-      'Vencida',
-      'Pendente',
-      'Paga',
+    /*
+      O STATUS calculado, não só a ordem: era exatamente aqui que a falha se
+      escondia. Com "Pendente" virando OVERDUE pelo relógio, a ordem mudava
+      por um motivo que a asserção de nomes não conseguia mostrar.
+    */
+    expect(
+      result.debtBreakdown.map((line) => [line.name, line.status]),
+    ).toEqual([
+      ['Vencida', 'OVERDUE'],
+      ['Pendente', 'PENDING'],
+      ['Paga', 'PAID'],
+    ]);
+  });
+
+  it('desempata por valor quando o status é o mesmo', async () => {
+    /*
+      A segunda chave do comparador, sem cobertura própria até aqui — e foi
+      ela que produziu a ordem inesperada quando as duas linhas viraram
+      OVERDUE. Separada de propósito: um teste protege o status, outro o
+      desempate, e nenhum mascara a falha do outro.
+    */
+    const prisma = buildPrisma({
+      debts: [
+        debtRow({ amount: '20', title: 'Menor', dueDate: utcDate(2020, 1, 1) }),
+        debtRow({ amount: '30', title: 'Maior', dueDate: utcDate(2020, 1, 1) }),
+      ],
+    });
+
+    const result = await buildBudgetService(prisma).getBudget(USER_ID, 8, 2026);
+
+    expect(
+      result.debtBreakdown.map((line) => [line.name, line.status]),
+    ).toEqual([
+      ['Maior', 'OVERDUE'],
+      ['Menor', 'OVERDUE'],
     ]);
   });
 });
