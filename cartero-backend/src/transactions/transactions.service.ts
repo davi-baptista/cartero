@@ -32,6 +32,19 @@ import { PreviewTransactionDto } from './dto/preview-transaction.dto';
 import { PreviewUpdateTransactionDto } from './dto/preview-update-transaction.dto';
 import type { TransactionUpdatePreview } from './transaction-update-preview.types';
 import type { TransactionPreview } from './transaction-preview.types';
+import {
+  PRESERVATION_MESSAGES,
+  type TransactionDeletePreview,
+  type TransactionDeleteResult,
+} from './transaction-delete-preview.types';
+import {
+  buildInstallmentDeletePlan,
+  deletableSetChanged,
+  readInstallmentNumber,
+  type InstallmentCandidate,
+  type InstallmentDeletePlan,
+  type InstallmentProtectionFacts,
+} from 'src/common/helpers/installment-delete-plan';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTransactionDto } from 'src/transactions/dto/create-transaction.dto';
 import { FindTransactionsDto } from 'src/transactions/dto/find-transactions.dto';
@@ -1171,7 +1184,312 @@ export class TransactionsService {
     );
   }
 
-  async remove(id: string, userId: string, scope?: string) {
+  /**
+   * Os fatos que decidem quais parcelas sobrevivem — em quatro consultas.
+   *
+   * Uma consulta por parcela seria N+1 numa série de dez. Cada uma destas
+   * pergunta por CONJUNTO e devolve ids, que o plano puro depois cruza.
+   *
+   * Recebe o cliente Prisma de fora para servir aos dois chamadores: a prévia
+   * lê fora de transação, a execução lê DENTRO dela — e é essa leitura de
+   * dentro que garante que o plano executado reflete o estado no momento da
+   * escrita, não o de quando a tela foi montada.
+   */
+  private async collectProtectionFacts(
+    tx: Prisma.TransactionClient | PrismaService,
+    series: InstallmentCandidate[],
+    userId: string,
+  ): Promise<{
+    facts: InstallmentProtectionFacts;
+    invoiceTotals: Map<string, number>;
+  }> {
+    const transactionIds = series.map((transaction) => transaction.id);
+    const invoiceIds = [
+      ...new Set(
+        series
+          .map((transaction) => transaction.invoiceId)
+          .filter((invoiceId): invoiceId is string => invoiceId !== null),
+      ),
+    ];
+
+    const [invoices, receivables, paidDebts, paidReceivables] =
+      await Promise.all([
+        invoiceIds.length
+          ? tx.invoice.findMany({
+              where: { id: { in: invoiceIds }, userId },
+              select: { id: true, status: true, totalAmount: true },
+            })
+          : Promise.resolve(
+              [] as { id: string; status: string; totalAmount: unknown }[],
+            ),
+        tx.receivable.findMany({
+          where: { userId, transactionId: { in: transactionIds } },
+          select: { transactionId: true, isPaid: true },
+        }),
+        tx.debt.findMany({
+          where: { userId, paymentTransactionId: { in: transactionIds } },
+          select: { paymentTransactionId: true },
+        }),
+        tx.receivable.findMany({
+          where: { userId, paymentTransactionId: { in: transactionIds } },
+          select: { paymentTransactionId: true },
+        }),
+      ]);
+
+    const paidInvoiceIds = new Set(
+      invoices
+        .filter((invoice) => invoice.status === 'PAID')
+        .map((invoice) => invoice.id),
+    );
+
+    const invoiceTotals = new Map(
+      invoices.map((invoice) => [invoice.id, Number(invoice.totalAmount)]),
+    );
+
+    const receivedReceivableSourceIds = new Set(
+      receivables
+        .filter((receivable) => receivable.isPaid && receivable.transactionId)
+        .map((receivable) => receivable.transactionId as string),
+    );
+
+    const pendingReceivableSourceIds = new Set(
+      receivables
+        .filter((receivable) => !receivable.isPaid && receivable.transactionId)
+        .map((receivable) => receivable.transactionId as string),
+    );
+
+    const paymentTransactionIds = new Set(
+      [...paidDebts, ...paidReceivables]
+        .map((registro) => registro.paymentTransactionId)
+        .filter((identificador): identificador is string =>
+          Boolean(identificador),
+        ),
+    );
+
+    return {
+      facts: {
+        paidInvoiceIds,
+        receivedReceivableSourceIds,
+        paymentTransactionIds,
+        pendingReceivableSourceIds,
+      },
+      invoiceTotals,
+    };
+  }
+
+  /**
+   * O plano de exclusão da série a que esta transação pertence.
+   *
+   * Fonte ÚNICA da prévia e da execução. Duas implementações da mesma regra
+   * divergiriam, e o sintoma seria a tela prometer uma coisa e o servidor
+   * fazer outra — exatamente o que esta fase existe para eliminar.
+   */
+  private async resolveInstallmentDeletePlan(
+    tx: Prisma.TransactionClient | PrismaService,
+    transaction: Transaction,
+    userId: string,
+  ): Promise<InstallmentDeletePlan> {
+    const series = await this.getInstallmentSeries(tx, transaction, userId);
+    const { facts, invoiceTotals } = await this.collectProtectionFacts(
+      tx,
+      series,
+      userId,
+    );
+
+    return buildInstallmentDeletePlan(series, facts, invoiceTotals);
+  }
+
+  /** O que a exclusão faria — sem gravar nada. */
+  async previewDelete(
+    id: string,
+    userId: string,
+  ): Promise<TransactionDeletePreview> {
+    const existing = await this.entityValidationService.validateTransaction(
+      id,
+      userId,
+    );
+
+    const isInstallment =
+      existing.parentId !== null ||
+      (await this.hasInstallmentChildren(existing.id, userId));
+
+    const plan = await this.resolveInstallmentDeletePlan(
+      this.prisma,
+      existing,
+      userId,
+    );
+
+    return {
+      isInstallment,
+      seriesTotal: plan.series.length,
+      deletableCount: plan.deletable.length,
+      preservedCount: plan.preserved.length,
+      /*
+        Soma dos valores reais. Uma série de R$ 1.000 em 3x não é 3 × 333,33:
+        a última parcela carrega o centavo do arredondamento, e multiplicar
+        erraria o total justamente na tela que promete o impacto.
+      */
+      deletableTotal: plan.deletable.reduce(
+        (total, item) => total + Number(item.amount),
+        0,
+      ),
+      deletable: plan.deletable.map((item) => ({
+        id: item.id,
+        installmentNumber: readInstallmentNumber(item.title),
+        amount: Number(item.amount),
+        date: item.date,
+      })),
+      preserved: plan.preserved.map(({ transaction: item, reason }) => ({
+        id: item.id,
+        installmentNumber: readInstallmentNumber(item.title),
+        amount: Number(item.amount),
+        date: item.date,
+        reason,
+        message: PRESERVATION_MESSAGES[reason],
+      })),
+      receivablesRemoved: plan.receivablesRemoved,
+      invoicesEmptied: plan.invoicesEmptied.length,
+    };
+  }
+
+  /**
+   * Exclui as parcelas em aberto da série — e só elas.
+   *
+   * ── Por que não passa pelos guards do `remove` legado ──
+   *
+   * Aqueles são all-or-nothing por desenho: qualquer parcela protegida
+   * derruba a operação inteira. Faz sentido para `ALL`, que promete apagar a
+   * série toda e não pode cumprir pela metade. Aqui a promessa é outra —
+   * "remova o que ainda dá" — e uma parcela protegida é RESULTADO ESPERADO,
+   * não erro.
+   *
+   * A política é a mesma; o que muda é a granularidade: `resolvePreservationReason`
+   * responde por transação em vez de por conjunto.
+   */
+  private async removeOpenInstallments(
+    id: string,
+    userId: string,
+    expectedDeletableIds?: string[],
+  ): Promise<TransactionDeleteResult> {
+    const existing = await this.entityValidationService.validateTransaction(
+      id,
+      userId,
+    );
+
+    const isInstallment =
+      existing.parentId !== null ||
+      (await this.hasInstallmentChildren(existing.id, userId));
+
+    if (!isInstallment) {
+      /*
+        Compra à vista não tem "parcelas em aberto". Apagá-la como se `OPEN`
+        fosse `ONE` executaria uma operação que ninguém pediu — a tela usa o
+        fluxo simples para este caso.
+      */
+      throw new BadRequestException({
+        message:
+          'Esta transação não é uma compra parcelada. Use a exclusão simples.',
+        code: 'OPEN_SCOPE_REQUIRES_INSTALLMENT',
+      });
+    }
+
+    return await this.prisma.$transaction(
+      async (tx: Prisma.TransactionClient) => {
+        /*
+          Recalculado DENTRO da transação: entre a prévia e este instante a
+          fatura pode ter sido paga ou a cobrança recebida. A prévia informa;
+          quem decide é esta leitura.
+        */
+        const plan = await this.resolveInstallmentDeletePlan(
+          tx,
+          existing,
+          userId,
+        );
+
+        const deletableIds = plan.deletable.map((item) => item.id);
+
+        if (deletableIds.length === 0) {
+          throw new ConflictException({
+            message:
+              'Não há parcelas em aberto que possam ser excluídas nesta compra.',
+            code: 'NO_DELETABLE_INSTALLMENTS',
+          });
+        }
+
+        /*
+          O usuário confirmou um conjunto específico. Se ele mudou, a
+          confirmação não vale mais para o conjunto novo — devolvemos o
+          estado atual e deixamos a decisão com quem pediu.
+
+          A comparação é por identidade, não por contagem: trocar uma parcela
+          por outra mantém o total e mudaria o que é apagado.
+        */
+        if (
+          expectedDeletableIds &&
+          deletableSetChanged(expectedDeletableIds, deletableIds)
+        ) {
+          throw new ConflictException({
+            message:
+              'O que pode ser excluído mudou desde a última verificação. Confira novamente antes de confirmar.',
+            code: 'DELETE_SET_CHANGED',
+          });
+        }
+
+        /*
+          Mesma ordem do `remove` legado: a cobrança derivada primeiro, depois
+          a transação, depois a fatura. O FK de `Receivable.transactionId` é
+          ON DELETE SET NULL — apagar a transação antes zeraria o vínculo e a
+          cobrança sobreviveria órfã.
+        */
+        for (const item of plan.deletable) {
+          await tx.receivable.deleteMany({
+            where: { transactionId: item.id, userId },
+          });
+
+          await tx.transaction.delete({ where: { id: item.id, userId } });
+
+          if (item.invoiceId) {
+            const invoice = await tx.invoice.update({
+              where: { id: item.invoiceId, userId },
+              data: { totalAmount: { decrement: item.amount as never } },
+            });
+
+            if (Number(invoice.totalAmount) === 0) {
+              await tx.invoice.delete({ where: { id: invoice.id, userId } });
+            }
+          }
+        }
+
+        return {
+          deletedIds: deletableIds,
+          deletedCount: deletableIds.length,
+          preservedIds: plan.preserved.map(({ transaction: item }) => item.id),
+          receivablesRemoved: plan.receivablesRemoved,
+          invoicesEmptied: plan.invoicesEmptied.length,
+        };
+      },
+    );
+  }
+
+  /**
+   * `OPEN` devolve o conjunto real removido; os escopos legados seguem sem
+   * retorno, como sempre foram. A união é honesta sobre isso — quem chama com
+   * `OPEN` precisa saber o que saiu para decidir se o painel aberto sumiu.
+   */
+  async remove(
+    id: string,
+    userId: string,
+    scope?: string,
+    expectedDeletableIds?: string[],
+  ): Promise<TransactionDeleteResult | void> {
+    /*
+      `OPEN` não é um escopo a mais na mesma máquina: ele particiona a série
+      em vez de recortá-la. Roteado antes de `normalizeScope`, que o recusa.
+    */
+    if (scope === 'OPEN') {
+      return await this.removeOpenInstallments(id, userId, expectedDeletableIds);
+    }
+
     const existing = await this.entityValidationService.validateTransaction(
       id,
       userId,
@@ -1260,9 +1578,25 @@ export class TransactionsService {
     );
   }
 
+  /**
+   * O escopo clássico, para edição e para a exclusão legada.
+   *
+   * `OPEN` é recusado em vez de cair no `ONE` do fallback. Silenciar aqui
+   * seria o pior desfecho possível: quem pedisse "exclua as parcelas em
+   * aberto" teria UMA parcela apagada e receberia sucesso — uma operação
+   * diferente da pedida, apresentada como se fosse a pedida.
+   */
   private normalizeScope(scope?: string): TransactionScope {
     if (scope === 'NEXT' || scope === 'ALL') {
       return scope;
+    }
+
+    if (scope === 'OPEN') {
+      throw new BadRequestException({
+        message:
+          'O escopo OPEN só existe para excluir as parcelas em aberto de uma compra parcelada.',
+        code: 'OPEN_SCOPE_NOT_SUPPORTED',
+      });
     }
 
     return 'ONE';

@@ -18,6 +18,7 @@ import { TransactionsService } from './transactions.service';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { PreviewTransactionDto } from './dto/preview-transaction.dto';
 import { PreviewUpdateTransactionDto } from './dto/preview-update-transaction.dto';
+import { DeleteTransactionDto } from './dto/delete-transaction.dto';
 
 @Controller('transactions')
 @UseGuards(JwtAuthGuard)
@@ -70,12 +71,32 @@ export class TransactionsController {
     return this.transactionsService.create(user.id, dto);
   }
 
+  /** O que a exclusão faria — sem gravar nada. */
+  @Post(':id/preview-delete')
+  previewDelete(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.transactionsService.previewDelete(id, user.id);
+  }
+
+  /**
+   * `scope=OPEN` exclui as parcelas em aberto da série inteira.
+   *
+   * O conjunto confirmado viaja no BODY, não na query: são até dezenas de
+   * UUIDs, e uma query com `expectedDeletableIds[]=…` repetido dezenas de
+   * vezes esbarraria no limite de tamanho de URL de proxies e logs. O verbo
+   * segue `DELETE` — a operação é a mesma, só a confirmação é mais rica.
+   */
   @Delete(':id')
   remove(
     @Param('id') id: string,
     @CurrentUser() user: User,
     @Query('scope') scope?: string,
+    @Body() dto?: DeleteTransactionDto,
   ) {
-    return this.transactionsService.remove(id, user.id, scope);
+    return this.transactionsService.remove(
+      id,
+      user.id,
+      scope,
+      dto?.expectedDeletableIds,
+    );
   }
 }
