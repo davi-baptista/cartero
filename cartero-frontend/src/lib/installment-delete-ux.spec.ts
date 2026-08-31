@@ -247,6 +247,155 @@ describe('D11: a confirmação envia os ids exatos', () => {
   })
 })
 
+describe('F1-F8: a recusa carrega o plano — nenhuma requisição extra', () => {
+  const trechoDoErro = (fonte: string) => {
+    const inicio = fonte.indexOf('const openDeleteMut')
+    const erro = fonte.slice(inicio)
+    return erro.slice(erro.indexOf('onError'), erro.indexOf('const deleteMut'))
+  }
+
+  it('F1/F7: os dois 409 leem o preview embutido', () => {
+    for (const [nome, fonte] of [
+      ['Extrato', EXTRATO],
+      ['painel da fatura', FATURA],
+    ] as const) {
+      const corpo = trechoDoErro(fonte)
+      expect(corpo, nome).toContain('DELETE_SET_CHANGED')
+      expect(corpo, nome).toContain('NO_DELETABLE_INSTALLMENTS')
+      expect(corpo, nome).toContain(
+        "apiErrorDetail<TransactionDeletePreview>(",
+      )
+    }
+  })
+
+  it('F2: o caminho normal não refaz a prévia', () => {
+    /*
+      Buscar de novo poderia observar um TERCEIRO estado e explicar a recusa
+      por algo que não a causou. O plano vem no próprio erro.
+    */
+    for (const fonte of [EXTRATO, FATURA]) {
+      const corpo = trechoDoErro(fonte)
+      const embutida = corpo.indexOf('if (embutida)')
+      const refetch = corpo.indexOf('previewDeleteTransaction(id)')
+
+      expect(embutida).toBeGreaterThan(-1)
+      /* O refetch existe, mas SÓ depois do caminho embutido retornar. */
+      expect(refetch).toBeGreaterThan(embutida)
+    }
+  })
+
+  it('F8: o fallback é defensivo e roda no máximo uma vez', () => {
+    for (const fonte of [EXTRATO, FATURA]) {
+      const corpo = trechoDoErro(fonte)
+      /* Uma única chamada, dentro de try/catch, sem laço nem retry. */
+      expect(corpo.match(/previewDeleteTransaction\(id\)/g) ?? []).toHaveLength(
+        1,
+      )
+      expect(corpo).not.toContain('while')
+      expect(corpo).not.toContain('for (')
+    }
+  })
+
+  it('não usa parsing de string para identificar a recusa', () => {
+    for (const fonte of [EXTRATO, FATURA]) {
+      const corpo = trechoDoErro(fonte)
+      expect(corpo).not.toContain("includes('DELETE_SET_CHANGED')")
+      expect(corpo).toContain('isApiErrorCode(')
+    }
+  })
+
+  it('F5: a nova confirmação envia os IDs do preview VIGENTE', () => {
+    /*
+      Reenviar o conjunto antigo garantiria outro 409 — o servidor recusaria
+      exatamente o que acabou de recusar, e o usuário ficaria preso.
+    */
+    expect(DIALOG).toContain('const preview = refreshedPreview ?? fetched ?? null')
+    expect(DIALOG).toContain('onConfirm(preview!.deletable.map((item) => item.id))')
+  })
+
+  it('F6: preview embutido com zero deletáveis remove o botão destrutivo', () => {
+    /* `nadaAExcluir` deriva do preview vigente, que já é o atualizado. */
+    expect(DIALOG).toContain(
+      'nadaAExcluir = Boolean(preview) && preview!.deletableCount === 0',
+    )
+    expect(DIALOG).toContain('{!nadaAExcluir && (')
+  })
+
+  it('uma única autoridade visível no diálogo', () => {
+    /*
+      `refreshedPreview` tem precedência sobre a query; o pai o zera ao
+      cancelar, no sucesso e ao trocar de compra (a `key` remonta).
+    */
+    expect(DIALOG).toContain('refreshedPreview ?? fetched ?? null')
+    expect(EXTRATO).toContain("key={openDeleteTarget?.id ?? 'none'}")
+    expect(FATURA).toContain("key={openDeleteTarget?.id ?? 'none'}")
+  })
+})
+
+describe('F9-F12: o painel depois do sucesso', () => {
+  it('F9/F10: fecha só quando a transação aberta foi removida', () => {
+    expect(EXTRATO).toContain(
+      'if (detail.openId && result.deletedIds.includes(detail.openId)) {',
+    )
+  })
+
+  it('F11: a parcela preservada continua aberta e recebe dados novos', () => {
+    const sucesso = EXTRATO.slice(EXTRATO.indexOf('const openDeleteMut'))
+    const corpo = sucesso.slice(0, sucesso.indexOf('onError'))
+
+    /* Invalida a lista — o painel preservado relê a entidade. */
+    expect(corpo).toContain("queryKey: ['transactions']")
+    /* E não fecha fora da condição. */
+    expect(corpo.match(/detail\.close\(\)/g) ?? []).toHaveLength(1)
+  })
+
+  it('F12: nada no fluxo depende da raiz da série existir', () => {
+    /*
+      A raiz pode ter sido removida com um filho protegido sobrevivendo. A
+      decisão usa `deletedIds`, não posição na série nem `parentId`.
+    */
+    const sucesso = EXTRATO.slice(EXTRATO.indexOf('const openDeleteMut'))
+    const corpo = sucesso.slice(0, sucesso.indexOf('onError'))
+
+    expect(corpo).not.toContain('parentId')
+    expect(corpo).toContain('result.deletedIds')
+  })
+})
+
+describe('F15-F17: quem NÃO foi migrado', () => {
+  const DIVIDAS = code(ler('../app/(dashboard)/debts/page.tsx'))
+  const RECEBER = code(ler('../app/(dashboard)/receivables/page.tsx'))
+
+  it('F15/F16: Dívidas e A Receber seguem no domínio próprio', () => {
+    /*
+      Eles usam o diálogo de escopo para séries de Dívida/Cobrança, que têm
+      endpoints próprios e não passam pelo preview de transação.
+    */
+    for (const [nome, fonte] of [
+      ['Dívidas', DIVIDAS],
+      ['A Receber', RECEBER],
+    ] as const) {
+      expect(fonte, nome).not.toContain('deleteOpenInstallments')
+      expect(fonte, nome).not.toContain('previewDeleteTransaction')
+      expect(fonte, nome).not.toContain('InstallmentDeleteDialog')
+      expect(fonte, nome).toContain('InstallmentScopeDialog')
+    }
+  })
+
+  it('F17: a edição de transação continua no escopo legado', () => {
+    expect(EXTRATO).toContain("setScopeDialog({ tx: editTx, mode: 'edit' })")
+    expect(ESCOPO).not.toContain('OPEN')
+  })
+
+  it('compra à vista não passa pela prévia', () => {
+    const handler = EXTRATO.slice(EXTRATO.indexOf('function handleDelete'))
+    const corpo = handler.slice(0, handler.indexOf('\n  }'))
+
+    expect(corpo).toContain('setDeleteTarget(tx)')
+    expect(EXTRATO).toContain('<ConfirmDialog')
+  })
+})
+
 describe('D12/D13/D14/D15: conjunto obsoleto', () => {
   it('DELETE_SET_CHANGED não repete a exclusão sozinho', () => {
     const erro = EXTRATO.slice(EXTRATO.indexOf('const openDeleteMut'))

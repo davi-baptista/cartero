@@ -54,6 +54,22 @@ export function isApiErrorCode(error: unknown, code: string): boolean {
 }
 
 /**
+ * Dados que a recusa carrega além da mensagem.
+ *
+ * Algumas recusas explicam o estado que as causou — a exclusão de parcelas
+ * devolve o plano recalculado. Ler esse campo evita uma segunda requisição
+ * que, pior que redundante, poderia observar um TERCEIRO estado e explicar a
+ * recusa por algo que não a causou.
+ *
+ * Genérico em vez de fixo no preview: quem chama declara o que espera, e o
+ * helper não precisa conhecer os tipos de cada domínio.
+ */
+export function apiErrorDetail<T>(error: unknown, field: string): T | undefined {
+  const body = errorBody(error) as Record<string, unknown> | undefined
+  return body?.[field] as T | undefined
+}
+
+/**
  * Códigos de conflito que o backend usa para recusar operações que deixariam
  * dados inconsistentes. Todos vêm com mensagem própria, então a UI só precisa
  * repassá-la — a lista existe para os casos em que o fluxo muda (abrir uma

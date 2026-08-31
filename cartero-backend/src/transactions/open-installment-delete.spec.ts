@@ -1,7 +1,10 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { TransactionsService } from './transactions.service';
-import type { TransactionDeleteResult } from './transaction-delete-preview.types';
+import type {
+  TransactionDeletePreview,
+  TransactionDeleteResult,
+} from './transaction-delete-preview.types';
 import type { EntityValidationService } from 'src/common/entity-validation.service';
 import type { PrismaService } from 'src/prisma/prisma.service';
 import {
@@ -236,6 +239,8 @@ function montar(cenario: Cenario) {
     removeOpen,
     state,
     deletes,
+    /** Exposto para contar consultas — prova que o plano não é recalculado. */
+    client,
     falhar: (id: string) => {
       falharNoDeleteDe = id;
     },
@@ -488,6 +493,139 @@ describe('execução com escopo OPEN', () => {
       BadRequestException,
     );
     expect(deletes.transactions).toHaveLength(0);
+  });
+});
+
+describe('o 409 carrega o plano que o causou', () => {
+  /*
+    Sem o plano embutido o cliente precisaria de uma segunda requisição para
+    saber o que mudou — e essa leitura poderia devolver um TERCEIRO estado,
+    explicando a recusa por algo que não a causou.
+  */
+
+  /** O corpo estruturado que o Nest devolve, já tipado. */
+  const corpoDo = (erro: unknown) =>
+    (erro as ConflictException).getResponse() as {
+      code: string;
+      message: string;
+      preview?: TransactionDeletePreview;
+    };
+
+  it('B1/B2: DELETE_SET_CHANGED traz a prévia do plano recalculado', async () => {
+    const { removeOpen } = montar({
+      parcelas: serie(4),
+      faturasPagas: ['inv1'],
+    });
+
+    /* O cliente confirmou t1..t4; t1 já está protegida. */
+    const erro = await removeOpen('t2', ['t1', 't2', 't3', 't4']).catch(
+      (e: unknown) => e,
+    );
+
+    const corpo = corpoDo(erro);
+    expect(corpo.code).toBe('DELETE_SET_CHANGED');
+    expect(corpo.preview).toBeDefined();
+
+    /* A prévia descreve exatamente o estado que causou a recusa. */
+    expect(corpo.preview!.deletable.map((d) => d.id)).toEqual([
+      't2',
+      't3',
+      't4',
+    ]);
+    expect(corpo.preview!.preserved.map((p) => p.id)).toEqual(['t1']);
+    expect(corpo.preview!.deletableCount).toBe(3);
+  });
+
+  it('B3/B5: NO_DELETABLE traz a prévia com os motivos reais', async () => {
+    const { removeOpen } = montar({
+      parcelas: serie(3),
+      faturasPagas: ['inv1', 'inv2'],
+      receivables: [{ transactionId: 't3', isPaid: true }],
+    });
+
+    const erro = await removeOpen('t1').catch((e: unknown) => e);
+    const corpo = corpoDo(erro);
+
+    expect(corpo.code).toBe('NO_DELETABLE_INSTALLMENTS');
+    expect(corpo.preview!.deletableCount).toBe(0);
+
+    const motivos = Object.fromEntries(
+      corpo.preview!.preserved.map((p) => [p.id, p.reason]),
+    );
+    expect(motivos.t1).toBe('PAID_INVOICE');
+    expect(motivos.t3).toBe('RECEIVABLE_ALREADY_PAID');
+
+    /* A frase acompanha o código — a tela não precisa traduzir. */
+    expect(corpo.preview!.preserved[0].message).toBeTruthy();
+  });
+
+  it('B4: nenhuma das duas recusas grava nada', async () => {
+    /*
+      Observa as CHAMADAS de escrita, não só o estado final.
+
+      O duplo desfaz o estado no rollback, como o Postgres faria — então
+      conferir apenas `state` e `deletes` diria "nada mudou" mesmo se a
+      operação tivesse tentado escrever antes de recusar. A recusa tem de
+      acontecer ANTES de qualquer escrita, não ser desfeita depois.
+    */
+    const semEscrita = (h: ReturnType<typeof montar>, nome: string) => {
+      expect(h.client.transaction.delete, nome).not.toHaveBeenCalled();
+      expect(h.client.receivable.deleteMany, nome).not.toHaveBeenCalled();
+      expect(h.client.invoice.update, nome).not.toHaveBeenCalled();
+      expect(h.client.invoice.delete, nome).not.toHaveBeenCalled();
+    };
+
+    const semDeletavel = montar({
+      parcelas: serie(2),
+      faturasPagas: ['inv1', 'inv2'],
+    });
+    await semDeletavel.removeOpen('t1').catch(() => undefined);
+    expect(semDeletavel.state.transactions).toHaveLength(2);
+    semEscrita(semDeletavel, 'NO_DELETABLE_INSTALLMENTS');
+
+    const conjuntoMudou = montar({
+      parcelas: serie(3),
+      faturasPagas: ['inv1'],
+    });
+    await conjuntoMudou
+      .removeOpen('t2', ['t1', 't2', 't3'])
+      .catch(() => undefined);
+    expect(conjuntoMudou.state.transactions).toHaveLength(3);
+    semEscrita(conjuntoMudou, 'DELETE_SET_CHANGED');
+  });
+
+  it('B6: o conjunto da prévia devolvida executa na segunda tentativa', async () => {
+    const cenario = { parcelas: serie(4), faturasPagas: ['inv1'] };
+    const { removeOpen } = montar(cenario);
+
+    const erro = await removeOpen('t2', ['t1', 't2', 't3', 't4']).catch(
+      (e: unknown) => e,
+    );
+    const idsAtualizados = corpoDo(erro).preview!.deletable.map((d) => d.id);
+
+    /* Segunda confirmação, agora com o conjunto que o 409 informou. */
+    const outra = montar(cenario);
+    const resultado = await outra.removeOpen('t2', idsAtualizados);
+
+    expect(resultado.deletedIds).toEqual(idsAtualizados);
+  });
+
+  it('a prévia embutida NÃO é recalculada por uma segunda leitura', async () => {
+    /*
+      Duas resoluções poderiam discordar. Contar as consultas de série prova
+      que o corpo do erro reusa o plano já calculado.
+    */
+    const { removeOpen, client } = montar({
+      parcelas: serie(3),
+      faturasPagas: ['inv1'],
+    });
+
+    await removeOpen('t2', ['t1', 't2', 't3']).catch(() => undefined);
+
+    const buscasDeSerie = client.transaction.findMany.mock.calls.filter(
+      ([args]: [{ where?: { OR?: unknown } }]) => Boolean(args?.where?.OR),
+    );
+    expect(buscasDeSerie).toHaveLength(1);
   });
 });
 

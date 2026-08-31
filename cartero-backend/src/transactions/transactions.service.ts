@@ -33,14 +33,13 @@ import { PreviewUpdateTransactionDto } from './dto/preview-update-transaction.dt
 import type { TransactionUpdatePreview } from './transaction-update-preview.types';
 import type { TransactionPreview } from './transaction-preview.types';
 import {
-  PRESERVATION_MESSAGES,
+  serializeDeletePlan,
   type TransactionDeletePreview,
   type TransactionDeleteResult,
 } from './transaction-delete-preview.types';
 import {
   buildInstallmentDeletePlan,
   deletableSetChanged,
-  readInstallmentNumber,
   type InstallmentCandidate,
   type InstallmentDeletePlan,
   type InstallmentProtectionFacts,
@@ -1319,37 +1318,7 @@ export class TransactionsService {
       userId,
     );
 
-    return {
-      isInstallment,
-      seriesTotal: plan.series.length,
-      deletableCount: plan.deletable.length,
-      preservedCount: plan.preserved.length,
-      /*
-        Soma dos valores reais. Uma série de R$ 1.000 em 3x não é 3 × 333,33:
-        a última parcela carrega o centavo do arredondamento, e multiplicar
-        erraria o total justamente na tela que promete o impacto.
-      */
-      deletableTotal: plan.deletable.reduce(
-        (total, item) => total + Number(item.amount),
-        0,
-      ),
-      deletable: plan.deletable.map((item) => ({
-        id: item.id,
-        installmentNumber: readInstallmentNumber(item.title),
-        amount: Number(item.amount),
-        date: item.date,
-      })),
-      preserved: plan.preserved.map(({ transaction: item, reason }) => ({
-        id: item.id,
-        installmentNumber: readInstallmentNumber(item.title),
-        amount: Number(item.amount),
-        date: item.date,
-        reason,
-        message: PRESERVATION_MESSAGES[reason],
-      })),
-      receivablesRemoved: plan.receivablesRemoved,
-      invoicesEmptied: plan.invoicesEmptied.length,
-    };
+    return serializeDeletePlan(plan, isInstallment);
   }
 
   /**
@@ -1408,11 +1377,21 @@ export class TransactionsService {
 
         const deletableIds = plan.deletable.map((item) => item.id);
 
+        /*
+          As duas recusas abaixo carregam o plano que as causou.
+
+          Sem ele o cliente precisaria de uma segunda requisição para saber o
+          que mudou — e essa leitura poderia devolver um terceiro estado,
+          explicando a recusa por algo que não a causou. O plano já está aqui,
+          calculado dentro da transação: serializá-lo custa nada e é a única
+          resposta que corresponde ao motivo real.
+        */
         if (deletableIds.length === 0) {
           throw new ConflictException({
             message:
               'Não há parcelas em aberto que possam ser excluídas nesta compra.',
             code: 'NO_DELETABLE_INSTALLMENTS',
+            preview: serializeDeletePlan(plan, true),
           });
         }
 
@@ -1432,6 +1411,7 @@ export class TransactionsService {
             message:
               'O que pode ser excluído mudou desde a última verificação. Confira novamente antes de confirmar.',
             code: 'DELETE_SET_CHANGED',
+            preview: serializeDeletePlan(plan, true),
           });
         }
 

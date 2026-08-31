@@ -44,7 +44,12 @@ import {
 import { InstallmentDeleteDialog } from '@/app/(dashboard)/transactions/installment-delete-dialog'
 import { deleteSuccessMessage } from '@/lib/installment-delete-copy'
 import { belongsToSeries } from '@/lib/installment-series'
-import { API_ERROR_CODES, apiErrorMessage, isApiErrorCode } from '@/lib/api-error'
+import {
+  API_ERROR_CODES,
+  apiErrorDetail,
+  apiErrorMessage,
+  isApiErrorCode,
+} from '@/lib/api-error'
 import { isAxiosError } from 'axios'
 import {
   getInvoice,
@@ -538,6 +543,18 @@ export function InvoiceDetailsDrawer({
       )
 
       if (conjuntoMudou || nadaAExcluir) {
+        /* A recusa carrega o plano recalculado — nenhuma requisição extra. */
+        const embutida = apiErrorDetail<TransactionDeletePreview>(
+          error,
+          'preview',
+        )
+        if (embutida) {
+          setRefreshedDeletePreview(embutida)
+          setOpenDeleteError(null)
+          return
+        }
+
+        /* Fallback defensivo para um backend anterior. Uma tentativa só. */
         const id = openDeleteTarget?.id
         if (id) {
           try {

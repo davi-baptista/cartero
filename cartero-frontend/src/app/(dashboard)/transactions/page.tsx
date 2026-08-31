@@ -55,7 +55,13 @@ import { getBanks } from '@/services/banks.service'
 import { getCategories } from '@/services/categories.service'
 import { formatCurrency, formatDate, isExpense, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
 import { bankDisplayName } from '@/lib/bank-display'
-import { API_ERROR_CODES, apiErrorMessage, apiErrorStatus, isApiErrorCode } from '@/lib/api-error'
+import {
+  API_ERROR_CODES,
+  apiErrorDetail,
+  apiErrorMessage,
+  apiErrorStatus,
+  isApiErrorCode,
+} from '@/lib/api-error'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import {
   DETAIL_ACTION_CLASS,
@@ -869,10 +875,10 @@ export default function TransactionsPage() {
         O conjunto mudou entre a confirmação e a execução — ou já não há nada a
         excluir. Nenhum dos dois é erro técnico, e nenhum se repete sozinho.
 
-        O 409 traz código e mensagem, não a prévia nova, então ela é buscada
-        aqui: o diálogo precisa mostrar o estado ATUAL para que a próxima
-        confirmação valha para o conjunto certo. Sem isso o usuário
-        reconfirmaria às cegas o mesmo conjunto recusado.
+        A recusa CARREGA o plano recalculado que a causou, então o caminho
+        normal não faz requisição nenhuma: o diálogo troca a prévia exibida e
+        pede nova confirmação. Buscar de novo poderia observar um terceiro
+        estado e explicar a recusa por algo que não a causou.
       */
       const conjuntoMudou = isApiErrorCode(
         err,
@@ -884,6 +890,20 @@ export default function TransactionsPage() {
       )
 
       if (conjuntoMudou || nadaAExcluir) {
+        const embutida = apiErrorDetail<TransactionDeletePreview>(
+          err,
+          'preview',
+        )
+        if (embutida) {
+          setRefreshedDeletePreview(embutida)
+          setOpenDeleteError(null)
+          return
+        }
+
+        /*
+          Fallback defensivo, fora do caminho normal: um backend anterior a
+          esta versão recusaria sem o plano. Uma tentativa só — nunca laço.
+        */
         const id = openDeleteTarget?.id
         if (id) {
           try {

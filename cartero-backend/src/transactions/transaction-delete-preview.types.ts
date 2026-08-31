@@ -1,4 +1,8 @@
-import type { InstallmentPreservationReason } from '../common/helpers/installment-delete-plan';
+import {
+  readInstallmentNumber,
+  type InstallmentDeletePlan,
+  type InstallmentPreservationReason,
+} from '../common/helpers/installment-delete-plan';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -84,3 +88,49 @@ export const PRESERVATION_MESSAGES: Record<
   PAYMENT_TRANSACTION_LINKED:
     'Esta parcela registra o pagamento de uma dívida ou cobrança.',
 };
+
+/**
+ * O plano, no formato que a API devolve.
+ *
+ * Existe como função para que a prévia e as DUAS recusas 409 sirvam o mesmo
+ * objeto a partir do MESMO plano já calculado. Montar o corpo do erro com uma
+ * segunda resolução seria pior que redundante: as duas leituras poderiam
+ * discordar, e o usuário veria uma recusa explicada por um estado que não é o
+ * que causou a recusa.
+ */
+export function serializeDeletePlan(
+  plan: InstallmentDeletePlan,
+  isInstallment: boolean,
+): TransactionDeletePreview {
+  return {
+    isInstallment,
+    seriesTotal: plan.series.length,
+    deletableCount: plan.deletable.length,
+    preservedCount: plan.preserved.length,
+    /*
+      Soma dos valores reais. Uma série de R$ 1.000 em 3x não é 3 × 333,33: a
+      última parcela carrega o centavo do arredondamento, e multiplicar
+      erraria o total justamente na tela que promete o impacto.
+    */
+    deletableTotal: plan.deletable.reduce(
+      (total, item) => total + Number(item.amount),
+      0,
+    ),
+    deletable: plan.deletable.map((item) => ({
+      id: item.id,
+      installmentNumber: readInstallmentNumber(item.title),
+      amount: Number(item.amount),
+      date: item.date,
+    })),
+    preserved: plan.preserved.map(({ transaction: item, reason }) => ({
+      id: item.id,
+      installmentNumber: readInstallmentNumber(item.title),
+      amount: Number(item.amount),
+      date: item.date,
+      reason,
+      message: PRESERVATION_MESSAGES[reason],
+    })),
+    receivablesRemoved: plan.receivablesRemoved,
+    invoicesEmptied: plan.invoicesEmptied.length,
+  };
+}
