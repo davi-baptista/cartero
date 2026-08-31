@@ -52,6 +52,10 @@ import {
   invalidateTransactionDependents,
   transactionAffectsPerson,
 } from '@/lib/transaction-dependent-queries'
+import {
+  openDeleteDialogKey,
+  scopeDialogKey,
+} from '@/lib/transaction-dialog-keys'
 import { useDetailNavigation } from '@/lib/detail-navigation'
 import { useDetailEntity } from '@/lib/use-detail-entity'
 import { useDetailTaskAnchor } from '@/lib/use-detail-task-anchor'
@@ -1410,8 +1414,15 @@ export default function TransactionsPage() {
         que pode sair, e a tela mostra o impacto antes de confirmar.
       */}
       <InstallmentDeleteDialog
-        /* Remonta por compra: a prévia de uma série não pode vazar para outra. */
-        key={openDeleteTarget?.id ?? 'none'}
+        /*
+          Remonta por compra: a prévia de uma série não pode vazar para outra.
+
+          O prefixo não é decoração. Este diálogo e o de escopo são IRMÃOS e
+          ambos ficam montados o tempo todo; com a sentinela `'none'` nos dois,
+          o estado ocioso dava a eles a MESMA key e o React reclamava de chave
+          duplicada em toda renderização da tela.
+        */
+        key={openDeleteDialogKey(openDeleteTarget?.id)}
         open={openDeleteTarget !== null}
         transactionId={openDeleteTarget?.id ?? null}
         isPending={openDeleteMut.isPending}
@@ -1436,7 +1447,12 @@ export default function TransactionsPage() {
         // Remonta por operação: o escopo volta a "Apenas esta" a cada abertura,
         // sem um efeito de reset (que a regra `set-state-in-effect` proíbe, com
         // razão — era estado derivado disfarçado de sincronização).
-        key={scopeDialog ? `${scopeDialog.mode}:${scopeDialog.tx.id}` : 'none'}
+        key={scopeDialogKey(
+          scopeDialog && {
+            mode: scopeDialog.mode,
+            transactionId: scopeDialog.tx.id,
+          },
+        )}
         open={scopeDialog !== null}
         mode={scopeDialog?.mode ?? 'delete'}
         transaction={scopeDialog?.tx ?? null}

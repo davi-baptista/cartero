@@ -76,6 +76,10 @@ import {
   invalidateTransactionDependents,
   transactionAffectsPerson,
 } from '@/lib/transaction-dependent-queries'
+import {
+  openDeleteDialogKey,
+  scopeDialogKey,
+} from '@/lib/transaction-dialog-keys'
 import type { Transaction } from '@/types'
 import { InvoiceStatus, TransactionType, InstallmentScope } from '@/types'
 import type { LucideIcon } from 'lucide-react'
@@ -945,7 +949,12 @@ export function InvoiceDetailsDrawer({
           edição o impacto exato vem da prévia do servidor. */}
       {/* Exclusão de compra parcelada — o mesmo diálogo do Extrato. */}
       <InstallmentDeleteDialog
-        key={openDeleteTarget?.id ?? 'none'}
+        /*
+          O prefixo distingue este diálogo do de escopo, que é IRMÃO e fica
+          montado junto: com a mesma sentinela nos dois, o estado ocioso lhes
+          dava a MESMA key e o React reclamava de chave duplicada.
+        */
+        key={openDeleteDialogKey(openDeleteTarget?.id)}
         open={openDeleteTarget !== null}
         transactionId={openDeleteTarget?.id ?? null}
         isPending={openDeleteMut.isPending}
@@ -968,7 +977,12 @@ export function InvoiceDetailsDrawer({
 
       <InstallmentScopeDialog
         // Remonta por operação — escopo inicial limpo sem efeito de reset.
-        key={scopeDialog ? `${scopeDialog.mode}:${scopeDialog.tx.id}` : 'none'}
+        key={scopeDialogKey(
+          scopeDialog && {
+            mode: scopeDialog.mode,
+            transactionId: scopeDialog.tx.id,
+          },
+        )}
         open={scopeDialog !== null}
         mode={scopeDialog?.mode ?? 'delete'}
         transaction={scopeDialog?.tx ?? null}

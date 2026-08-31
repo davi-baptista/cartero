@@ -99,7 +99,12 @@ describe('D8: o servidor é a autoridade', () => {
     /* Reutilizar a prévia de outra série mostraria o impacto errado. */
     expect(DIALOG).toContain("queryKey: ['transaction-delete-preview'")
     expect(DIALOG).toContain('gcTime: 0')
-    expect(EXTRATO).toContain("key={openDeleteTarget?.id ?? 'none'}")
+    /*
+      A remontagem por compra continua sendo o mecanismo; a key passou a vir de
+      `transaction-dialog-keys`, porque a sentinela literal colidia com a do
+      diálogo de escopo, que é irmão (G11).
+    */
+    expect(EXTRATO).toContain('openDeleteDialogKey(openDeleteTarget?.id)')
   })
 })
 
@@ -327,8 +332,8 @@ describe('F1-F8: a recusa carrega o plano — nenhuma requisição extra', () =>
       cancelar, no sucesso e ao trocar de compra (a `key` remonta).
     */
     expect(DIALOG).toContain('refreshedPreview ?? fetched ?? null')
-    expect(EXTRATO).toContain("key={openDeleteTarget?.id ?? 'none'}")
-    expect(FATURA).toContain("key={openDeleteTarget?.id ?? 'none'}")
+    expect(EXTRATO).toContain('openDeleteDialogKey(openDeleteTarget?.id)')
+    expect(FATURA).toContain('openDeleteDialogKey(openDeleteTarget?.id)')
   })
 })
 
