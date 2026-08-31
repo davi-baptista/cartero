@@ -42,7 +42,12 @@ import {
   createTransaction,
   updateTransaction,
   deleteTransaction,
+  deleteOpenInstallments,
+  previewDeleteTransaction,
+  type TransactionDeletePreview,
 } from '@/services/transactions.service'
+import { InstallmentDeleteDialog } from './installment-delete-dialog'
+import { deleteSuccessMessage } from '@/lib/installment-delete-copy'
 import { useDetailNavigation } from '@/lib/detail-navigation'
 import { useDetailEntity } from '@/lib/use-detail-entity'
 import { useDetailTaskAnchor } from '@/lib/use-detail-task-anchor'
@@ -644,6 +649,19 @@ export default function TransactionsPage() {
 
   const [scopeDialog, setScopeDialog] = useState<{ tx: Transaction; mode: 'edit' | 'delete' } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null)
+
+  /*
+    Exclusão das parcelas em aberto: a compra de onde a ação partiu, mais o
+    que o servidor devolve quando o conjunto muda ou a execução falha. Os dois
+    últimos vivem aqui porque pertencem à tarefa, não à requisição — o diálogo
+    continua aberto para o usuário decidir.
+  */
+  const [openDeleteTarget, setOpenDeleteTarget] = useState<Transaction | null>(
+    null,
+  )
+  const [refreshedDeletePreview, setRefreshedDeletePreview] =
+    useState<TransactionDeletePreview | null>(null)
+  const [openDeleteError, setOpenDeleteError] = useState<string | null>(null)
   /**
    * Alterações já preenchidas, aguardando a escolha de escopo.
    *
@@ -703,7 +721,10 @@ export default function TransactionsPage() {
     o anchor ser zerado no meio da cadeia Detalhe → Escopo → Edição.
   */
   const taskOpen =
-    sheetOpen || scopeDialog !== null || deleteTarget !== null
+    sheetOpen ||
+    scopeDialog !== null ||
+    deleteTarget !== null ||
+    openDeleteTarget !== null
 
   /*
     Fecha SOMENTE as tarefas transientes. Nada de filtro, busca, período ou
@@ -715,6 +736,9 @@ export default function TransactionsPage() {
     setScopeDialog(null)
     setPendingEdit(null)
     setDeleteTarget(null)
+    setOpenDeleteTarget(null)
+    setRefreshedDeletePreview(null)
+    setOpenDeleteError(null)
   }
 
   /*
@@ -790,6 +814,96 @@ export default function TransactionsPage() {
       // "Não foi possível salvar".
       toast.error(
         apiErrorMessage(err, 'Não foi possível salvar as alterações. Tente novamente.'),
+      )
+    },
+  })
+
+  /**
+   * Exclusão das parcelas em aberto.
+   *
+   * O resultado da execução é a autoridade — não a prévia que foi exibida.
+   * Entre uma e outra o servidor recalcula, e é o conjunto REAL que decide o
+   * que invalidar e se o painel aberto ainda existe.
+   */
+  const openDeleteMut = useMutation({
+    mutationFn: ({
+      id,
+      expectedDeletableIds,
+    }: {
+      id: string
+      expectedDeletableIds: string[]
+    }) => deleteOpenInstallments(id, expectedDeletableIds),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['bank-invoices'] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['budget'] })
+      qc.invalidateQueries({ queryKey: ['receivables'] })
+
+      /*
+        As superfícies da pessoa só mudam quando alguma cobrança saiu junto.
+        Invalidá-las sempre custaria duas requisições em toda exclusão de
+        compra própria, que não altera saldo de ninguém.
+      */
+      if (result.receivablesRemoved > 0) {
+        qc.invalidateQueries({ queryKey: ['persons'] })
+        qc.invalidateQueries({ queryKey: ['person-statement'] })
+      }
+
+      /*
+        O painel só fecha se a transação aberta foi de fato removida. Numa
+        série mista o usuário pode estar vendo uma parcela PRESERVADA — fechar
+        o detalhe dela seria dispensar uma entidade que continua existindo.
+      */
+      if (detail.openId && result.deletedIds.includes(detail.openId)) {
+        detail.close()
+      }
+
+      setOpenDeleteTarget(null)
+      setRefreshedDeletePreview(null)
+      setOpenDeleteError(null)
+      toast.success(deleteSuccessMessage(result.deletedCount))
+    },
+    onError: async (err) => {
+      /*
+        O conjunto mudou entre a confirmação e a execução — ou já não há nada a
+        excluir. Nenhum dos dois é erro técnico, e nenhum se repete sozinho.
+
+        O 409 traz código e mensagem, não a prévia nova, então ela é buscada
+        aqui: o diálogo precisa mostrar o estado ATUAL para que a próxima
+        confirmação valha para o conjunto certo. Sem isso o usuário
+        reconfirmaria às cegas o mesmo conjunto recusado.
+      */
+      const conjuntoMudou = isApiErrorCode(
+        err,
+        API_ERROR_CODES.DELETE_SET_CHANGED,
+      )
+      const nadaAExcluir = isApiErrorCode(
+        err,
+        API_ERROR_CODES.NO_DELETABLE_INSTALLMENTS,
+      )
+
+      if (conjuntoMudou || nadaAExcluir) {
+        const id = openDeleteTarget?.id
+        if (id) {
+          try {
+            setRefreshedDeletePreview(await previewDeleteTransaction(id))
+            setOpenDeleteError(null)
+            return
+          } catch {
+            /* A prévia também falhou; cai na mensagem do próprio 409. */
+          }
+        }
+        setOpenDeleteError(apiErrorMessage(err, 'A situação das parcelas mudou.'))
+        return
+      }
+
+      /* Falha técnica: o diálogo continua aberto, com a mensagem no contexto. */
+      setOpenDeleteError(
+        apiErrorMessage(
+          err,
+          'Não foi possível excluir as parcelas. Tente novamente.',
+        ),
       )
     },
   })
@@ -911,10 +1025,15 @@ export default function TransactionsPage() {
     setSheetOpen(true)
   }
 
+  /*
+    Compra parcelada não pergunta mais "esta / próximas / todas": pergunta se
+    as parcelas em aberto devem sair, e o servidor diz quais são. Compra à
+    vista continua na confirmação simples — não há série a particionar.
+  */
   function handleDelete(tx: Transaction) {
     taskAnchor.beginFromDetail()
     if (belongsToInstallmentSeries(tx)) {
-      setScopeDialog({ tx, mode: 'delete' })
+      setOpenDeleteTarget(tx)
     } else {
       setDeleteTarget(tx)
     }
@@ -1251,6 +1370,33 @@ export default function TransactionsPage() {
       {/* Escopo, impacto e confirmação num só lugar — inclusive o aceite de
           fatura fechada, que antes era um diálogo separado abrindo por cima
           deste depois do save falhar. */}
+      {/*
+        Exclusão de compra parcelada. O escopo saiu daqui: o servidor decide o
+        que pode sair, e a tela mostra o impacto antes de confirmar.
+      */}
+      <InstallmentDeleteDialog
+        /* Remonta por compra: a prévia de uma série não pode vazar para outra. */
+        key={openDeleteTarget?.id ?? 'none'}
+        open={openDeleteTarget !== null}
+        transactionId={openDeleteTarget?.id ?? null}
+        isPending={openDeleteMut.isPending}
+        refreshedPreview={refreshedDeletePreview}
+        executionError={openDeleteError}
+        onConfirm={(expectedDeletableIds) => {
+          if (!openDeleteTarget) return
+          setOpenDeleteError(null)
+          openDeleteMut.mutate({
+            id: openDeleteTarget.id,
+            expectedDeletableIds,
+          })
+        }}
+        onCancel={() => {
+          setOpenDeleteTarget(null)
+          setRefreshedDeletePreview(null)
+          setOpenDeleteError(null)
+        }}
+      />
+
       <InstallmentScopeDialog
         // Remonta por operação: o escopo volta a "Apenas esta" a cada abertura,
         // sem um efeito de reset (que a regra `set-state-in-effect` proíbe, com

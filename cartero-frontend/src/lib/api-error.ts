@@ -81,4 +81,13 @@ export const API_ERROR_CODES = {
    */
   AUTOMATIC_RECEIVABLE_MANAGED_BY_TRANSACTION:
     'AUTOMATIC_RECEIVABLE_MANAGED_BY_TRANSACTION',
+  /**
+   * O que podia ser excluído mudou entre a prévia e a confirmação.
+   *
+   * Não é erro técnico: a confirmação do usuário valia para um conjunto que
+   * já não é o atual. A tela recarrega a prévia e pede nova confirmação.
+   */
+  DELETE_SET_CHANGED: 'DELETE_SET_CHANGED',
+  /** Nenhuma parcela da série está em aberto e livre de travas. */
+  NO_DELETABLE_INSTALLMENTS: 'NO_DELETABLE_INSTALLMENTS',
 } as const

@@ -198,3 +198,86 @@ export async function deleteTransaction(id: string, scope?: InstallmentScope): P
     params: scope ? { scope } : undefined,
   })
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Excluir as parcelas em aberto de uma compra parcelada
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * O servidor é a autoridade sobre o que pode sair. O cliente não repete
+ * `invoice.status === 'PAID'` nem consulta cobranças: ele pergunta, mostra a
+ * resposta e devolve exatamente o conjunto que o usuário confirmou.
+ */
+
+/** Por que uma parcela sobrevive à exclusão. */
+export type InstallmentPreservationReason =
+  | 'PAID_INVOICE'
+  | 'RECEIVABLE_ALREADY_PAID'
+  | 'PAYMENT_TRANSACTION_LINKED'
+
+export interface DeletePreviewInstallment {
+  id: string
+  /** Posição original na série (`7` em "7/10"). Nunca recalculada. */
+  installmentNumber: number | null
+  amount: number
+  date: string
+}
+
+export interface DeletePreviewPreserved extends DeletePreviewInstallment {
+  reason: InstallmentPreservationReason
+  message: string
+}
+
+export interface TransactionDeletePreview {
+  /** `false` para compra à vista — a tela usa a confirmação simples. */
+  isInstallment: boolean
+  seriesTotal: number
+  deletableCount: number
+  preservedCount: number
+  /** Soma real das deletáveis, não valor × quantidade. */
+  deletableTotal: number
+  deletable: DeletePreviewInstallment[]
+  preserved: DeletePreviewPreserved[]
+  receivablesRemoved: number
+  invoicesEmptied: number
+}
+
+/** O que a execução de fato removeu — não o que a prévia previa. */
+export interface TransactionDeleteResult {
+  deletedIds: string[]
+  deletedCount: number
+  preservedIds: string[]
+  receivablesRemoved: number
+  invoicesEmptied: number
+}
+
+export async function previewDeleteTransaction(
+  id: string,
+): Promise<TransactionDeletePreview> {
+  const { data } = await api.post<TransactionDeletePreview>(
+    `/transactions/${id}/preview-delete`,
+  )
+  return data
+}
+
+/**
+ * Executa a exclusão das parcelas em aberto.
+ *
+ * `expectedDeletableIds` são os ids que o usuário viu na prévia. Mandar a
+ * contagem não bastaria: trocar uma parcela por outra mantém o total e mudaria
+ * o que é apagado. Se o conjunto tiver mudado, o servidor recusa com
+ * `DELETE_SET_CHANGED` em vez de executar algo diferente do confirmado.
+ */
+export async function deleteOpenInstallments(
+  id: string,
+  expectedDeletableIds: string[],
+): Promise<TransactionDeleteResult> {
+  const { data } = await api.delete<TransactionDeleteResult>(
+    `/transactions/${id}`,
+    {
+      params: { scope: 'OPEN' },
+      data: { expectedDeletableIds },
+    },
+  )
+  return data
+}

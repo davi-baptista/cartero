@@ -36,8 +36,13 @@ import {
   createTransaction,
   updateTransaction,
   deleteTransaction,
+  deleteOpenInstallments,
+  previewDeleteTransaction,
   type PreviewUpdatePayload,
+  type TransactionDeletePreview,
 } from '@/services/transactions.service'
+import { InstallmentDeleteDialog } from '@/app/(dashboard)/transactions/installment-delete-dialog'
+import { deleteSuccessMessage } from '@/lib/installment-delete-copy'
 import { belongsToSeries } from '@/lib/installment-series'
 import { API_ERROR_CODES, apiErrorMessage, isApiErrorCode } from '@/lib/api-error'
 import { isAxiosError } from 'axios'
@@ -381,6 +386,14 @@ export function InvoiceDetailsDrawer({
     payload: Parameters<typeof updateTransaction>[1]
   } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null)
+
+  /* Exclusão das parcelas em aberto — mesmo fluxo do Extrato. */
+  const [openDeleteTarget, setOpenDeleteTarget] = useState<Transaction | null>(
+    null,
+  )
+  const [refreshedDeletePreview, setRefreshedDeletePreview] =
+    useState<TransactionDeletePreview | null>(null)
+  const [openDeleteError, setOpenDeleteError] = useState<string | null>(null)
   /**
    * Categoria escolhida no gráfico — recorta a lista abaixo. Guarda junto a
    * fatura a que pertence, para o filtro não vazar ao trocar de fatura.
@@ -485,6 +498,71 @@ export function InvoiceDetailsDrawer({
     },
   })
 
+  /**
+   * Exclusão das parcelas em aberto, a partir do painel da fatura.
+   *
+   * O resultado da execução é a autoridade; a prévia exibida apenas informou.
+   * Não há detalhe de transação para fechar aqui — este painel é da FATURA,
+   * e a exclusão de parcelas não muda qual fatura está aberta.
+   */
+  const openDeleteMut = useMutation({
+    mutationFn: ({
+      id,
+      expectedDeletableIds,
+    }: {
+      id: string
+      expectedDeletableIds: string[]
+    }) => deleteOpenInstallments(id, expectedDeletableIds),
+    onSuccess: (result) => {
+      invalidateAfterTxChange()
+
+      /* Só quando alguma cobrança saiu junto o saldo de alguém mudou. */
+      if (result.receivablesRemoved > 0) {
+        qc.invalidateQueries({ queryKey: ['persons'] })
+        qc.invalidateQueries({ queryKey: ['person-statement'] })
+      }
+
+      setOpenDeleteTarget(null)
+      setRefreshedDeletePreview(null)
+      setOpenDeleteError(null)
+      toast.success(deleteSuccessMessage(result.deletedCount))
+    },
+    onError: async (error) => {
+      const conjuntoMudou = isApiErrorCode(
+        error,
+        API_ERROR_CODES.DELETE_SET_CHANGED,
+      )
+      const nadaAExcluir = isApiErrorCode(
+        error,
+        API_ERROR_CODES.NO_DELETABLE_INSTALLMENTS,
+      )
+
+      if (conjuntoMudou || nadaAExcluir) {
+        const id = openDeleteTarget?.id
+        if (id) {
+          try {
+            setRefreshedDeletePreview(await previewDeleteTransaction(id))
+            setOpenDeleteError(null)
+            return
+          } catch {
+            /* A prévia também falhou; usa a mensagem do próprio 409. */
+          }
+        }
+        setOpenDeleteError(
+          apiErrorMessage(error, 'A situação das parcelas mudou.'),
+        )
+        return
+      }
+
+      setOpenDeleteError(
+        apiErrorMessage(
+          error,
+          'Não foi possível excluir as parcelas. Tente novamente.',
+        ),
+      )
+    },
+  })
+
   const deleteTxMut = useMutation({
     mutationFn: ({ id, scope }: { id: string; scope?: InstallmentScope }) =>
       deleteTransaction(id, scope),
@@ -538,9 +616,14 @@ export function InvoiceDetailsDrawer({
     setTxSheetOpen(true)
   }
 
+  /*
+    Mesma política do Extrato: compra parcelada não escolhe escopo, o servidor
+    diz o que ainda pode sair. Duas interpretações da mesma regra em telas
+    diferentes é como a divergência começa.
+  */
   function handleDeleteTx(tx: Transaction) {
     if (belongsToSeries(tx)) {
-      setScopeDialog({ tx, mode: 'delete' })
+      setOpenDeleteTarget(tx)
       return
     }
     setDeleteTarget(tx)
@@ -829,6 +912,29 @@ export function InvoiceDetailsDrawer({
           fatura diferente, a série chega quase sempre incompleta — o diálogo
           detecta isso e apresenta os números como piso, não como total. Na
           edição o impacto exato vem da prévia do servidor. */}
+      {/* Exclusão de compra parcelada — o mesmo diálogo do Extrato. */}
+      <InstallmentDeleteDialog
+        key={openDeleteTarget?.id ?? 'none'}
+        open={openDeleteTarget !== null}
+        transactionId={openDeleteTarget?.id ?? null}
+        isPending={openDeleteMut.isPending}
+        refreshedPreview={refreshedDeletePreview}
+        executionError={openDeleteError}
+        onConfirm={(expectedDeletableIds) => {
+          if (!openDeleteTarget) return
+          setOpenDeleteError(null)
+          openDeleteMut.mutate({
+            id: openDeleteTarget.id,
+            expectedDeletableIds,
+          })
+        }}
+        onCancel={() => {
+          setOpenDeleteTarget(null)
+          setRefreshedDeletePreview(null)
+          setOpenDeleteError(null)
+        }}
+      />
+
       <InstallmentScopeDialog
         // Remonta por operação — escopo inicial limpo sem efeito de reset.
         key={scopeDialog ? `${scopeDialog.mode}:${scopeDialog.tx.id}` : 'none'}
