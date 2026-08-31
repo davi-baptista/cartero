@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { deleteTransaction } from '@/services/transactions.service'
+import { invalidateTransactionDependents } from '@/lib/transaction-dependent-queries'
 import { apiErrorMessage } from '@/lib/api-error'
 
 /**
@@ -34,18 +35,14 @@ export function useDeleteSourceTransaction(options?: {
     mutationFn: (transactionId: string) => deleteTransaction(transactionId),
     onSuccess: () => {
       /*
-        As mesmas invalidações do delete pelo Extrato — a operação é a mesma, e
-        uma lista menor deixaria alguma superfície exibindo o que já não existe.
+        A política compartilhada de qualquer lançamento. A lista anterior
+        invalidava `persons` mas esquecia `person-statement` — e este atalho
+        parte justamente do extrato da pessoa, a tela que ficava obsoleta.
 
-        `persons` entra porque este caminho pode partir do extrato da pessoa,
-        onde o saldo consolidado muda junto.
+        `affectsPerson` é sempre verdadeiro: este caminho só existe para
+        excluir a compra que ORIGINOU uma cobrança automática de alguém.
       */
-      qc.invalidateQueries({ queryKey: ['transactions'] })
-      qc.invalidateQueries({ queryKey: ['bank-invoices'] })
-      qc.invalidateQueries({ queryKey: ['receivables'] })
-      qc.invalidateQueries({ queryKey: ['invoices'] })
-      qc.invalidateQueries({ queryKey: ['budget'] })
-      qc.invalidateQueries({ queryKey: ['persons'] })
+      invalidateTransactionDependents(qc, { affectsPerson: true })
 
       toast.success('Compra e cobrança excluídas')
       options?.onSuccess?.()

@@ -27,6 +27,10 @@ import {
   getInvoice,
 } from '@/services/invoices.service'
 import { useDetailNavigation } from '@/lib/detail-navigation'
+import {
+  invalidateTransactionDependents,
+  transactionAffectsPerson,
+} from '@/lib/transaction-dependent-queries'
 import { useDetailEntity } from '@/lib/use-detail-entity'
 import { getBank, restoreBank } from '@/services/banks.service'
 import {
@@ -386,11 +390,15 @@ export default function BankInvoicesPage() {
 
   const createTxMut = useMutation({
     mutationFn: createTransaction,
-    onSuccess: () => {
-      // As mesmas chaves que o drawer invalida: a fatura nasce deste lançamento.
-      qc.invalidateQueries({ queryKey: ['bank-invoices', bankId] })
-      qc.invalidateQueries({ queryKey: ['transactions'] })
-      qc.invalidateQueries({ queryKey: ['budget'] })
+    onSuccess: (_data, variables) => {
+      /*
+        A política é a mesma de qualquer lançamento — antes esta lista
+        esquecia `invoices` e `receivables`, que o Extrato já invalidava.
+      */
+      invalidateTransactionDependents(qc, {
+        bankId,
+        affectsPerson: transactionAffectsPerson(null, variables.personId),
+      })
       setCreateOpen(false)
       toast.success('Transação criada')
     },

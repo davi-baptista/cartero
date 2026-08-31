@@ -48,6 +48,10 @@ import {
 } from '@/services/transactions.service'
 import { InstallmentDeleteDialog } from './installment-delete-dialog'
 import { deleteSuccessMessage } from '@/lib/installment-delete-copy'
+import {
+  invalidateTransactionDependents,
+  transactionAffectsPerson,
+} from '@/lib/transaction-dependent-queries'
 import { useDetailNavigation } from '@/lib/detail-navigation'
 import { useDetailEntity } from '@/lib/use-detail-entity'
 import { useDetailTaskAnchor } from '@/lib/use-detail-task-anchor'
@@ -765,12 +769,14 @@ export default function TransactionsPage() {
   // ── Mutations ──
   const createMut = useMutation({
     mutationFn: createTransaction,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] })
-      qc.invalidateQueries({ queryKey: ['bank-invoices'] })
-      qc.invalidateQueries({ queryKey: ['receivables'] })
-      qc.invalidateQueries({ queryKey: ['invoices'] })
-      qc.invalidateQueries({ queryKey: ['budget'] })
+    onSuccess: (_data, variables) => {
+      /*
+        Uma compra atribuída a alguém nasce com cobrança automática, e o saldo
+        dessa pessoa muda no mesmo instante.
+      */
+      invalidateTransactionDependents(qc, {
+        affectsPerson: transactionAffectsPerson(null, variables.personId),
+      })
       setSheetOpen(false)
       toast.success('Transação criada')
     },
@@ -778,14 +784,23 @@ export default function TransactionsPage() {
   })
 
   const updateMut = useMutation({
-    mutationFn: ({ id, payload, scope }: { id: string; payload: Parameters<typeof updateTransaction>[1]; scope?: InstallmentScope }) =>
+    mutationFn: ({ id, payload, scope }: { id: string; payload: Parameters<typeof updateTransaction>[1]; scope?: InstallmentScope; previousPersonId?: string | null }) =>
       updateTransaction(id, payload, scope),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] })
-      qc.invalidateQueries({ queryKey: ['bank-invoices'] })
-      qc.invalidateQueries({ queryKey: ['receivables'] })
-      qc.invalidateQueries({ queryKey: ['invoices'] })
-      qc.invalidateQueries({ queryKey: ['budget'] })
+    onSuccess: (_data, variables) => {
+      /*
+        `previousPersonId` é o que torna o caso A → B correto: a pessoa que
+        PERDEU a compra não aparece no payload enviado, e sem o valor anterior
+        o saldo dela continuaria exibindo um lançamento que já é de outra.
+
+        Editar valor ou data de uma compra que JÁ era de alguém também mexe no
+        extrato dessa pessoa, mesmo sem trocar de dono.
+      */
+      invalidateTransactionDependents(qc, {
+        affectsPerson: transactionAffectsPerson(
+          variables.previousPersonId,
+          variables.payload.personId,
+        ),
+      })
       setSheetOpen(false)
       setEditTx(null)
       setScopeDialog(null)
@@ -840,21 +855,14 @@ export default function TransactionsPage() {
       expectedDeletableIds: string[]
     }) => deleteOpenInstallments(id, expectedDeletableIds),
     onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: ['transactions'] })
-      qc.invalidateQueries({ queryKey: ['bank-invoices'] })
-      qc.invalidateQueries({ queryKey: ['invoices'] })
-      qc.invalidateQueries({ queryKey: ['budget'] })
-      qc.invalidateQueries({ queryKey: ['receivables'] })
-
       /*
-        As superfícies da pessoa só mudam quando alguma cobrança saiu junto.
-        Invalidá-las sempre custaria duas requisições em toda exclusão de
-        compra própria, que não altera saldo de ninguém.
+        Aqui a execução informa exatamente quantas cobranças saíram, então a
+        pergunta "mexeu em pessoa?" tem resposta precisa — melhor que inferir
+        do payload, que não sabe quais parcelas o servidor decidiu remover.
       */
-      if (result.receivablesRemoved > 0) {
-        qc.invalidateQueries({ queryKey: ['persons'] })
-        qc.invalidateQueries({ queryKey: ['person-statement'] })
-      }
+      invalidateTransactionDependents(qc, {
+        affectsPerson: result.receivablesRemoved > 0,
+      })
 
       /*
         O painel só fecha se a transação aberta foi de fato removida. Numa
@@ -932,11 +940,13 @@ export default function TransactionsPage() {
     mutationFn: ({ id, scope }: { id: string; scope?: InstallmentScope; hasPerson?: boolean }) =>
       deleteTransaction(id, scope),
     onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: ['transactions'] })
-      qc.invalidateQueries({ queryKey: ['bank-invoices'] })
-      qc.invalidateQueries({ queryKey: ['receivables'] })
-      qc.invalidateQueries({ queryKey: ['invoices'] })
-      qc.invalidateQueries({ queryKey: ['budget'] })
+      /*
+        `hasPerson` já era coletado para escolher o texto do toast; é a mesma
+        informação que decide se o saldo de alguém mudou.
+      */
+      invalidateTransactionDependents(qc, {
+        affectsPerson: Boolean(variables.hasPerson),
+      })
       setDeleteTarget(null)
       setScopeDialog(null)
       /*
@@ -1089,7 +1099,11 @@ export default function TransactionsPage() {
       return
     }
 
-    await updateMut.mutateAsync({ id: editTx.id, payload })
+    await updateMut.mutateAsync({
+      id: editTx.id,
+      payload,
+      previousPersonId: editTx.personId,
+    })
   }
 
   /** Confirmação do diálogo de escopo — para edição e exclusão. */
@@ -1108,6 +1122,7 @@ export default function TransactionsPage() {
     if (!pendingEdit) return
     updateMut.mutate({
       id: pendingEdit.tx.id,
+      previousPersonId: pendingEdit.tx.personId,
       // O aceite da fatura fechada já foi dado no próprio diálogo; enviá-lo
       // junto evita o segundo diálogo que antes surgia depois do erro.
       payload: confirmClosedInvoice

@@ -297,16 +297,17 @@ describe('itens 11, 12 e 36: a exclusão opera na compra', () => {
   })
 
   it('item 49: reaproveita as invalidações da operação real', () => {
-    for (const chave of [
-      'transactions',
-      'receivables',
-      'bank-invoices',
-      'invoices',
-      'budget',
-      'persons',
-    ]) {
-      expect(HOOK, `faltou invalidar ${chave}`).toContain(`'${chave}'`)
-    }
+    /*
+      Delegar à política compartilhada é mais forte que enumerar chaves aqui:
+      a lista manual anterior citava `persons` e esquecia `person-statement`,
+      e este atalho parte justamente do extrato da pessoa — a tela que ficava
+      obsoleta. Uma chave nova na política passa a valer aqui sem edição.
+    */
+    expect(HOOK).toContain('invalidateTransactionDependents(qc,')
+    expect(HOOK).toContain('affectsPerson: true')
+
+    /* E nenhuma lista manual sobreviveu ao lado dela. */
+    expect(HOOK).not.toContain('qc.invalidateQueries(')
   })
 
   it('itens 48 e 23: o atalho não abre escopo de parcelamento', () => {

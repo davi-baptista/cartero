@@ -72,6 +72,10 @@ import {
   INVOICE_STATUS_COLOR,
 } from '@/lib/invoice-status'
 import { invalidateInvoiceDependents } from '@/lib/invoice-dependent-queries'
+import {
+  invalidateTransactionDependents,
+  transactionAffectsPerson,
+} from '@/lib/transaction-dependent-queries'
 import type { Transaction } from '@/types'
 import { InvoiceStatus, TransactionType, InstallmentScope } from '@/types'
 import type { LucideIcon } from 'lucide-react'
@@ -446,17 +450,21 @@ export function InvoiceDetailsDrawer({
   })
 
   /** Toda escrita na fatura muda o total dela — o resto do app precisa saber. */
-  function invalidateAfterTxChange() {
-    qc.invalidateQueries({ queryKey: ['invoice', invoiceId] })
-    qc.invalidateQueries({ queryKey: ['bank-invoices', bankId] })
-    qc.invalidateQueries({ queryKey: ['transactions'] })
-    qc.invalidateQueries({ queryKey: ['budget'] })
+  /**
+   * Delega à política compartilhada, acrescentando o que só este painel sabe.
+   *
+   * A lista local anterior esquecia `invoices` e `receivables`, que o Extrato
+   * invalidava — a mesma operação deixava telas diferentes em estados
+   * diferentes dependendo de onde foi disparada.
+   */
+  function invalidateAfterTxChange(affectsPerson = false) {
+    invalidateTransactionDependents(qc, { invoiceId, bankId, affectsPerson })
   }
 
   const createTxMut = useMutation({
     mutationFn: createTransaction,
-    onSuccess: () => {
-      invalidateAfterTxChange()
+    onSuccess: (_data, variables) => {
+      invalidateAfterTxChange(transactionAffectsPerson(null, variables.personId))
       toast.success('Transação criada')
     },
     onError: (error) => {
@@ -476,9 +484,15 @@ export function InvoiceDetailsDrawer({
       id: string
       payload: Parameters<typeof updateTransaction>[1]
       scope?: InstallmentScope
+      previousPersonId?: string | null
     }) => updateTransaction(id, payload, scope),
-    onSuccess: () => {
-      invalidateAfterTxChange()
+    onSuccess: (_data, variables) => {
+      invalidateAfterTxChange(
+        transactionAffectsPerson(
+          variables.previousPersonId,
+          variables.payload.personId,
+        ),
+      )
       // O save pode partir do formulário ou do diálogo de escopo; fechar os
       // dois aqui evita deixar um deles aberto sobre a lista já atualizada.
       setTxSheetOpen(false)
@@ -519,13 +533,8 @@ export function InvoiceDetailsDrawer({
       expectedDeletableIds: string[]
     }) => deleteOpenInstallments(id, expectedDeletableIds),
     onSuccess: (result) => {
-      invalidateAfterTxChange()
-
-      /* Só quando alguma cobrança saiu junto o saldo de alguém mudou. */
-      if (result.receivablesRemoved > 0) {
-        qc.invalidateQueries({ queryKey: ['persons'] })
-        qc.invalidateQueries({ queryKey: ['person-statement'] })
-      }
+      /* A execução informa quantas cobranças saíram — resposta precisa. */
+      invalidateAfterTxChange(result.receivablesRemoved > 0)
 
       setOpenDeleteTarget(null)
       setRefreshedDeletePreview(null)
@@ -661,6 +670,7 @@ export function InvoiceDetailsDrawer({
     if (!pendingEdit) return
     updateTxMut.mutate({
       id: pendingEdit.tx.id,
+      previousPersonId: pendingEdit.tx.personId,
       payload: confirmClosedInvoice
         ? { ...pendingEdit.payload, confirmReopenClosedInvoice: true }
         : pendingEdit.payload,
@@ -683,7 +693,11 @@ export function InvoiceDetailsDrawer({
       return
     }
 
-    await updateTxMut.mutateAsync({ id: editTx.id, payload: data })
+    await updateTxMut.mutateAsync({
+      id: editTx.id,
+      payload: data,
+      previousPersonId: editTx.personId,
+    })
     setTxSheetOpen(false)
     setEditTx(null)
   }

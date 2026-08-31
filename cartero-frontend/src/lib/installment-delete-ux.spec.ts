@@ -343,8 +343,11 @@ describe('F9-F12: o painel depois do sucesso', () => {
     const sucesso = EXTRATO.slice(EXTRATO.indexOf('const openDeleteMut'))
     const corpo = sucesso.slice(0, sucesso.indexOf('onError'))
 
-    /* Invalida a lista — o painel preservado relê a entidade. */
-    expect(corpo).toContain("queryKey: ['transactions']")
+    /*
+      Invalida os dependentes — o painel preservado relê a entidade. A chamada
+      é à política compartilhada; as chaves concretas têm spec própria.
+    */
+    expect(corpo).toContain('invalidateTransactionDependents(qc,')
     /* E não fecha fora da condição. */
     expect(corpo.match(/detail\.close\(\)/g) ?? []).toHaveLength(1)
   })
@@ -512,8 +515,8 @@ describe('D29/D30/D31/D32: o painel da fatura', () => {
   })
 
   it('invalida as superfícies da pessoa quando alguma cobrança saiu', () => {
-    expect(FATURA).toContain('result.receivablesRemoved > 0')
-    expect(FATURA).toContain("queryKey: ['person-statement']")
+    /* Mesma decisão do Extrato, repassada à mesma política. */
+    expect(FATURA).toContain('invalidateAfterTxChange(result.receivablesRemoved > 0)')
   })
 })
 
@@ -526,9 +529,11 @@ describe('D34: invalidação específica do novo fluxo', () => {
     const sucesso = EXTRATO.slice(EXTRATO.indexOf('const openDeleteMut'))
     const corpo = sucesso.slice(0, sucesso.indexOf('onError'))
 
-    expect(corpo).toContain('if (result.receivablesRemoved > 0) {')
-    expect(corpo).toContain("queryKey: ['persons']")
-    expect(corpo).toContain("queryKey: ['person-statement']")
+    /*
+      A decisão vem do resultado da execução, repassada à política — que é
+      quem conhece as chaves de pessoa.
+    */
+    expect(corpo).toContain('affectsPerson: result.receivablesRemoved > 0')
   })
 
   it('usa as chaves canônicas do projeto', () => {
