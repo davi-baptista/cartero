@@ -316,6 +316,8 @@ Se qualquer um desses três parâmetros estiver presente na URL, o filtro padrã
 - `GET /persons/:id/statement` implementado
 - `findOrCreateInvoice`/`getInvoiceDueDate` extraídos para `common/helpers/invoice.helper.ts` (usados por Transactions, Debts e Receivables)
 - `PATCH /transactions/:id` → bloqueia edição se invoice original for PAID ✅
+- `PATCH /transactions/:id` → re-atribui a invoice quando muda `date`, `bankId`, `type`, `amount` ou `isRefund`: desconta da fatura anterior, recalcula a nova por `findOrCreateInvoice` e ajusta os `totalAmount` ✅
+- `PATCH /banks/:id` → alteração do ciclo de faturamento propaga para as faturas elegíveis ✅ (ver seção própria abaixo)
 - Invoice sync executado no bootstrap (app.scheduler.ts) ✅
 - Cookie de refresh first-party via proxy `/api`, com `sameSite: 'lax'` e `secure` em produção ✅
 - **Transações reembolsáveis** ✅ (ver seção própria abaixo)
@@ -326,8 +328,6 @@ Se qualquer um desses três parâmetros estiver presente na URL, o filtro padrã
 ### Backend ⏳ Pendente
 - `GET /alerts`
 - `GET /statement`
-- `PATCH /banks/:id` → recalcular status das faturas ao alterar `invoiceCloseDate`/`invoiceDueDate` (ver TODO.md)
-- `PATCH /transactions/:id` → re-atribuir invoice ao alterar `date` (ver TODO.md)
 - `POST /invoices/sync` → endpoint protegido por `x-cron-secret` que executa sync de status das faturas + envia e-mail de alerta com faturas/dívidas vencidas ou vencendo hoje; chamado 1x/dia pelo cron-job.org
 - **Notificações — avaliar canais alternativos ao e-mail:**
   - Push notification via Web Push (VAPID keys + Service Worker no frontend) — aparece mesmo com app fechado
@@ -864,6 +864,57 @@ Auditados na Fase 8C: **nenhum dos dois consome `PersonStatement`**, então a Fa
 - Pendências ordenadas por vencimento (em atraso primeiro); histórico por `paidAt` desc
 - Cobrança automática recebe badge discreto "Compra no cartão" e a linha linka para a compra
 - `PersonFormSheet`: `sm:max-w-md` + `overflow-y-auto` no form + footer `shrink-0` — sem isso o botão de salvar saía da tela em notebook
+
+## Ciclo de faturamento do banco — `PATCH /banks/:id` (✅ Implementado)
+
+### Datas de fatura são snapshots, não funções do banco
+
+`Invoice.closeDate` e `Invoice.dueDate` são **persistidos na criação**. Antes eram
+derivados da configuração ATUAL do banco a cada leitura, então mudar o vencimento
+do cartão reescrevia as datas de todo o histórico — uma fatura paga em agosto
+passava a exibir outro vencimento.
+
+Por isso a pergunta não é "por que não recalcula tudo?": recalcular o histórico é
+que seria a regressão.
+
+### O que a alteração do ciclo atinge
+
+Só faturas **`OPEN`**. Não é conveniência: um parcelamento em 10x materializa
+faturas futuras de imediato, e sem isso uma troca de cartão levaria meses para
+surtir efeito nas faturas já criadas.
+
+| Situação | Efeito | Motivo registrado no plano |
+|---|---|---|
+| `OPEN` e ainda aberta pelo calendário | `closeDate`, `dueDate` e `status` atualizados | — |
+| `CLOSED` / `OVERDUE` / `PAID` | intactas | `HISTORICAL_STATUS` |
+| `OPEN` que o calendário já fechou | intacta | `EFFECTIVELY_CLOSED` |
+| Datas que não se movem de fato | intacta | `NO_DATE_CHANGE` |
+
+`NO_DATE_CHANGE` existe pelo clamp: dias 30 e 31 colapsam no mesmo dia em
+fevereiro, e sem alteração real a fatura não entra na contagem que a interface
+mostra.
+
+### Transações não são redistribuídas
+
+`month`/`year`, `invoiceId` e `totalAmount` ficam intactos — só as **datas** da
+fatura mudam. Redistribuir lançamentos reescreveria histórico em cascata: uma
+compra que sempre pertenceu à fatura de outubro passaria para novembro sem que
+ninguém tivesse pedido.
+
+### Detalhes
+
+- `billing-config-plan.helper.ts` é **puro**, e é a mesma função usada pela prévia
+  (`POST /banks/:id/preview-billing-config`) e pelo save — o padrão que resolveu a
+  divergência entre preview e update em Transactions
+- Banco, faturas e recebíveis mudam num **único `$transaction`**: ou muda tudo, ou
+  nada muda
+- O `status` é derivado **inline** (`deriveStatusFromInvoiceDates`), não delegado
+  ao cron. Esperar a madrugada deixaria uma fatura cujo novo fechamento já passou
+  marcada como aberta. `AppScheduler.syncInvoiceStatus` continua sendo o único
+  outro call site, para a passagem natural do tempo
+- Recebíveis automáticos **pendentes** das faturas afetadas acompanham o novo
+  `dueDate`; os já recebidos ficam intactos
+- Frontend invalida `banks`, `invoices`, `bank-invoices` e `receivables`
 
 ## Feature: Orçamento Mensal — página `/budget` (✅ Implementado)
 
