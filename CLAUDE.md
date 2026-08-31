@@ -187,8 +187,6 @@ GET /budget?month=&year=  → salary (do PERÍODO), salaryKnown, salaryEffective
 GET /salary?year=&month=   → { known, amount, effectiveFrom } — resolve a renda da competência
 PUT /salary                → { amount, month, year } — upsert idempotente da competência
 GET /health                → keepalive público (sem auth), retorna { status: 'ok' }, não toca no banco
-GET /alerts                → ⏳ pendente
-GET /statement             → ⏳ pendente
 ```
 
 ## Design System
@@ -242,6 +240,17 @@ GET /statement             → ⏳ pendente
 
 Janela de 7 dias (`ATTENTION_DAYS_WINDOW = 7`), máximo 3 itens por seção (`ATTENTION_LIMIT = 3`).
 
+**Esta é a superfície de alerta dentro do app.** Não existe `GET /alerts`, e
+nada o espera: o painel compõe no cliente as listas que já carrega
+(`invoices`, `debts`, `receivables`, `banks`), sem endpoint agregador. Cobre
+mais que o previsto originalmente — a janela é de 7 dias, não só "vence hoje",
+e itens em atraso de meses anteriores continuam aparecendo.
+
+**Web Push é outra camada**, não sinônimo. O painel é consultável dentro do
+app; o push (`NotificationsService.runDueDateCheck`, disparado por
+`POST /notifications/run`) alcança o usuário com o app fechado e respeita
+`Debt.isAlertEnabled`. As duas coexistem e nenhuma substitui a outra.
+
 **Faturas — lógica de exibição por status:**
 - `OVERDUE` → sempre aparece; exibe "Venceu há Xd"
 - `OPEN` → aparece se `invoiceCloseDate ≤ 7 dias`; exibe "Fecha em X dias / Fecha hoje / Fecha amanhã"
@@ -280,6 +289,43 @@ Janela de 7 dias (`ATTENTION_DAYS_WINDOW = 7`), máximo 3 itens por seção (`AT
 | `?endDate=<YYYY-MM-DD>` | Inicializa filtro de data fim pela URL; `startDate` fica `undefined` |
 
 `startDate` padrão é sempre `undefined` nas páginas de Dívidas e A Receber — garante que itens vencidos de meses anteriores sempre apareçam.
+
+## Extrato (`/transactions`) — o histórico global
+
+"Histórico do que aconteceu, na data em que aconteceu." É a superfície do
+movimento financeiro consolidado: entradas, saídas, cartão, parcelamentos e
+compras de terceiros, com filtros de período, tipo, banco, categoria e busca.
+
+Não existe `GET /statement`, e nada o espera. O extrato geral é `GET
+/transactions` — a rota nasceu antes do nome que o planejamento tinha imaginado.
+
+### Histórico, não competência
+
+O Extrato **não** tem cards agregados. Uma compra de R$ 122,90 em 5x aparece por
+R$ 122,90 na data em que aconteceu, o que é correto para o histórico — mas sob um
+card "Gastos" afirmaria um desembolso de R$ 122,90 no mês, quando a fatura cobra
+R$ 24,58. O número estava certo; o rótulo é que mentia.
+
+"Quanto sai do bolso neste mês" é pergunta do **Orçamento**. Manter as duas na
+mesma tela convidava a somar universos diferentes. `statement-scope.spec.ts`
+vigia essa ausência.
+
+### Pagamentos de dívida e cobrança são opt-in
+
+Marcar uma Debt como paga ou um Receivable como recebido **só** gera Transaction
+quando `createExpenseOnDebtPaid` / `createIncomeOnReceivablePaid` estão ligadas —
+duas caixas no Perfil, desligadas por padrão. Com elas ligadas, os pagamentos
+entram no Extrato como qualquer lançamento.
+
+É escolha do usuário, nunca comportamento obrigatório: quem controla dívidas fora
+do fluxo de caixa não quer o espelho.
+
+### Não confundir com o extrato de Pessoa
+
+`GET /persons/:id/statement` é outra feature: recorta a relação com **uma
+pessoa** (Debt + Receivable, `summary` all-time e `period` por `paidAt`). O
+Extrato recorta o **período do usuário** sobre Transactions. Nomes parecidos,
+universos distintos.
 
 ## URL params — Transações
 
@@ -324,13 +370,11 @@ Se qualquer um desses três parâmetros estiver presente na URL, o filtro padrã
 - **Transações de pagamento (Dívida paga / Receita recebida)** ✅ (ver seção própria abaixo)
 - **Categorias de sistema** ✅ (`isSystem`, protegidas contra edição/exclusão/colisão de nome)
 - `GET /health` ✅ — keepalive público, sem tocar no banco
+- **Web Push** ✅ — `NotificationsService` (VAPID + `web-push`), `POST /notifications/subscribe` e `POST /notifications/run`; Service Worker em `public/sw.js`
 
 ### Backend ⏳ Pendente
-- `GET /alerts`
-- `GET /statement`
 - `POST /invoices/sync` → endpoint protegido por `x-cron-secret` que executa sync de status das faturas + envia e-mail de alerta com faturas/dívidas vencidas ou vencendo hoje; chamado 1x/dia pelo cron-job.org
 - **Notificações — avaliar canais alternativos ao e-mail:**
-  - Push notification via Web Push (VAPID keys + Service Worker no frontend) — aparece mesmo com app fechado
   - WhatsApp via API de bot (ex: Twilio, Z-API, Evolution API)
   - Telegram bot — simples de implementar, gratuito
 
@@ -385,10 +429,6 @@ duplicada de Subscription.**
 - Página de Orçamento (`/budget`) — visão mensal do salário vs faturas, com breakdown de valor a receber de terceiros ✅
 - `CurrencyInput` em todos os campos de valor monetário (transação, dívida, recebível, salário) ✅
 - Deploy: Vercel (frontend) · Render (backend) · Neon (banco)
-
-### Frontend ⏳ Pendente
-- `GET /alerts` → banner/modal de alertas ao abrir o app
-- `GET /statement` → página de extrato geral
 
 ---
 
