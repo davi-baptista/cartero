@@ -129,9 +129,21 @@ const MONTH_SCOPED_ROUTES = [
   '/persons',
 ]
 
+/**
+ * Rotas em que o seletor vale só no caminho EXATO.
+ *
+ * `/banks` é mensal: cada row mostra a fatura da competência. Já
+ * `/banks/:id/invoices` lista o histórico inteiro do cartão por seção, e não
+ * lê o período — um seletor ali seria um controle que não muda nada.
+ */
+const MONTH_SCOPED_EXACT = ['/banks']
+
 function HeaderMonthNav({ pathname }: { pathname: string }) {
   const { period, setPeriod } = useMonthPeriod()
-  if (!MONTH_SCOPED_ROUTES.some((route) => pathname.startsWith(route))) return null
+  const scoped =
+    MONTH_SCOPED_ROUTES.some((route) => pathname.startsWith(route)) ||
+    MONTH_SCOPED_EXACT.includes(pathname)
+  if (!scoped) return null
   // No mobile o nome da página sai da barra, então o seletor ocupa o espaço
   // livre centralizado; no desktop ele volta a encostar à direita.
   return (

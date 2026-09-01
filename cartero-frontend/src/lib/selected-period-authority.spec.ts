@@ -205,32 +205,64 @@ describe('item 23: navegação manual atravessa a virada de ano', () => {
   })
 })
 
-describe('itens 1, 7 e 48: entrar no banco não abre fatura', () => {
-  it('a row do banco navega para a página, sem invoiceId', () => {
-    expect(code(BANKS)).toContain('href={`/banks/${bank.id}/invoices`}')
-    expect(code(BANKS)).not.toContain('invoices?invoiceId=')
-  })
-
-  it('itens 3, 49 e 56: o destaque da fatura atual permanece', () => {
+describe('a fatura aberta pertence ao mês exibido', () => {
+  it('a row abre a fatura DA COMPETÊNCIA, sem página intermediária', () => {
     /*
-      Remover o auto-open não pode remover o CURRENT INVOICE HIGHLIGHT.
-      `nearest` continua alimentando badge, valor e texto temporal — e
-      segue sendo a base da ordenação por urgência.
+      Isto INVERTE a regra anterior, deliberadamente.
+
+      Antes o click ia para `/banks/:id/invoices` e o `?invoiceId=` era
+      proibido: com "fatura atual" fixa, abrir uma fatura que o usuário não
+      pediu era decidir por ele. Com o seletor de mês no topo, a competência
+      passou a ser escolha explícita — a fatura já está determinada quando a
+      row é clicada, e a página do meio não tem mais o que decidir.
     */
     const banksCode = code(BANKS)
-    expect(banksCode).toContain('<NearestInvoiceBadge info={nearest} />')
-    expect(banksCode).toContain('<NearestInvoiceAmount info={nearest} />')
-    expect(banksCode).toContain('formatCloseTiming')
-    expect(banksCode).toContain('formatDueTiming')
-    expect(banksCode).toContain('orderBanksByUrgency')
+    expect(banksCode).toContain('onOpenInvoice(invoice.id)')
+    expect(banksCode).toContain("useDetailNavigation('invoiceId')")
   })
 
-  it('item 11: banco sem fatura não ganha invoiceId inventado', () => {
+  it('a fatura é resolvida por month/year, nunca por uma data', () => {
     /*
-      O href passou a ser único para os dois casos, então não existe mais
-      ramo capaz de produzir um id — nem verdadeiro, nem falso.
+      A competência é persistida em `month`/`year` pelo mês de FECHAMENTO.
+      Derivar de `dueDate` deslocaria todo cartão que vence no mês seguinte:
+      uma fatura que fecha em 28/09 e vence em 10/10 pertence a setembro.
     */
-    expect(code(BANKS)).not.toContain('nearest.invoice.id')
+    const selecao = code(
+      readFileSync(new URL('./bank-invoice-selection.ts', import.meta.url), 'utf-8'),
+    )
+    const porPeriodo = selecao.slice(
+      selecao.indexOf('export function invoiceForPeriod'),
+      selecao.indexOf('export interface BankMonthRow'),
+    )
+
+    expect(porPeriodo).toContain('invoice.month === period.month')
+    expect(porPeriodo).toContain('invoice.year === period.year')
+    /*
+      Nenhuma data participa da decisão. `selectBankInvoice`, logo acima,
+      continua usando `dueDate` — mas para ORDENAR por urgência, que é outra
+      pergunta.
+    */
+    expect(porPeriodo).not.toContain('dueDate')
+    expect(porPeriodo).not.toContain('closeDate')
+  })
+
+  it('trocar de mês não deixa uma fatura de outro período aberta', () => {
+    /*
+      Sem isto, setembro → agosto manteria o painel mostrando a fatura de
+      setembro sobre uma lista de agosto — duas competências na mesma tela,
+      sem dizer qual é qual.
+    */
+    expect(code(BANKS)).toContain('openInvoiceBelongsToPeriod')
+  })
+
+  it('item 11: banco sem fatura no mês não ganha invoiceId inventado', () => {
+    /*
+      A row sem fatura não recebe `onView`: não existe ramo capaz de produzir
+      um id — nem verdadeiro, nem falso.
+    */
+    const banksCode = code(BANKS)
+    expect(banksCode).toContain('invoice ? () => onOpenInvoice(invoice.id) : undefined')
+    expect(banksCode).not.toContain('nearest.invoice.id')
   })
 })
 

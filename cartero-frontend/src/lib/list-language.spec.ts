@@ -931,11 +931,27 @@ describe('itens 30 e 56: o que NÃO podia mudar', () => {
     expect(EXTRATO).toContain('tx.description')
   })
 
-  it('Bancos manteve ordenação, rótulo e a ausência de auto-open', () => {
-    expect(BANCOS).toContain('orderBanksByUrgency')
-    expect(BANCOS).toContain('Fatura atual')
-    expect(BANCOS).toContain('href={`/banks/${bank.id}/invoices`}')
-    expect(BANCOS).not.toContain('invoices?invoiceId=')
+  it('Bancos nomeia a competência exibida, nunca "Fatura atual"', () => {
+    /*
+      A listagem virou MENSAL: cada row mostra a fatura do mês selecionado, e
+      o rótulo acompanha o período. "Fatura atual" passou a mentir assim que o
+      usuário consultava agosto — o documento continuava afirmando que aquela
+      era a fatura corrente.
+    */
+    expect(BANCOS).toContain('banksForPeriod')
+    /*
+      Sem comentários: a prosa que EXPLICA a remoção cita o rótulo antigo, e
+      casaria com a busca.
+    */
+    const codigo = BANCOS.replace(/\/\*[\s\S]*?\*\//g, '')
+    expect(codigo).not.toContain('Fatura atual')
+    expect(BANCOS).toContain('formatMonthYear(period.month, period.year)')
+
+    /*
+      O histórico completo continua alcançável pelo menu — a rota não foi
+      removida, só deixou de ser o caminho obrigatório até uma fatura.
+    */
+    expect(BANCOS).toContain('/banks/${bank.id}/invoices')
   })
 
   it('item 12: a fatura atual mantém o destaque próprio', () => {

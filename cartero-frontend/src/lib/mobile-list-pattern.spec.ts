@@ -97,36 +97,45 @@ describe('Parte C: a row de Banco segue o padrão de Pessoas', () => {
     expect(ROW_PRIMITIVE).toContain('<DisclosureChevron />')
   })
 
-  it('a listagem NÃO tem mais menu administrativo', () => {
+  it('o menu administrativo é IRMÃO da row, sem disputar a largura', () => {
     /*
-      Editar e excluir passaram para a página do próprio banco. Na listagem o
-      kebab disputava largura com o valor e o rótulo "Fatura atual" no
-      mobile — e a lista existe para identificar e navegar, não gerenciar.
-    */
-    /*
-      Mira a row ATIVA. A seção de arquivados tem o menu próprio dela
-      (Restaurar / Excluir) e está fora deste escopo.
+      As ações de banco voltaram para a listagem: elas viviam na página do
+      cartão, que deixou de ser o caminho principal quando o click passou a
+      abrir a fatura direto — sem isso, editar exigiria uma rota que a
+      interface não oferece mais.
+
+      O que causou a remoção anterior continua barrado: o kebab não pode
+      dividir a linha com o valor. Sobreposto em `absolute`, com `pr-10` na
+      row reservando o espaço, ele não empurra nada — o mesmo arranjo de
+      Pessoas.
     */
     const rowAtiva = BANKS.slice(
       BANKS.indexOf('function BankRow'),
       BANKS.indexOf('function RowSkeleton'),
     )
 
-    expect(rowAtiva).not.toContain('MoreVertical')
-    expect(rowAtiva).not.toContain('DropdownMenu')
+    expect(rowAtiva).toContain('MoreVertical')
+    expect(rowAtiva).toContain('absolute top-1/2 right-1')
+    expect(rowAtiva).toContain('pr-10 sm:pr-12')
   })
 
-  it('a row continua clicável, com o destino de sempre', () => {
-    expect(BANKS).toContain('href={')
-    expect(BANKS).toContain('invoiceId=')
-  })
-
-  it('item 34: sem próxima fatura, nenhum R$ 0 é inventado', () => {
+  it('a row abre o detalhe da fatura, sem página intermediária', () => {
     /*
-      `NearestInvoiceAmount` devolve `null` quando não há fatura; o badge
-      "Em dia" carrega o estado sozinho.
+      O ganho da fase: com o mês no topo, a fatura já está determinada, então
+      a página do meio não tem mais o que decidir.
     */
-    expect(BANKS).toContain('if (info === null)')
+    expect(BANKS).toContain('onOpenInvoice(invoice.id)')
+    expect(BANKS).toContain("useDetailNavigation('invoiceId')")
+  })
+
+  it('item 34: sem fatura no mês, nenhum R$ 0 é inventado', () => {
+    /*
+      O banco continua listado — a lista é de BANCOS, e sumir com um cartão
+      porque o mês não teve gasto esconderia o próprio cartão. O trailing diz
+      "Sem fatura" em vez de um valor que ninguém gastou.
+    */
+    expect(BANKS).toContain('Sem fatura')
+    expect(BANKS).toContain('invoice ? () => onOpenInvoice(invoice.id) : undefined')
   })
 
   it('itens 30-31: a composição financeira sai da linha do banco', () => {
@@ -202,7 +211,7 @@ describe('Refinamento visual de Bancos', () => {
       título e o chevron. Passar a badge por esse slot é a afirmação de que
       ela pertence à identidade, não à coluna de valores.
     */
-    expect(BANKS).toContain('titleAdornment={<NearestInvoiceBadge info={nearest} />}')
+    expect(BANKS).toContain('titleAdornment={<MonthInvoiceBadge invoice={invoice} />}')
     expect(BANKS).toContain('title={bank.name}')
     expect(ROW_PRIMITIVE).toContain('{titleAdornment}')
   })
@@ -245,12 +254,17 @@ describe('Refinamento visual de Bancos', () => {
     expect(ROW).toContain('<DisclosureChevron />')
   })
 
-  it('item 8: banco sem fatura não ganha destaque especial', () => {
+  it('item 8: banco sem fatura no mês não ganha destaque especial', () => {
     /*
-      Ausência de fatura é ausência de bloco direito — `null` nos slots, não
-      um ramo com tratamento próprio. Nada de "R$ 0,00" ou placeholder.
+      A condição é UMA — `invoice ? … : …` —, então não há ramo capaz de
+      exibir valor sem rótulo ou o contrário. O que mudou desde a versão por
+      urgência: o banco continua na lista, dizendo "Sem fatura", em vez de
+      perder o bloco direito inteiro. Numa visão mensal a ausência é
+      informação; antes era só ruído de uma fatura que não existia agora.
     */
-    expect(BANKS).toContain('nearest !== null ? (')
+    expect(BANKS).toContain('invoice ? (')
+    expect(BANKS).toContain('Sem fatura')
+    expect(BANKS).not.toContain('R$ 0,00')
   })
 })
 
@@ -392,22 +406,28 @@ describe('Gerenciamento do banco mudou de superfície', () => {
     LISTA.indexOf('function RowSkeleton'),
   )
 
-  it('item 33: a row com fatura mostra rótulo e valor, sem kebab', () => {
-    expect(rowAtiva).toContain('Fatura atual')
-    expect(rowAtiva).toContain('<NearestInvoiceAmount')
-    expect(rowAtiva).not.toContain('MoreVertical')
+  it('item 33: a row com fatura mostra o valor e a competência', () => {
+    /*
+      O rótulo nomeia o MÊS exibido. "Fatura atual" era correto enquanto a
+      lista só mostrava a fatura vigente; com o seletor, passou a afirmar
+      "atual" sobre um período histórico.
+    */
+    expect(rowAtiva).toContain('<MonthInvoiceAmount')
+    expect(rowAtiva).toContain('{monthLabel}')
   })
 
-  it('item 33: banco sem fatura não inventa rótulo nem valor', () => {
+  it('item 33: banco sem fatura não inventa valor', () => {
     /*
       Rótulo e valor vivem no MESMO slot `trailing`, sob uma única condição:
-      ou o banco tem fatura e mostra os dois, ou não mostra nada. Não existe
-      ramo capaz de exibir um sem o outro, nem placeholder de R$ 0,00.
+      ou o banco tem fatura do mês e mostra os dois, ou o slot diz "Sem
+      fatura". Não existe ramo capaz de exibir um sem o outro, nem
+      placeholder de R$ 0,00.
     */
-    expect(rowAtiva).toContain('nearest !== null ? (')
     const trailing = rowAtiva.slice(rowAtiva.indexOf('trailing={'))
-    expect(trailing).toContain('<NearestInvoiceAmount')
-    expect(trailing).toContain('Fatura atual')
+    expect(trailing).toContain('<MonthInvoiceAmount')
+    expect(trailing).toContain('{monthLabel}')
+    expect(trailing).toContain('Sem fatura')
+    expect(trailing).not.toContain('formatCurrency(0)')
   })
 
   it('item 35: "Fatura atual" NÃO é escondida no mobile', () => {

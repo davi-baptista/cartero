@@ -1,10 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Trash2, Landmark, ChevronRight, MoreVertical, Archive, ArchiveRestore } from 'lucide-react'
+import { Plus, Trash2, Landmark, ChevronRight, MoreVertical, Archive, ArchiveRestore, Pencil, ReceiptText } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -28,7 +29,7 @@ import {
   previewBillingConfig,
 } from '@/services/banks.service'
 import { getInvoices } from '@/services/invoices.service'
-import { formatCurrency } from '@/lib/formatters'
+import { formatCurrency, formatMonthYear } from '@/lib/formatters'
 import { apiErrorMessage } from '@/lib/api-error'
 import {
   FinancialListRow,
@@ -39,16 +40,19 @@ import {
 } from '@/components/ui/financial-list-row'
 import { cn } from '@/lib/utils'
 import { InvoiceStatus } from '@/types'
-import type { Bank } from '@/types'
+import type { Bank, Invoice } from '@/types'
 import {
   INVOICE_STATUS_BADGE,
   INVOICE_STATUS_LABEL,
 } from '@/lib/invoice-status'
-import { formatCloseTiming, formatDueTiming } from '@/lib/invoice-timing'
+import { invoiceTimingLabel } from '@/lib/invoice-timing'
 import {
-  orderBanksByUrgency,
-  type BankInvoiceSelection,
+  banksForPeriod,
+  summarizeBankMonth,
 } from '@/lib/bank-invoice-selection'
+import { useMonthPeriod, type MonthPeriod } from '@/components/month-nav'
+import { useDetailNavigation } from '@/lib/detail-navigation'
+import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -60,27 +64,25 @@ import {
  * 5d". Antes o badge dizia só "Vence em 5d", e quem olhava a lista de bancos e
  * o detalhe da fatura via dois nomes para o mesmo estado.
  */
-function NearestInvoiceBadge({
-  info,
-}: {
-  info: BankInvoiceSelection | null
-}) {
-  if (info === null) {
-    return (
-      <span className="inline-flex shrink-0 items-center rounded-full bg-receivable/10 px-2 py-0.5 text-[11px] font-medium text-receivable">
-        Em dia
-      </span>
-    )
-  }
+function MonthInvoiceBadge({ invoice }: { invoice: Invoice | null }) {
+  /*
+    Sem fatura na competência ≠ "Em dia".
 
-  const isOverdue = info.status === InvoiceStatus.OVERDUE
+    A versão por urgência dizia "Em dia" quando não havia pendência, o que era
+    verdade sobre o AGORA. Numa visão mensal a ausência é outra coisa: o mês
+    pode não ter tido gasto, ou ser futuro. Afirmar quitação seria inventar um
+    fato sobre um período que talvez nem tenha chegado.
+  */
+  if (invoice === null) return null
+
+  const isOverdue = invoice.status === InvoiceStatus.OVERDUE
 
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       <span
         className={cn(
           'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium',
-          INVOICE_STATUS_BADGE[info.status],
+          INVOICE_STATUS_BADGE[invoice.status],
         )}
       >
         {isOverdue && (
@@ -89,19 +91,14 @@ function NearestInvoiceBadge({
             <span className="size-1.5 rounded-full bg-destructive" />
           </span>
         )}
-        {INVOICE_STATUS_LABEL[info.status]}
+        {INVOICE_STATUS_LABEL[invoice.status]}
       </span>
     </span>
   )
 }
 
 // The amount alone, standing as the row's primary stat.
-function NearestInvoiceAmount({
-  info,
-}: {
-  info: BankInvoiceSelection | null
-}) {
-  if (info === null) return null
+function MonthInvoiceAmount({ amount }: { amount: number }) {
   /*
     Tipografia canônica do `FinancialListRow`, em cor NEUTRA.
 
@@ -115,9 +112,7 @@ function NearestInvoiceAmount({
     continua sem opinião sobre cor, então Extrato, Dívidas e A Receber
     mantêm as delas.
   */
-  return (
-    <span className={ROW_AMOUNT_CLASS}>{formatCurrency(info.amount)}</span>
-  )
+  return <span className={ROW_AMOUNT_CLASS}>{formatCurrency(amount)}</span>
 }
 
 /**
@@ -126,55 +121,62 @@ function NearestInvoiceAmount({
  */
 function BankRow({
   bank,
-  nearest,
+  invoice,
+  amount,
+  period,
+  onOpenInvoice,
+  onEdit,
+  onArchive,
+  onDelete,
+  isArchiving,
 }: {
   bank: Bank
-  /**
-   * Fatura que representa o banco. Vem de fora, já resolvida: era uma query
-   * por linha (`['bank-invoices','mini',id]`) cuja regra de seleção divergia
-   * da usada para ordenar — o card podia ser posicionado por uma fatura e
-   * exibir os números de outra.
-   */
-  nearest: BankInvoiceSelection | null
+  /** A fatura DESTA competência, ou `null` quando o mês não teve fatura. */
+  invoice: Invoice | null
+  amount: number
+  period: MonthPeriod
+  onOpenInvoice: (invoiceId: string) => void
+  onEdit: () => void
+  onArchive: () => void
+  onDelete: () => void
+  isArchiving: boolean
 }) {
+  const router = useRouter()
   const initial = bank.name[0]?.toUpperCase() ?? '?'
+  const monthLabel = formatMonthYear(period.month, period.year)
 
   /*
     Rótulo completo para leitor de tela: a metadata visual é compacta, mas a
     informação não pode depender do que coube na tela.
   */
-  const ariaLabel =
-    nearest !== null
-      ? `Abrir detalhes do ${bank.name}. Próxima fatura ${formatCurrency(nearest.amount)}.`
-      : `Abrir detalhes do ${bank.name}.`
+  const ariaLabel = invoice
+    ? `Abrir fatura de ${monthLabel} do ${bank.name}. ${formatCurrency(amount)}.`
+    : `${bank.name} não tem fatura em ${monthLabel}.`
 
   return (
     /*
       ── Row inteira clicável, no padrão de Pessoas ──
 
-      Antes era uma `div` inerte com QUATRO blocos disputando a linha: nome,
-      valor com rótulo, `⋮` e um link "Faturas" separado. No mobile as três
-      caixas `shrink-0` espremiam a coluna do nome, e `⋮` ao lado de `>`
-      fazia os dois parecerem ações concorrentes.
-
-      Agora: a row é um `Link` que ocupa a linha inteira, e o menu é IRMÃO
-      dele — não filho. Aninhar `button` dentro de `a` é HTML inválido e
-      quebra teclado; a sobreposição resolve sem isso.
+      O menu é IRMÃO da row, não filho: aninhar `button` dentro de `a`/`button`
+      é HTML inválido e quebra teclado. A sobreposição resolve sem isso.
     */
     <div className="group relative border-b border-border last:border-b-0">
       <FinancialListRow
         /*
-          Vai para a PÁGINA do banco — nunca direto para o detalhe da fatura.
+          Click abre o DETALHE da fatura, não uma página intermediária.
 
-          Antes o href carregava `?invoiceId=` da fatura atual, e o drawer
-          abria sozinho: entrar no banco e abrir uma fatura viravam a mesma
-          ação, sem o usuário ter pedido a segunda.
+          Antes a row levava a `/banks/:id/invoices`, e de lá o usuário abria a
+          fatura — dois níveis para chegar ao mesmo lugar. Com o mês no topo, a
+          fatura que interessa já está determinada, então a página do meio
+          deixou de ter o que decidir.
 
-          `?invoiceId=` continua sendo lido pela página de faturas; ele só
-          deixa de ser INJETADO aqui.
+          Sem fatura no mês não há detalhe a abrir: `onView` fica ausente e a
+          row não finge ser clicável.
         */
-        href={`/banks/${bank.id}/invoices`}
+        onView={invoice ? () => onOpenInvoice(invoice.id) : undefined}
         ariaLabel={ariaLabel}
+        /* Espaço à direita para o kebab sobreposto não cobrir o valor. */
+        className="pr-10 sm:pr-12"
         leading={
           <div className={cn(ROW_ICON_CLASS, ROW_ICON_BG_CLASS, 'text-sm font-semibold text-muted-foreground select-none')}>
             {initial}
@@ -183,36 +185,75 @@ function BankRow({
         title={bank.name}
         /* A badge qualifica o banco, então acompanha o nome — nunca a coluna
            de valores. Com nome longo quem cede espaço é o texto. */
-        titleAdornment={<NearestInvoiceBadge info={nearest} />}
+        titleAdornment={<MonthInvoiceBadge invoice={invoice} />}
         meta={
-          nearest !== null ? (
+          invoice ? (
             <span className="truncate">
-              {nearest.status === InvoiceStatus.OPEN
-                ? formatCloseTiming(nearest.referenceDate, undefined, 'short')
-                : formatDueTiming(nearest.referenceDate, undefined, 'short')}
+              {invoiceTimingLabel(invoice)}
             </span>
           ) : null
         }
         /*
-          Onde o Extrato mostra a data, Bancos mostra o rótulo da fatura: mesma
-          hierarquia visual, dado diferente. Um valor solto no canto não diria
-          o que representa.
+          O rótulo dizia "Fatura atual" em qualquer situação. Com o seletor de
+          mês isso passou a mentir: consultando agosto, o documento continuava
+          afirmando que aquela era a fatura corrente.
 
-          Banco sem fatura simplesmente não tem bloco direito — sem "R$ 0,00"
-          nem placeholder inventado.
+          Agora nomeia a competência que está sendo exibida.
         */
         trailing={
-          nearest !== null ? (
+          invoice ? (
             <>
-              <NearestInvoiceAmount info={nearest} />
+              <MonthInvoiceAmount amount={amount} />
               <span className={ROW_TRAILING_LABEL_CLASS}>
-                Fatura atual
+                {monthLabel}
               </span>
             </>
-          ) : null
+          ) : (
+            <span className={ROW_TRAILING_LABEL_CLASS}>Sem fatura</span>
+          )
         }
       />
 
+      {/*
+        Gestão do BANCO, separada do conteúdo financeiro do mês — a mesma
+        divisão que Pessoas usa. Sobreposto à direita, irmão da row.
+      */}
+      <div className="absolute top-1/2 right-1 -translate-y-1/2">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            aria-label={`Mais opções de ${bank.name}`}
+          >
+            <MoreVertical className="size-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onEdit}>
+              <Pencil className="size-3.5" />
+              Editar
+            </DropdownMenuItem>
+            {/*
+              O histórico completo do cartão continua existindo: a rota
+              dedicada não foi removida, só deixou de ser o caminho obrigatório
+              para chegar a uma fatura.
+            */}
+            <DropdownMenuItem onClick={() => router.push(`/banks/${bank.id}/invoices`)}>
+              <ReceiptText className="size-3.5" />
+              Ver todas as faturas
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onArchive} disabled={isArchiving}>
+              <Archive className="size-3.5" />
+              Arquivar
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={onDelete}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="size-3.5" />
+              Excluir
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
   )
 }
@@ -416,10 +457,49 @@ export default function BanksPage() {
    * refiltrava a lista de faturas dentro do comparador e usava uma segunda
    * fonte para os números exibidos.
    */
+  /*
+    O mês é contexto do app (`MonthPeriodProvider`), o mesmo que governa
+    Orçamento, Extrato, Dívidas, A Receber e Pessoas. Bancos passou a
+    participar dele em vez de manter estado próprio.
+  */
+  const { period } = useMonthPeriod()
+
+  /** Identidade de URL do detalhe, a mesma foundation da O4.3. */
+  const detail = useDetailNavigation('invoiceId')
+
+  /**
+   * Bancos com a fatura da competência exibida.
+   *
+   * Uma passada sobre `['invoices']`, que a página já carregava — nenhuma
+   * requisição por banco. A ordenação por urgência saiu: num mês fechado não
+   * há urgência a comunicar, e reordenar por status faria as rows saltarem de
+   * lugar a cada troca de período.
+   */
   const bankRows = useMemo(
-    () => orderBanksByUrgency(banks ?? [], invoices),
-    [banks, invoices],
+    () => banksForPeriod(banks ?? [], invoices, period),
+    [banks, invoices, period],
   )
+
+  const monthSummary = useMemo(() => summarizeBankMonth(bankRows), [bankRows])
+
+  /*
+    A fatura aberta precisa pertencer ao mês exibido.
+
+    Sem isto, trocar setembro → agosto deixaria o painel mostrando a fatura de
+    setembro sobre uma lista de agosto — duas competências na mesma tela, sem
+    dizer qual é qual.
+  */
+  const openInvoiceBankId =
+    bankRows.find((row) => row.invoice?.id === detail.openId)?.bank.id ?? null
+
+  const openInvoiceBelongsToPeriod =
+    detail.openId !== null && openInvoiceBankId !== null
+
+  useEffect(() => {
+    if (detail.openId !== null && !invoicesLoading && !openInvoiceBelongsToPeriod) {
+      detail.close()
+    }
+  }, [detail, invoicesLoading, openInvoiceBelongsToPeriod])
 
   /**
    * Impacto da alteração de ciclo, só quando há uma edição pendente.
@@ -590,6 +670,48 @@ export default function BanksPage() {
       </div>
 
       {/*
+        Resumo da competência, no lugar que Pessoas usa para "Saldo com
+        pessoas".
+
+        O total inclui as faturas PAGAS: elas pertencem ao ciclo, e tirá-las
+        faria o número encolher sozinho quando o usuário pagasse — como se o
+        gasto não tivesse existido. "Quanto ainda falta" é outra pergunta, e
+        aparece na linha de apoio em vez de disputar o mesmo número.
+      */}
+      {tab === 'active' && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground">
+            Faturas de {formatMonthYear(period.month, period.year)}
+          </p>
+          {invoicesLoading || isLoading ? (
+            <Skeleton className="mt-1.5 h-7 w-32" />
+          ) : (
+            <>
+              <p className="mt-0.5 text-[22px] font-semibold tabular-nums tracking-[-0.02em]">
+                {formatCurrency(monthSummary.total)}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {monthSummary.invoiceCount === 0 ? (
+                  'Nenhuma fatura neste mês'
+                ) : (
+                  <>
+                    {monthSummary.invoiceCount}{' '}
+                    {monthSummary.invoiceCount === 1 ? 'fatura' : 'faturas'}
+                    {monthSummary.paidCount > 0 && (
+                      <>
+                        {' · '}
+                        {formatCurrency(monthSummary.unpaid)} em aberto
+                      </>
+                    )}
+                  </>
+                )}
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
+      {/*
         Abas discretas, não uma seção permanente.
         Quem nunca arquivou nada não deve carregar uma área vazia na tela; a
         aba "Arquivados" só aparece quando existe pelo menos um, ou quando o
@@ -711,18 +833,48 @@ export default function BanksPage() {
           </div>
         ) : (
           <div>
-            {bankRows.map(({ bank, selection }, i) => (
+            {bankRows.map(({ bank, invoice, amount }, i) => (
               <MotionRow key={bank.id} index={i}>
                 {/*
-                  Sem ações administrativas: editar e excluir passaram a viver
-                  na página do próprio banco. A listagem identifica e navega.
+                  Row e kebab dividem o trabalho, como em Pessoas: a linha
+                  mostra o mês e abre a fatura; o menu administra o BANCO.
+
+                  As ações voltaram para cá porque viviam na página do banco —
+                  que deixou de ser o caminho principal quando o click passou a
+                  abrir o detalhe direto. Sem isso, editar um cartão exigiria
+                  descobrir uma rota que a interface não oferece mais.
                 */}
-                <BankRow bank={bank} nearest={selection} />
+                <BankRow
+                  bank={bank}
+                  invoice={invoice}
+                  amount={amount}
+                  period={period}
+                  onOpenInvoice={detail.open}
+                  onEdit={() => setEditBank(bank)}
+                  onArchive={() => archiveMut.mutate(bank.id)}
+                  onDelete={() => setDeleteTarget(bank)}
+                  isArchiving={archiveMut.isPending}
+                />
               </MotionRow>
             ))}
           </div>
         )}
       </div>
+
+      {/*
+        O MESMO drawer da página do banco — não uma segunda versão.
+
+        `key` pelo id: quando ele sai (Voltar, X) ou troca por outra fatura, o
+        componente é recriado e todo estado transiente morre junto, em vez de
+        vazar de uma fatura para a seguinte.
+      */}
+      <InvoiceDetailsDrawer
+        key={detail.openId ?? 'none'}
+        invoiceId={detail.openId}
+        bankId={openInvoiceBankId ?? ''}
+        open={detail.openId !== null && openInvoiceBankId !== null}
+        onOpenChange={(open) => !open && detail.close()}
+      />
 
       {/*
         Impacto da mudança de ciclo. Um único dialog: escolhe, vê o que muda,

@@ -1,3 +1,6 @@
+import { formatDate } from './formatters'
+import { parseInvoiceDate } from './invoice-dates'
+
 /**
  * Prazo relativo de faturas — fonte única.
  *
@@ -99,4 +102,39 @@ export function timingUrgency(
   if (diff === 0) return 'today'
   if (diff <= 2) return 'soon'
   return 'later'
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Prazo de uma fatura na visão mensal
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Numa lista com seletor de mês, contagem regressiva só faz sentido para o que
+ * ainda vai acontecer. "Vence em 5d" numa fatura de março seria absurdo — e
+ * "Venceu há 180d" é ruído: o que importa de um ciclo encerrado é a DATA, não
+ * a distância até hoje.
+ *
+ * Por isso a régua é o estado, não o calendário da tela:
+ *
+ *   OPEN    → conta até o fechamento ("Fecha em 5d")
+ *   CLOSED  → conta até o vencimento ("Vence em 3d")
+ *   OVERDUE → conta desde o vencimento; é a pendência que exige ação
+ *   PAID    → data factual ("Paga · venceu em 10/08"), sem contagem
+ *
+ * `PAID` é o caso que decide o formato: um ciclo quitado não tem prazo a
+ * cumprir, e exibir contagem sobre ele sugeriria pendência onde não há.
+ */
+export function invoiceTimingLabel(
+  invoice: { status: string; closeDate: string; dueDate: string },
+  today: Date = new Date(),
+): string {
+  if (invoice.status === 'PAID') {
+    return `Venceu em ${formatDate(invoice.dueDate)}`
+  }
+
+  if (invoice.status === 'OPEN') {
+    return formatCloseTiming(parseInvoiceDate(invoice.closeDate), today, 'short')
+  }
+
+  return formatDueTiming(parseInvoiceDate(invoice.dueDate), today, 'short')
 }

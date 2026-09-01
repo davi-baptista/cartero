@@ -135,3 +135,145 @@ export function orderBanksByUrgency<T extends { id: string; name: string }>(
     return a.bank.name.localeCompare(b.bank.name)
   })
 }
+
+// ─── Visão mensal ─────────────────────────────────────────────────────────────
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * A fatura de um banco NUMA competência
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `selectBankInvoice` responde "o que exige ação agora?" — urgência, ignorando
+ * pagas e zeradas. Serve à ordenação, não a uma consulta histórica: com ela a
+ * lista mostrava sempre a mesma fatura, rotulada "FATURA ATUAL", e ver agosto
+ * exigia entrar no banco.
+ *
+ * Esta responde outra pergunta: **"qual é a fatura DESTE mês?"**. Uma só pode
+ * existir — `@@unique([userId, bankId, month, year])` no schema —, então não há
+ * escolha a fazer: ou a competência tem fatura, ou não tem.
+ *
+ * ── A competência é `month`/`year`, nunca uma data ──
+ *
+ * Os dois são inteiros PERSISTIDOS na criação, pelo mês de FECHAMENTO. Derivar
+ * de `dueDate` erraria: uma fatura que fecha em 28/09 e vence em 10/10
+ * pertence a setembro, e por `dueDate` cairia em outubro — todo cartão com
+ * vencimento no mês seguinte apareceria deslocado.
+ *
+ * ── Fatura zerada NÃO é omitida aqui ──
+ *
+ * A seleção por urgência as ignora, e com razão: não há o que cobrar. Mas numa
+ * visão mensal a ausência é informação — "R$ 0,00" diz que o mês não teve
+ * gasto, enquanto sumir com a row sugeriria que o cartão não existe.
+ */
+export function invoiceForPeriod(
+  bankId: string,
+  invoices: Invoice[],
+  period: { month: number; year: number },
+): Invoice | null {
+  return (
+    invoices.find(
+      (invoice) =>
+        invoice.bankId === bankId &&
+        invoice.month === period.month &&
+        invoice.year === period.year,
+    ) ?? null
+  )
+}
+
+/** Um banco e a sua fatura na competência exibida. */
+export interface BankMonthRow<T> {
+  bank: T
+  invoice: Invoice | null
+  /** Bruto da fatura; `0` quando o mês não tem fatura. */
+  amount: number
+  /** Parte que pertence a outras pessoas. */
+  reimbursable: number
+  /** `amount − reimbursable`. */
+  ownAmount: number
+}
+
+/**
+ * Todos os bancos com a fatura da competência.
+ *
+ * Ordem ESTÁVEL por nome, diferente da lista por urgência: num mês fechado não
+ * há urgência a comunicar, e reordenar por status faria as rows saltarem de
+ * posição a cada troca de mês — o usuário perderia a referência de onde cada
+ * cartão está.
+ *
+ * Nenhum banco é escondido por não ter fatura: a lista é de BANCOS, e some com
+ * um cartão só porque o mês não teve gasto esconderia o próprio cartão.
+ */
+export function banksForPeriod<T extends { id: string; name: string }>(
+  banks: T[],
+  invoices: Invoice[],
+  period: { month: number; year: number },
+): Array<BankMonthRow<T>> {
+  return banks
+    .map((bank) => {
+      const invoice = invoiceForPeriod(bank.id, invoices, period)
+      const amount = invoice ? Number(invoice.totalAmount) : 0
+      const reimbursable = invoice?.reimbursable ?? 0
+      return { bank, invoice, amount, reimbursable, ownAmount: amount - reimbursable }
+    })
+    .sort((a, b) => a.bank.name.localeCompare(b.bank.name))
+}
+
+/** Resumo do mês exibido no topo da lista. */
+export interface BankMonthSummary {
+  /** Soma bruta de TODAS as faturas da competência, pagas inclusive. */
+  total: number
+  invoiceCount: number
+  openCount: number
+  closedCount: number
+  overdueCount: number
+  paidCount: number
+  /** O que ainda não foi quitado — `total` menos as pagas. */
+  unpaid: number
+}
+
+/**
+ * O resumo responde "quanto somam as faturas deste mês?".
+ *
+ * A fatura PAGA entra no total: ela pertence ao ciclo, e tirá-la faria o número
+ * encolher sozinho quando o usuário pagasse — como se o gasto não tivesse
+ * existido. "Quanto ainda falta pagar" é outra pergunta, e tem campo próprio
+ * (`unpaid`), em vez de os dois disputarem o mesmo número.
+ */
+export function summarizeBankMonth<T>(
+  rows: Array<BankMonthRow<T>>,
+): BankMonthSummary {
+  const summary: BankMonthSummary = {
+    total: 0,
+    invoiceCount: 0,
+    openCount: 0,
+    closedCount: 0,
+    overdueCount: 0,
+    paidCount: 0,
+    unpaid: 0,
+  }
+
+  for (const row of rows) {
+    if (!row.invoice) continue
+    summary.total += row.amount
+    summary.invoiceCount += 1
+
+    switch (row.invoice.status) {
+      case InvoiceStatus.OPEN:
+        summary.openCount += 1
+        break
+      case InvoiceStatus.CLOSED:
+        summary.closedCount += 1
+        break
+      case InvoiceStatus.OVERDUE:
+        summary.overdueCount += 1
+        break
+      case InvoiceStatus.PAID:
+        summary.paidCount += 1
+        break
+    }
+
+    if (row.invoice.status !== InvoiceStatus.PAID) summary.unpaid += row.amount
+  }
+
+  return summary
+}
