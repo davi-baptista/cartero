@@ -252,6 +252,31 @@ export function summarizeCompetence(
  * Genérico sobre o tipo CONCRETO (`SettlementItem<Debt>` etc.) para o chamador
  * não perder `id`, `amount` e os demais campos ao filtrar.
  */
+/**
+ * Rótulo do saldo da competência.
+ *
+ * Fonte única do drawer e do PDF. O documento é conferido pela outra pessoa, e
+ * ele dizendo "Saldo a receber" onde a tela diz "Nada a acertar" seria uma
+ * divergência impossível de explicar.
+ *
+ * Vocabulário do acerto MENSAL — deliberadamente diferente de `balanceLabel`,
+ * que fala do consolidado all-time ("Tudo acertado"). Um mês vazio não afirma
+ * que a relação está quitada: pode haver pendência em outra competência.
+ */
+export function competenceBalanceLabel(summary: CompetenceSummary): string {
+  if (summary.isEmpty) return 'Nada a acertar'
+  if (summary.net > 0.005) return 'Saldo a receber'
+  if (summary.net < -0.005) return 'Saldo a pagar'
+  return 'Saldo líquido zerado'
+}
+
+/** Sinal do saldo: `+`, `-` ou nada. A tolerância evita `-R$ 0,00`. */
+export function competenceBalanceSign(summary: CompetenceSummary): '+' | '-' | '' {
+  if (summary.net > 0.005) return '+'
+  if (summary.net < -0.005) return '-'
+  return ''
+}
+
 export function openItemsFor<T extends Timed>(
   items: readonly T[],
   selected: SettlementCompetence,

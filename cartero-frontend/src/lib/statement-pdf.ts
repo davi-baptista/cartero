@@ -1,7 +1,11 @@
 import { jsPDF } from 'jspdf'
 import { formatCurrency, formatDate } from '@/lib/formatters'
-import type { Debt, PersonSummary, Receivable } from '@/types'
-import { balanceLabel, balanceSentence } from '@/lib/person-statement'
+import type { Debt, Receivable } from '@/types'
+import {
+  competenceBalanceLabel,
+  competenceBalanceSign,
+  type CompetenceSummary,
+} from '@/lib/person-settlement-view'
 
 // Light equivalents of the same semantic roles used across the app's dark theme.
 const COLOR_BACKGROUND: [number, number, number] = [255, 255, 255]
@@ -35,16 +39,34 @@ const SIZE_LABEL = 9
  *
  * Recebendo o mesmo `summary` que o drawer exibe, os dois não podem divergir.
  */
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * O documento é MENSAL — inteiro
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * O cabeçalho sempre imprimiu o mês selecionado, mas o resumo e a lista vinham
+ * do universo all-time: um PDF de "setembro 2026" apresentava R$ 13.080 e 38
+ * pendências quando setembro tinha R$ 770 e 5 — incluindo parcelas de 2027 e
+ * 2028 de uma série de 24x, que nunca pertenceram ao mês.
+ *
+ * Quem lê o documento é a outra pessoa, que não tem como saber que o título e
+ * os números falam de períodos diferentes.
+ *
+ * A competência é a MESMA do drawer (`openItemsFor` + `summarizeCompetence`,
+ * de `person-settlement-view`): o mês civil de `dueDate`, mais o que venceu
+ * antes e continua aberto. O PDF não filtra nada por conta própria — receber
+ * o universo já resolvido é o que impede uma terceira semântica temporal.
+ */
 interface StatementPdfInput {
   personName: string
-  /** Rótulo do mês escolhido — vale para a seção de histórico, não para o resumo. */
+  /** O mês exportado. Vale para o documento inteiro, não só para o histórico. */
   periodLabel: string
-  /** Situação atual: all-time. Alimenta o card "SITUAÇÃO ATUAL". */
-  summary: PersonSummary
-  /** Pendências abertas — all-time, como o `summary`. */
+  /** Resumo DO MÊS — `summarizeCompetence` sobre os itens abaixo. */
+  summary: CompetenceSummary
+  /** Em aberto na competência: vence nela, ou venceu antes e segue aberto. */
   pendingReceivables: Receivable[]
   pendingDebts: Debt[]
-  /** Quitados NO PERÍODO — o universo temporal, seção separada. */
+  /** Resolvidos arquivados nesta competência. */
   settledReceivables: Receivable[]
   settledDebts: Debt[]
 }
@@ -167,6 +189,25 @@ function drawGradientFrame(doc: jsPDF, pageWidth: number, pageHeight: number, th
 // Row height for the item list — enough room for the title + due-date line to breathe.
 const ROW_HEIGHT = 14
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Geometria da página
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * O gerador nunca chamava `addPage`: escrevia num único A4 com um cursor que
+ * só crescia. Com 87 pendências o cursor chegava a 1312mm numa página de
+ * 297mm — o texto entrava no stream do PDF (por isso a extração o encontrava)
+ * mas ficava fora do MediaBox, invisível. A row de transição, por volta da
+ * 13ª, era desenhada por cima do footer.
+ *
+ * `FOOTER_RESERVE` é área física reservada em TODAS as páginas: o footer é
+ * desenhado dentro dela, e nenhuma row pode entrar. A régua é o baseline da
+ * segunda linha da row (`y + 4.5`), não o topo — senão a data da última row
+ * caberia embaixo da linha do footer.
+ */
+const FOOTER_RESERVE = 24
+const ROW_TAIL = 5
+
 function addRow(
   doc: jsPDF,
   x: number,
@@ -211,6 +252,31 @@ function addRow(
   doc.text(origin ? `Em ${occurredAt} · ${origin}` : `Em ${occurredAt}`, x, y + 4.5)
 }
 
+/**
+ * Frase que explica o saldo do mês para quem recebe o documento.
+ *
+ * Espelha `balanceSentence`, mas no vocabulário da competência: um mês sem
+ * itens diz "Nada a acertar neste mês", nunca "Nenhuma pendência em aberto" —
+ * que afirmaria quitação de uma relação que pode ter pendências em outros
+ * meses.
+ *
+ * O caso de compensação diz explicitamente que há pendências: saldo zero com
+ * R$ 500 de cada lado não é acerto concluído.
+ */
+function competenceSentence(
+  summary: CompetenceSummary,
+  personName: string,
+): string {
+  if (summary.isEmpty) return 'Nada a acertar neste mês'
+
+  const value = formatCurrency(Math.abs(summary.net))
+
+  if (summary.net > 0.005) return `${personName} deve ${value} a você neste mês`
+  if (summary.net < -0.005) return `Você deve ${value} a ${personName} neste mês`
+
+  return `Os valores se compensam, mas ${summary.itemCount} pendência(s) seguem em aberto`
+}
+
 export async function generateStatementPdf(input: StatementPdfInput): Promise<jsPDF> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   await registerInter(doc)
@@ -221,11 +287,50 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
   const margin = frameThickness + WAVE_AMPLITUDE + 13
   const contentWidth = pageWidth - margin * 2
 
-  doc.setFillColor(...COLOR_BACKGROUND)
-  doc.rect(0, 0, pageWidth, pageHeight, 'F')
-  drawGradientFrame(doc, pageWidth, pageHeight, frameThickness)
+  /* Fundo e moldura são por PÁGINA — cada página nova recebe os dois. */
+  function paintPageChrome() {
+    doc.setFillColor(...COLOR_BACKGROUND)
+    doc.rect(0, 0, pageWidth, pageHeight, 'F')
+    drawGradientFrame(doc, pageWidth, pageHeight, frameThickness)
+  }
+
+  /* Footer dentro da área reservada, repetido em toda página. */
+  function paintFooter() {
+    doc.setDrawColor(...COLOR_BORDER)
+    doc.line(margin, pageHeight - 18, pageWidth - margin, pageHeight - 18)
+    doc.setFont('Inter', 'normal')
+    doc.setFontSize(SIZE_LABEL - 1)
+    doc.setTextColor(...COLOR_MUTED)
+    doc.text('Gerado pelo Cartero', margin, pageHeight - 12)
+    doc.text(
+      formatDate(new Date().toISOString().slice(0, 10)),
+      pageWidth - margin,
+      pageHeight - 12,
+      { align: 'right' },
+    )
+  }
+
+  paintPageChrome()
 
   let y = margin + 2
+
+  /** A última coordenada utilizável antes da área do footer. */
+  const contentBottom = pageHeight - FOOTER_RESERVE
+
+  /**
+   * Garante `needed` mm de espaço, abrindo página quando não houver.
+   *
+   * É o que substitui o cursor infinito. O chamador passa a altura do bloco
+   * INTEIRO que vai desenhar, então uma row nunca começa numa página e termina
+   * na outra (`break-inside: avoid`, na prática).
+   */
+  function ensureSpace(needed: number) {
+    if (y + needed <= contentBottom) return
+    paintFooter()
+    doc.addPage()
+    paintPageChrome()
+    y = margin + 6
+  }
 
   const logoDataUrl = await loadAsDataUrl('/logo-vertical-sem-nome.png')
   const logoSize = 8
@@ -242,11 +347,12 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
   doc.text(input.periodLabel, pageWidth - margin, y + 2, { align: 'right' })
 
   /*
-    Card de "Situação atual" — sempre all-time.
+    Card do MÊS — o mesmo universo do cabeçalho ao lado.
 
-    O rótulo diz explicitamente "Situação atual" porque o cabeçalho ao lado
-    mostra um período: sem essa distinção o leitor somaria as duas coisas e
-    entenderia que o saldo é do mês.
+    Antes era "Situação atual", all-time, justificado por um rótulo que
+    distinguia os dois períodos. Na prática o documento pedia que o leitor
+    fizesse essa separação sozinho: título de setembro, saldo de todos os
+    tempos, lista de todos os tempos.
   */
   const { summary } = input
   const cardTop = y + 14
@@ -258,10 +364,10 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
   doc.setFont('Inter', 'medium')
   doc.setFontSize(SIZE_LABEL)
   doc.setTextColor(...COLOR_MUTED)
-  doc.text('SITUAÇÃO ATUAL', margin + 8, cardY)
+  doc.text(input.periodLabel.toUpperCase(), margin + 8, cardY)
 
   cardY += 11
-  const netBalance = summary.netBalance
+  const netBalance = summary.net
   const positive = netBalance > 0.005
   const negative = netBalance < -0.005
   doc.setFont('Inter', 'bold')
@@ -273,7 +379,8 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
         ? COLOR_DESTRUCTIVE
         : COLOR_INK),
   )
-  const sign = positive ? '+ ' : negative ? '- ' : ''
+  const signGlyph = competenceBalanceSign(summary)
+  const sign = signGlyph ? `${signGlyph} ` : ''
   doc.text(
     `${sign}${formatCurrency(Math.abs(netBalance))}`,
     margin + 8,
@@ -284,12 +391,12 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
   doc.setFont('Inter', 'normal')
   doc.setFontSize(SIZE_LABEL)
   doc.setTextColor(...COLOR_MUTED)
-  doc.text(balanceLabel(summary), pageWidth - margin - 8, cardY, {
+  doc.text(competenceBalanceLabel(summary), pageWidth - margin - 8, cardY, {
     align: 'right',
   })
 
   cardY += 7
-  doc.text(balanceSentence(summary, input.personName), margin + 8, cardY)
+  doc.text(competenceSentence(summary, input.personName), margin + 8, cardY)
 
   /*
     Composição sempre impressa junto do saldo.
@@ -303,20 +410,20 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
   doc.setFontSize(SIZE_BODY - 1)
   doc.setTextColor(...COLOR_RECEIVABLE)
   doc.text(
-    `A receber ${formatCurrency(summary.receivablePending)}`,
+    `A receber ${formatCurrency(summary.receivableTotal)}`,
     margin + 8,
     cardY,
   )
   doc.setTextColor(...COLOR_DESTRUCTIVE)
   doc.text(
-    `A pagar ${formatCurrency(summary.debtPending)}`,
+    `A pagar ${formatCurrency(summary.debtTotal)}`,
     margin + 58,
     cardY,
   )
   doc.setFont('Inter', 'normal')
   doc.setTextColor(...COLOR_MUTED)
   doc.text(
-    `${summary.pendingReceivablesCount + summary.pendingDebtsCount} pendência(s)`,
+    `${summary.itemCount} pendência(s)`,
     pageWidth - margin - 8,
     cardY,
     { align: 'right' },
@@ -324,7 +431,14 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
 
   y = cardTop + cardHeight + 14
 
+  /**
+   * Cabeçalho de seção.
+   *
+   * Reserva o próprio espaço MAIS a primeira row: um "A PAGAR — PENDENTE"
+   * sozinho no pé da página faria a seção parecer vazia.
+   */
   function sectionTitle(label: string) {
+    ensureSpace(11 + ROW_HEIGHT)
     doc.setFont('Inter', 'medium')
     doc.setFontSize(SIZE_LABEL)
     doc.setTextColor(...COLOR_BRAND)
@@ -338,6 +452,7 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
   if (input.pendingReceivables.length > 0) {
     sectionTitle('A RECEBER — PENDENTE')
     for (const item of input.pendingReceivables) {
+      ensureSpace(ROW_TAIL)
       addRow(
         doc,
         margin,
@@ -358,6 +473,7 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
   if (input.pendingDebts.length > 0) {
     sectionTitle('A PAGAR — PENDENTE')
     for (const item of input.pendingDebts) {
+      ensureSpace(ROW_TAIL)
       addRow(doc, margin, y, contentWidth, item.title, formatDate(item.occurredAt), Number(item.amount), COLOR_DESTRUCTIVE, '-')
       y += ROW_HEIGHT
     }
@@ -377,6 +493,7 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
   if (history.length > 0) {
     sectionTitle(`QUITADO — ${input.periodLabel.toUpperCase()}`)
     for (const { item, kind } of history) {
+      ensureSpace(ROW_TAIL)
       addRow(
         doc,
         margin,
@@ -393,13 +510,8 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
     }
   }
 
-  doc.setDrawColor(...COLOR_BORDER)
-  doc.line(margin, pageHeight - 18, pageWidth - margin, pageHeight - 18)
-  doc.setFont('Inter', 'normal')
-  doc.setFontSize(SIZE_LABEL - 1)
-  doc.setTextColor(...COLOR_MUTED)
-  doc.text('Gerado pelo Cartero', margin, pageHeight - 12)
-  doc.text(formatDate(new Date().toISOString().slice(0, 10)), pageWidth - margin, pageHeight - 12, { align: 'right' })
+  /* A última página fecha com o mesmo footer das anteriores. */
+  paintFooter()
 
   return doc
 }

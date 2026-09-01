@@ -99,6 +99,7 @@ import {
 import { getPersonStatement, settlePerson } from '@/services/persons.service'
 import {
   dueLabel,
+  competenceBalanceLabel,
   openItemsFor,
   resolvedLabel,
   summarizeCompetence,
@@ -400,14 +401,18 @@ export function PersonStatementDrawer({
     a deixava aberta em silêncio.
   */
   const summary = data?.summary
-  const pendingDebts = data?.pending.debts ?? []
-  const pendingReceivables = data?.pending.receivables ?? []
+  /*
+    `pending` (all-time) não é mais lido aqui: o card, a lista e o PDF são
+    mensais, e o WhatsApp usa os TOTAIS de `summary`, não as listas.
+  */
   /*
     Histórico = universo de PERÍODO. Nome distinto do consolidado de propósito:
     `period.settled*` não pode ser confundido com `pending`.
   */
   const historyDebts = data?.period.settledDebts ?? []
   const historyReceivables = data?.period.settledReceivables ?? []
+  /* O mês pode não ter pendência e ainda ter histórico — o PDF vale por ele. */
+  const historyItemCount = historyDebts.length + historyReceivables.length
 
   /*
     `settlement.defaultCompetence` continua vindo do backend, mas NÃO é mais
@@ -862,8 +867,21 @@ export function PersonStatementDrawer({
       }
     }
 
-    if (summary.isFullySettled) {
+    /*
+      Duas guardas, porque os dois destinos falam de universos diferentes.
+
+      O WhatsApp fala da relação INTEIRA, então `isFullySettled` (all-time) é o
+      critério certo. O PDF é mensal: uma pessoa com pendências só em novembro
+      não está quitada, mas o documento de setembro sairia vazio — e um extrato
+      sem itens não é o que quem clicou esperava.
+    */
+    if (requirePhone && summary.isFullySettled) {
       toast.info('Não há pendências para enviar')
+      return null
+    }
+
+    if (!requirePhone && monthSummary.isEmpty && historyItemCount === 0) {
+      toast.info('Nada a acertar neste mês')
       return null
     }
 
@@ -879,9 +897,17 @@ export function PersonStatementDrawer({
 
     return {
       person,
+      /* All-time — o WhatsApp fala da relação inteira. */
       summary,
-      pendingReceivables,
-      pendingDebts,
+      /*
+        O PDF é um documento MENSAL: recebe o universo da competência, o mesmo
+        que a lista abaixo do card exibe. Antes recebia `pendingReceivables` /
+        `pendingDebts`, que são all-time por contrato (Fase 8B) — o título dizia
+        setembro e a lista trazia parcelas de 2028.
+      */
+      monthSummary,
+      monthReceivables,
+      monthDebts,
       historyDebts,
       historyReceivables,
       periodLabel,
@@ -908,7 +934,8 @@ export function PersonStatementDrawer({
     if (!context) return null
 
     /*
-      O PDF recebe o MESMO `summary` que o drawer exibe.
+      O PDF recebe o mesmo universo MENSAL que o drawer exibe — resumo e itens
+      da competência selecionada.
 
       Ele não recalcula nada: se recalculasse, os dois poderiam divergir — e o
       documento é justamente o que a outra pessoa vai conferir.
@@ -916,9 +943,9 @@ export function PersonStatementDrawer({
     const doc = await generateStatementPdf({
       personName: context.person.name,
       periodLabel: context.periodLabel,
-      summary: context.summary,
-      pendingReceivables: context.pendingReceivables,
-      pendingDebts: context.pendingDebts,
+      summary: context.monthSummary,
+      pendingReceivables: context.monthReceivables,
+      pendingDebts: context.monthDebts,
       settledReceivables: context.historyReceivables,
       settledDebts: context.historyDebts,
     })
@@ -1108,13 +1135,8 @@ export function PersonStatementDrawer({
               */}
               <div className="rounded-xl border border-border bg-muted/30 px-4 py-4">
                 <p className="text-xs text-muted-foreground">
-                  {monthSummary.isEmpty
-                    ? 'Nada a acertar'
-                    : monthSummary.net > 0.005
-                      ? 'Saldo a receber'
-                      : monthSummary.net < -0.005
-                        ? 'Saldo a pagar'
-                        : 'Saldo líquido zerado'}
+                  {/* Mesma fonte que o PDF usa — os dois não podem divergir. */}
+                  {competenceBalanceLabel(monthSummary)}
                 </p>
                 <p
                   className={cn(
