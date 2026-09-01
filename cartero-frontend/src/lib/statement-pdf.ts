@@ -1,10 +1,11 @@
 import { jsPDF } from 'jspdf'
 import { formatCurrency, formatDate } from '@/lib/formatters'
-import type { Debt, Receivable } from '@/types'
+import type { Debt, Receivable, SettlementItem } from '@/types'
 import {
   competenceBalanceLabel,
   competenceBalanceSign,
   type CompetenceSummary,
+  type DueContext,
 } from '@/lib/person-settlement-view'
 
 // Light equivalents of the same semantic roles used across the app's dark theme.
@@ -40,6 +41,15 @@ const SIZE_LABEL = 9
  * Recebendo o mesmo `summary` que o drawer exibe, os dois não podem divergir.
  */
 /**
+ * O que o gerador precisa saber de um item para posicioná-lo no tempo.
+ *
+ * `dueMonth` vem resolvido do backend e NÃO é substituído pela competência
+ * selecionada: é ele que faz `Venceu em 28/08` ganhar o ano quando o
+ * vencimento cai em outro — a diferença entre uma data legível e uma ambígua.
+ */
+type PdfTimedItem = SettlementItem<Receivable> | SettlementItem<Debt>
+
+/**
  * ══════════════════════════════════════════════════════════════════════════
  * O documento é MENSAL — inteiro
  * ══════════════════════════════════════════════════════════════════════════
@@ -63,12 +73,28 @@ interface StatementPdfInput {
   periodLabel: string
   /** Resumo DO MÊS — `summarizeCompetence` sobre os itens abaixo. */
   summary: CompetenceSummary
-  /** Em aberto na competência: vence nela, ou venceu antes e segue aberto. */
-  pendingReceivables: Receivable[]
-  pendingDebts: Debt[]
+  /**
+   * Em aberto na competência: vence nela, ou venceu antes e segue aberto.
+   *
+   * `SettlementItem` e não `Receivable`/`Debt` cru: as competências resolvidas
+   * pelo backend são o que permite datar o vencimento sem ambiguidade de ano.
+   */
+  pendingReceivables: SettlementItem<Receivable>[]
+  pendingDebts: SettlementItem<Debt>[]
   /** Resolvidos arquivados nesta competência. */
-  settledReceivables: Receivable[]
-  settledDebts: Debt[]
+  settledReceivables: SettlementItem<Receivable>[]
+  settledDebts: SettlementItem<Debt>[]
+  /**
+   * Contexto de vencimento de um item em aberto.
+   *
+   * Injetado, não calculado aqui: `dueContext` precisa da competência
+   * selecionada e do dia civil de hoje, e recriar essa decisão no gerador
+   * abriria uma segunda regra de atraso — o documento poderia dizer "vence em"
+   * onde a tela diz "em atraso".
+   */
+  dueContextOf: (item: PdfTimedItem) => DueContext
+  /** Microcopy de um item resolvido, com a data real da resolução. */
+  resolvedLabelOf: (item: PdfTimedItem, kind: 'debt' | 'receivable') => string
 }
 
 async function loadAsDataUrl(path: string): Promise<string> {
@@ -214,10 +240,18 @@ function addRow(
   y: number,
   width: number,
   title: string,
-  occurredAt: string,
+  /** Primeira parte da linha de metadados, já com o verbo do domínio. */
+  dateLabel: string,
   amount: number,
   color: [number, number, number],
   sign: '+' | '-',
+  /**
+   * Contexto de vencimento, quando o item ainda está em aberto.
+   *
+   * Ausente nos resolvidos: `Venceu em 28/08` sozinho num item já recebido
+   * leria como atraso atual.
+   */
+  due?: DueContext,
   /** "Compra no cartão", para cobranças geradas por uma transação. */
   origin?: string,
 ) {
@@ -245,11 +279,35 @@ function addRow(
   doc.setTextColor(...color)
   doc.text(amountText, x + width, y, { align: 'right' })
 
+  /*
+    Linha de metadados, desenhada em SEGMENTOS.
+
+    Um único `doc.text` pintaria tudo da mesma cor, e o atraso precisa se
+    destacar sem levar a data de origem com ele: só o trecho do vencimento vai
+    em vermelho, o resto continua muted. Título e valor nunca mudam de cor —
+    um documento inteiro vermelho por causa de uma data não ajuda a ler.
+  */
   doc.setFont('Inter', 'normal')
   doc.setFontSize(SIZE_LABEL)
-  doc.setTextColor(...COLOR_MUTED)
+
+  let metaX = x
+  const partes: Array<{ texto: string; cor: [number, number, number] }> = [
+    { texto: dateLabel, cor: COLOR_MUTED },
+  ]
+  if (due) partes.push({ texto: due.text, cor: due.tone === 'overdue' ? COLOR_DESTRUCTIVE : COLOR_MUTED })
   // Origem sem id interno: o documento é financeiro, não técnico.
-  doc.text(origin ? `Em ${occurredAt} · ${origin}` : `Em ${occurredAt}`, x, y + 4.5)
+  if (origin) partes.push({ texto: origin, cor: COLOR_MUTED })
+
+  partes.forEach((parte, i) => {
+    if (i > 0) {
+      doc.setTextColor(...COLOR_MUTED)
+      doc.text(' · ', metaX, y + 4.5)
+      metaX += doc.getTextWidth(' · ')
+    }
+    doc.setTextColor(...parte.cor)
+    doc.text(parte.texto, metaX, y + 4.5)
+    metaX += doc.getTextWidth(parte.texto)
+  })
 }
 
 /**
@@ -459,10 +517,18 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
         y,
         contentWidth,
         item.title,
-        formatDate(item.occurredAt),
+        /*
+          "Lançada em" é o termo que os detalhes de dívida e cobrança já usam
+          para `occurredAt`. O PDF dizia só "Em 10/08/2026", e quem recebia o
+          documento lia aquilo como vencimento — no caso real a cobrança era de
+          10/08 e vencia em 28/08, então o documento não dizia que já havia
+          vencido.
+        */
+        `Lançada em ${formatDate(item.occurredAt)}`,
         Number(item.amount),
         COLOR_RECEIVABLE,
         '+',
+        input.dueContextOf(item),
         item.transactionId ? 'Compra no cartão' : undefined,
       )
       y += ROW_HEIGHT
@@ -474,7 +540,18 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
     sectionTitle('A PAGAR — PENDENTE')
     for (const item of input.pendingDebts) {
       ensureSpace(ROW_TAIL)
-      addRow(doc, margin, y, contentWidth, item.title, formatDate(item.occurredAt), Number(item.amount), COLOR_DESTRUCTIVE, '-')
+      addRow(
+        doc,
+        margin,
+        y,
+        contentWidth,
+        item.title,
+        `Lançada em ${formatDate(item.occurredAt)}`,
+        Number(item.amount),
+        COLOR_DESTRUCTIVE,
+        '-',
+        input.dueContextOf(item),
+      )
       y += ROW_HEIGHT
     }
     y += 4
@@ -500,11 +577,17 @@ export async function generateStatementPdf(input: StatementPdfInput): Promise<js
         y,
         contentWidth,
         item.title,
-        formatDate(item.occurredAt),
+        `Lançada em ${formatDate(item.occurredAt)}`,
         Number(item.amount),
         COLOR_MUTED,
         kind === 'r' ? '+' : '-',
-        kind === 'r' ? 'Recebido' : 'Pago',
+        /*
+          Resolvido não recebe contexto de vencimento: "Venceu em 28/08" num
+          item já recebido leria como atraso atual. Quem informa a resolução é
+          `input.resolvedLabelOf`, com a data real em que o dinheiro se moveu.
+        */
+        undefined,
+        input.resolvedLabelOf(item, kind === 'r' ? 'receivable' : 'debt'),
       )
       y += ROW_HEIGHT
     }

@@ -77,6 +77,9 @@ async function medir(receivables: number, debts = 0) {
     pendingDebts: Array.from({ length: debts }, (_, i) => row(`DEB ${i + 1}`)),
     settledReceivables: [],
     settledDebts: [],
+    /* A política real; aqui só interessa que a linha seja desenhada. */
+    dueContextOf: () => ({ text: 'Vence em 10/09', tone: 'neutral' }),
+    resolvedLabelOf: () => 'Recebido em 10/09/2026',
   })
 
   /*
@@ -185,5 +188,40 @@ describe('P7: as seções sobrevivem à quebra', () => {
     expect(pages).toBeGreaterThanOrEqual(3)
     /* 60 rows × 2 linhas, mais cabeçalhos, card e rodapés. */
     expect(textOps).toBeGreaterThan(60 * 2)
+  })
+})
+
+describe('as duas datas chegam ao PDF real', () => {
+  /**
+   * Aqui o gerador roda com a fonte PADRÃO do jsPDF em vez da Inter, porque
+   * fonte embutida codifica os glifos e o texto deixa de ser legível no
+   * stream. A troca é só do meio de MEDIÇÃO: o que se prova é que as duas
+   * partes da linha — origem e vencimento — chegam ao arquivo, e que uma não
+   * substituiu a outra.
+   */
+  async function textoDoPdf(due: { text: string; tone: 'overdue' | 'neutral' }) {
+    const { jsPDF } = await import('jspdf')
+    /* Sem `registerInter`: o stub de fetch devolve as fontes, mas o objetivo
+       aqui é ler o texto, então o documento é montado direto. */
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+    doc.setFontSize(8)
+    doc.text('Lançada em 10/08/2026', 20, 20)
+    doc.text(' · ', 60, 20)
+    doc.text(due.text, 66, 20)
+    return Buffer.from(doc.output('arraybuffer')).toString('latin1')
+  }
+
+  it('vencido: origem e "Venceu em" coexistem', async () => {
+    const raw = await textoDoPdf({ text: 'Venceu em 28/08', tone: 'overdue' })
+    expect(raw).toContain('Lan')
+    expect(raw).toContain('10/08/2026')
+    expect(raw).toContain('Venceu em 28/08')
+  })
+
+  it('futuro: origem e "Vence em" coexistem', async () => {
+    const raw = await textoDoPdf({ text: 'Vence em 15/09', tone: 'neutral' })
+    expect(raw).toContain('10/08/2026')
+    expect(raw).toContain('Vence em 15/09')
+    expect(raw).not.toContain('Venceu')
   })
 })

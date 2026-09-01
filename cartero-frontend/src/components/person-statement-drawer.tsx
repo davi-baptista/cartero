@@ -100,6 +100,7 @@ import { getPersonStatement, settlePerson } from '@/services/persons.service'
 import {
   dueLabel,
   competenceBalanceLabel,
+  dueContext,
   openItemsFor,
   resolvedLabel,
   summarizeCompetence,
@@ -948,6 +949,14 @@ export function PersonStatementDrawer({
       pendingDebts: context.monthDebts,
       settledReceivables: context.historyReceivables,
       settledDebts: context.historyDebts,
+      /*
+        A política de atraso viaja junto, em vez de ser recriada no gerador: é
+        a MESMA `dueContext` que a lista da tela usa, com a mesma competência e
+        o mesmo dia civil. Sem isso o PDF poderia dizer "vence em" onde o
+        drawer diz "em atraso".
+      */
+      dueContextOf: (item) => dueContext(item, competence),
+      resolvedLabelOf: (item, kind) => resolvedLabel(item, kind),
     })
 
     return {

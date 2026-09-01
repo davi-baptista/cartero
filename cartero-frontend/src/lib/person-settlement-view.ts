@@ -160,6 +160,51 @@ export function dueLabel(
   }
 }
 
+/**
+ * Contexto de vencimento para a linha do PDF.
+ *
+ * ── Por que existe, separado de `dueLabel` ──
+ *
+ * A linha do PDF já carrega a data de ORIGEM (`occurredAt` — quando a cobrança
+ * aconteceu), e o documento não pode perdê-la: ela e o vencimento são fatos
+ * diferentes. Uma cobrança criada em 10/08 que vence em 28/08 tem as duas
+ * datas, e trocar uma pela outra apagaria informação.
+ *
+ * `dueLabel` monta a linha inteira do drawer ("Em atraso · venceu em 28/08"),
+ * onde a origem aparece em outro lugar. Aqui devolvemos só o TRECHO do
+ * vencimento, para o PDF compor `Cobrança em 10/08/2026 · Venceu em 28/08`.
+ *
+ * O estado vem de `dueStateOf` e a data de `dueDisplay` — as mesmas funções do
+ * drawer, então o PDF não pode divergir da tela. Em particular: `pending` NÃO
+ * é sinônimo de vencido, e a comparação é por dia civil de Fortaleza.
+ *
+ * `tone` separa semântica de apresentação: quem desenha decide a cor, este
+ * módulo só diz que aquele trecho é uma situação de atraso.
+ */
+export interface DueContext {
+  text: string
+  tone: 'overdue' | 'neutral'
+}
+
+export function dueContext(
+  item: Timed,
+  selected: SettlementCompetence,
+  today = formatDateValue(),
+): DueContext {
+  const state = dueStateOf(item, selected, today)
+  const dueText = dueDisplay(dueDay(item), selected)
+
+  switch (state) {
+    case 'overdue':
+      return { text: `Venceu em ${dueText}`, tone: 'overdue' }
+    case 'dueToday':
+      /* "Vence hoje" é o vocabulário que o drawer já usa — não inventado aqui. */
+      return { text: 'Vence hoje', tone: 'neutral' }
+    case 'pending':
+      return { text: `Vence em ${dueText}`, tone: 'neutral' }
+  }
+}
+
 /** Urgência temporal manda na ordem — não a data da compra de origem. */
 const STATE_ORDER: Record<DueState, number> = {
   overdue: 0,
