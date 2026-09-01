@@ -2,6 +2,17 @@ import { readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 /**
+ * Timeout próprio, acima dos 5s padrão.
+ *
+ * Cada caso gera um PDF REAL, e o primeiro paga o registro das três variantes
+ * da Inter — ~1.3MB de fonte embutida. Isolado leva ~5,0s; junto das outras 34
+ * suítes ultrapassava o limite em alguns milissegundos e falhava por carga, não
+ * por regressão. Afrouxar o timeout global esconderia lentidão de verdade em
+ * testes que deveriam ser instantâneos.
+ */
+const PDF_TIMEOUT = 30_000
+
+/**
  * ══════════════════════════════════════════════════════════════════════════
  * O documento pagina de verdade
  * ══════════════════════════════════════════════════════════════════════════
@@ -97,11 +108,11 @@ async function medir(receivables: number, debts = 0) {
 describe('P1-P2: o número de páginas segue o conteúdo', () => {
   it('P1: documento curto ocupa 1 página', async () => {
     expect((await medir(4)).pages).toBe(1)
-  })
+  }, PDF_TIMEOUT)
 
   it('P2: documento longo passa de 1 página', async () => {
     expect((await medir(40)).pages).toBeGreaterThan(1)
-  })
+  }, PDF_TIMEOUT)
 
   it('documento muito longo passa de 2 páginas', async () => {
     /*
@@ -109,7 +120,7 @@ describe('P1-P2: o número de páginas segue o conteúdo', () => {
       despercebido.
     */
     expect((await medir(90)).pages).toBeGreaterThanOrEqual(3)
-  })
+  }, PDF_TIMEOUT)
 })
 
 describe('P3-P4: nenhum item desaparece', () => {
@@ -138,12 +149,12 @@ describe('P3-P4: nenhum item desaparece', () => {
       (90 - 4) * custoPorRow,
     )
     expect(longo.pages).toBeGreaterThan(curto.pages)
-  })
+  }, PDF_TIMEOUT)
 
   it('a row de transição força página nova em vez de invadir o footer', async () => {
     /* Cabem ~13 rows por página; a 14ª colidia com o footer. */
     expect((await medir(14)).pages).toBe(2)
-  })
+  }, PDF_TIMEOUT)
 })
 
 describe('P5-P6: footer e unicidade', () => {
@@ -157,7 +168,7 @@ describe('P5-P6: footer e unicidade', () => {
     const { pages, textOps } = await medir(90)
     expect(pages).toBeGreaterThanOrEqual(3)
     expect(textOps).toBeGreaterThan(90 * 2)
-  })
+  }, PDF_TIMEOUT)
 
   it('P6: a contagem é exata — nada é duplicado na quebra', async () => {
     /*
@@ -179,7 +190,7 @@ describe('P5-P6: footer e unicidade', () => {
 
     expect(custoMeio).toBeGreaterThan(0)
     expect(custoLimite).toBeLessThanOrEqual(custoMeio + rodapeExtra + custoMeio)
-  })
+  }, PDF_TIMEOUT)
 })
 
 describe('P7: as seções sobrevivem à quebra', () => {
@@ -188,7 +199,7 @@ describe('P7: as seções sobrevivem à quebra', () => {
     expect(pages).toBeGreaterThanOrEqual(3)
     /* 60 rows × 2 linhas, mais cabeçalhos, card e rodapés. */
     expect(textOps).toBeGreaterThan(60 * 2)
-  })
+  }, PDF_TIMEOUT)
 })
 
 describe('as duas datas chegam ao PDF real', () => {
@@ -216,12 +227,12 @@ describe('as duas datas chegam ao PDF real', () => {
     expect(raw).toContain('Lan')
     expect(raw).toContain('10/08/2026')
     expect(raw).toContain('Venceu em 28/08')
-  })
+  }, PDF_TIMEOUT)
 
   it('futuro: origem e "Vence em" coexistem', async () => {
     const raw = await textoDoPdf({ text: 'Vence em 15/09', tone: 'neutral' })
     expect(raw).toContain('10/08/2026')
     expect(raw).toContain('Vence em 15/09')
     expect(raw).not.toContain('Venceu')
-  })
+  }, PDF_TIMEOUT)
 })

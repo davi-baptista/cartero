@@ -131,10 +131,11 @@ describe('B10-B13: a lista do mês', () => {
     expect(santander?.amount).toBe(0)
   })
 
-  it('a ordem é estável por nome, não por urgência', () => {
+  it('a ordem é por importância; o nome só desempata', () => {
     /*
-      Reordenar por status faria as rows saltarem de posição a cada troca de
-      mês, e o usuário perderia a referência de onde cada cartão está.
+      Bradesco (CLOSED) antes de Porto (OPEN) por urgência — e Santander, sem
+      fatura, por último apesar de vir antes dos dois no alfabeto se a lista
+      fosse ordenada por nome.
     */
     const rows = banksForPeriod(banks, invoices, SET)
     expect(rows.map((r) => r.bank.name)).toEqual([

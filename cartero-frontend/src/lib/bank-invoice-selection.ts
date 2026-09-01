@@ -193,29 +193,118 @@ export interface BankMonthRow<T> {
 }
 
 /**
- * Todos os bancos com a fatura da competência.
+ * ══════════════════════════════════════════════════════════════════════════
+ * Importância de uma row na visão mensal
+ * ══════════════════════════════════════════════════════════════════════════
  *
- * Ordem ESTÁVEL por nome, diferente da lista por urgência: num mês fechado não
- * há urgência a comunicar, e reordenar por status faria as rows saltarem de
- * posição a cada troca de mês — o usuário perderia a referência de onde cada
- * cartão está.
+ * Duas dimensões, nesta ordem: a CLASSE de urgência decide primeiro, e a
+ * proximidade do próximo evento desempata dentro dela. Ordenar só por status
+ * deixaria uma fechada que vence em 20 dias na frente de outra que vence
+ * amanhã; ordenar só por data misturaria uma aberta que fecha hoje com uma
+ * vencida há três meses.
  *
- * Nenhum banco é escondido por não ter fatura: a lista é de BANCOS, e some com
- * um cartão só porque o mês não teve gasto esconderia o próprio cartão.
+ * O ranking de OVERDUE → CLOSED → OPEN é o mesmo de `orderBanksByUrgency`,
+ * que ordenava a lista antes de ela virar mensal. A versão mensal a
+ * substituiu por ordem alfabética — o que faz sentido para um mês encerrado,
+ * mas apaga a urgência do mês corrente, que é quando ela importa.
+ *
+ * ── Onde PAID e "sem fatura" entram ──
+ *
+ * Na policy antiga os dois compartilhavam o rank 3, e isso nunca foi decidido:
+ * `selectBankInvoice` jamais devolvia uma fatura paga, então o 3 valia só para
+ * "banco sem pendência". A visão mensal mudou o cenário — consultar agosto
+ * mostra faturas pagas o tempo todo —, e os dois precisam se separar:
+ *
+ *   PAID        → o ciclo aconteceu e está resolvido: depois de tudo que
+ *                 ainda exige ação, mas ANTES de quem não tem fatura;
+ *   sem fatura  → sempre por último. Não há obrigação, valor ou data — a row
+ *                 existe para dizer que o cartão continua ali.
+ *
+ * A invariante "qualquer fatura precede a ausência dela" vale mesmo quando o
+ * banco sem fatura viria primeiro no alfabeto, e mesmo quando a única fatura
+ * do mês já está paga.
+ */
+const MONTH_ROW_RANK: Record<InvoiceStatus, number> = {
+  [InvoiceStatus.OVERDUE]: 0,
+  [InvoiceStatus.CLOSED]: 1,
+  [InvoiceStatus.OPEN]: 2,
+  [InvoiceStatus.PAID]: 3,
+}
+
+/**
+ * Último grupo. Nenhum status divide este rank.
+ *
+ * A invariante "qualquer fatura precede a ausência dela" tem DUAS barreiras
+ * independentes: este rank, e o `Infinity` de `nextEventTime`. Empatar o rank
+ * de PAID com este ainda produziria a ordem certa — o que é proposital: a
+ * regra mais importante da lista não devia depender de um único número estar
+ * correto.
+ */
+const NO_INVOICE_RANK = 4
+
+function monthRowRank(invoice: Invoice | null): number {
+  return invoice === null ? NO_INVOICE_RANK : MONTH_ROW_RANK[invoice.status]
+}
+
+/**
+ * Quando o próximo fato relevante da fatura acontece.
+ *
+ * Aberta ainda não tem vencimento a cumprir: o que se aproxima é o
+ * FECHAMENTO. Nos demais estados o vencimento é o marco — inclusive em PAID,
+ * onde ordena o histórico por data em vez de deixá-lo à mercê do alfabeto.
+ *
+ * Sem fatura não há evento: `Infinity` mantém essas rows no fim sem precisar
+ * de um caso especial no comparador.
+ */
+function nextEventTime(invoice: Invoice | null): number {
+  if (invoice === null) return Number.POSITIVE_INFINITY
+  const iso =
+    invoice.status === InvoiceStatus.OPEN ? invoice.closeDate : invoice.dueDate
+  return parseInvoiceDate(iso).getTime()
+}
+
+/**
+ * Todos os bancos com a fatura da competência, por importância.
+ *
+ * A ordem muda entre meses porque os fatos mudam: a mesma fatura que estava
+ * aberta em setembro aparece paga em agosto, e a posição acompanha. Isso é
+ * diferente de instabilidade — dentro de um mês a ordem é determinística, e o
+ * que a move é o estado real de cada fatura.
+ *
+ * Nenhum banco é escondido por não ter fatura: a lista é de BANCOS, e sumir
+ * com um cartão só porque o mês não teve gasto esconderia o próprio cartão.
+ * Ele vai para o fim, não para fora.
  */
 export function banksForPeriod<T extends { id: string; name: string }>(
   banks: T[],
   invoices: Invoice[],
   period: { month: number; year: number },
 ): Array<BankMonthRow<T>> {
-  return banks
-    .map((bank) => {
-      const invoice = invoiceForPeriod(bank.id, invoices, period)
-      const amount = invoice ? Number(invoice.totalAmount) : 0
-      const reimbursable = invoice?.reimbursable ?? 0
-      return { bank, invoice, amount, reimbursable, ownAmount: amount - reimbursable }
-    })
-    .sort((a, b) => a.bank.name.localeCompare(b.bank.name))
+  const rows = banks.map((bank) => {
+    const invoice = invoiceForPeriod(bank.id, invoices, period)
+    const amount = invoice ? Number(invoice.totalAmount) : 0
+    const reimbursable = invoice?.reimbursable ?? 0
+    return { bank, invoice, amount, reimbursable, ownAmount: amount - reimbursable }
+  })
+
+  /*
+    As datas são convertidas UMA vez, antes do sort: `parseInvoiceDate` dentro
+    do comparador rodaria O(n log n) vezes sobre os mesmos valores.
+  */
+  const ranked = rows.map((row) => ({
+    row,
+    rank: monthRowRank(row.invoice),
+    nextEvent: nextEventTime(row.invoice),
+  }))
+
+  ranked.sort((a, b) => {
+    if (a.rank !== b.rank) return a.rank - b.rank
+    if (a.nextEvent !== b.nextEvent) return a.nextEvent - b.nextEvent
+    /* Tie-break determinístico: sem ele a ordem viria da resposta da API. */
+    return a.row.bank.name.localeCompare(b.row.bank.name)
+  })
+
+  return ranked.map((entry) => entry.row)
 }
 
 /** Resumo do mês exibido no topo da lista. */
