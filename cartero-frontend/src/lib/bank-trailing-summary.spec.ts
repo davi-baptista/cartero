@@ -7,7 +7,11 @@ import {
   banksForPeriod,
   summarizeBankMonth,
 } from './bank-invoice-selection'
-import { bankMonthSummaryLines } from './bank-month-summary-lines'
+import {
+  bankMonthSummaryLines,
+  CYCLE_LABEL,
+  monthCycleOf,
+} from './bank-month-summary-lines'
 import { InvoiceStatus, type Invoice } from '@/types'
 
 /**
@@ -28,7 +32,6 @@ import { InvoiceStatus, type Invoice } from '@/types'
  */
 
 const SET = { month: 9, year: 2026 }
-const OUT = { month: 10, year: 2026 }
 
 function invoice(
   bankId: string,
@@ -53,7 +56,7 @@ const banco = (id: string, name: string) => ({ id, name })
 
 describe('T1-T7: a precedência do trailing', () => {
   it('T5: sem fatura vence tudo', () => {
-    expect(bankTrailingState(null, SET, SET)).toBe('noInvoice')
+    expect(bankTrailingState(null)).toBe('noInvoice')
     expect(BANK_TRAILING_LABEL.noInvoice).toBe('Sem fatura')
   })
 
@@ -63,8 +66,8 @@ describe('T1-T7: a precedência do trailing', () => {
       fato resolvido é mais informativo que a posição no calendário.
     */
     const paga = invoice('b', InvoiceStatus.PAID)
-    expect(bankTrailingState(paga, SET, SET)).toBe('paid')
-    expect(bankTrailingState(paga, SET, OUT)).toBe('paid')
+    expect(bankTrailingState(paga)).toBe('paid')
+    expect(BANK_TRAILING_LABEL.paid).toBe('Paga')
   })
 
   it('T4: em atraso sobrepõe o rótulo de ciclo', () => {
@@ -73,37 +76,33 @@ describe('T1-T7: a precedência do trailing', () => {
       atrás de "Fatura atual". A precedência existe para impedir isso.
     */
     const vencida = invoice('b', InvoiceStatus.OVERDUE)
-    expect(bankTrailingState(vencida, SET, SET)).toBe('overdue')
-    expect(bankTrailingState(vencida, SET, OUT)).toBe('overdue')
+    expect(bankTrailingState(vencida)).toBe('overdue')
+    expect(BANK_TRAILING_LABEL.overdue).toBe('Fatura vencida')
   })
 
-  it('T1: mês corrente e não quitada → Fatura atual', () => {
-    expect(bankTrailingState(invoice('b', InvoiceStatus.OPEN), SET, SET)).toBe(
-      'current',
-    )
-    expect(BANK_TRAILING_LABEL.current).toBe('Fatura atual')
-  })
-
-  it('T7: CLOSED do mês corrente continua sendo a fatura ATUAL', () => {
-    /*
-      `OPEN` e `CLOSED` são estados internos do ciclo. Uma fatura que fechou
-      ontem e vence em cinco dias é a fatura deste mês — o subtexto já diz em
-      que ponto do prazo ela está.
-    */
-    expect(bankTrailingState(invoice('b', InvoiceStatus.CLOSED), SET, SET)).toBe(
-      'current',
-    )
-  })
-
-  it('T2: outro mês e não quitada → Fatura aberta', () => {
-    /*
-      A distinção que o seletor de mês exige: navegar para outubro não deve
-      dizer que a fatura de outubro é a "atual".
-    */
-    expect(bankTrailingState(invoice('b', InvoiceStatus.OPEN), OUT, SET)).toBe(
-      'open',
-    )
+  it('T1: aberta → Fatura aberta', () => {
+    expect(bankTrailingState(invoice('b', InvoiceStatus.OPEN))).toBe('open')
     expect(BANK_TRAILING_LABEL.open).toBe('Fatura aberta')
+  })
+
+  it('T7: CLOSED tem rótulo PRÓPRIO, não se mistura com aberta', () => {
+    /*
+      A distinção que o rótulo de ciclo apagava: uma fatura que ainda acumula
+      e outra que já fechou e vence em três dias pedem ações diferentes, e
+      "Fatura atual" servia para as duas.
+    */
+    expect(bankTrailingState(invoice('b', InvoiceStatus.CLOSED))).toBe('closed')
+    expect(BANK_TRAILING_LABEL.closed).toBe('Fatura fechada')
+  })
+
+  it('T2: o trailing não depende do mês exibido', () => {
+    /*
+      O ciclo subiu para o resumo do topo. O status de uma fatura é o mesmo
+      esteja ela no mês corrente ou não — navegar não muda o fato.
+    */
+    const aberta = invoice('b', InvoiceStatus.OPEN)
+    expect(bankTrailingState(aberta)).toBe('open')
+    expect(bankTrailingState(aberta)).toBe(bankTrailingState(aberta))
   })
 
   it('T6: o rótulo nunca é a competência', () => {
@@ -123,26 +122,28 @@ describe('C4-C7: só os fatos que mudam a ação ganham cor', () => {
     expect(BANK_TRAILING_TONE.overdue).toBe('text-destructive')
   })
 
-  it('C5/C6: os rótulos de ciclo são muted', () => {
+  it('C5/C6: aberta e fechada são muted', () => {
     /*
-      O ponto da fase: "Fatura atual" em azul competiria com "Fecha amanhã" em
-      âmbar. Contexto não deve disputar atenção com urgência.
+      O prazo no subtexto já carrega a urgência. Colorir os dois lados faria a
+      row competir consigo mesma.
     */
-    expect(BANK_TRAILING_TONE.current).toBe('text-muted-foreground')
     expect(BANK_TRAILING_TONE.open).toBe('text-muted-foreground')
+    expect(BANK_TRAILING_TONE.closed).toBe('text-muted-foreground')
   })
 
   it('C7: sem fatura é muted', () => {
     expect(BANK_TRAILING_TONE.noInvoice).toContain('muted')
   })
 
-  it('nenhum rótulo de ciclo usa azul', () => {
+  it('nenhum status de fatura usa azul no trailing', () => {
     /*
-      `text-primary` é cor de interação no design system. Herdá-la para status
-      secundário de fatura foi o que criou o conflito visual.
+      `text-primary` ficou reservado ao rótulo de CICLO no resumo do topo, que
+      é contexto. Usá-lo também no status da row traria de volta duas cores
+      concorrentes na mesma linha.
     */
-    expect(BANK_TRAILING_TONE.current).not.toContain('primary')
-    expect(BANK_TRAILING_TONE.open).not.toContain('primary')
+    for (const tone of Object.values(BANK_TRAILING_TONE)) {
+      expect(tone).not.toContain('primary')
+    }
   })
 })
 
@@ -167,14 +168,18 @@ describe('S1-S10: o resumo só diz o que o total não conta', () => {
       dizê-lo de novo não informa nada.
     */
     const linhas = bankMonthSummaryLines(resumo([inv('b1', 1173.95)]))
-    expect(linhas).toEqual([{ kind: 'count', text: '1 fatura em aberto' }])
+    expect(linhas).toEqual([
+      { kind: 'count', text: '1 fatura em aberto', cycle: 'current' },
+    ])
   })
 
   it('S2: várias faturas, nada pago → contagem no plural', () => {
     const linhas = bankMonthSummaryLines(
       resumo([inv('b1', 500), inv('b2', 300)]),
     )
-    expect(linhas).toEqual([{ kind: 'count', text: '2 faturas em aberto' }])
+    expect(linhas).toEqual([
+      { kind: 'count', text: '2 faturas em aberto', cycle: 'current' },
+    ])
   })
 
   it('S3: terceiros e nada pago → só a composição', () => {
@@ -203,7 +208,9 @@ describe('S1-S10: o resumo só diz o que o total não conta', () => {
     const linhas = bankMonthSummaryLines(
       resumo([inv('b1', 800, InvoiceStatus.PAID), inv('b2', 1200)]),
     )
-    expect(linhas).toEqual([{ kind: 'remaining', amount: 1200 }])
+    expect(linhas).toEqual([
+      { kind: 'remaining', amount: 1200, cycle: 'current' },
+    ])
   })
 
   it('S5: terceiros e parte paga → duas linhas, fatos diferentes', () => {
@@ -303,13 +310,14 @@ describe('a página consome as policies compartilhadas', () => {
   const code = PAGE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
   it('o trailing sai da policy, não de condições locais', () => {
-    expect(code).toContain('bankTrailingState(invoice, period, currentPeriod())')
+    expect(code).toContain('bankTrailingState(invoice)')
     expect(code).toContain('BANK_TRAILING_LABEL[trailingState]')
     expect(code).toContain('BANK_TRAILING_TONE[trailingState]')
   })
 
   it('o resumo sai da policy, não de ifs na JSX', () => {
-    expect(code).toContain('bankMonthSummaryLines(monthSummary)')
+    expect(code).toContain('bankMonthSummaryLines(')
+    expect(code).toContain('monthCycleOf(period, currentPeriod())')
     expect(code).not.toContain('monthSummary.paidCount > 0 &&')
   })
 
@@ -333,5 +341,107 @@ describe('a página consome as policies compartilhadas', () => {
       code.indexOf('role="tablist"'),
     )
     expect(resumoJsx).not.toContain('text-pending')
+  })
+})
+
+describe('o ciclo do mês, no resumo do topo', () => {
+  const HOJE = { month: 9, year: 2026 }
+
+  it('reconhece atual, futuro e passado', () => {
+    expect(monthCycleOf({ month: 9, year: 2026 }, HOJE)).toBe('current')
+    expect(monthCycleOf({ month: 10, year: 2026 }, HOJE)).toBe('future')
+    expect(monthCycleOf({ month: 8, year: 2026 }, HOJE)).toBe('past')
+  })
+
+  it('atravessa a virada de ano', () => {
+    /* Janeiro de 2027 é futuro em setembro de 2026, não passado. */
+    expect(monthCycleOf({ month: 1, year: 2027 }, HOJE)).toBe('future')
+    expect(monthCycleOf({ month: 12, year: 2025 }, HOJE)).toBe('past')
+  })
+
+  it('Caso 1: mês atual com pendência leva "Faturas atuais"', () => {
+    const linhas = bankMonthSummaryLines(
+      resumo([inv('b1', 800, InvoiceStatus.PAID), inv('b2', 1200)]),
+      'current',
+    )
+    expect(linhas[0]).toMatchObject({ kind: 'remaining', cycle: 'current' })
+    expect(CYCLE_LABEL.current).toBe('Faturas atuais')
+  })
+
+  it('Caso 2: mês totalmente pago diz só "Tudo em dia"', () => {
+    /*
+      Sem prefixo de ciclo: "Tudo em dia" já é conclusivo, e nada resta a
+      fazer seja o mês qual for.
+    */
+    const linhas = bankMonthSummaryLines(
+      resumo([inv('b1', 500, InvoiceStatus.PAID)]),
+      'current',
+    )
+    expect(linhas).toEqual([{ kind: 'settled', text: 'Tudo em dia' }])
+  })
+
+  it('Caso 3: mês futuro leva "Faturas futuras"', () => {
+    const linhas = bankMonthSummaryLines(resumo([inv('b1', 320)]), 'future')
+    expect(linhas[0]).toMatchObject({ kind: 'count', cycle: 'future' })
+    expect(CYCLE_LABEL.future).toBe('Faturas futuras')
+  })
+
+  it('Caso 4: mês passado NÃO recebe rótulo', () => {
+    /*
+      "Faturas passadas" seria redundante — o seletor já diz o mês. O caso
+      relevante do passado é o atraso, e ele se anuncia sozinho em vermelho.
+    */
+    expect(CYCLE_LABEL.past).toBeNull()
+
+    const linhas = bankMonthSummaryLines(resumo([inv('b1', 320)]), 'past')
+    expect(linhas[0]).toMatchObject({ cycle: 'past' })
+  })
+
+  it('o rótulo de ciclo NUNCA aparece na linha de composição', () => {
+    /*
+      A composição fala de dinheiro (sua parte / de terceiros), não de tempo.
+      Prefixá-la com o ciclo misturaria dois assuntos numa linha só.
+    */
+    const linhas = bankMonthSummaryLines(
+      resumo([inv('b1', 1000, InvoiceStatus.OPEN, 240)]),
+      'future',
+    )
+    expect(linhas[0].kind).toBe('composition')
+    expect(linhas[0]).not.toHaveProperty('cycle')
+  })
+})
+
+describe('a fatura paga tinge o prazo de verde', () => {
+  const PAGE = readFileSync(
+    new URL('../app/(dashboard)/banks/page.tsx', import.meta.url),
+    'utf-8',
+  )
+  const code = PAGE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+
+  it('usa a MESMA cor do trailing "Paga"', () => {
+    /*
+      "Venceu em 10/09" saía cinza ao lado de "PAGA" em verde, e os dois falam
+      do mesmo fato resolvido. Sem inventar tom: é o `BANK_TRAILING_TONE.paid`.
+    */
+    expect(code).toContain('BANK_TRAILING_TONE.paid')
+    expect(code).toContain('invoice.status === InvoiceStatus.PAID')
+  })
+
+  it('as outras faturas continuam com a cor da urgência', () => {
+    /* O verde é exceção para o resolvido, não substituto da régua de prazo. */
+    expect(code).toContain('invoiceTimingClass(invoice)')
+  })
+
+  it('o rótulo de ciclo usa azul — cor de contexto', () => {
+    /*
+      Os tons de valor (âmbar, vermelho, verde) já significam prazo e
+      resolução; reusar um deles no ciclo sugeriria que o MÊS é urgente ou
+      resolvido.
+    */
+    const cycleLabel = code.slice(
+      code.indexOf('function CycleLabel'),
+      code.indexOf('function MonthInvoiceAmount'),
+    )
+    expect(cycleLabel).toContain('text-primary')
   })
 })

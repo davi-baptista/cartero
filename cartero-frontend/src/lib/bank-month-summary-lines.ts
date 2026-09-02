@@ -36,21 +36,57 @@ import { invoiceSectionParts } from '@/lib/invoice-composition'
  * logo". Colorir o resumo faria a tela inteira parecer um alerta.
  */
 
+/**
+ * Em que ciclo o mês exibido está, em relação a hoje.
+ *
+ * Subiu para cá do trailing das rows: ali se repetia linha a linha e
+ * atrapalhava a leitura do estado de cada fatura. No resumo vale uma vez para
+ * o mês inteiro, que é o escopo natural da informação.
+ */
+export type MonthCycle = 'current' | 'future' | 'past'
+
 export type SummaryLine =
   | { kind: 'empty'; text: string }
   | {
       kind: 'composition'
       parts: Array<{ kind: 'own' | 'thirdParty'; amount: number }>
     }
-  | { kind: 'remaining'; amount: number }
+  | { kind: 'remaining'; amount: number; cycle: MonthCycle }
   | { kind: 'settled'; text: string }
-  | { kind: 'count'; text: string }
+  | { kind: 'count'; text: string; cycle: MonthCycle }
+
+/** Rótulo do ciclo. `past` fica sem rótulo — ver `cycleLabel`. */
+export const CYCLE_LABEL: Record<MonthCycle, string | null> = {
+  current: 'Faturas atuais',
+  future: 'Faturas futuras',
+  /*
+    Mês passado não recebe rótulo.
+
+    "Faturas passadas" seria redundante — o seletor já diz o mês, e o estado
+    de cada fatura aparece na row. O caso relevante do passado é a fatura em
+    atraso, e essa se anuncia sozinha: vermelho na row e no "Faltam".
+  */
+  past: null,
+}
+
+/** O ciclo do mês exibido contra o mês de hoje. */
+export function monthCycleOf(
+  period: { month: number; year: number },
+  today: { month: number; year: number },
+): MonthCycle {
+  if (period.year !== today.year) {
+    return period.year > today.year ? 'future' : 'past'
+  }
+  if (period.month === today.month) return 'current'
+  return period.month > today.month ? 'future' : 'past'
+}
 
 /** Tolerância de centavo, a mesma de `invoiceSectionParts`. */
 const EPSILON = 0.005
 
 export function bankMonthSummaryLines(
   summary: BankMonthSummary,
+  cycle: MonthCycle = 'current',
 ): SummaryLine[] {
   /*
     Nenhuma fatura NÃO é "tudo em dia".
@@ -82,6 +118,11 @@ export function bankMonthSummaryLines(
   const nadaPago = Math.abs(summary.unpaid - summary.total) <= EPSILON
 
   if (tudoPago) {
+    /*
+      Sem rótulo de ciclo: "Tudo em dia" já é conclusivo, e prefixá-lo com
+      "Faturas atuais ·" só adicionaria palavra a uma linha que não pede
+      contexto — nada resta a fazer, seja o mês qual for.
+    */
     linhas.push({ kind: 'settled', text: 'Tudo em dia' })
     return linhas
   }
@@ -91,7 +132,7 @@ export function bankMonthSummaryLines(
     esse é justamente o caso em que a informação não é redundante.
   */
   if (!nadaPago) {
-    linhas.push({ kind: 'remaining', amount: summary.unpaid })
+    linhas.push({ kind: 'remaining', amount: summary.unpaid, cycle })
     return linhas
   }
 
@@ -106,6 +147,7 @@ export function bankMonthSummaryLines(
       text: `${summary.invoiceCount} ${
         summary.invoiceCount === 1 ? 'fatura em aberto' : 'faturas em aberto'
       }`,
+      cycle,
     })
   }
 

@@ -39,9 +39,14 @@ import {
   ROW_ICON_CLASS,
 } from '@/components/ui/financial-list-row'
 import { cn } from '@/lib/utils'
-import type { Bank, Invoice } from '@/types'
+import { InvoiceStatus, type Bank, type Invoice } from '@/types'
 import { invoiceTimingClass, invoiceTimingLabel } from '@/lib/invoice-timing'
-import { bankMonthSummaryLines } from '@/lib/bank-month-summary-lines'
+import {
+  bankMonthSummaryLines,
+  CYCLE_LABEL,
+  monthCycleOf,
+  type MonthCycle,
+} from '@/lib/bank-month-summary-lines'
 import {
   BANK_TRAILING_LABEL,
   BANK_TRAILING_TONE,
@@ -58,6 +63,30 @@ import { useDetailNavigation } from '@/lib/detail-navigation'
 import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+/**
+ * Rótulo do ciclo, prefixando a linha de pendência do resumo.
+ *
+ * Azul porque é CONTEXTO, não estado financeiro: os tons de valor
+ * (âmbar, vermelho, verde) já significam prazo e resolução, e reusar um deles
+ * aqui sugeriria que o mês em si é urgente ou resolvido. `text-primary` é a
+ * cor que o design system reserva para orientação.
+ *
+ * Mês passado não recebe rótulo — `CYCLE_LABEL.past` é `null`.
+ */
+function CycleLabel({ cycle }: { cycle: MonthCycle }) {
+  const label = CYCLE_LABEL[cycle]
+  if (!label) return null
+
+  return (
+    <>
+      <span className="font-medium text-primary">{label}</span>
+      <span className="mx-1.5 text-muted-foreground/40" aria-hidden>
+        ·
+      </span>
+    </>
+  )
+}
 
 // The amount alone, standing as the row's primary stat.
 function MonthInvoiceAmount({ amount }: { amount: number }) {
@@ -106,7 +135,7 @@ function BankRow({
   const router = useRouter()
   const initial = bank.name[0]?.toUpperCase() ?? '?'
   const monthLabel = formatMonthYear(period.month, period.year)
-  const trailingState = bankTrailingState(invoice, period, currentPeriod())
+  const trailingState = bankTrailingState(invoice)
 
   /*
     Rótulo completo para leitor de tela: a metadata visual é compacta, mas a
@@ -167,7 +196,22 @@ function BankRow({
               continua muted: pintar tudo encheria a lista de tons sem
               hierarquia.
             */
-            <span className={cn('truncate', invoiceTimingClass(invoice))}>
+            /*
+              Fatura paga tinge o prazo de verde também.
+
+              "Venceu em 10/09" saía cinza ao lado de "PAGA" em verde, e os
+              dois falam do MESMO fato resolvido. Com a cor compartilhada, a
+              linha inteira se lê como concluída de relance — sem inventar
+              tom: é o mesmo `text-paid` do trailing.
+            */
+            <span
+              className={cn(
+                'truncate',
+                invoice.status === InvoiceStatus.PAID
+                  ? BANK_TRAILING_TONE.paid
+                  : invoiceTimingClass(invoice),
+              )}
+            >
               {invoiceTimingLabel(invoice)}
             </span>
           ) : null
@@ -712,7 +756,10 @@ export default function BanksPage() {
                 Duas linhas no máximo: acima disso o bloco começa a competir
                 com a lista, que é o conteúdo principal da tela.
               */}
-              {bankMonthSummaryLines(monthSummary).map((linha) => {
+              {bankMonthSummaryLines(
+                monthSummary,
+                monthCycleOf(period, currentPeriod()),
+              ).map((linha) => {
                 if (linha.kind === 'composition') {
                   return (
                     <p
@@ -754,6 +801,7 @@ export default function BanksPage() {
                       key={linha.kind}
                       className="mt-0.5 text-[11px] text-muted-foreground"
                     >
+                      <CycleLabel cycle={linha.cycle} />
                       {/*
                         Neutro: pendência é o estado normal de um mês em curso,
                         e o âmbar fica reservado ao prazo nas rows.
@@ -780,6 +828,7 @@ export default function BanksPage() {
                     key={linha.kind}
                     className="mt-0.5 text-[11px] text-muted-foreground"
                   >
+                    {linha.kind === 'count' && <CycleLabel cycle={linha.cycle} />}
                     {linha.text}
                   </p>
                 )

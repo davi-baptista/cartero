@@ -386,49 +386,47 @@ export function summarizeBankMonth<T>(
  * O que o trailing diz sobre a fatura
  * ══════════════════════════════════════════════════════════════════════════
  *
- * Antes o trailing repetia o status interno — `ABERTA`, `FECHADA` — em azul e
- * âmbar. Duas coisas davam errado nisso.
+ * O ESTADO OPERACIONAL, espelhando o status persistido. É o que se lê de
+ * relance para saber o que fazer com a linha.
  *
- * A primeira: a row passava duas mensagens coloridas concorrentes. "Fecha
- * amanhã" em âmbar e "ABERTA" em azul disputavam a atenção, e a urgência —
- * que é a informação acionável — perdia espaço para um estado que o subtexto
- * já explicava melhor.
+ *   Fatura aberta    ainda acumula lançamentos
+ *   Fatura fechada   valor definido, aguardando o vencimento
+ *   Fatura vencida   passou do prazo e não foi paga
+ *   Paga             resolvida
+ *   Sem fatura       o mês não teve fatura neste banco
  *
- * A segunda: `OPEN` e `CLOSED` são estados INTERNOS do ciclo. Para quem olha a
- * lista, uma fatura que fechou ontem e vence em cinco dias não é
- * categoricamente diferente de uma que ainda acumula — as duas são a fatura
- * deste mês, e o subtexto já diz em que ponto do prazo cada uma está.
+ * ── Por que não o ciclo ──
  *
- * Então o trailing passou a responder outra pergunta: **em que ciclo esta
- * fatura está, em relação a hoje?**
+ * Uma versão anterior mostrava "Fatura atual" / "Fatura aberta" aqui, para
+ * dizer se a competência exibida era a corrente. A intenção era boa — evitar
+ * duas cores concorrentes na row —, mas custou a leitura rápida: "Fatura
+ * atual" não distingue uma fatura que ainda acumula de uma que já fechou e
+ * vence em três dias, e essas duas pedem ações diferentes.
  *
- *   FATURA ATUAL   é o ciclo corrente — o que o usuário está vivendo
- *   FATURA ABERTA  é outro mês, ainda não quitado
+ * A noção de ciclo não se perdeu: subiu para o resumo do topo
+ * (`bankMonthSummaryLines`), onde vale uma vez para o mês inteiro em vez de
+ * se repetir em cada linha.
  *
- * ── Precedência ──
+ * ── Cor ──
  *
- * Fatos resolvidos ou em atraso VENCEM o rótulo de ciclo: esconder um atraso
- * atrás de "FATURA ATUAL" seria o pior resultado possível desta simplificação.
- *
- *   1. sem fatura   →  SEM FATURA
- *   2. paga         →  PAGA        (verde, em qualquer mês)
- *   3. em atraso    →  VENCIDA     (vermelho, em qualquer mês)
- *   4. mês corrente →  FATURA ATUAL
- *   5. demais       →  FATURA ABERTA
+ * Só `paid` (verde) e `overdue` (vermelho) ganham tom: são os dois estados
+ * que mudam o que o usuário faz. `open` e `closed` ficam muted — o prazo no
+ * subtexto já carrega a urgência, e colorir os dois lados faria a row
+ * competir consigo mesma.
  */
 export type BankTrailingState =
   | 'noInvoice'
   | 'paid'
   | 'overdue'
-  | 'current'
+  | 'closed'
   | 'open'
 
 /** Copy oficial. Texto, nunca só cor — o status não pode depender de tom. */
 export const BANK_TRAILING_LABEL: Record<BankTrailingState, string> = {
   noInvoice: 'Sem fatura',
   paid: 'Paga',
-  overdue: 'Vencida',
-  current: 'Fatura atual',
+  overdue: 'Fatura vencida',
+  closed: 'Fatura fechada',
   open: 'Fatura aberta',
 }
 
@@ -443,26 +441,21 @@ export const BANK_TRAILING_TONE: Record<BankTrailingState, string> = {
   noInvoice: 'text-muted-foreground/70',
   paid: 'text-paid',
   overdue: 'text-destructive',
-  current: 'text-muted-foreground',
+  closed: 'text-muted-foreground',
   open: 'text-muted-foreground',
 }
 
-export function bankTrailingState(
-  invoice: Invoice | null,
-  period: { month: number; year: number },
-  currentPeriod: { month: number; year: number },
-): BankTrailingState {
+export function bankTrailingState(invoice: Invoice | null): BankTrailingState {
   if (invoice === null) return 'noInvoice'
-  if (invoice.status === InvoiceStatus.PAID) return 'paid'
-  if (invoice.status === InvoiceStatus.OVERDUE) return 'overdue'
 
-  /*
-    O ciclo é decidido pela COMPETÊNCIA exibida contra o mês de hoje, não pelo
-    status: uma fatura `CLOSED` do mês corrente continua sendo a fatura atual —
-    ela fechou e ainda vai ser paga.
-  */
-  const ehMesCorrente =
-    period.month === currentPeriod.month && period.year === currentPeriod.year
-
-  return ehMesCorrente ? 'current' : 'open'
+  switch (invoice.status) {
+    case InvoiceStatus.PAID:
+      return 'paid'
+    case InvoiceStatus.OVERDUE:
+      return 'overdue'
+    case InvoiceStatus.CLOSED:
+      return 'closed'
+    case InvoiceStatus.OPEN:
+      return 'open'
+  }
 }
