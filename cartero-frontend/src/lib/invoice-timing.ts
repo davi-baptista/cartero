@@ -138,3 +138,49 @@ export function invoiceTimingLabel(
 
   return formatDueTiming(parseInvoiceDate(invoice.dueDate), today, 'short')
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * A cor do prazo
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * A lista de Bancos ficou legível mas muda: "Fecha amanhã" e "Fecha em 12d"
+ * saíam no mesmo cinza, e a urgência — a razão de a lista existir — só
+ * aparecia se o usuário lesse o número.
+ *
+ * A régua é a MESMA de `timingUrgency`, e os tokens são os que a Visão Geral
+ * já usa para prazos (`DUE_URGENCY_CLASS`): as duas telas falam do mesmo fato
+ * e não podiam pintá-lo de cores diferentes.
+ *
+ *   atrasado   destructive   exige ação agora
+ *   hoje       pending       o prazo acaba hoje
+ *   em breve   pending       ≤2 dias: ainda dá tempo, mas não muito
+ *   depois     muted         é informação, não alerta
+ *
+ * Só as duas pontas ganham cor. Pintar "em 12d" de azul ou verde encheria a
+ * lista de tons sem hierarquia — e o que não é urgente não precisa competir
+ * pela atenção.
+ *
+ * `PAID` não passa por aqui: um ciclo quitado não tem prazo a cumprir, e a
+ * cor dele vem do status (verde), não do calendário.
+ */
+export function invoiceTimingClass(
+  invoice: { status: string; closeDate: string; dueDate: string },
+  today: Date = new Date(),
+): string {
+  if (invoice.status === 'PAID') return 'text-muted-foreground'
+
+  const target = parseInvoiceDate(
+    invoice.status === 'OPEN' ? invoice.closeDate : invoice.dueDate,
+  )
+
+  switch (timingUrgency(target, today)) {
+    case 'overdue':
+      return 'text-destructive'
+    case 'today':
+    case 'soon':
+      return 'text-pending'
+    case 'later':
+      return 'text-muted-foreground'
+  }
+}

@@ -40,8 +40,11 @@ import {
 } from '@/components/ui/financial-list-row'
 import { cn } from '@/lib/utils'
 import type { Bank, Invoice } from '@/types'
-import { INVOICE_STATUS_LABEL } from '@/lib/invoice-status'
-import { invoiceTimingLabel } from '@/lib/invoice-timing'
+import {
+  INVOICE_STATUS_LABEL,
+  INVOICE_STATUS_TEXT,
+} from '@/lib/invoice-status'
+import { invoiceTimingClass, invoiceTimingLabel } from '@/lib/invoice-timing'
 import {
   banksForPeriod,
   summarizeBankMonth,
@@ -150,7 +153,18 @@ function BankRow({
         */
         meta={
           invoice ? (
-            <span className="truncate">{invoiceTimingLabel(invoice)}</span>
+            /*
+              A cor vem da URGÊNCIA, não do status: "Fecha amanhã" e "Fecha em
+              12d" saíam no mesmo cinza, e o prazo — a razão de a lista existir
+              — só aparecia para quem lesse o número.
+
+              Só as pontas ganham cor (atrasado, ≤2 dias). O que não é urgente
+              continua muted: pintar tudo encheria a lista de tons sem
+              hierarquia.
+            */
+            <span className={cn('truncate', invoiceTimingClass(invoice))}>
+              {invoiceTimingLabel(invoice)}
+            </span>
           ) : null
         }
         /*
@@ -165,7 +179,23 @@ function BankRow({
           invoice ? (
             <>
               <MonthInvoiceAmount amount={amount} />
-              <span className={ROW_TRAILING_LABEL_CLASS}>
+              {/*
+                O estado ganha a cor que o produto já usa para ele
+                (`INVOICE_STATUS_TEXT`): azul aberta, âmbar fechada, vermelho em
+                atraso, verde paga. A mesma paleta do detalhe da fatura — o
+                mesmo fato não podia ter duas cores.
+
+                O VALOR fica neutro de propósito. Ele é o dado principal da
+                linha, e colori-lo junto do status faria os dois competirem
+                pela mesma informação; com um só colorido, o olho sabe onde
+                olhar.
+              */}
+              <span
+                className={cn(
+                  ROW_TRAILING_LABEL_CLASS,
+                  INVOICE_STATUS_TEXT[invoice.status],
+                )}
+              >
                 {INVOICE_STATUS_LABEL[invoice.status]}
               </span>
             </>
@@ -175,7 +205,16 @@ function BankRow({
               outra coisa — o mês pode ter tido gasto nenhum, mas a fatura
               existir.
             */
-            <span className={ROW_TRAILING_LABEL_CLASS}>Sem fatura</span>
+            /*
+              Cinza, e não um tom de estado: o mês sem fatura não é bom nem
+              ruim. Verde sugeriria "em dia", âmbar sugeriria pendência — e
+              nenhuma das duas coisas aconteceu.
+            */
+            <span
+              className={cn(ROW_TRAILING_LABEL_CLASS, 'text-muted-foreground/70')}
+            >
+              Sem fatura
+            </span>
           )
         }
       />
@@ -656,6 +695,18 @@ export default function BanksPage() {
               <p className="mt-0.5 text-[22px] font-semibold tabular-nums tracking-[-0.02em]">
                 {formatCurrency(monthSummary.total)}
               </p>
+              {/*
+                O que falta pagar, sempre — não só quando algo já foi pago.
+
+                A condição anterior era `paidCount > 0`, então a informação
+                desaparecia justamente no caso em que ela mais importa: o mês
+                inteiro em aberto. "Quanto ainda falta" é a pergunta acionável
+                da tela; o total acima responde "quanto o mês custou".
+
+                Quando tudo está quitado, o texto diz isso em verde em vez de
+                repetir "R$ 0,00 em aberto" — a mesma informação, sem o número
+                que o leitor precisa interpretar.
+              */}
               <p className="mt-0.5 text-[11px] text-muted-foreground">
                 {monthSummary.invoiceCount === 0 ? (
                   'Nenhuma fatura neste mês'
@@ -663,11 +714,13 @@ export default function BanksPage() {
                   <>
                     {monthSummary.invoiceCount}{' '}
                     {monthSummary.invoiceCount === 1 ? 'fatura' : 'faturas'}
-                    {monthSummary.paidCount > 0 && (
-                      <>
-                        {' · '}
+                    {' · '}
+                    {monthSummary.unpaid > 0 ? (
+                      <span className="font-medium text-pending">
                         {formatCurrency(monthSummary.unpaid)} em aberto
-                      </>
+                      </span>
+                    ) : (
+                      <span className="font-medium text-paid">tudo pago</span>
                     )}
                   </>
                 )}
