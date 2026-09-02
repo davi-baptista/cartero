@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { isNavItemActive } from '@/lib/nav-active-route'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
@@ -49,19 +50,39 @@ function SidebarNav({ pathname }: { pathname: string }) {
       <SidebarGroup>
         <SidebarGroupContent>
           <SidebarMenu className="gap-0.5">
-            {navItems.map(({ href, label, icon: Icon }) => (
-              <SidebarMenuItem key={href}>
-                <SidebarMenuButton
-                  render={<Link href={href} />}
-                  isActive={pathname.startsWith(href)}
-                  tooltip={label}
-                  onClick={() => { if (isMobile) setOpenMobile(false) }}
-                >
-                  <Icon className="size-4" />
-                  <span>{label}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
+            {navItems.map(({ href, label, icon: Icon }) => {
+              const active = isNavItemActive(href, pathname)
+
+              /*
+                Estando na própria superfície, o item deixa de ser um `Link`.
+
+                Tocar em "Pessoas" a partir de `/persons?personId=abc`
+                navegava para `/persons`: uma transição real, que descartava o
+                `personId` e deixava a tela num estado que parecia
+                carregamento perdido. O detalhe aberto é estado do usuário, e
+                ele pediu a tela em que já está.
+
+                Um `button` em vez de `Link` — e não um `Link` com
+                `preventDefault` — porque o elemento passa a não ter destino:
+                não faz sentido oferecer "abrir em nova aba" para algo que não
+                navega.
+              */
+              return (
+                <SidebarMenuItem key={href}>
+                  <SidebarMenuButton
+                    render={active ? <button type="button" /> : <Link href={href} />}
+                    isActive={active}
+                    tooltip={label}
+                    onClick={() => {
+                      if (isMobile) setOpenMobile(false)
+                    }}
+                  >
+                    <Icon className="size-4" />
+                    <span>{label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )
+            })}
           </SidebarMenu>
         </SidebarGroupContent>
       </SidebarGroup>

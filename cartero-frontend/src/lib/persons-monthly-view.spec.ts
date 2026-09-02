@@ -272,13 +272,27 @@ describe('itens 12, 43 e 44: a lista continua sendo de contatos', () => {
       A lista vem de `persons`, não dos saldos: quem não tem movimento no mês
       continua aparecendo. Iterar os saldos esconderia quem está em dia.
     */
-    expect(PAGINA).toContain('{persons.map((person, i) => {')
+    /*
+      A lista renderizada deriva de `persons` — a de contatos —, agora
+      ORDENADA. Ordenar não filtra: `orderedPersons` é um `map` sobre
+      `persons`, então quem não tem movimento continua aparecendo (no fim,
+      pela policy de prioridade).
+    */
+    expect(PAGINA).toContain('{orderedPersons.map((person, i) => {')
+    expect(PAGINA).toContain('persons.map((person) => {')
     expect(PAGINA).toContain('balanceById.get(person.id)')
     expect(PAGINA).toContain('?.netBalance ?? 0')
+    /* Nenhum filtro entre a fonte e a renderização. */
+    expect(code(PAGINA)).not.toContain('persons.filter(')
   })
 
-  it('item 43: a ordem não passou a ser por saldo', () => {
-    // A lista é de contatos; ordenar por urgência seria outra decisão.
+  it('item 43: a ordem é por URGÊNCIA, nunca por saldo', () => {
+    /*
+      A lista passou a ser ordenada — a decisão que este teste dizia ser "de
+      outra fase". O que continua barrado é ordenar por VALOR: R$ 1.000
+      vencendo em 30 dias não é mais urgente que R$ 50 vencidos ontem.
+    */
+    expect(code(PAGINA)).toContain('sortPeopleByPriority(')
     expect(code(PAGINA)).not.toContain('sort((a, b) => b.netBalance')
     expect(code(PAGINA)).not.toContain('orderBy')
   })

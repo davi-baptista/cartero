@@ -104,3 +104,99 @@ export function isNextItemOverdue(
      `2026-09-02` daria "menor" e marcaria como atraso um item de hoje. */
   return item.dueDate.slice(0, 10) < today.slice(0, 10)
 }
+
+// ─── Ordem da lista ──────────────────────────────────────────────────────────
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Quem precisa de atenção primeiro
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `GET /persons` faz `findMany` sem `orderBy`, então a lista chegava na ordem
+ * que o Postgres devolvesse — sem contrato. Na prática, pessoas com
+ * "R$ 0,00 · SEM SALDO" apareciam antes de quem tinha cobrança atrasada.
+ *
+ * A régua é a mesma de Bancos: urgência primeiro, proximidade depois, estados
+ * sem ação no fim.
+ *
+ *   0. atrasado         venceu e continua aberto
+ *   1. vence hoje       o prazo acaba hoje
+ *   2. futuro           ordenado pela data mais próxima
+ *   3. tem saldo        sem evento datado utilizável
+ *   4. sem saldo        nada a acertar
+ *
+ * ── O item que ordena é o item EXIBIDO ──
+ *
+ * `nextItem` é o mesmo que produz o subtexto da row. Ordenar por um evento
+ * invisível faria a lista parecer embaralhada: uma linha dizendo "Receber em
+ * 12d" passaria à frente de outra com "Pagar amanhã" por causa de uma
+ * obrigação que ninguém vê.
+ *
+ * ── Saldo zero não é o mesmo que nada a fazer ──
+ *
+ * Uma pessoa pode ter R$ 500 de cada lado: saldo líquido zero, duas
+ * obrigações abertas. Quem decide o último grupo é a AUSÊNCIA de evento, não
+ * o valor do saldo — e o backend só devolve `nextItem: null` quando não há
+ * pendência do lado que o saldo aponta.
+ *
+ * ── Valor não é urgência ──
+ *
+ * R$ 1.000 vencendo em 30 dias não é mais urgente que R$ 50 vencidos ontem.
+ * O montante não participa da ordem.
+ */
+export type PersonPriorityRank = 0 | 1 | 2 | 3 | 4
+
+/** O mínimo para posicionar uma pessoa na lista. */
+export interface SortablePerson {
+  name: string
+  netBalance: number
+  nextItem: NextSettlementItem | null | undefined
+}
+
+const SEM_SALDO = 0.005
+
+export function personPriorityRank(
+  person: SortablePerson,
+  today: string = formatDateValue(),
+): PersonPriorityRank {
+  const item = person.nextItem
+
+  if (item) {
+    const dia = item.dueDate.slice(0, 10)
+    if (dia < today) return 0
+    if (dia === today) return 1
+    return 2
+  }
+
+  /* Sem evento datado, mas com saldo: ainda há algo a acertar. */
+  return Math.abs(person.netBalance) > SEM_SALDO ? 3 : 4
+}
+
+/**
+ * Ordena por importância, sem mutar a entrada.
+ *
+ * A cópia é deliberada: a lista vem do cache do React Query, e ordenar no
+ * lugar faria dois consumidores verem ordens diferentes.
+ */
+export function sortPeopleByPriority<T extends SortablePerson>(
+  people: readonly T[],
+  today: string = formatDateValue(),
+): T[] {
+  return [...people].sort((a, b) => {
+    const rankA = personPriorityRank(a, today)
+    const rankB = personPriorityRank(b, today)
+    if (rankA !== rankB) return rankA - rankB
+
+    /*
+      Dentro do mesmo grupo, a data mais próxima lidera. Vale para os três
+      grupos com evento: entre atrasados, o mais antigo é o mais urgente;
+      entre futuros, o que vence antes.
+    */
+    const diaA = a.nextItem?.dueDate.slice(0, 10)
+    const diaB = b.nextItem?.dueDate.slice(0, 10)
+    if (diaA && diaB && diaA !== diaB) return diaA < diaB ? -1 : 1
+
+    /* Tie-break estável: sem ele a ordem viria da resposta da API. */
+    return a.name.localeCompare(b.name)
+  })
+}

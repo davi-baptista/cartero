@@ -36,6 +36,7 @@ import {
 import {
   isNextItemOverdue,
   nextItemLabel,
+  sortPeopleByPriority,
 } from '@/lib/person-next-item'
 import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
@@ -367,6 +368,33 @@ export default function PersonsPage() {
     [balances],
   )
 
+  /**
+   * A lista, por importância.
+   *
+   * `GET /persons` não define `orderBy`, então a ordem vinha do Postgres —
+   * sem contrato. Na prática quem tinha "R$ 0,00 · SEM SALDO" aparecia antes
+   * de quem tinha cobrança atrasada.
+   *
+   * O join com os saldos acontece aqui porque a urgência vive neles: o
+   * contato sozinho não sabe quando algo vence. `nextItem` é o MESMO campo
+   * que produz o subtexto da row — ordenar por outro faria a lista parecer
+   * embaralhada.
+   */
+  const orderedPersons = useMemo(() => {
+    if (balancesLoading) return persons
+
+    return sortPeopleByPriority(
+      persons.map((person) => {
+        const balance = balanceById.get(person.id)
+        return {
+          ...person,
+          netBalance: balance?.netBalance ?? 0,
+          nextItem: balance?.nextItem ?? null,
+        }
+      }),
+    )
+  }, [persons, balanceById, balancesLoading])
+
   /*
     ── O resumo sai das MESMAS linhas ──
 
@@ -527,7 +555,7 @@ export default function PersonsPage() {
           </div>
         ) : (
           <div>
-            {persons.map((person, i) => {
+            {orderedPersons.map((person, i) => {
               const balance = balanceById.get(person.id)
               const net = balance?.netBalance ?? 0
               const proximoAcerto = nextItemLabel(balance?.nextItem)

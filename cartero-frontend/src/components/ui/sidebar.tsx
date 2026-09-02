@@ -4,6 +4,7 @@ import * as React from "react"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import { cva, type VariantProps } from "class-variance-authority"
+import { X } from "lucide-react"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
@@ -12,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -28,7 +30,18 @@ import { PanelLeftIcon } from "lucide-react"
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = "16rem"
-const SIDEBAR_WIDTH_MOBILE = "18rem"
+/*
+  Largura do painel no mobile.
+
+  Eram 18rem (288px), que numa tela de 390px cobria quase tudo: sem faixa
+  externa visível, o menu parecia uma página nova e ninguém percebia que
+  havia um "fora" para tocar.
+
+  `min()` mantém as 18rem onde couber e cede em telas estreitas, sempre
+  deixando ~3rem de backdrop à mostra — o suficiente para comunicar overlay
+  e receber o toque.
+*/
+const SIDEBAR_WIDTH_MOBILE = "min(18rem, calc(100vw - 3rem))"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
@@ -187,7 +200,24 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          /*
+            X próprio, em vez do genérico do `SheetContent`.
+
+            Havia um `[&>button]:hidden` que escondia o botão padrão — e no
+            mobile, com o painel cobrindo quase toda a largura, ele era a
+            única saída óbvia. O substituto abaixo existe para o rótulo ser
+            "Fechar menu" e não "Close": um leitor de tela precisa saber o
+            que está fechando.
+          */
+          showCloseButton={false}
+          /*
+            `max-w`, não `w`: o `SheetContent` já traz
+            `data-[side=left]:w-full`, que é mais específico e vencia o
+            `w-(--sidebar-width)` — o painel saía com a viewport inteira e a
+            faixa de backdrop ficava em zero. Limitar o máximo respeita o
+            `w-full` e ainda deixa o "fora" visível.
+          */
+          className="max-w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -199,6 +229,22 @@ function Sidebar({
             <SheetTitle>Sidebar</SheetTitle>
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>
           </SheetHeader>
+          {/*
+            Sobreposto ao conteúdo, não empurrando o layout: a sidebar já tem
+            header próprio, e reservar altura para o X deslocaria os itens.
+          */}
+          <SheetClose
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="absolute top-3.5 right-3.5 z-10 text-sidebar-foreground/70 hover:text-sidebar-foreground"
+                aria-label="Fechar menu"
+              />
+            }
+          >
+            <X className="size-4" />
+          </SheetClose>
           <div className="flex h-full w-full flex-col">{children}</div>
         </SheetContent>
       </Sheet>
