@@ -169,7 +169,7 @@ describe('S1-S10: o resumo só diz o que o total não conta', () => {
     */
     const linhas = bankMonthSummaryLines(resumo([inv('b1', 1173.95)]))
     expect(linhas).toEqual([
-      { kind: 'count', text: '1 fatura em aberto', cycle: 'current' },
+      { kind: 'cycle', cycle: 'current', remaining: null, count: null },
     ])
   })
 
@@ -178,7 +178,7 @@ describe('S1-S10: o resumo só diz o que o total não conta', () => {
       resumo([inv('b1', 500), inv('b2', 300)]),
     )
     expect(linhas).toEqual([
-      { kind: 'count', text: '2 faturas em aberto', cycle: 'current' },
+      { kind: 'cycle', cycle: 'current', remaining: null, count: null },
     ])
   })
 
@@ -190,8 +190,8 @@ describe('S1-S10: o resumo só diz o que o total não conta', () => {
     const linhas = bankMonthSummaryLines(
       resumo([inv('b1', 1173.95, InvoiceStatus.OPEN, 240)]),
     )
-    expect(linhas).toHaveLength(1)
-    expect(linhas[0].kind).toBe('composition')
+    /* Composição + o rótulo de ciclo, que NÃO depende de pagamento. */
+    expect(linhas.map((l) => l.kind)).toEqual(['composition', 'cycle'])
     if (linhas[0].kind === 'composition') {
       expect(linhas[0].parts).toEqual([
         { kind: 'own', amount: 933.95 },
@@ -209,7 +209,7 @@ describe('S1-S10: o resumo só diz o que o total não conta', () => {
       resumo([inv('b1', 800, InvoiceStatus.PAID), inv('b2', 1200)]),
     )
     expect(linhas).toEqual([
-      { kind: 'remaining', amount: 1200, cycle: 'current' },
+      { kind: 'cycle', cycle: 'current', remaining: 1200, count: null },
     ])
   })
 
@@ -220,7 +220,7 @@ describe('S1-S10: o resumo só diz o que o total não conta', () => {
         inv('b2', 1200, InvoiceStatus.OPEN, 240),
       ]),
     )
-    expect(linhas.map((l) => l.kind)).toEqual(['composition', 'remaining'])
+    expect(linhas.map((l) => l.kind)).toEqual(['composition', 'cycle'])
     /* Duas é o máximo — acima disso o resumo compete com a lista. */
     expect(linhas).toHaveLength(2)
   })
@@ -364,7 +364,7 @@ describe('o ciclo do mês, no resumo do topo', () => {
       resumo([inv('b1', 800, InvoiceStatus.PAID), inv('b2', 1200)]),
       'current',
     )
-    expect(linhas[0]).toMatchObject({ kind: 'remaining', cycle: 'current' })
+    expect(linhas[0]).toMatchObject({ kind: 'cycle', cycle: 'current', remaining: 1200 })
     expect(CYCLE_LABEL.current).toBe('Faturas atuais')
   })
 
@@ -382,7 +382,7 @@ describe('o ciclo do mês, no resumo do topo', () => {
 
   it('Caso 3: mês futuro leva "Faturas futuras"', () => {
     const linhas = bankMonthSummaryLines(resumo([inv('b1', 320)]), 'future')
-    expect(linhas[0]).toMatchObject({ kind: 'count', cycle: 'future' })
+    expect(linhas[0]).toMatchObject({ kind: 'cycle', cycle: 'future' })
     expect(CYCLE_LABEL.future).toBe('Faturas futuras')
   })
 
@@ -443,5 +443,140 @@ describe('a fatura paga tinge o prazo de verde', () => {
       code.indexOf('function MonthInvoiceAmount'),
     )
     expect(cycleLabel).toContain('text-primary')
+  })
+})
+
+describe('o ciclo é independente do pagamento', () => {
+  /**
+   * O bug que esta seção fixa.
+   *
+   * O rótulo do ciclo viajava DENTRO das linhas de quitação (`remaining` e
+   * `count`), e cada uma tinha sua própria condição de existir. No mês
+   * corrente sem nada pago e COM terceiros, nenhuma das duas era emitida —
+   * então "Faturas atuais" só nascia depois de o usuário pagar alguma fatura.
+   *
+   * Pagar uma fatura não pode fazer o mês virar "atual": isso é fato do
+   * calendário, não de quitação.
+   */
+  const cicloDe = (linhas: ReturnType<typeof bankMonthSummaryLines>) =>
+    linhas.find((l) => l.kind === 'cycle')
+
+  it('S1/S2: mês atual com ZERO pago já mostra o ciclo', () => {
+    const linhas = bankMonthSummaryLines(resumo([inv('b1', 1463.49)]), 'current')
+    expect(cicloDe(linhas)).toMatchObject({ cycle: 'current' })
+  })
+
+  it('S2: e NÃO mostra "Faltam", que repetiria o total', () => {
+    const linhas = bankMonthSummaryLines(resumo([inv('b1', 1463.49)]), 'current')
+    expect(cicloDe(linhas)).toMatchObject({ remaining: null })
+  })
+
+  it('a regressão exata do relato: com terceiros e nada pago', () => {
+    /*
+      O caso que sumia. `temTerceiros` desviava para a composição e o ramo da
+      contagem não rodava, levando o ciclo embora.
+    */
+    const linhas = bankMonthSummaryLines(
+      resumo([inv('b1', 1463.49, InvoiceStatus.OPEN, 240)]),
+      'current',
+    )
+    expect(linhas.map((l) => l.kind)).toEqual(['composition', 'cycle'])
+    expect(cicloDe(linhas)).toMatchObject({ cycle: 'current', remaining: null })
+  })
+
+  it('S3: pagar UMA fatura não faz o ciclo nascer — só o complemento', () => {
+    /*
+      A invariante central: o rótulo é o mesmo antes e depois do pagamento.
+      O que muda é apenas o `remaining`.
+    */
+    const antes = bankMonthSummaryLines(
+      resumo([inv('b1', 180.51), inv('b2', 1282.98)]),
+      'current',
+    )
+    const depois = bankMonthSummaryLines(
+      resumo([inv('b1', 180.51, InvoiceStatus.PAID), inv('b2', 1282.98)]),
+      'current',
+    )
+
+    expect(cicloDe(antes)).toMatchObject({ cycle: 'current', remaining: null })
+    expect(cicloDe(depois)).toMatchObject({
+      cycle: 'current',
+      remaining: 1282.98,
+    })
+  })
+
+  it('S4: todas pagas continua "Tudo em dia", sem ciclo', () => {
+    const linhas = bankMonthSummaryLines(
+      resumo([inv('b1', 500, InvoiceStatus.PAID)]),
+      'current',
+    )
+    expect(linhas).toEqual([{ kind: 'settled', text: 'Tudo em dia' }])
+    expect(cicloDe(linhas)).toBeUndefined()
+  })
+
+  it('S5/S6: mês futuro mostra o ciclo com zero pago', () => {
+    const linhas = bankMonthSummaryLines(resumo([inv('b1', 320)]), 'future')
+    expect(cicloDe(linhas)).toMatchObject({ cycle: 'future', remaining: null })
+    expect(CYCLE_LABEL.future).toBe('Faturas futuras')
+  })
+
+  it('S7: mês futuro mantém o ciclo após pagamento parcial', () => {
+    const linhas = bankMonthSummaryLines(
+      resumo([inv('b1', 200, InvoiceStatus.PAID), inv('b2', 320)]),
+      'future',
+    )
+    expect(cicloDe(linhas)).toMatchObject({ cycle: 'future', remaining: 320 })
+  })
+
+  it('S8: mês passado não ganha rótulo de ciclo', () => {
+    /*
+      Decisão preservada da BANKS1.4: "Faturas passadas" seria redundante — o
+      seletor já diz o mês. A linha existe, mas com a contagem no lugar do
+      rótulo, para não ficar vazia.
+    */
+    const linhas = bankMonthSummaryLines(resumo([inv('b1', 320)]), 'past')
+    expect(CYCLE_LABEL.past).toBeNull()
+    expect(cicloDe(linhas)).toMatchObject({
+      cycle: 'past',
+      count: '1 fatura em aberto',
+    })
+  })
+
+  it('S9: zero faturas não mostra ciclo algum', () => {
+    const linhas = bankMonthSummaryLines(resumo([]), 'current')
+    expect(linhas).toEqual([
+      { kind: 'empty', text: 'Nenhuma fatura neste mês' },
+    ])
+    expect(cicloDe(linhas)).toBeUndefined()
+  })
+
+  it('S10: a composição segue independente das duas decisões', () => {
+    /*
+      Terceiros é fato de DINHEIRO; ciclo é de calendário; quitação é de
+      pagamento. As três não se condicionam.
+    */
+    const semTerceiros = bankMonthSummaryLines(resumo([inv('b1', 500)]), 'current')
+    const comTerceiros = bankMonthSummaryLines(
+      resumo([inv('b1', 500, InvoiceStatus.OPEN, 100)]),
+      'current',
+    )
+
+    expect(semTerceiros.some((l) => l.kind === 'composition')).toBe(false)
+    expect(comTerceiros.some((l) => l.kind === 'composition')).toBe(true)
+    /* E o ciclo está nos dois. */
+    expect(cicloDe(semTerceiros)).toMatchObject({ cycle: 'current' })
+    expect(cicloDe(comTerceiros)).toMatchObject({ cycle: 'current' })
+  })
+
+  it('o rótulo sozinho não leva separador na tela', () => {
+    /*
+      "Faturas atuais ·" com nada depois deixaria um ponto órfão. O separador
+      é responsabilidade de quem desenha, e só aparece quando há complemento.
+    */
+    const PAGE = readFileSync(
+      new URL('../app/(dashboard)/banks/page.tsx', import.meta.url),
+      'utf-8',
+    )
+    expect(PAGE).toContain('withSeparator={linha.remaining !== null || linha.count !== null}')
   })
 })

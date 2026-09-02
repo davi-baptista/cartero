@@ -74,16 +74,25 @@ import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
  *
  * Mês passado não recebe rótulo — `CYCLE_LABEL.past` é `null`.
  */
-function CycleLabel({ cycle }: { cycle: MonthCycle }) {
+function CycleLabel({
+  cycle,
+  withSeparator = true,
+}: {
+  cycle: MonthCycle
+  /** `false` quando o rótulo é a linha inteira — não há o que separar. */
+  withSeparator?: boolean
+}) {
   const label = CYCLE_LABEL[cycle]
   if (!label) return null
 
   return (
     <>
       <span className="font-medium text-primary">{label}</span>
-      <span className="mx-1.5 text-muted-foreground/40" aria-hidden>
-        ·
-      </span>
+      {withSeparator && (
+        <span className="mx-1.5 text-muted-foreground/40" aria-hidden>
+          ·
+        </span>
+      )}
     </>
   )
 }
@@ -795,41 +804,45 @@ export default function BanksPage() {
                   )
                 }
 
-                if (linha.kind === 'remaining') {
+                if (linha.kind === 'cycle') {
                   return (
                     <p
                       key={linha.kind}
                       className="mt-0.5 text-[11px] text-muted-foreground"
                     >
-                      <CycleLabel cycle={linha.cycle} />
                       {/*
-                        Neutro: pendência é o estado normal de um mês em curso,
-                        e o âmbar fica reservado ao prazo nas rows.
+                        O rótulo do ciclo é INDEPENDENTE do progresso de
+                        quitação: ele diz em que mês estamos, não quanto foi
+                        pago. Antes viajava dentro das linhas de quitação, e
+                        no mês corrente sem nada pago com terceiros nenhuma
+                        delas era emitida — o rótulo sumia por acidente.
                       */}
-                      Faltam{' '}
-                      <span className="font-medium">
-                        {formatCurrency(linha.amount)}
-                      </span>{' '}
-                      para quitar
-                    </p>
-                  )
-                }
-
-                if (linha.kind === 'settled') {
-                  return (
-                    <p key={linha.kind} className="mt-0.5 text-[11px]">
-                      <span className="font-medium text-paid">{linha.text}</span>
+                      <CycleLabel
+                        cycle={linha.cycle}
+                        /* Sozinho, o rótulo não leva o separador. */
+                        withSeparator={linha.remaining !== null || linha.count !== null}
+                      />
+                      {linha.remaining !== null && (
+                        <>
+                          {/*
+                            Neutro: pendência é o estado normal de um mês em
+                            curso, e o âmbar fica reservado ao prazo nas rows.
+                          */}
+                          Faltam{' '}
+                          <span className="font-medium">
+                            {formatCurrency(linha.remaining)}
+                          </span>{' '}
+                          para quitar
+                        </>
+                      )}
+                      {linha.count}
                     </p>
                   )
                 }
 
                 return (
-                  <p
-                    key={linha.kind}
-                    className="mt-0.5 text-[11px] text-muted-foreground"
-                  >
-                    {linha.kind === 'count' && <CycleLabel cycle={linha.cycle} />}
-                    {linha.text}
+                  <p key={linha.kind} className="mt-0.5 text-[11px]">
+                    <span className="font-medium text-paid">{linha.text}</span>
                   </p>
                 )
               })}

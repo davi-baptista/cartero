@@ -51,9 +51,28 @@ export type SummaryLine =
       kind: 'composition'
       parts: Array<{ kind: 'own' | 'thirdParty'; amount: number }>
     }
-  | { kind: 'remaining'; amount: number; cycle: MonthCycle }
+  /**
+   * A linha de ciclo, com o progresso de quitação como COMPLEMENTO opcional.
+   *
+   * Antes o ciclo viajava dentro de `remaining` e `count` — duas linhas que
+   * cada uma tinha sua própria condição de existir. No mês corrente sem nada
+   * pago e COM terceiros, nenhuma das duas era emitida, e "Faturas atuais"
+   * desaparecia junto: o rótulo do ciclo dependia, por acidente, do estado de
+   * pagamento.
+   *
+   * Agora são conceitos independentes. O ciclo é um fato do CALENDÁRIO — o mês
+   * exibido é o corrente ou não — e não muda quando uma fatura é paga. O
+   * complemento é um fato de QUITAÇÃO, e continua condicional.
+   */
+  | {
+      kind: 'cycle'
+      cycle: MonthCycle
+      /** `null` quando o valor pendente repetiria o total exibido acima. */
+      remaining: number | null
+      /** Contagem, quando não há complemento nem terceiros a mostrar. */
+      count: string | null
+    }
   | { kind: 'settled'; text: string }
-  | { kind: 'count'; text: string; cycle: MonthCycle }
 
 /** Rótulo do ciclo. `past` fica sem rótulo — ver `cycleLabel`. */
 export const CYCLE_LABEL: Record<MonthCycle, string | null> = {
@@ -115,41 +134,50 @@ export function bankMonthSummaryLines(
   if (temTerceiros) linhas.push({ kind: 'composition', parts })
 
   const tudoPago = summary.unpaid <= EPSILON
-  const nadaPago = Math.abs(summary.unpaid - summary.total) <= EPSILON
 
+  /*
+    Tudo quitado encerra a linha secundária.
+
+    "Tudo em dia" já é conclusivo, e prefixá-lo com "Faturas atuais ·" só
+    adicionaria palavra a algo que não pede contexto — nada resta a fazer,
+    seja o mês qual for.
+  */
   if (tudoPago) {
-    /*
-      Sem rótulo de ciclo: "Tudo em dia" já é conclusivo, e prefixá-lo com
-      "Faturas atuais ·" só adicionaria palavra a uma linha que não pede
-      contexto — nada resta a fazer, seja o mês qual for.
-    */
     linhas.push({ kind: 'settled', text: 'Tudo em dia' })
     return linhas
   }
 
   /*
-    Quitação parcial ENTRE faturas: o valor restante é diferente do total, e
-    esse é justamente o caso em que a informação não é redundante.
+    ── Duas decisões independentes ──
+
+    O CICLO é um fato do calendário: o mês exibido é o corrente, um futuro ou
+    um passado. Não muda quando uma fatura é paga.
+
+    O COMPLEMENTO é um fato de quitação, e só aparece quando acrescenta
+    informação: com nada pago, o valor pendente É o total logo acima, e
+    repeti-lo não informa nada.
   */
-  if (!nadaPago) {
-    linhas.push({ kind: 'remaining', amount: summary.unpaid, cycle })
-    return linhas
-  }
+  const nadaPago = Math.abs(summary.unpaid - summary.total) <= EPSILON
+  const remaining = nadaPago ? null : summary.unpaid
 
   /*
-    Nada pago ainda. O valor em aberto É o total, então dizer o número de novo
-    não informa nada — e com a composição presente, uma segunda linha só para
-    anunciar que tudo está aberto deixaria o bloco pesado sem motivo.
+    A contagem é o último recurso: existe para a linha não ficar vazia quando
+    não há complemento de quitação, nem composição, nem rótulo de ciclo — o
+    caso do mês passado com nada pago e sem terceiros.
   */
-  if (!temTerceiros) {
-    linhas.push({
-      kind: 'count',
-      text: `${summary.invoiceCount} ${
-        summary.invoiceCount === 1 ? 'fatura em aberto' : 'faturas em aberto'
-      }`,
-      cycle,
-    })
-  }
+  const precisaContagem =
+    remaining === null && !temTerceiros && CYCLE_LABEL[cycle] === null
+
+  linhas.push({
+    kind: 'cycle',
+    cycle,
+    remaining,
+    count: precisaContagem
+      ? `${summary.invoiceCount} ${
+          summary.invoiceCount === 1 ? 'fatura em aberto' : 'faturas em aberto'
+        }`
+      : null,
+  })
 
   return linhas
 }
