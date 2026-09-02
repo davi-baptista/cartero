@@ -14,6 +14,7 @@ import {
 } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import {
+  deleteInvoiceIfEmpty,
   findOrCreateInvoice,
   findOrCreateInvoiceForPeriod,
   getInvoiceDueDate,
@@ -1078,7 +1079,7 @@ export class TransactionsService {
                 );
               }
 
-              await tx.invoice.update({
+              const previousInvoice = await tx.invoice.update({
                 where: { id: transaction.invoiceId, userId },
                 data: {
                   totalAmount: transaction.isRefund
@@ -1086,6 +1087,20 @@ export class TransactionsService {
                     : { decrement: transaction.amount },
                 },
               });
+
+              /*
+                A fatura que ficou vazia sai junto.
+
+                `remove` sempre fez isso; a reatribuição decrementava e parava
+                ali. Mover a ÚNICA transação de uma fatura para outro banco
+                deixava atrás um ciclo de R$ 0,00 sem lançamento nenhum — que
+                continua sendo listado, ganha status pelo cron e aparece na
+                visão mensal como se aquele mês tivesse tido fatura.
+
+                O mesmo predicado das outras limpezas: zero é o sinal de que
+                não sobrou lançamento. Faturas com saldo, mesmo menor, ficam.
+              */
+              await deleteInvoiceIfEmpty(tx, userId, previousInvoice);
             }
 
             invoiceId = null;
@@ -1434,9 +1449,7 @@ export class TransactionsService {
               data: { totalAmount: { decrement: item.amount as never } },
             });
 
-            if (Number(invoice.totalAmount) === 0) {
-              await tx.invoice.delete({ where: { id: invoice.id, userId } });
-            }
+            await deleteInvoiceIfEmpty(tx, userId, invoice);
           }
         }
 
@@ -1545,11 +1558,7 @@ export class TransactionsService {
               },
             });
 
-            if (Number(invoice.totalAmount) === 0) {
-              await tx.invoice.delete({
-                where: { id: invoice.id, userId },
-              });
-            }
+            await deleteInvoiceIfEmpty(tx, userId, invoice);
           }
         }
 

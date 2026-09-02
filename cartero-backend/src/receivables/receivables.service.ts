@@ -6,7 +6,10 @@ import {
   SOURCE_INVOICE_SELECT,
   resolveSourceDeleteBlockReason,
 } from 'src/common/helpers/receivable-source-capability';
-import { findOrCreateSystemReceivableBank } from 'src/common/helpers/invoice.helper';
+import {
+  deleteInvoiceIfEmpty,
+  findOrCreateSystemReceivableBank,
+} from 'src/common/helpers/invoice.helper';
 import {
   createReceivablePaymentTransaction,
   removeSettlementTransaction,
@@ -367,11 +370,7 @@ export class ReceivablesService {
                   },
                 });
 
-                if (Number(invoice.totalAmount) === 0) {
-                  await tx.invoice.delete({
-                    where: { id: invoice.id, userId },
-                  });
-                }
+                await deleteInvoiceIfEmpty(tx, userId, invoice);
               }
             }
           }
@@ -394,11 +393,7 @@ export class ReceivablesService {
                   },
                 });
 
-                if (Number(invoice.totalAmount) === 0) {
-                  await tx.invoice.delete({
-                    where: { id: invoice.id, userId },
-                  });
-                }
+                await deleteInvoiceIfEmpty(tx, userId, invoice);
               }
             }
           }

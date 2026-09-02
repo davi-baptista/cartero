@@ -5,7 +5,10 @@ import {
 } from '@nestjs/common';
 import { Prisma, TransactionType } from '@prisma/client';
 import type { Bank, Debt, Receivable } from '@prisma/client';
-import { findOrCreateInvoice } from './invoice.helper';
+import {
+  deleteInvoiceIfEmpty,
+  findOrCreateInvoice,
+} from './invoice.helper';
 import { parseDateOnly } from './date-only.helper';
 
 /**
@@ -223,9 +226,7 @@ export async function removeSettlementTransaction(
     data: { totalAmount: { decrement: paymentTransaction.amount } },
   });
 
-  if (Number(invoice.totalAmount) === 0) {
-    await tx.invoice.delete({ where: { id: invoice.id, userId } });
-  }
+  await deleteInvoiceIfEmpty(tx, userId, invoice);
 }
 
 /**

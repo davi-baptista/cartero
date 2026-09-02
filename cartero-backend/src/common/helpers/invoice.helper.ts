@@ -325,3 +325,53 @@ export async function findOrCreateInvoice(
     month,
   );
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * A fatura sem lançamento nenhum não deve existir
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Uma fatura é materializada pela PRIMEIRA transação de crédito da
+ * competência — nunca antecipadamente. A recíproca precisa valer: quando a
+ * última transação sai, o ciclo deixa de ter fato que o sustente.
+ *
+ * Uma fatura de R$ 0,00 órfã não é inofensiva. Ela continua sendo listada,
+ * recebe transições de status pelo cron e aparece na visão mensal de Bancos
+ * como se aquele mês tivesse tido fatura — o usuário vê um ciclo que nunca
+ * aconteceu, num banco onde talvez nunca tenha usado o cartão.
+ *
+ * ── Por que centralizar ──
+ *
+ * A condição existia repetida em quatro lugares (`remove`, delete de série,
+ * desmarcar dívida paga, desmarcar cobrança recebida) e FALTAVA no caminho de
+ * reatribuição do `update`. É o padrão clássico de invariante duplicada: as
+ * cópias existentes estavam certas, e quem foi escrito depois esqueceu.
+ *
+ * ── O predicado é zero, não "sem transações" ──
+ *
+ * `totalAmount` é a soma mantida incrementalmente pelos próprios fluxos que
+ * mexem na fatura, e é o que todas as limpezas anteriores já usavam. Contar
+ * transações a cada limpeza seria uma segunda fonte de verdade — e as duas
+ * poderiam discordar.
+ *
+ * Estornos podem, em teoria, levar uma fatura a zero com transações dentro.
+ * Manter o predicado herdado preserva esse comportamento como está: esta fase
+ * corrige a lacuna, não redefine a política.
+ */
+export async function deleteInvoiceIfEmpty(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  invoice: { id: string; totalAmount: unknown } | null | undefined,
+): Promise<boolean> {
+  /*
+    Sem fatura, nada a limpar. O `update` do Prisma sempre devolve a linha,
+    então na prática isto só protege de chamada com valor ausente — mas a
+    limpeza é o último passo de fluxos financeiros, e derrubar um deles por
+    causa de um `undefined` seria pior que não limpar.
+  */
+  if (!invoice) return false;
+  if (Number(invoice.totalAmount) !== 0) return false;
+
+  await tx.invoice.delete({ where: { id: invoice.id, userId } });
+  return true;
+}

@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { deleteInvoiceIfEmpty } from 'src/common/helpers/invoice.helper';
 import { Prisma, Debt, TransactionType } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
@@ -338,11 +339,7 @@ export class DebtsService {
                   data: { totalAmount: { decrement: transaction.amount } },
                 });
 
-                if (Number(invoice.totalAmount) === 0) {
-                  await tx.invoice.delete({
-                    where: { id: invoice.id, userId },
-                  });
-                }
+                await deleteInvoiceIfEmpty(tx, userId, invoice);
               }
             }
           }
