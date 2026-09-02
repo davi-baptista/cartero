@@ -1,4 +1,5 @@
 import { api } from '@/lib/api'
+import type { NextSettlementItem } from '@/lib/person-next-item'
 import type {
   Person,
   PersonStatement,
@@ -39,6 +40,13 @@ export interface PersonMonthlyBalance {
   netBalance: number
   receivablePending: number
   debtPending: number
+  /**
+   * O acerto mais urgente do MESMO lado do saldo, ou `null`.
+   *
+   * Dado, não texto: `person-next-item` decide o verbo e a distância. Vem do
+   * mesmo lote — nenhuma consulta por pessoa.
+   */
+  nextItem: NextSettlementItem | null
 }
 
 export async function getPersonsMonthlySummary(params: {

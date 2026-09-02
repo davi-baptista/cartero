@@ -39,12 +39,8 @@ import {
   ROW_ICON_CLASS,
 } from '@/components/ui/financial-list-row'
 import { cn } from '@/lib/utils'
-import { InvoiceStatus } from '@/types'
 import type { Bank, Invoice } from '@/types'
-import {
-  INVOICE_STATUS_BADGE,
-  INVOICE_STATUS_LABEL,
-} from '@/lib/invoice-status'
+import { INVOICE_STATUS_LABEL } from '@/lib/invoice-status'
 import { invoiceTimingLabel } from '@/lib/invoice-timing'
 import {
   banksForPeriod,
@@ -55,47 +51,6 @@ import { useDetailNavigation } from '@/lib/detail-navigation'
 import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-
-/**
- * Estado da fatura, com o prazo ao lado.
- *
- * O badge carrega o estado — "Fechada", "Em atraso" —, o mesmo vocabulário das
- * outras telas. O prazo vem depois, em texto secundário: "Fechada · vence em
- * 5d". Antes o badge dizia só "Vence em 5d", e quem olhava a lista de bancos e
- * o detalhe da fatura via dois nomes para o mesmo estado.
- */
-function MonthInvoiceBadge({ invoice }: { invoice: Invoice | null }) {
-  /*
-    Sem fatura na competência ≠ "Em dia".
-
-    A versão por urgência dizia "Em dia" quando não havia pendência, o que era
-    verdade sobre o AGORA. Numa visão mensal a ausência é outra coisa: o mês
-    pode não ter tido gasto, ou ser futuro. Afirmar quitação seria inventar um
-    fato sobre um período que talvez nem tenha chegado.
-  */
-  if (invoice === null) return null
-
-  const isOverdue = invoice.status === InvoiceStatus.OVERDUE
-
-  return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      <span
-        className={cn(
-          'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium',
-          INVOICE_STATUS_BADGE[invoice.status],
-        )}
-      >
-        {isOverdue && (
-          <span className="relative flex size-1.5 shrink-0">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/60" />
-            <span className="size-1.5 rounded-full bg-destructive" />
-          </span>
-        )}
-        {INVOICE_STATUS_LABEL[invoice.status]}
-      </span>
-    </span>
-  )
-}
 
 // The amount alone, standing as the row's primary stat.
 function MonthInvoiceAmount({ amount }: { amount: number }) {
@@ -185,30 +140,41 @@ function BankRow({
         title={bank.name}
         /* A badge qualifica o banco, então acompanha o nome — nunca a coluna
            de valores. Com nome longo quem cede espaço é o texto. */
-        titleAdornment={<MonthInvoiceBadge invoice={invoice} />}
+        /*
+          Sem badge ao lado do nome.
+
+          Ela disputava largura com o título e o chevron, e no mobile fazia
+          "Porto Seguro" truncar em "Porto Seg...". O estado não sumiu: desceu
+          para o trailing, onde a coluna já é estreita por natureza e não
+          compete com o nome.
+        */
         meta={
           invoice ? (
-            <span className="truncate">
-              {invoiceTimingLabel(invoice)}
-            </span>
+            <span className="truncate">{invoiceTimingLabel(invoice)}</span>
           ) : null
         }
         /*
-          O rótulo dizia "Fatura atual" em qualquer situação. Com o seletor de
-          mês isso passou a mentir: consultando agosto, o documento continuava
-          afirmando que aquela era a fatura corrente.
+          Duas perguntas, dois lugares: a esquerda diz o que ACONTECE ("Fecha
+          amanhã"), o trailing diz o ESTADO ("Aberta").
 
-          Agora nomeia a competência que está sendo exibida.
+          O rótulo antes repetia a competência — "SETEMBRO 2026" em toda row,
+          logo abaixo de um seletor que já diz Setembro 2026. Informação que o
+          usuário lê uma vez e depois só ocupa espaço.
         */
         trailing={
           invoice ? (
             <>
               <MonthInvoiceAmount amount={amount} />
               <span className={ROW_TRAILING_LABEL_CLASS}>
-                {monthLabel}
+                {INVOICE_STATUS_LABEL[invoice.status]}
               </span>
             </>
           ) : (
+            /*
+              Sem valor: "R$ 0,00" afirmaria uma fatura de valor zero, que é
+              outra coisa — o mês pode ter tido gasto nenhum, mas a fatura
+              existir.
+            */
             <span className={ROW_TRAILING_LABEL_CLASS}>Sem fatura</span>
           )
         }

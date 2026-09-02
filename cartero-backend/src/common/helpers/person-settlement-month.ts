@@ -209,3 +209,75 @@ export function belongsToHistoryCompetence(
   if (!item.isPaid) return false;
   return compareCompetence(dueMonthOf(item), selected) === 0;
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * O próximo acerto que merece atenção
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * A lista de Pessoas mostra o saldo do mês, mas não dizia QUANDO algo
+ * acontece: "R$ 462,22 · A RECEBER" não distingue uma cobrança vencida há
+ * três dias de outra que vence só no fim do mês.
+ *
+ * Isto devolve o item mais urgente — DADO, nunca texto pronto. O verbo
+ * ("Receber"/"Pagar") e a distância ("em 4d") são decisões de apresentação, e
+ * o backend não deve escolhê-las: a mesma informação alimenta a lista hoje e
+ * poderia alimentar um push ou um e-mail amanhã, com vocabulários diferentes.
+ *
+ * ── Só o lado que o saldo mostra ──
+ *
+ * Uma pessoa pode ter dívida e cobrança ao mesmo tempo. O item devolvido vem
+ * do MESMO sentido do saldo líquido, para a linha não se contradizer: uma row
+ * dizendo "A RECEBER" com "Pagar amanhã" embaixo é factualmente correta e
+ * exige do leitor um esforço que a lista existe para evitar.
+ *
+ * O custo é conhecido e aceito: uma dívida vencendo amanhã não aparece na
+ * lista quando o saldo é a receber. Ela continua no extrato da pessoa, que é
+ * a superfície de detalhe.
+ *
+ * ── Urgência, não ordem de chegada ──
+ *
+ * Vencido primeiro, depois o que vence hoje, depois o mais próximo. Pegar o
+ * primeiro item da consulta daria a ordem do banco, que não é contrato.
+ */
+export type SettlementDirection = 'receive' | 'pay';
+
+export interface NextSettlementItem {
+  direction: SettlementDirection;
+  /** `YYYY-MM-DD` — dia civil, sem hora, para o cliente comparar com hoje. */
+  dueDate: string;
+}
+
+/** Dia civil de Fortaleza (UTC-3), no formato comparável por string. */
+function civilDay(date: Date): string {
+  const local = new Date(date.getTime() - 3 * 60 * 60 * 1000);
+  return local.toISOString().slice(0, 10);
+}
+
+/**
+ * O item mais urgente do lado indicado, ou `null` quando não há nenhum.
+ *
+ * `netBalance` decide o lado: positivo, a pessoa te deve e olhamos os
+ * recebíveis; negativo, o inverso. Saldo ZERO não significa ausência de
+ * pendência — pode haver R$ 500 abertos de cada lado —, e nesse caso a lista
+ * não tem um sentido a mostrar, então também não tem evento a destacar.
+ */
+export function nextSettlementItem(
+  receivables: SettleableItem[],
+  debts: SettleableItem[],
+  netBalance: number,
+): NextSettlementItem | null {
+  if (Math.abs(netBalance) < 0.005) return null;
+
+  const direction: SettlementDirection = netBalance > 0 ? 'receive' : 'pay';
+  const pool = direction === 'receive' ? receivables : debts;
+
+  let melhor: Date | null = null;
+  for (const item of pool) {
+    if (item.isPaid) continue;
+    /* O mais próximo vence: vencidos têm data menor, então lideram sozinhos. */
+    if (melhor === null || item.dueDate < melhor) melhor = item.dueDate;
+  }
+
+  return melhor === null ? null : { direction, dueDate: civilDay(melhor) };
+}

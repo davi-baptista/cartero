@@ -33,6 +33,10 @@ import {
   ROW_TRAILING_LABEL_CLASS,
   ROW_ICON_CLASS,
 } from '@/components/ui/financial-list-row'
+import {
+  isNextItemOverdue,
+  nextItemLabel,
+} from '@/lib/person-next-item'
 import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 import {
@@ -526,6 +530,8 @@ export default function PersonsPage() {
             {persons.map((person, i) => {
               const balance = balanceById.get(person.id)
               const net = balance?.netBalance ?? 0
+              const proximoAcerto = nextItemLabel(balance?.nextItem)
+              const atrasado = isNextItemOverdue(balance?.nextItem)
 
               /*
                 Três estados, três vocabulários. Saldo zero é neutro — nem
@@ -577,6 +583,28 @@ export default function PersonsPage() {
                       </div>
                     }
                     title={person.name}
+                    /*
+                      O próximo acerto, quando existe.
+
+                      A linha dizia quanto e não dizia quando: uma cobrança
+                      vencida há três dias ficava idêntica a outra que só vence
+                      no fim do mês. `null` é resultado legítimo — pessoa sem
+                      pendência fica sem subtexto, em vez de exibir "Sem
+                      pendências", que ocupa a linha para não dizer nada.
+                    */
+                    meta={
+                      proximoAcerto ? (
+                        <span
+                          className={cn(
+                            'truncate',
+                            /* Só o atraso ganha tom de atenção. */
+                            atrasado && 'text-destructive',
+                          )}
+                        >
+                          {proximoAcerto}
+                        </span>
+                      ) : null
+                    }
                     trailing={
                       /*
                         Sem valor enquanto os saldos não chegaram: mostrar

@@ -211,7 +211,15 @@ describe('Refinamento visual de Bancos', () => {
       título e o chevron. Passar a badge por esse slot é a afirmação de que
       ela pertence à identidade, não à coluna de valores.
     */
-    expect(BANKS).toContain('titleAdornment={<MonthInvoiceBadge invoice={invoice} />}')
+    /*
+      A badge de Bancos SAIU do grupo do nome: ela disputava largura com o
+      título e o chevron, e no mobile fazia "Porto Seguro" truncar em "Porto
+      Seg...". O estado desceu para o trailing, onde a coluna já é estreita.
+
+      O slot continua sendo o lugar certo para adornos de identidade — o teste
+      passa a vigiar que Bancos não volte a usá-lo para status.
+    */
+    expect(BANKS).not.toContain('titleAdornment=')
     expect(BANKS).toContain('title={bank.name}')
     expect(ROW_PRIMITIVE).toContain('{titleAdornment}')
   })
@@ -264,7 +272,8 @@ describe('Refinamento visual de Bancos', () => {
     */
     expect(BANKS).toContain('invoice ? (')
     expect(BANKS).toContain('Sem fatura')
-    expect(BANKS).not.toContain('R$ 0,00')
+    /* Sem comentários: a prosa explica por que NÃO exibimos o valor zero. */
+    expect(BANKS.replace(/\/\*[\s\S]*?\*\//g, '')).not.toContain('R$ 0,00')
   })
 })
 
@@ -413,7 +422,12 @@ describe('Gerenciamento do banco mudou de superfície', () => {
       "atual" sobre um período histórico.
     */
     expect(rowAtiva).toContain('<MonthInvoiceAmount')
-    expect(rowAtiva).toContain('{monthLabel}')
+    /*
+      O trailing passou a nomear o ESTADO, não a competência: "SETEMBRO 2026"
+      se repetia em toda row logo abaixo de um seletor que já dizia Setembro
+      2026 — informação lida uma vez, depois só ocupando espaço.
+    */
+    expect(rowAtiva).toContain('INVOICE_STATUS_LABEL[invoice.status]')
   })
 
   it('item 33: banco sem fatura não inventa valor', () => {
@@ -425,7 +439,7 @@ describe('Gerenciamento do banco mudou de superfície', () => {
     */
     const trailing = rowAtiva.slice(rowAtiva.indexOf('trailing={'))
     expect(trailing).toContain('<MonthInvoiceAmount')
-    expect(trailing).toContain('{monthLabel}')
+    expect(trailing).toContain('INVOICE_STATUS_LABEL[invoice.status]')
     expect(trailing).toContain('Sem fatura')
     expect(trailing).not.toContain('formatCurrency(0)')
   })

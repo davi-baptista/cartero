@@ -19,6 +19,7 @@ import {
   belongsToCompetence,
   belongsToHistoryCompetence,
   dueMonthOf,
+  nextSettlementItem,
   referenceMonthOf,
   resolveDefaultCompetence,
   type SettleableItem,
@@ -165,6 +166,19 @@ export class PersonsService {
         netBalance: summary.netBalance,
         receivablePending: summary.receivablePending,
         debtPending: summary.debtPending,
+        /*
+          O próximo acerto que merece atenção, para a lista dizer QUANDO algo
+          acontece — não só quanto.
+
+          Derivado dos mesmos baldes que o resumo já usa: nenhuma consulta a
+          mais, e nada por pessoa. É DADO, não texto: o verbo e a distância
+          são decisões de apresentação.
+        */
+        nextItem: nextSettlementItem(
+          bucket.receivables,
+          bucket.debts,
+          summary.netBalance,
+        ),
       };
     });
   }
