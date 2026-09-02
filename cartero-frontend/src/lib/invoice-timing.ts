@@ -93,6 +93,20 @@ export function formatDueTimingFromISO(
 /** Grau de urgência, para escolher a cor sem repetir os limites em cada tela. */
 export type TimingUrgency = 'overdue' | 'today' | 'soon' | 'later'
 
+/**
+ * A janela em que um prazo é URGENTE — a mesma da "Atenção agora".
+ *
+ * O painel da Visão Geral só lista o que vence em até 7 dias, e pinta tudo
+ * que entra na lista de âmbar. Bancos usava 2 dias, então o mesmo fato
+ * ("fecha em 5d") saía âmbar em uma tela e cinza na outra.
+ *
+ * Não era divergência de COR — as duas sempre usaram `text-pending`, o único
+ * âmbar do produto. Era divergência de RÉGUA, que é mais difícil de notar:
+ * ninguém compara tons, mas todos estranham quando a mesma fatura parece
+ * urgente num lugar e não no outro.
+ */
+export const URGENT_DAYS_WINDOW = 7
+
 export function timingUrgency(
   target: Date,
   today: Date = new Date(),
@@ -100,7 +114,7 @@ export function timingUrgency(
   const diff = civilDaysUntil(target, today)
   if (diff < 0) return 'overdue'
   if (diff === 0) return 'today'
-  if (diff <= 2) return 'soon'
+  if (diff <= URGENT_DAYS_WINDOW) return 'soon'
   return 'later'
 }
 

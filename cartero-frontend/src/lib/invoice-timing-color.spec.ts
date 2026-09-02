@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { invoiceTimingClass, invoiceTimingLabel } from './invoice-timing'
+import {
+  invoiceTimingClass,
+  invoiceTimingLabel,
+  URGENT_DAYS_WINDOW,
+} from './invoice-timing'
 import { INVOICE_STATUS_TEXT } from './invoice-status'
 import { InvoiceStatus } from '@/types'
 
@@ -51,19 +55,27 @@ describe('a cor do prazo segue a urgência', () => {
 
   it('prazo distante NÃO ganha cor', () => {
     /*
-      A contenção: colorir "em 12d" encheria a lista de tons sem hierarquia.
+      A contenção: colorir "em 31d" encheria a lista de tons sem hierarquia.
       Informação que não é urgente não deve competir pela atenção.
     */
     expect(
-      invoiceTimingClass(invoice(InvoiceStatus.OPEN, '2026-09-20', '2026-09-28'), HOJE),
+      invoiceTimingClass(invoice(InvoiceStatus.OPEN, '2026-10-03', '2026-10-10'), HOJE),
     ).toBe('text-muted-foreground')
   })
 
-  it('a fronteira dos 2 dias é onde a cor para', () => {
-    const aos2 = invoice(InvoiceStatus.OPEN, '2026-09-04', '2026-09-12')
-    const aos3 = invoice(InvoiceStatus.OPEN, '2026-09-05', '2026-09-12')
-    expect(invoiceTimingClass(aos2, HOJE)).toBe('text-pending')
-    expect(invoiceTimingClass(aos3, HOJE)).toBe('text-muted-foreground')
+  it('a fronteira é a MESMA janela da "Atenção agora"', () => {
+    /*
+      7 dias, não 2. A régua é compartilhada (`URGENT_DAYS_WINDOW`): o painel
+      da Visão Geral lista o que vence em até uma semana e pinta tudo de
+      âmbar, e Bancos usava 2 dias — então a mesma fatura parecia urgente numa
+      tela e não na outra.
+    */
+    expect(URGENT_DAYS_WINDOW).toBe(7)
+
+    const dentro = invoice(InvoiceStatus.OPEN, '2026-09-09', '2026-09-16')
+    const fora = invoice(InvoiceStatus.OPEN, '2026-09-10', '2026-09-17')
+    expect(invoiceTimingClass(dentro, HOJE)).toBe('text-pending')
+    expect(invoiceTimingClass(fora, HOJE)).toBe('text-muted-foreground')
   })
 
   it('fatura fechada mede o VENCIMENTO, não o fechamento', () => {
@@ -158,36 +170,9 @@ describe('a contenção visual da row', () => {
   it('banco sem fatura fica cinza, sem tom de estado', () => {
     /*
       O mês sem fatura não é bom nem ruim: verde sugeriria "em dia", âmbar
-      sugeriria pendência, e nenhuma das duas coisas aconteceu.
+      sugeriria pendência, e nenhuma das duas coisas aconteceu. O tom vem do
+      mapa de estados, não de uma classe solta na página.
     */
-    expect(code).toContain("'text-muted-foreground/70'")
-  })
-})
-
-describe('o resumo do topo diz o que falta pagar', () => {
-  const PAGE = readFileSync(
-    new URL('../app/(dashboard)/banks/page.tsx', import.meta.url),
-    'utf-8',
-  )
-  const code = PAGE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-
-  it('"em aberto" aparece sempre que houver algo a pagar', () => {
-    /*
-      A condição anterior era `paidCount > 0`, então a informação desaparecia
-      justamente quando o mês inteiro estava em aberto — o caso em que ela
-      mais importa.
-    */
-    expect(code).toContain('monthSummary.unpaid > 0 ?')
-    expect(code).not.toContain('monthSummary.paidCount > 0 && (')
-  })
-
-  it('mês quitado diz "tudo pago" em vez de R$ 0,00', () => {
-    /* Mesma informação, sem um número que o leitor precisa interpretar. */
-    expect(code).toContain('tudo pago')
-    expect(code).toContain('text-paid')
-  })
-
-  it('mês sem fatura não inventa contagem', () => {
-    expect(code).toContain('Nenhuma fatura neste mês')
+    expect(code).toContain('BANK_TRAILING_TONE.noInvoice')
   })
 })

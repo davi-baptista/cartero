@@ -271,7 +271,7 @@ describe('Refinamento visual de Bancos', () => {
       informação; antes era só ruído de uma fatura que não existia agora.
     */
     expect(BANKS).toContain('invoice ? (')
-    expect(BANKS).toContain('Sem fatura')
+    expect(BANKS).toContain('BANK_TRAILING_LABEL.noInvoice')
     /* Sem comentários: a prosa explica por que NÃO exibimos o valor zero. */
     expect(BANKS.replace(/\/\*[\s\S]*?\*\//g, '')).not.toContain('R$ 0,00')
   })
@@ -423,11 +423,11 @@ describe('Gerenciamento do banco mudou de superfície', () => {
     */
     expect(rowAtiva).toContain('<MonthInvoiceAmount')
     /*
-      O trailing passou a nomear o ESTADO, não a competência: "SETEMBRO 2026"
-      se repetia em toda row logo abaixo de um seletor que já dizia Setembro
-      2026 — informação lida uma vez, depois só ocupando espaço.
+      O trailing nomeia o CICLO, não a competência nem o status interno:
+      "SETEMBRO 2026" se repetia logo abaixo de um seletor que já dizia
+      Setembro 2026, e `ABERTA`/`FECHADA` competia em cor com o prazo.
     */
-    expect(rowAtiva).toContain('INVOICE_STATUS_LABEL[invoice.status]')
+    expect(rowAtiva).toContain('BANK_TRAILING_LABEL[trailingState]')
   })
 
   it('item 33: banco sem fatura não inventa valor', () => {
@@ -439,8 +439,8 @@ describe('Gerenciamento do banco mudou de superfície', () => {
     */
     const trailing = rowAtiva.slice(rowAtiva.indexOf('trailing={'))
     expect(trailing).toContain('<MonthInvoiceAmount')
-    expect(trailing).toContain('INVOICE_STATUS_LABEL[invoice.status]')
-    expect(trailing).toContain('Sem fatura')
+    expect(trailing).toContain('BANK_TRAILING_LABEL[trailingState]')
+    expect(trailing).toContain('BANK_TRAILING_LABEL.noInvoice')
     expect(trailing).not.toContain('formatCurrency(0)')
   })
 

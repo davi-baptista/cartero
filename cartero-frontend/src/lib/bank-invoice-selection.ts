@@ -318,6 +318,14 @@ export interface BankMonthSummary {
   paidCount: number
   /** O que ainda não foi quitado — `total` menos as pagas. */
   unpaid: number
+  /**
+   * Sua parte e a de terceiros, somadas sobre as faturas do mês.
+   *
+   * Mesma decomposição que o Orçamento e o detalhe da fatura já mostram; aqui
+   * é só a agregação mensal dela.
+   */
+  own: number
+  thirdParty: number
 }
 
 /**
@@ -339,11 +347,15 @@ export function summarizeBankMonth<T>(
     overdueCount: 0,
     paidCount: 0,
     unpaid: 0,
+    own: 0,
+    thirdParty: 0,
   }
 
   for (const row of rows) {
     if (!row.invoice) continue
     summary.total += row.amount
+    summary.own += row.ownAmount
+    summary.thirdParty += row.reimbursable
     summary.invoiceCount += 1
 
     switch (row.invoice.status) {
@@ -365,4 +377,92 @@ export function summarizeBankMonth<T>(
   }
 
   return summary
+}
+
+// ─── Rótulo do trailing ───────────────────────────────────────────────────────
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * O que o trailing diz sobre a fatura
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Antes o trailing repetia o status interno — `ABERTA`, `FECHADA` — em azul e
+ * âmbar. Duas coisas davam errado nisso.
+ *
+ * A primeira: a row passava duas mensagens coloridas concorrentes. "Fecha
+ * amanhã" em âmbar e "ABERTA" em azul disputavam a atenção, e a urgência —
+ * que é a informação acionável — perdia espaço para um estado que o subtexto
+ * já explicava melhor.
+ *
+ * A segunda: `OPEN` e `CLOSED` são estados INTERNOS do ciclo. Para quem olha a
+ * lista, uma fatura que fechou ontem e vence em cinco dias não é
+ * categoricamente diferente de uma que ainda acumula — as duas são a fatura
+ * deste mês, e o subtexto já diz em que ponto do prazo cada uma está.
+ *
+ * Então o trailing passou a responder outra pergunta: **em que ciclo esta
+ * fatura está, em relação a hoje?**
+ *
+ *   FATURA ATUAL   é o ciclo corrente — o que o usuário está vivendo
+ *   FATURA ABERTA  é outro mês, ainda não quitado
+ *
+ * ── Precedência ──
+ *
+ * Fatos resolvidos ou em atraso VENCEM o rótulo de ciclo: esconder um atraso
+ * atrás de "FATURA ATUAL" seria o pior resultado possível desta simplificação.
+ *
+ *   1. sem fatura   →  SEM FATURA
+ *   2. paga         →  PAGA        (verde, em qualquer mês)
+ *   3. em atraso    →  VENCIDA     (vermelho, em qualquer mês)
+ *   4. mês corrente →  FATURA ATUAL
+ *   5. demais       →  FATURA ABERTA
+ */
+export type BankTrailingState =
+  | 'noInvoice'
+  | 'paid'
+  | 'overdue'
+  | 'current'
+  | 'open'
+
+/** Copy oficial. Texto, nunca só cor — o status não pode depender de tom. */
+export const BANK_TRAILING_LABEL: Record<BankTrailingState, string> = {
+  noInvoice: 'Sem fatura',
+  paid: 'Paga',
+  overdue: 'Vencida',
+  current: 'Fatura atual',
+  open: 'Fatura aberta',
+}
+
+/**
+ * Tom de cada estado.
+ *
+ * Só `paid` e `overdue` ganham cor: são os dois fatos que mudam o que o
+ * usuário faz. Os rótulos de ciclo ficam muted de propósito — eles dão
+ * contexto, e contexto não deve competir com a urgência do subtexto.
+ */
+export const BANK_TRAILING_TONE: Record<BankTrailingState, string> = {
+  noInvoice: 'text-muted-foreground/70',
+  paid: 'text-paid',
+  overdue: 'text-destructive',
+  current: 'text-muted-foreground',
+  open: 'text-muted-foreground',
+}
+
+export function bankTrailingState(
+  invoice: Invoice | null,
+  period: { month: number; year: number },
+  currentPeriod: { month: number; year: number },
+): BankTrailingState {
+  if (invoice === null) return 'noInvoice'
+  if (invoice.status === InvoiceStatus.PAID) return 'paid'
+  if (invoice.status === InvoiceStatus.OVERDUE) return 'overdue'
+
+  /*
+    O ciclo é decidido pela COMPETÊNCIA exibida contra o mês de hoje, não pelo
+    status: uma fatura `CLOSED` do mês corrente continua sendo a fatura atual —
+    ela fechou e ainda vai ser paga.
+  */
+  const ehMesCorrente =
+    period.month === currentPeriod.month && period.year === currentPeriod.year
+
+  return ehMesCorrente ? 'current' : 'open'
 }

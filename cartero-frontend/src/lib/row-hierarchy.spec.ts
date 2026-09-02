@@ -36,13 +36,16 @@ describe('U1-U3: Bancos liberou a linha do título', () => {
   })
 
   it('U2: o estado da fatura desceu para o trailing', () => {
-    /* Removido da linha do nome, mas NÃO removido da tela. */
-    expect(BANKS).toContain('INVOICE_STATUS_LABEL[invoice.status]')
-
+    /*
+      Removido da linha do nome, mas NÃO removido da tela. O rótulo passou a
+      descrever o CICLO ("Fatura atual"/"Fatura aberta") em vez do status
+      interno, que competia em cor com o prazo.
+    */
     const trailing = BANKS.slice(
       BANKS.indexOf('trailing={', BANKS.indexOf('function BankRow')),
     )
-    expect(trailing).toContain('INVOICE_STATUS_LABEL[invoice.status]')
+    expect(trailing).toContain('BANK_TRAILING_LABEL[trailingState]')
+    expect(trailing).toContain('BANK_TRAILING_TONE[trailingState]')
   })
 
   it('U3: a competência não se repete em cada row', () => {
@@ -69,7 +72,7 @@ describe('U4-U5: a informação operacional continua', () => {
   })
 
   it('U5: banco sem fatura diz "Sem fatura", não R$ 0,00', () => {
-    expect(BANKS).toContain('Sem fatura')
+    expect(BANKS).toContain('BANK_TRAILING_LABEL.noInvoice')
     expect(BANKS).not.toContain('R$ 0,00')
   })
 })

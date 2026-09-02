@@ -40,16 +40,20 @@ import {
 } from '@/components/ui/financial-list-row'
 import { cn } from '@/lib/utils'
 import type { Bank, Invoice } from '@/types'
-import {
-  INVOICE_STATUS_LABEL,
-  INVOICE_STATUS_TEXT,
-} from '@/lib/invoice-status'
 import { invoiceTimingClass, invoiceTimingLabel } from '@/lib/invoice-timing'
+import { bankMonthSummaryLines } from '@/lib/bank-month-summary-lines'
 import {
+  BANK_TRAILING_LABEL,
+  BANK_TRAILING_TONE,
+  bankTrailingState,
   banksForPeriod,
   summarizeBankMonth,
 } from '@/lib/bank-invoice-selection'
-import { useMonthPeriod, type MonthPeriod } from '@/components/month-nav'
+import {
+  currentPeriod,
+  useMonthPeriod,
+  type MonthPeriod,
+} from '@/components/month-nav'
 import { useDetailNavigation } from '@/lib/detail-navigation'
 import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
 
@@ -102,6 +106,7 @@ function BankRow({
   const router = useRouter()
   const initial = bank.name[0]?.toUpperCase() ?? '?'
   const monthLabel = formatMonthYear(period.month, period.year)
+  const trailingState = bankTrailingState(invoice, period, currentPeriod())
 
   /*
     Rótulo completo para leitor de tela: a metadata visual é compacta, mas a
@@ -180,23 +185,24 @@ function BankRow({
             <>
               <MonthInvoiceAmount amount={amount} />
               {/*
-                O estado ganha a cor que o produto já usa para ele
-                (`INVOICE_STATUS_TEXT`): azul aberta, âmbar fechada, vermelho em
-                atraso, verde paga. A mesma paleta do detalhe da fatura — o
-                mesmo fato não podia ter duas cores.
+                O trailing diz em que CICLO a fatura está, não o status interno.
 
-                O VALOR fica neutro de propósito. Ele é o dado principal da
-                linha, e colori-lo junto do status faria os dois competirem
-                pela mesma informação; com um só colorido, o olho sabe onde
-                olhar.
+                `ABERTA` em azul competia com "Fecha amanhã" em âmbar: duas
+                mensagens coloridas na mesma row, e a urgência perdia espaço
+                para um estado que o subtexto já explicava melhor. Só `PAGA` e
+                `VENCIDA` mantêm cor — são os fatos que mudam o que o usuário
+                faz.
+
+                O VALOR fica neutro de propósito: colori-lo junto do status
+                faria os dois competirem pela mesma informação.
               */}
               <span
                 className={cn(
                   ROW_TRAILING_LABEL_CLASS,
-                  INVOICE_STATUS_TEXT[invoice.status],
+                  BANK_TRAILING_TONE[trailingState],
                 )}
               >
-                {INVOICE_STATUS_LABEL[invoice.status]}
+                {BANK_TRAILING_LABEL[trailingState]}
               </span>
             </>
           ) : (
@@ -211,9 +217,12 @@ function BankRow({
               nenhuma das duas coisas aconteceu.
             */
             <span
-              className={cn(ROW_TRAILING_LABEL_CLASS, 'text-muted-foreground/70')}
+              className={cn(
+                ROW_TRAILING_LABEL_CLASS,
+                BANK_TRAILING_TONE.noInvoice,
+              )}
             >
-              Sem fatura
+              {BANK_TRAILING_LABEL.noInvoice}
             </span>
           )
         }
@@ -696,35 +705,85 @@ export default function BanksPage() {
                 {formatCurrency(monthSummary.total)}
               </p>
               {/*
-                O que falta pagar, sempre — não só quando algo já foi pago.
+                Cada linha só aparece quando acrescenta um fato que o total
+                não conta. A regra vive em `bankMonthSummaryLines`, para o
+                resumo não voltar a repetir o número de cima.
 
-                A condição anterior era `paidCount > 0`, então a informação
-                desaparecia justamente no caso em que ela mais importa: o mês
-                inteiro em aberto. "Quanto ainda falta" é a pergunta acionável
-                da tela; o total acima responde "quanto o mês custou".
-
-                Quando tudo está quitado, o texto diz isso em verde em vez de
-                repetir "R$ 0,00 em aberto" — a mesma informação, sem o número
-                que o leitor precisa interpretar.
+                Duas linhas no máximo: acima disso o bloco começa a competir
+                com a lista, que é o conteúdo principal da tela.
               */}
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {monthSummary.invoiceCount === 0 ? (
-                  'Nenhuma fatura neste mês'
-                ) : (
-                  <>
-                    {monthSummary.invoiceCount}{' '}
-                    {monthSummary.invoiceCount === 1 ? 'fatura' : 'faturas'}
-                    {' · '}
-                    {monthSummary.unpaid > 0 ? (
-                      <span className="font-medium text-pending">
-                        {formatCurrency(monthSummary.unpaid)} em aberto
-                      </span>
-                    ) : (
-                      <span className="font-medium text-paid">tudo pago</span>
-                    )}
-                  </>
-                )}
-              </p>
+              {bankMonthSummaryLines(monthSummary).map((linha) => {
+                if (linha.kind === 'composition') {
+                  return (
+                    <p
+                      key={linha.kind}
+                      className="mt-0.5 text-[11px] text-muted-foreground"
+                    >
+                      {linha.parts.map((part, i) => (
+                        <span key={part.kind}>
+                          {i > 0 && (
+                            <span
+                              className="mx-1.5 text-muted-foreground/40"
+                              aria-hidden
+                            >
+                              ·
+                            </span>
+                          )}
+                          {/*
+                            Verde só em "de outras pessoas" — o mesmo tom que o
+                            Orçamento usa para o dinheiro que volta.
+                          */}
+                          <span
+                            className={cn(
+                              'font-medium',
+                              part.kind === 'thirdParty' && 'text-receivable',
+                            )}
+                          >
+                            {formatCurrency(part.amount)}
+                          </span>{' '}
+                          {part.kind === 'own' ? 'sua parte' : 'de outras pessoas'}
+                        </span>
+                      ))}
+                    </p>
+                  )
+                }
+
+                if (linha.kind === 'remaining') {
+                  return (
+                    <p
+                      key={linha.kind}
+                      className="mt-0.5 text-[11px] text-muted-foreground"
+                    >
+                      {/*
+                        Neutro: pendência é o estado normal de um mês em curso,
+                        e o âmbar fica reservado ao prazo nas rows.
+                      */}
+                      Faltam{' '}
+                      <span className="font-medium">
+                        {formatCurrency(linha.amount)}
+                      </span>{' '}
+                      para quitar
+                    </p>
+                  )
+                }
+
+                if (linha.kind === 'settled') {
+                  return (
+                    <p key={linha.kind} className="mt-0.5 text-[11px]">
+                      <span className="font-medium text-paid">{linha.text}</span>
+                    </p>
+                  )
+                }
+
+                return (
+                  <p
+                    key={linha.kind}
+                    className="mt-0.5 text-[11px] text-muted-foreground"
+                  >
+                    {linha.text}
+                  </p>
+                )
+              })}
             </>
           )}
         </div>

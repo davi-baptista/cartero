@@ -40,8 +40,17 @@ describe('B1-B5: o mês vem do contexto do app', () => {
   })
 
   it('Bancos NÃO mantém estado de mês próprio', () => {
+    /*
+      O que não pode existir é SELEÇÃO local — ela faria o período se perder
+      ao navegar entre as telas.
+
+      `currentPeriod()` continua permitido e é usado para outra coisa: saber
+      qual é o mês de HOJE, para o trailing distinguir "Fatura atual" de
+      "Fatura aberta". Isso é autoridade temporal, não estado de seleção.
+    */
     expect(BANKS).not.toContain('useState<MonthPeriod>')
-    expect(BANKS).not.toContain('currentPeriod()')
+    expect(BANKS).not.toContain('setPeriod')
+    expect(BANKS).toContain('useMonthPeriod()')
   })
 
   it('B1: o seletor aparece em /banks', () => {
