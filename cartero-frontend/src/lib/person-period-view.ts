@@ -1,5 +1,6 @@
 import type { NextSettlementItem } from '@/lib/person-next-item'
 import { timingUrgency } from '@/lib/invoice-timing'
+import { formatDate } from '@/lib/formatters'
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -139,34 +140,48 @@ export function isResolvedStatus(status: PersonRowStatus): boolean {
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
- * Mês resolvido não tem subtexto
+ * Mês resolvido diz QUANDO terminou
  * ══════════════════════════════════════════════════════════════════════════
  *
- * A versão anterior devolvia "Recebido"/"Pago" aqui, para ocupar o lugar do
- * prazo — deixar "Receber em 12d" numa linha quitada afirmaria uma pendência
- * inexistente, e isso continua verdade.
- *
- * Mas o trailing já diz `RECEBIDO`, então a row passou a repetir o mesmo
- * estado duas vezes:
+ * A versão original devolvia "Recebido"/"Pago" aqui, para ocupar o lugar do
+ * prazo. O trailing já dizia `RECEBIDO`, então a row exibia o mesmo estado
+ * duas vezes:
  *
  *   Eva
  *   Recebido        R$ 720,45
  *                    RECEBIDO
  *
- * A segunda ocorrência não acrescenta nada. A correção certa era OMITIR o
- * subtexto, não substituí-lo.
+ * A correção foi OMITIR — o que resolveu a duplicação e deixou a row resolvida
+ * sem nada à esquerda, com o nome parecendo flutuar ao lado de duas linhas.
  *
- * ── Por que não "Recebido em 28/08" ──
+ * `Quitado em 18/08` resolve os dois problemas: não repete o trailing, e
+ * responde uma pergunta que ele não responde.
  *
- * Seria útil com uma obrigação só. Mas uma pessoa pode ter vários itens
- * resolvidos em datas diferentes, e escolher uma seria inventar um fato — as
- * datas reais de cada um estão no drawer, onde há espaço para todas.
+ *   esquerda   QUANDO o acerto terminou
+ *   trailing   COMO terminou (`PAGO` / `RECEBIDO`)
+ *
+ * ── Por que "Quitado", e não "Pago em"/"Recebido em" ──
+ *
+ * Um verbo único serve aos dois sentidos e evita a repetição: "Pago em 18/08"
+ * ao lado de `PAGO` seria a duplicação de volta, só com uma data no meio.
+ *
+ * ── Sem data confiável, `Acerto concluído` ──
+ *
+ * Vários itens podem ter sido resolvidos em dias diferentes, e o backend só
+ * afirma `settledAt` quando ele é defensável. Sem ele, a linha diz o que sabe
+ * — não uma data escolhida para preencher espaço.
  */
 export function rowSubtext(
   status: PersonRowStatus,
   prazo: string | null,
+  /** `YYYY-MM-DD` civil, ou `null` quando não há data defensável. */
+  settledAt?: string | null,
 ): string | null {
-  return isResolvedStatus(status) ? null : prazo
+  if (!isResolvedStatus(status)) return prazo
+
+  return settledAt
+    ? `Quitado em ${formatDate(settledAt)}`
+    : 'Acerto concluído'
 }
 
 /**

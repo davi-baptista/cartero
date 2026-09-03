@@ -44,8 +44,9 @@ describe('U1-U3: Bancos liberou a linha do título', () => {
     const trailing = BANKS.slice(
       BANKS.indexOf('trailing={', BANKS.indexOf('function BankRow')),
     )
-    expect(trailing).toContain('BANK_TRAILING_LABEL[trailingState]')
-    expect(trailing).toContain('BANK_TRAILING_TONE[trailingState]')
+    /* Rótulo e tom vêm do presenter compartilhado, não de índices locais. */
+    expect(trailing).toContain('apresentacao.statusLabel')
+    expect(trailing).toContain('apresentacao.statusTone')
   })
 
   it('U3: a competência não se repete em cada row', () => {
@@ -68,7 +69,10 @@ describe('U4-U5: a informação operacional continua', () => {
       "Fecha amanhã" responde o que ACONTECE; o trailing responde o ESTADO. As
       duas coisas são diferentes, e nenhuma substitui a outra.
     */
-    expect(BANKS).toContain('invoiceTimingLabel(invoice)')
+    expect(BANKS).toContain('apresentacao.timingLabel')
+    expect(code(ler('./invoice-row-presenter.ts'))).toContain(
+      'invoiceTimingLabel(invoice, today)',
+    )
   })
 
   it('U5: banco sem fatura diz "Sem fatura", não R$ 0,00', () => {

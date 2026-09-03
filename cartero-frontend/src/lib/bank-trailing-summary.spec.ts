@@ -12,6 +12,10 @@ import {
   CYCLE_LABEL,
   monthCycleOf,
 } from './bank-month-summary-lines'
+
+/** Fonte de um módulo vizinho, para verificar onde a policy vive. */
+const ler = (caminho: string) =>
+  readFileSync(new URL(caminho, import.meta.url), 'utf-8')
 import { InvoiceStatus, type Invoice } from '@/types'
 
 /**
@@ -310,9 +314,19 @@ describe('a página consome as policies compartilhadas', () => {
   const code = PAGE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
   it('o trailing sai da policy, não de condições locais', () => {
-    expect(code).toContain('bankTrailingState(invoice)')
-    expect(code).toContain('BANK_TRAILING_LABEL[trailingState]')
-    expect(code).toContain('BANK_TRAILING_TONE[trailingState]')
+    /*
+      A derivação migrou para `invoice-row-presenter`, a autoridade que Bancos
+      e Orçamento passaram a compartilhar. O contrato é o mesmo — a página não
+      decide o rótulo nem o tom —, e agora vale para as duas telas.
+    */
+    expect(code).toContain('invoiceRowPresentation(invoice)')
+    expect(code).toContain('apresentacao.statusLabel')
+    expect(code).toContain('apresentacao.statusTone')
+
+    const presenter = ler('./invoice-row-presenter.ts')
+    expect(presenter).toContain('bankTrailingState(invoice)')
+    expect(presenter).toContain('BANK_TRAILING_LABEL[state]')
+    expect(presenter).toContain('BANK_TRAILING_TONE[state]')
   })
 
   it('o resumo sai da policy, não de ifs na JSX', () => {
@@ -423,13 +437,22 @@ describe('a fatura paga tinge o prazo de verde', () => {
       "Venceu em 10/09" saía cinza ao lado de "PAGA" em verde, e os dois falam
       do mesmo fato resolvido. Sem inventar tom: é o `BANK_TRAILING_TONE.paid`.
     */
-    expect(code).toContain('BANK_TRAILING_TONE.paid')
-    expect(code).toContain('invoice.status === InvoiceStatus.PAID')
+    /*
+      A condicional saiu do JSX para o presenter — era ELA a policy real, e
+      vivia num lugar onde quem consumisse o helper não a encontraria. Foi
+      exatamente por isso que o Orçamento divergiu.
+    */
+    const presenter = ler('./invoice-row-presenter.ts')
+    expect(presenter).toContain('BANK_TRAILING_TONE.paid')
+    expect(presenter).toContain("state === 'paid'")
+    expect(code).toContain('apresentacao.timingTone')
   })
 
   it('as outras faturas continuam com a cor da urgência', () => {
     /* O verde é exceção para o resolvido, não substituto da régua de prazo. */
-    expect(code).toContain('invoiceTimingClass(invoice)')
+    expect(ler('./invoice-row-presenter.ts')).toContain(
+      'invoiceTimingClass(invoice, today)',
+    )
   })
 
   it('o rótulo de ciclo usa azul — cor de contexto', () => {

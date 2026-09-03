@@ -445,7 +445,16 @@ export const BANK_TRAILING_TONE: Record<BankTrailingState, string> = {
   open: 'text-muted-foreground',
 }
 
-export function bankTrailingState(invoice: Invoice | null): BankTrailingState {
+/**
+ * Só o `status` importa aqui.
+ *
+ * A assinatura pedia `Invoice` inteira, o que obrigava quem tem apenas os
+ * campos de apresentação a fazer cast. O tipo agora diz o que a função de
+ * fato lê — e `Invoice` continua satisfazendo-o.
+ */
+export function bankTrailingState(
+  invoice: { status: InvoiceStatus } | null,
+): BankTrailingState {
   if (invoice === null) return 'noInvoice'
 
   switch (invoice.status) {

@@ -208,6 +208,8 @@ const VAZIO = {
   settledReceivablesCount: 0,
   settledDebtsCount: 0,
   nextItem: null,
+  /* Sem movimento, nada terminou: não há data de conclusão a afirmar. */
+  settledAt: null,
 } as const
 
 export default function PersonsPage() {
@@ -653,6 +655,7 @@ export default function PersonsPage() {
               const proximoAcerto = rowSubtext(
                 status,
                 nextItemLabel(balance.nextItem),
+                balance.settledAt,
               )
               /* Régua canônica de urgência — a mesma de Bancos e da Atenção. */
               const prazoTone = subtextTone(balance.nextItem)

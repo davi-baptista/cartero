@@ -334,9 +334,9 @@ describe('F6: a page aplica a policy sem mexer no resto', () => {
 
   it('probe 12: a fatura não foi tocada', () => {
     /* Invoice já estava correta: mesma metadata, mesmo trailing. */
-    expect(BUDGET_CODE).toContain('invoiceTimingLabel(inv)')
-    expect(BUDGET_CODE).toContain('invoiceTimingClass(inv)')
-    expect(BUDGET_CODE).toContain('budgetInvoiceStatus(inv)')
+    expect(BUDGET_CODE).toContain('invoiceRowPresentation(inv)')
+    expect(BUDGET_CODE).toContain('apresentacao.timingLabel')
+    expect(BUDGET_CODE).toContain('apresentacao.statusLabel')
   })
 
   it('probe 31: a row não ganha um terceiro nível à esquerda', () => {

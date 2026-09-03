@@ -39,8 +39,8 @@ import {
   ROW_ICON_CLASS,
 } from '@/components/ui/financial-list-row'
 import { cn } from '@/lib/utils'
-import { InvoiceStatus, type Bank, type Invoice } from '@/types'
-import { invoiceTimingClass, invoiceTimingLabel } from '@/lib/invoice-timing'
+import type { Bank, Invoice } from '@/types'
+import { invoiceRowPresentation } from '@/lib/invoice-row-presenter'
 import {
   bankMonthSummaryLines,
   CYCLE_LABEL,
@@ -50,7 +50,6 @@ import {
 import {
   BANK_TRAILING_LABEL,
   BANK_TRAILING_TONE,
-  bankTrailingState,
   banksForPeriod,
   summarizeBankMonth,
 } from '@/lib/bank-invoice-selection'
@@ -144,7 +143,14 @@ function BankRow({
   const router = useRouter()
   const initial = bank.name[0]?.toUpperCase() ?? '?'
   const monthLabel = formatMonthYear(period.month, period.year)
-  const trailingState = bankTrailingState(invoice)
+  /*
+    A apresentação da row vem do presenter compartilhado.
+
+    Prazo, tom do prazo, estado e tom do estado saíam de três chamadas e uma
+    condicional no JSX daqui. O Orçamento reproduzia parte disso e divergia no
+    tom do prazo pago — agora as duas telas pedem o MESMO objeto.
+  */
+  const apresentacao = invoiceRowPresentation(invoice)
 
   /*
     Rótulo completo para leitor de tela: a metadata visual é compacta, mas a
@@ -213,15 +219,8 @@ function BankRow({
               linha inteira se lê como concluída de relance — sem inventar
               tom: é o mesmo `text-paid` do trailing.
             */
-            <span
-              className={cn(
-                'truncate',
-                invoice.status === InvoiceStatus.PAID
-                  ? BANK_TRAILING_TONE.paid
-                  : invoiceTimingClass(invoice),
-              )}
-            >
-              {invoiceTimingLabel(invoice)}
+            <span className={cn('truncate', apresentacao.timingTone)}>
+              {apresentacao.timingLabel}
             </span>
           ) : null
         }
@@ -252,10 +251,10 @@ function BankRow({
               <span
                 className={cn(
                   ROW_TRAILING_LABEL_CLASS,
-                  BANK_TRAILING_TONE[trailingState],
+                  apresentacao.statusTone,
                 )}
               >
-                {BANK_TRAILING_LABEL[trailingState]}
+                {apresentacao.statusLabel}
               </span>
             </>
           ) : (

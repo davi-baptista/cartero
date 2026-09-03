@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { budgetAllSettled, budgetDueTone, budgetInvoiceStatus } from './budget-row-view'
+import { budgetAllSettled, budgetDueTone } from './budget-row-view'
+import { invoiceRowPresentation } from './invoice-row-presenter'
 import { BANK_TRAILING_LABEL, BANK_TRAILING_TONE } from './bank-invoice-selection'
 import { InvoiceStatus, type Invoice } from '@/types'
 
@@ -98,25 +99,25 @@ describe('B5-B12: a row de fatura', () => {
   })
 
   it('B6: OPEN devolve FATURA ABERTA', () => {
-    expect(budgetInvoiceStatus(invoice(InvoiceStatus.OPEN)).label).toBe(
+    expect(invoiceRowPresentation(invoice(InvoiceStatus.OPEN)).statusLabel).toBe(
       'Fatura aberta',
     )
   })
 
   it('B7: CLOSED devolve FATURA FECHADA', () => {
-    expect(budgetInvoiceStatus(invoice(InvoiceStatus.CLOSED)).label).toBe(
+    expect(invoiceRowPresentation(invoice(InvoiceStatus.CLOSED)).statusLabel).toBe(
       'Fatura fechada',
     )
   })
 
   it('B8: OVERDUE devolve FATURA VENCIDA', () => {
-    expect(budgetInvoiceStatus(invoice(InvoiceStatus.OVERDUE)).label).toBe(
+    expect(invoiceRowPresentation(invoice(InvoiceStatus.OVERDUE)).statusLabel).toBe(
       'Fatura vencida',
     )
   })
 
   it('B9: PAID devolve PAGA', () => {
-    expect(budgetInvoiceStatus(invoice(InvoiceStatus.PAID)).label).toBe('Paga')
+    expect(invoiceRowPresentation(invoice(InvoiceStatus.PAID)).statusLabel).toBe('Paga')
   })
 
   it('o rótulo é o de BANCOS, não uma segunda cópia', () => {
@@ -130,7 +131,9 @@ describe('B5-B12: a row de fatura', () => {
       InvoiceStatus.OVERDUE,
       InvoiceStatus.PAID,
     ]) {
-      const { label, tone } = budgetInvoiceStatus(invoice(st))
+      const { statusLabel: label, statusTone: tone } = invoiceRowPresentation(
+        invoice(st),
+      )
       expect(Object.values(BANK_TRAILING_LABEL)).toContain(label)
       expect(Object.values(BANK_TRAILING_TONE)).toContain(tone)
     }
@@ -150,10 +153,10 @@ describe('B5-B12: a row de fatura', () => {
         BUDGET_CODE.indexOf(marcador) + tamanho,
       )
 
-    /* Faturas. */
+    /* Faturas — pelo presenter compartilhado com Bancos. */
     const faturas = bloco('invoices.map(')
     expect(faturas).toContain('trailing={')
-    expect(faturas).toContain('status.label')
+    expect(faturas).toContain('apresentacao.statusLabel')
 
     /* Acertos com pessoas. */
     const pessoas = bloco('visiblePeople.map(')
@@ -179,8 +182,8 @@ describe('B5-B12: a row de fatura', () => {
       BUDGET_CODE.indexOf('invoices.map(') + 2200,
     )
     expect(faturas).toContain('meta={')
-    expect(faturas).toContain('invoiceTimingLabel(inv)')
-    expect(faturas).toContain('invoiceTimingClass(inv)')
+    expect(faturas).toContain('apresentacao.timingLabel')
+    expect(faturas).toContain('apresentacao.timingTone')
   })
 
   it('B12/probe 11: o mês não é repetido na row', () => {
@@ -233,7 +236,7 @@ describe('B13-B18: a cor da fatura', () => {
   })
 
   it('B15: o trailing PAGA é verde', () => {
-    expect(budgetInvoiceStatus(invoice(InvoiceStatus.PAID)).tone).toBe(
+    expect(invoiceRowPresentation(invoice(InvoiceStatus.PAID)).statusTone).toBe(
       'text-paid',
     )
   })
@@ -262,12 +265,20 @@ describe('B13-B18: a cor da fatura', () => {
       "vencida" ou de "quantos dias são urgentes" faria o mesmo fato sair
       diferente em cada lugar.
     */
-    const helper = semComentarios(ler('./budget-row-view.ts'))
+    /*
+      A apresentação da FATURA migrou para `invoice-row-presenter`, a
+      autoridade que Bancos e Orçamento compartilham — mantê-la num módulo
+      específico do Orçamento foi o que permitiu as duas divergirem no tom do
+      prazo pago.
+    */
+    const presenter = semComentarios(ler('./invoice-row-presenter.ts'))
+    expect(presenter).toContain('bankTrailingState')
+    expect(presenter).toContain('BANK_TRAILING_LABEL')
+    expect(presenter).toContain('invoiceTimingClass')
 
-    expect(helper).toContain('bankTrailingState')
-    expect(helper).toContain('BANK_TRAILING_LABEL')
-    expect(helper).toContain('timingUrgency')
-    expect(BUDGET_CODE).toContain('invoiceTimingClass(inv)')
+    /* O prazo de DÍVIDA continua aqui, com a mesma régua. */
+    expect(semComentarios(ler('./budget-row-view.ts'))).toContain('timingUrgency')
+    expect(BUDGET_CODE).toContain('invoiceRowPresentation(inv)')
   })
 
   it('resolvido não colore a data do vencimento', () => {

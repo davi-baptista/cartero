@@ -19,12 +19,8 @@ import {
   ROW_TRAILING_LABEL_CLASS,
 } from '@/components/ui/financial-list-row'
 import { debtRowMeta, settlementRowMeta } from '@/lib/budget-settlement-meta'
-import {
-  budgetAllSettled,
-  budgetDueTone,
-  budgetInvoiceStatus,
-} from '@/lib/budget-row-view'
-import { invoiceTimingClass, invoiceTimingLabel } from '@/lib/invoice-timing'
+import { budgetAllSettled, budgetDueTone } from '@/lib/budget-row-view'
+import { invoiceRowPresentation } from '@/lib/invoice-row-presenter'
 import { useMonthPeriod } from '@/components/month-nav'
 import { getBudget } from '@/services/budget.service'
 import { upsertSalary } from '@/services/salary.service'
@@ -54,7 +50,6 @@ import {
   invoiceSectionParts,
   summarizeInvoiceSection,
 } from '@/lib/invoice-composition'
-import { InvoiceStatus } from '@/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -637,17 +632,24 @@ export default function BudgetPage() {
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
             {invoices.map((inv) => {
               /*
-                Estado e prazo vêm dos helpers de BANCOS.
+                A MESMA apresentação de Bancos, pelo mesmo presenter.
 
-                A mesma fatura aparece nas duas telas, e derivar aqui um
-                segundo "vencida" ou uma segunda janela de urgência faria o
-                mesmo fato sair diferente em cada lugar.
+                Antes o estado saía de `budgetInvoiceStatus` e o prazo de
+                `invoiceTimingClass` direto — e faltava a regra que Bancos
+                aplicava numa condicional do JSX: fatura paga tinge o prazo de
+                verde. O subtexto saía cinza aqui e verde lá, para a mesma
+                fatura.
               */
-              const status = budgetInvoiceStatus(inv)
+              const apresentacao = invoiceRowPresentation(inv)
+              /*
+                O fundo tonal do ícone também sai do `state` do presenter: ler
+                `inv.status` aqui de novo seria uma segunda derivação do mesmo
+                fato, exatamente o que permitiu esta tela divergir de Bancos.
+              */
               const tone: StatusRowTone =
-                inv.status === InvoiceStatus.PAID
+                apresentacao.state === 'paid'
                   ? 'positive'
-                  : inv.status === InvoiceStatus.OVERDUE
+                  : apresentacao.state === 'overdue'
                     ? 'negative'
                     : 'neutral'
               /*
@@ -681,13 +683,18 @@ export default function BudgetPage() {
                     factual sem contagem.
                   */
                   meta={
-                    <span className={invoiceTimingClass(inv)}>
-                      {invoiceTimingLabel(inv)}
+                    <span className={apresentacao.timingTone}>
+                      {apresentacao.timingLabel}
                     </span>
                   }
                   trailing={
-                    <span className={cn(ROW_TRAILING_LABEL_CLASS, status.tone)}>
-                      {status.label}
+                    <span
+                      className={cn(
+                        ROW_TRAILING_LABEL_CLASS,
+                        apresentacao.statusTone,
+                      )}
+                    >
+                      {apresentacao.statusLabel}
                     </span>
                   }
                   amount={view.gross}

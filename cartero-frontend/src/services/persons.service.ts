@@ -69,6 +69,14 @@ export interface PersonMonthlyBalance {
    */
   settledReceivablesCount: number
   settledDebtsCount: number
+  /**
+   * Quando a competência ficou integralmente resolvida, `YYYY-MM-DD` civil.
+   *
+   * `null` quando há item aberto (a relação não terminou), quando nada foi
+   * resolvido, ou quando algum resolvido não tem data confiável — a data de
+   * outro item não pode falar pela conclusão que aquele registro não conhece.
+   */
+  settledAt: string | null
 }
 
 export async function getPersonsMonthlySummary(params: {

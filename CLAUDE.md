@@ -1108,6 +1108,82 @@ ESQUERDA   o que é?                       DIREITA   quanto?
 - Os **containers das seções** (cards arredondados) foram preservados de
   propósito: avaliar a nova hierarquia antes de mexer na moldura
 
+## Fatura e acerto: uma autoridade só (Fase UI-ALIGN) ✅
+
+### A row de fatura tem UM presenter
+
+A mesma fatura aparecia em Bancos e na seção Faturas do Orçamento, montada por
+caminhos diferentes, e divergia num ponto difícil de notar:
+
+```
+Bancos      Inter · Venceu em 10/09/2026 [VERDE]   R$ 10,00   PAGA
+Orçamento   Inter · Venceu em 10/09/2026 [cinza]   R$ 10,00   PAGA
+```
+
+A causa não era um helper errado — `invoiceTimingClass` devolve
+`text-muted-foreground` para `PAID` de propósito, porque um ciclo quitado não
+tem prazo a cumprir. Bancos corrigia isso com uma condicional **dentro do JSX**,
+e era ELA a policy real, num lugar onde ninguém que consumisse o helper a
+encontraria.
+
+`lib/invoice-row-presenter.ts` é agora a autoridade única
+(`invoiceRowPresentation`), consumida pelas duas páginas:
+
+| Status | Subtexto esquerdo | Tom | Trailing | Tom |
+|---|---|---|---|---|
+| `OPEN` | `Fecha em Xd` / `Fecha amanhã` | urgência¹ | `Fatura aberta` | muted |
+| `CLOSED` | `Vence em Xd` / `Vence amanhã` | urgência¹ | `Fatura fechada` | muted |
+| `OVERDUE` | `Venceu há Xd` | `text-destructive` | `Fatura vencida` | `text-destructive` |
+| `PAID` | `Venceu em DD/MM/AAAA` | **`text-paid`** | `Paga` | `text-paid` |
+| sem fatura | — (vazio) | — | `Sem fatura` | `muted/70` |
+
+¹ `text-destructive` no atraso, `text-pending` em ≤7 dias, neutro no resto.
+
+- **O valor é sempre neutro**, e o presenter não expõe campo de tom para ele —
+  a ausência é a garantia: nenhuma tela consegue pedir "a cor do valor"
+- O `state` também alimenta o fundo tonal do ícone no Orçamento; ler
+  `inv.status` de novo seria uma segunda derivação do mesmo fato
+- `bankTrailingState` teve a assinatura estreitada para `{ status }` — pedia
+  `Invoice` inteira e obrigava cast em quem tem só os campos de apresentação
+- `budgetInvoiceStatus` foi **removido**: mantê-lo num módulo específico do
+  Orçamento foi o que permitiu a divergência
+
+### Pessoas: `Quitado em DD/MM`
+
+`GET /persons/monthly-summary` tinha `settledReceivablesCount`/`settledDebtsCount`
+(quantos) e **nenhuma data** — o campo que faltava. As queries já traziam
+`paidAt` (sem `select`, o Prisma devolve todos os escalares); faltava atravessar
+a agregação.
+
+`common/helpers/aggregate-settlement.helper.ts` (`aggregateSettledAt`) é a regra
+compartilhada:
+
+| Situação | `settledAt` |
+|---|---|
+| tudo resolvido, com data | **maior** data de liquidação |
+| qualquer item ainda aberto | `null` |
+| resolvido sem `paidAt` (legado) | `null` |
+| nada resolvido | `null` |
+
+A maior data não é escolha arbitrária: é **quando o último item pendente foi
+quitado**, portanto quando a relação daquela competência ficou integralmente
+resolvida. A menor diria quando ela COMEÇOU a ser resolvida — outro fato.
+
+Item aberto zera a resposta porque a data do que já foi pago não é conclusão de
+nada; exibi-la sugeriria um acerto encerrado que continua devendo.
+
+**Apresentação** (`rowSubtext`): `Quitado em DD/MM/AAAA`, ou `Acerto concluído`
+sem data defensável.
+
+- **`Quitado`, não `Pago em`/`Recebido em`**: verbo único serve aos dois
+  sentidos e evita a duplicação — "Pago em 18/08" ao lado de `PAGO` seria a
+  repetição de volta, só com uma data no meio
+- A esquerda responde **quando** terminou; o trailing, **como** (`PAGO`/`RECEBIDO`)
+- Resolve o efeito colateral da fase anterior: omitir o subtexto acabou com a
+  duplicação e deixou a row resolvida sem nada à esquerda, com o nome flutuando
+
+Schema e migration intactos nas duas mudanças.
+
 ## Orçamento — prazo dos acertos (Fase BUDGET UI1.1) ✅
 
 A fase anterior alinhou a hierarquia visual, mas as rows de acerto e dívida

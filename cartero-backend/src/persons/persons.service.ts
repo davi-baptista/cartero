@@ -15,6 +15,7 @@ import {
   PENDING_ORDER,
   sumAmounts,
 } from 'src/common/helpers/person-consolidated';
+import { aggregateSettledAt } from 'src/common/helpers/aggregate-settlement.helper';
 import {
   belongsToCompetence,
   belongsToHistoryCompetence,
@@ -224,6 +225,27 @@ export class PersonsService {
         /* Contagens para o frontend distinguir "nada houve" de "tudo resolvido". */
         settledReceivablesCount: bucket.settledReceivables.length,
         settledDebtsCount: bucket.settledDebts.length,
+        /*
+          ── QUANDO a competência ficou integralmente resolvida ──
+
+          A maior data de liquidação entre TODOS os itens da competência —
+          pendentes e resolvidos, dos dois lados. Passar só os resolvidos
+          devolveria data para uma pessoa que ainda deve algo, e a row diria
+          "Quitado em 18/08" com uma dívida aberta na mesa.
+
+          `null` também quando algum resolvido não tem `paidAt`: a data de
+          outro item não pode falar pela conclusão que aquele registro não
+          conhece. A tela cai num fallback textual.
+
+          Mesma regra do Orçamento, pelo mesmo helper — duas cópias
+          divergiriam, e a primeira divergência seria qual data escolher.
+        */
+        settledAt: aggregateSettledAt([
+          ...bucket.receivables,
+          ...bucket.debts,
+          ...bucket.settledReceivables,
+          ...bucket.settledDebts,
+        ]),
         /*
           O próximo acerto que merece atenção, para a lista dizer QUANDO algo
           acontece — não só quanto.

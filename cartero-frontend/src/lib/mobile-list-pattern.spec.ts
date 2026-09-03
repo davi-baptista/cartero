@@ -443,7 +443,7 @@ describe('Gerenciamento do banco mudou de superfície', () => {
       "SETEMBRO 2026" se repetia logo abaixo de um seletor que já dizia
       Setembro 2026, e `ABERTA`/`FECHADA` competia em cor com o prazo.
     */
-    expect(rowAtiva).toContain('BANK_TRAILING_LABEL[trailingState]')
+    expect(rowAtiva).toContain('apresentacao.statusLabel')
   })
 
   it('item 33: banco sem fatura não inventa valor', () => {
@@ -455,7 +455,7 @@ describe('Gerenciamento do banco mudou de superfície', () => {
     */
     const trailing = rowAtiva.slice(rowAtiva.indexOf('trailing={'))
     expect(trailing).toContain('<MonthInvoiceAmount')
-    expect(trailing).toContain('BANK_TRAILING_LABEL[trailingState]')
+    expect(trailing).toContain('apresentacao.statusLabel')
     expect(trailing).toContain('BANK_TRAILING_LABEL.noInvoice')
     expect(trailing).not.toContain('formatCurrency(0)')
   })

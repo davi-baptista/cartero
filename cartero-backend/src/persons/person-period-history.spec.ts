@@ -80,6 +80,14 @@ function resolvida<T extends { isPaid: boolean; paidAt: Date | null }>(
   return { ...item, isPaid: true, paidAt: new Date('2026-08-20T03:00:00Z') };
 }
 
+/** Resolvida numa data específica, para os casos de `settledAt`. */
+function resolvidaEm<T extends { isPaid: boolean; paidAt: Date | null }>(
+  item: T,
+  dia: string,
+): T {
+  return { ...item, isPaid: true, paidAt: new Date(`${dia}T12:00:00.000Z`) };
+}
+
 interface Cenario {
   persons?: ReturnType<typeof pessoa>[];
   debts?: ReturnType<typeof divida>[];
@@ -387,5 +395,88 @@ describe('H11-H16: os dois pares coexistem', () => {
 
     expect(debtFind).toHaveBeenCalledTimes(1);
     expect(receivableFind).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('H17-H21: `settledAt` chega à lista de Pessoas', () => {
+  it('H17: competência inteiramente resolvida devolve a MAIOR data', async () => {
+    /*
+      O que a row afirma ao dizer "Quitado em 18/08": quando o último item
+      pendente foi liquidado, e portanto quando a relação daquele mês ficou
+      integralmente resolvida.
+    */
+    const [eva] = await build({
+      persons: [pessoa('p1', 'Eva')],
+      debts: [
+        resolvidaEm(divida('d1', 'p1', 100, '2026-08-05'), '2026-08-11'),
+        resolvidaEm(divida('d2', 'p1', 200, '2026-08-07'), '2026-08-18'),
+      ],
+    }).service.monthlySummary(USER_ID, COMPETENCIA);
+
+    expect(eva.settledAt).toBe('2026-08-18');
+  });
+
+  it('H18: pendência aberta zera a data', async () => {
+    /*
+      Com uma dívida em aberto, a data do que já foi pago não é a conclusão de
+      nada — a row cairia em "Quitado em" com obrigação viva na mesa.
+    */
+    const [eva] = await build({
+      persons: [pessoa('p1', 'Eva')],
+      debts: [
+        resolvidaEm(divida('d1', 'p1', 100, '2026-08-05'), '2026-08-11'),
+        divida('d2', 'p1', 200, '2026-08-20'),
+      ],
+    }).service.monthlySummary(USER_ID, COMPETENCIA);
+
+    expect(eva.settledAt).toBeNull();
+  });
+
+  it('H19: os dois lados contam', async () => {
+    /*
+      Recebível aberto também impede: a relação não terminou porque falta
+      alguém pagar VOCÊ.
+    */
+    const [eva] = await build({
+      persons: [pessoa('p1', 'Eva')],
+      debts: [resolvidaEm(divida('d1', 'p1', 100, '2026-08-05'), '2026-08-11')],
+      receivables: [cobranca('r1', 'p1', 50, '2026-08-22')],
+    }).service.monthlySummary(USER_ID, COMPETENCIA);
+
+    expect(eva.settledAt).toBeNull();
+  });
+
+  it('H20: resolvido sem `paidAt` não herda a data de outro', async () => {
+    const [eva] = await build({
+      persons: [pessoa('p1', 'Eva')],
+      debts: [
+        resolvidaEm(divida('d1', 'p1', 100, '2026-08-05'), '2026-08-18'),
+        { ...divida('d2', 'p1', 200, '2026-08-07'), isPaid: true, paidAt: null },
+      ],
+    }).service.monthlySummary(USER_ID, COMPETENCIA);
+
+    expect(eva.settledAt).toBeNull();
+  });
+
+  it('H21: pessoa sem movimento não tem data', async () => {
+    const [eva] = await build({
+      persons: [pessoa('p1', 'Eva')],
+    }).service.monthlySummary(USER_ID, COMPETENCIA);
+
+    expect(eva.settledAt).toBeNull();
+  });
+
+  it('o valor histórico continua intacto ao lado da data', async () => {
+    /* A fase anterior não regrediu: quitar muda o status, não o valor. */
+    const [eva] = await build({
+      persons: [pessoa('p1', 'Eva')],
+      receivables: [
+        resolvidaEm(cobranca('r1', 'p1', 350, '2026-08-10'), '2026-08-14'),
+      ],
+    }).service.monthlySummary(USER_ID, COMPETENCIA);
+
+    expect(eva.periodReceivableTotal).toBe(350);
+    expect(eva.receivablePending).toBe(0);
+    expect(eva.settledAt).toBe('2026-08-14');
   });
 });

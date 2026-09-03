@@ -181,14 +181,33 @@ describe('P-4: misto resolvido segue o sinal do líquido', () => {
 })
 
 describe('P-5: resolvido não repete o estado no subtexto', () => {
-  it('D1/D2: resolvido não tem subtexto', () => {
+  it('D1/D2: resolvido diz QUANDO, não repete o estado', () => {
     /*
-      A versão anterior devolvia "Recebido" aqui para ocupar o lugar do prazo.
-      Mas o trailing já diz RECEBIDO, e a row passou a exibir o mesmo estado
-      duas vezes — sem acrescentar nada.
+      Duas correções sucessivas. A original devolvia "Recebido" aqui e o
+      trailing já dizia RECEBIDO — o mesmo estado duas vezes. Omitir resolveu a
+      duplicação e deixou a row sem nada à esquerda, com o nome flutuando.
+
+      `Quitado em 18/08` não repete o trailing e responde outra pergunta: a
+      esquerda diz quando terminou, a direita diz como.
     */
-    expect(rowSubtext('received', 'Receber em 12d')).toBeNull()
-    expect(rowSubtext('paid', 'Pagar em 3d')).toBeNull()
+    expect(rowSubtext('received', 'Receber em 12d', '2026-08-18')).toBe(
+      'Quitado em 18/08/2026',
+    )
+    expect(rowSubtext('paid', 'Pagar em 3d', '2026-08-18')).toBe(
+      'Quitado em 18/08/2026',
+    )
+  })
+
+  it('sem data confiável, fallback honesto', () => {
+    /*
+      Vários itens podem ter sido resolvidos em dias diferentes, e o backend só
+      afirma `settledAt` quando ele é defensável. Sem ele a linha diz o que
+      sabe — não uma data escolhida para preencher espaço.
+    */
+    expect(rowSubtext('received', 'Receber em 12d', null)).toBe(
+      'Acerto concluído',
+    )
+    expect(rowSubtext('paid', null, undefined)).toBe('Acerto concluído')
   })
 
   it('D3: pendente mantém o subtexto de prazo', () => {
@@ -202,18 +221,31 @@ describe('P-5: resolvido não repete o estado no subtexto', () => {
     expect(rowSubtext('receivable', null)).toBeNull()
   })
 
-  it('nenhuma palavra de conclusão sobrou no subtexto', () => {
+  it('o verbo não repete o trailing', () => {
     /*
-      Vigia a duplicação de forma independente do nome da função: se alguém
-      voltar a devolver "Recebido"/"Pago" por aqui, isto falha.
+      "Pago em 18/08" ao lado de `PAGO` seria a duplicação de volta, só com uma
+      data no meio. "Quitado" é um verbo único que serve aos dois sentidos.
     */
     for (const st of ['received', 'paid'] as const) {
-      /*
-        O prazo de entrada CONTÉM as palavras, para provar que a omissão é do
-        estado resolvido e não coincidência do texto passado.
-      */
-      expect(rowSubtext(st, 'Recebido em 28/08')).toBeNull()
-      expect(rowSubtext(st, 'Pago em 15/07')).toBeNull()
+      for (const data of ['2026-08-18', null]) {
+        const texto = rowSubtext(st, 'Receber em 12d', data)!
+        expect(texto).not.toMatch(/^(Pago|Recebido)$/)
+        expect(texto).not.toContain('Pago em')
+        expect(texto).not.toContain('Recebido em')
+      }
+    }
+  })
+
+  it('resolvido nunca exibe prazo', () => {
+    /*
+      Mesmo com `nextItem` residual de outra competência: uma linha quitada com
+      "Receber em 12d" afirmaria pendência inexistente — o motivo original da
+      omissão, que continua valendo.
+    */
+    for (const data of ['2026-08-18', null]) {
+      const texto = rowSubtext('received', 'Receber em 12d', data)!
+      expect(texto).not.toContain('Receber em')
+      expect(texto).not.toContain('12d')
     }
   })
 

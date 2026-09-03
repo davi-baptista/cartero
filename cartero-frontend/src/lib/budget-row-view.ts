@@ -1,10 +1,4 @@
-import {
-  BANK_TRAILING_LABEL,
-  BANK_TRAILING_TONE,
-  bankTrailingState,
-} from '@/lib/bank-invoice-selection'
 import { timingUrgency } from '@/lib/invoice-timing'
-import type { Invoice } from '@/types'
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -34,15 +28,6 @@ import type { Invoice } from '@/types'
  * "quantos dias são urgentes" faria o mesmo fato aparecer diferente em duas
  * telas — e ninguém compara telas, só estranha a incoerência.
  */
-
-/** O estado da fatura, no vocabulário de Bancos. */
-export function budgetInvoiceStatus(invoice: Invoice): {
-  label: string
-  tone: string
-} {
-  const state = bankTrailingState(invoice)
-  return { label: BANK_TRAILING_LABEL[state], tone: BANK_TRAILING_TONE[state] }
-}
 
 /**
  * O tom do prazo de uma dívida ou acerto.
