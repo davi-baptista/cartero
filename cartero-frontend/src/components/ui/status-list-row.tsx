@@ -4,6 +4,7 @@ import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
 import {
   ROW_AMOUNT_CLASS,
   ROW_ICON_CLASS,
+  ROW_META_CLASS,
   ROW_TITLE_CLASS,
 } from '@/components/ui/financial-list-row'
 import { cn } from '@/lib/utils'
@@ -16,12 +17,27 @@ import { formatCurrency } from '@/lib/formatters'
  */
 export type StatusRowTone = 'neutral' | 'positive' | 'negative'
 
-const TONE_CLASSES: Record<StatusRowTone, { bg: string; icon: string; amount: string }> = {
-  // Em aberto fica neutro por design: só pago e vencido carregam cor, senão
-  // toda linha da lista competiria por atenção o tempo todo.
-  neutral: { bg: 'bg-muted/40', icon: 'text-muted-foreground', amount: '' },
-  positive: { bg: 'bg-paid/10', icon: 'text-paid', amount: 'text-paid' },
-  negative: { bg: 'bg-destructive/10', icon: 'text-destructive', amount: 'text-destructive' },
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * O papel do tone encolheu: valor e ícone não carregam mais cor
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Uma fatura paga acendia QUATRO sinais de sucesso ao mesmo tempo — fundo do
+ * ícone, ícone, valor e badge —, e a row inteira comunicava "resolvido" de
+ * quatro maneiras redundantes. Ficava mais pesada que a mesma informação em
+ * Bancos, onde só o status é verde.
+ *
+ * O valor é um FATO financeiro: R$ 1.940,95 é o mesmo número pago ou não. O
+ * ícone diz que aquilo é uma fatura, não em que estado ela está. Quem responde
+ * "isto está resolvido?" é o status no trailing — e basta ele.
+ *
+ * O fundo do ícone sobrevive como sinal discreto de fundo (10-40% de
+ * opacidade), não como cor de texto: ele situa a linha sem competir.
+ */
+const TONE_CLASSES: Record<StatusRowTone, { bg: string; icon: string }> = {
+  neutral: { bg: 'bg-muted/40', icon: 'text-muted-foreground' },
+  positive: { bg: 'bg-paid/10', icon: 'text-muted-foreground' },
+  negative: { bg: 'bg-destructive/10', icon: 'text-muted-foreground' },
 }
 
 /*
@@ -53,8 +69,8 @@ export const STATUS_ROW_TITLE_CLASS = cn(
   em 15px um valor de 13px ficaria menor que o texto ao lado, invertendo a
   hierarquia da row: o número é a informação que se procura primeiro.
 
-  Só tamanho e peso; a COR continua vindo do `tone`/`amountTone` de cada
-  domínio, intocada.
+  Sem cor: o valor é um fato financeiro e permanece neutro em todos os
+  estados — quem diz "isto está resolvido" é o status no trailing.
 */
 export const STATUS_ROW_AMOUNT_CLASS = cn('shrink-0', ROW_AMOUNT_CLASS)
 
@@ -74,32 +90,26 @@ export interface StatusListRowProps {
   icon: LucideIcon
   /** Estado da linha: pinta ícone e — por padrão — o valor. */
   tone: StatusRowTone
-  /**
-   * Sobrescreve a cor do VALOR, sem mexer no ícone.
-   *
-   * Existe porque algumas listas têm dois eixos independentes. Em "Acertos
-   * com pessoas" o ícone comunica urgência (existe algo vencido?) e o valor
-   * comunica direção (a receber ou a pagar) — um saldo negativo dentro do
-   * prazo precisa de valor vermelho com ícone neutro, e `tone` sozinho não
-   * consegue expressar isso.
-   *
-   * Faturas não passa nada e continua com os dois eixos casados, que é o
-   * comportamento correto lá: o status É a única dimensão.
-   */
-  amountTone?: StatusRowTone
-  /**
-   * Linha secundária — use com parcimônia.
-   *
-   * Faturas, Acertos e Bancos NÃO usam: a lista mostra entidade, status e
-   * valor; a composição vive no cabeçalho e no drawer. Repeti-la na linha
-   * dava a cada registro uma altura diferente.
-   *
-   * Sobrevive para "Pendências anteriores", onde o vencimento ORIGINAL é a
-   * razão de ser da seção — sem ele a linha não se explica.
-   */
-  subtitle?: React.ReactNode
   title: string
-  badge?: { label: string; className: string }
+  /**
+   * Prazo abaixo do nome — "Fecha em 6d", "Venceu em 14/08/2026".
+   *
+   * A metadata secundária tinha sido removida numa fase anterior por repetir
+   * o que o cabeçalho já consolidava e por dar a cada row uma altura
+   * diferente. O conteúdo agora é outro: prazo, não repetição de total. É a
+   * informação que responde "o que acontece temporalmente?" e que Bancos e
+   * Pessoas já mostram nesta posição.
+   */
+  meta?: React.ReactNode
+  /**
+   * Estado, abaixo do valor.
+   *
+   * Substitui a badge ao lado do título. A badge ocupava a largura que o nome
+   * precisa no mobile — "Mercado Pago [Aberta] >" disputava espaço para dizer
+   * algo que cabe do lado direito, onde há uma coluna inteira livre sob o
+   * valor.
+   */
+  trailing?: React.ReactNode
   amount: number
 }
 
@@ -114,14 +124,12 @@ export function StatusListRow({
   ariaLabel,
   icon: Icon,
   tone,
-  amountTone,
-  subtitle,
   title,
-  badge,
+  meta,
+  trailing,
   amount,
 }: StatusListRowProps) {
   const toneClasses = TONE_CLASSES[tone]
-  const amountClasses = TONE_CLASSES[amountTone ?? tone]
 
   /*
     `Link` ou `button` conforme o uso, com as MESMAS classes: a linha precisa
@@ -146,9 +154,20 @@ export function StatusListRow({
     cards do Orçamento, e o respiro lateral vem da própria linha — no Extrato
     ele vem do container da página.
   */
+  /*
+    Uma geometria só.
+
+    Havia duas: sem `subtitle` a row era uma faixa `items-center`; com ele
+    virava `flex-col` e a metadata descia em largura cheia. Duas alturas
+    diferentes na mesma lista, e o `flex-col` desalinhava o ícone.
+
+    Agora o prazo vive na COLUNA do título — o mesmo lugar de Bancos e
+    Pessoas — e uma linha com prazo tem a mesma estrutura de uma sem, só mais
+    alta pelo conteúdo. `items-start` mantém ícone, texto e valor alinhados
+    pelo topo quando isso acontece.
+  */
   const classes = cn(
-    'group flex w-full cursor-pointer gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/30 active:bg-muted/50 sm:gap-4 sm:py-4',
-    subtitle ? 'flex-col justify-center gap-1' : 'items-center',
+    'group flex w-full cursor-pointer items-start gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/30 active:bg-muted/50 sm:gap-4 sm:py-4',
   )
 
   const conteudo = (
@@ -178,30 +197,36 @@ export function StatusListRow({
 
         Agora ela ocupa a linha inteira abaixo, fora da disputa por largura.
       */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+      {/*
+        ── ESQUERDA: o que é, e o que acontece temporalmente ──
+
+        A badge saiu daqui. Ela dizia o estado na linha do NOME, disputando a
+        largura que o nome precisa no mobile — "Mercado Pago [Aberta] >" —
+        para comunicar algo que cabe sob o valor, onde há coluna livre.
+
+        No lugar dela desce o prazo, a informação que a linha não tinha: por
+        que esta fatura importa AGORA.
+      */}
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <span className="flex min-w-0 items-center gap-1.5">
           <span className={STATUS_ROW_TITLE_CLASS}>{title}</span>
-          {badge && (
-            <span
-              className={cn(
-                'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
-                badge.className,
-              )}
-            >
-              {badge.label}
-            </span>
-          )}
-          {/*
-            Depois da badge, na linha do título — o mesmo lugar de Bancos e
-            Faturas. Antes vivia no fim da row, competindo com o valor.
-          */}
+          {/* Junto do título, como em Bancos e Pessoas. */}
           <DisclosureChevron />
-        </div>
+        </span>
+
+        {meta && <div className={ROW_META_CLASS}>{meta}</div>}
       </div>
 
-      <span className={cn(STATUS_ROW_AMOUNT_CLASS, amountClasses.amount)}>
-        {formatCurrency(amount)}
-      </span>
+      {/*
+        ── DIREITA: quanto, e qual é o estado ──
+
+        Empilhados, como em Bancos e Pessoas. O valor fica neutro em todos os
+        estados; o status abaixo dele é o único portador de cor.
+      */}
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <span className={STATUS_ROW_AMOUNT_CLASS}>{formatCurrency(amount)}</span>
+        {trailing}
+      </div>
     </>
   )
 
@@ -210,17 +235,7 @@ export function StatusListRow({
     simplificadas. Com ele, a metadata desce para a largura cheia, fora da
     disputa com o valor e a seta.
   */
-  const linha = subtitle ? (
-    <>
-      <div className="flex w-full items-center gap-3">{conteudo}</div>
-      <p className="w-full text-[11px] leading-tight text-muted-foreground">
-        {subtitle}
-      </p>
-    </>
-  ) : (
-    conteudo
-  )
-
+  const linha = conteudo
 
   if (onClick) {
     return (

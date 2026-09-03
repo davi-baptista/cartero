@@ -29,9 +29,21 @@ const CHEVRON = ler('../components/ui/disclosure-chevron.tsx')
 const BANKS = ler('../app/(dashboard)/banks/page.tsx')
 const BUDGET = ler('../app/(dashboard)/budget/page.tsx')
 
-describe('itens 2-3: o primitive tem duas faixas', () => {
-  it('a metadata sai da coluna do título e ocupa a largura cheia', () => {
-    expect(ROW).toContain('w-full text-[11px] leading-tight')
+describe('itens 2-3: a metadata nunca corta uma cifra', () => {
+  it('a metadata usa o slot canônico, sem truncate', () => {
+    /*
+      A faixa de largura cheia existia por UM motivo: dentro da coluna do
+      título a metadata levava `truncate` e cortava valores no meio — "R$ 35…"
+      em vez de R$ 350,46. Esconder metade de uma cifra é pior que não
+      mostrá-la.
+
+      O conteúdo agora é PRAZO, não cifra, e vive no mesmo slot de Bancos e
+      Pessoas (`ROW_META_CLASS`) — a posição que o design system usa para
+      "o que acontece temporalmente". O que continua barrado é o `truncate`
+      sobre metadata financeira.
+    */
+    expect(ROW).toContain('ROW_META_CLASS')
+    expect(ROW).not.toContain('truncate text-[11px]')
   })
 
   it('item 10: nenhum valor financeiro é truncado na metadata', () => {
@@ -189,13 +201,17 @@ describe('itens 7/17/47: a lista não repete o drawer', () => {
     expect(BUDGET).toContain('peopleRowAriaLabel(person, formatCurrency)')
   })
 
-  it('itens 59-60: `subtitle` sobrevive só para pendências anteriores', () => {
+  it('itens 59-60: o vencimento original das pendências anteriores sobrevive', () => {
     /*
-      Ali o vencimento ORIGINAL é a razão de ser da seção — sem ele a linha
-      não se explica. É o único consumidor.
+      `subtitle` deixou de existir — tinha geometria própria (`flex-col`, faixa
+      de largura cheia) e criava duas alturas de row na mesma lista. O
+      conteúdo migrou para `meta`, o slot canônico.
+
+      O que este teste protege é o FATO, não o slot: ali o vencimento ORIGINAL
+      é a razão de ser da seção, e sem ele a linha não se explica.
     */
-    const usos = BUDGET.match(/subtitle=/g) ?? []
-    expect(usos.length).toBe(1)
+    expect(BUDGET).not.toContain('subtitle=')
+    expect(BUDGET).toContain('Venceu em {formatDate(item.dueDate)}')
   })
 })
 

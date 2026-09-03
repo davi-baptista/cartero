@@ -16,7 +16,14 @@ import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
 import {
   ROW_ICON_BG_CLASS,
   ROW_ICON_CLASS,
+  ROW_TRAILING_LABEL_CLASS,
 } from '@/components/ui/financial-list-row'
+import {
+  budgetAllSettled,
+  budgetDueTone,
+  budgetInvoiceStatus,
+} from '@/lib/budget-row-view'
+import { invoiceTimingClass, invoiceTimingLabel } from '@/lib/invoice-timing'
 import { useMonthPeriod } from '@/components/month-nav'
 import { getBudget } from '@/services/budget.service'
 import { upsertSalary } from '@/services/salary.service'
@@ -38,7 +45,6 @@ import {
 } from '@/lib/people-settlement-view'
 import { formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
-import { invoiceStatusConfig } from '@/lib/invoice-status'
 import {
   budgetBreakdownAriaLabel,
   budgetBreakdownParts,
@@ -98,38 +104,43 @@ const SECTION_ASIDE_CLASS =
 type DebtStatus = 'PAID' | 'OVERDUE' | 'PENDING'
 
 /**
- * Mesmo vocabulário visual do card de fatura, aplicado a dívidas: o badge e
- * o ícone compartilham a cor, e `order` define a prioridade de leitura —
- * o que exige ação aparece antes do que já está resolvido.
- */
-/**
- * Só o que é específico de dívida (rótulo, badge, ordem). A cor do ícone e do
- * valor vem do `tone`, resolvido pelo mesmo `StatusListRow` que a fatura usa
- * — assim os dois nunca voltam a divergir na paleta.
+ * O que é específico de dívida: rótulo, tom do trailing e ordem de leitura.
+ *
+ * ── A badge deu lugar ao trailing ──
+ *
+ * `className` pintava uma pílula ao lado do NOME. Ela dizia o estado na
+ * largura que o nome precisa no mobile, para comunicar algo que cabe sob o
+ * valor. `trailingTone` é o que sobrou: cor de TEXTO, e só onde ela informa.
+ *
+ * "Em atraso" é o vocabulário oficial desde a Fase 8A — nunca "Vencida".
+ * "A pagar" fica muted como `FATURA ABERTA`: pendência é o estado normal de
+ * uma lista de obrigações, e o âmbar está reservado ao prazo.
  */
 const DEBT_STATUS_CONFIG: Record<
   DebtStatus,
-  { label: string; className: string; tone: StatusRowTone; order: number }
+  {
+    trailingLabel: string
+    trailingTone: string
+    tone: StatusRowTone
+    order: number
+  }
 > = {
   OVERDUE: {
-    // "Em atraso" é o vocabulário oficial desde a Fase 8A — nunca "Vencida".
-    // Esta tela tinha ficado de fora daquela padronização.
-    label: 'Em atraso',
-    className: 'bg-destructive/15 text-destructive',
+    trailingLabel: 'EM ATRASO',
+    trailingTone: 'text-destructive',
     tone: 'negative',
     order: 0,
   },
-  // Neutro como a fatura "Aberta": o âmbar é reservado para o que já fechou e
-  // está esperando pagamento, não para o que ainda nem venceu.
   PENDING: {
-    label: 'A pagar',
-    className: 'bg-primary/15 text-primary',
+    trailingLabel: 'A PAGAR',
+    trailingTone: 'text-muted-foreground',
     tone: 'neutral',
     order: 1,
   },
   PAID: {
-    label: 'Paga',
-    className: 'bg-paid/15 text-paid',
+    /* O verde de conclusão, o mesmo `text-paid` de `PAGA` em Bancos. */
+    trailingLabel: 'PAGA',
+    trailingTone: 'text-paid',
     tone: 'positive',
     order: 2,
   },
@@ -413,6 +424,12 @@ export default function BudgetPage() {
   const monthEnd = formatDateValue(new Date(year, month, 0))
 
   const hasMix = summary.totalPaid > 0 && summary.totalPending > 0
+  /*
+    Houve obrigação e tudo foi resolvido — diferente de não ter havido nada.
+    Um mês vazio também tem `totalPending: 0`, e sem essa distinção a tela
+    parabenizaria quem simplesmente não gastou.
+  */
+  const tudoEmDia = budgetAllSettled(summary)
 
 
   return (
@@ -448,7 +465,19 @@ export default function BudgetPage() {
                 Neutro de propósito — nunca `text-destructive`. O número não é
                 erro nem atraso: é o custo normal da competência.
               */}
-              <p className="text-[38px] font-semibold tabular-nums tracking-[-0.025em] leading-none">
+              {/*
+                A MESMA escala de Bancos e Pessoas (`text-[22px]`).
+
+                Eram 38px — hero typography que fazia o total do Orçamento
+                parecer de outra ordem de importância que "Faturas de setembro"
+                ou "Saldo com pessoas", quando as três respondem a mesma
+                classe de pergunta sobre o mês.
+
+                Neutro de propósito, nunca `text-destructive` nem verde: o
+                número não é erro, atraso nem conquista — é o custo normal da
+                competência. Quem diz o estado é a linha de "Tudo em dia".
+              */}
+              <p className="mt-0.5 text-[22px] font-semibold tabular-nums tracking-[-0.02em]">
                 {formatCurrency(summary.totalToPay)}
               </p>
               {summary.totalToPay === 0 ? (
@@ -503,6 +532,17 @@ export default function BudgetPage() {
                 <span className="mx-1.5 text-muted-foreground/40" aria-hidden>·</span>
                 <span className="font-medium">{formatCurrency(summary.totalPending)} a pagar</span>
               </p>
+            )}
+
+            {/*
+              A conclusão, no vocabulário de Bancos e Pessoas.
+
+              Complementa `hasMix`: aquela linha mostra a divisão quando ainda
+              falta algo; esta aparece quando nada falta. As duas nunca
+              coexistem — com `totalPending` zerado não há mistura a exibir.
+            */}
+            {tudoEmDia && (
+              <p className="text-xs font-medium text-paid">Tudo em dia</p>
             )}
 
           </>
@@ -595,7 +635,14 @@ export default function BudgetPage() {
         ) : (
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
             {invoices.map((inv) => {
-              const { label, className } = invoiceStatusConfig(inv.status)
+              /*
+                Estado e prazo vêm dos helpers de BANCOS.
+
+                A mesma fatura aparece nas duas telas, e derivar aqui um
+                segundo "vencida" ou uma segunda janela de urgência faria o
+                mesmo fato sair diferente em cada lugar.
+              */
+              const status = budgetInvoiceStatus(inv)
               const tone: StatusRowTone =
                 inv.status === InvoiceStatus.PAID
                   ? 'positive'
@@ -627,7 +674,21 @@ export default function BudgetPage() {
                   icon={CreditCard}
                   tone={tone}
                   title={bankDisplayName(inv.bank, 'Banco')}
-                  badge={{ label, className }}
+                  /*
+                    O prazo, na mesma semântica de Bancos: OPEN conta até o
+                    fechamento, CLOSED até o vencimento, PAID mostra a data
+                    factual sem contagem.
+                  */
+                  meta={
+                    <span className={invoiceTimingClass(inv)}>
+                      {invoiceTimingLabel(inv)}
+                    </span>
+                  }
+                  trailing={
+                    <span className={cn(ROW_TRAILING_LABEL_CLASS, status.tone)}>
+                      {status.label}
+                    </span>
+                  }
                   amount={view.gross}
                 />
               )
@@ -730,19 +791,34 @@ export default function BudgetPage() {
                         ? 'negative'
                         : 'neutral'
                   }
-                  /*
-                    Mesma leitura das Faturas: a cor conta o ESTADO, não a
-                    direção. Em aberto neutro, quitado verde — decidido no
-                    helper, para a regra não viver no JSX.
-                  */
-                  amountTone={view.amountTone}
                   title={person.personName}
-                  badge={{
-                    label: peopleRowStatusLabel(view.status),
-                    className: quitado
-                      ? 'bg-paid/15 text-paid'
-                      : 'bg-primary/15 text-primary',
-                  }}
+                  /*
+                    Resolvido não repete o estado.
+
+                    O trailing já diz PAGO; um "Pago" abaixo do nome exibiria
+                    o mesmo fato duas vezes. Em aberto, a metadata explica o
+                    valor — composição bilateral ou pendência anterior, o que
+                    `peopleRowView` já prioriza.
+
+                    Sem prazo aqui: `peopleSettlements` traz agregados, não
+                    datas. Inventar "Pagar em Xd" a partir de um agregado
+                    afirmaria um vencimento que o payload não conhece.
+                  */
+                  meta={
+                    quitado || view.metadata.length === 0
+                      ? undefined
+                      : view.metadata[0]
+                  }
+                  trailing={
+                    <span
+                      className={cn(
+                        ROW_TRAILING_LABEL_CLASS,
+                        quitado ? 'text-paid' : 'text-muted-foreground',
+                      )}
+                    >
+                      {peopleRowStatusLabel(view.status, view.direction)}
+                    </span>
+                  }
                   amount={quitado ? view.amount : Math.abs(view.amount)}
                 />
               )
@@ -777,7 +853,7 @@ export default function BudgetPage() {
 
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
             {standaloneDebtRows.map((item) => {
-              const { label, className, tone } = DEBT_STATUS_CONFIG[item.status]
+              const cfg = DEBT_STATUS_CONFIG[item.status]
               return (
                 <StatusListRow
                   key={`${item.kind}-${item.id ?? item.name}`}
@@ -789,15 +865,25 @@ export default function BudgetPage() {
                       : `/debts?endDate=${monthEnd}`
                   }
                   icon={item.kind === 'person' ? User : HandCoins}
-                  tone={tone}
+                  tone={cfg.tone}
                   title={item.name}
-                  badge={{ label, className }}
                   /*
-                    O subtítulo dizia "já descontado R$ X que <pessoa> te
-                    deve" — a compensação afirmada na tela. Ela não existe
-                    mais: o valor é a dívida íntegra, e o que a pessoa deve
-                    aparece na informação de A Receber, sem abater nada.
+                    Sem metadata: `debts` traz o valor agregado da competência,
+                    não o vencimento de cada dívida. O prazo apareceria com
+                    prazer, mas o payload não o conhece — e derivá-lo de um
+                    agregado seria inventar uma data.
+
+                    O subtítulo anterior dizia "já descontado R$ X que
+                    <pessoa> te deve" — a compensação afirmada na tela. Ela
+                    não existe mais: o valor é a dívida íntegra.
                   */
+                  trailing={
+                    <span
+                      className={cn(ROW_TRAILING_LABEL_CLASS, cfg.trailingTone)}
+                    >
+                      {cfg.trailingLabel}
+                    </span>
+                  }
                   amount={item.amount}
                 />
               )
@@ -839,16 +925,31 @@ export default function BudgetPage() {
                 icon={item.personId ? User : HandCoins}
                 tone={item.paidInMonth ? 'positive' : 'negative'}
                 title={item.title}
-                badge={
-                  item.paidInMonth
-                    ? { label: 'Paga', className: DEBT_STATUS_CONFIG.PAID.className }
-                    : { label: 'Em atraso', className: DEBT_STATUS_CONFIG.OVERDUE.className }
-                }
-                subtitle={
-                  <>
-                    venceu em {formatDate(item.dueDate)}
+                /*
+                  Aqui o prazo EXISTE no payload (`dueDate`), e é a razão de
+                  ser da seção: sem o vencimento original a linha não se
+                  explica. Sobe da faixa de largura cheia para a coluna do
+                  título, o lugar que Bancos e Pessoas usam.
+
+                  Resolvido não colore a data: `PAGA` no trailing já diz o
+                  estado, e pintar o vencimento de verde faria a data parecer
+                  o fato comemorado.
+                */
+                meta={
+                  <span className={budgetDueTone(item.dueDate, item.paidInMonth)}>
+                    Venceu em {formatDate(item.dueDate)}
                     {item.personName ? ` · ${item.personName}` : ''}
-                  </>
+                  </span>
+                }
+                trailing={
+                  <span
+                    className={cn(
+                      ROW_TRAILING_LABEL_CLASS,
+                      item.paidInMonth ? 'text-paid' : 'text-destructive',
+                    )}
+                  >
+                    {item.paidInMonth ? 'PAGA' : 'EM ATRASO'}
+                  </span>
                 }
                 amount={item.amount}
               />

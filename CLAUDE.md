@@ -1060,6 +1060,54 @@ ninguém tivesse pedido.
   `dueDate`; os já recebidos ficam intactos
 - Frontend invalida `banks`, `invoices`, `bank-invoices` e `receivables`
 
+## Orçamento — hierarquia visual das rows (Fase BUDGET UI1) ✅
+
+A página seguia uma versão anterior da linguagem visual: total em `text-[38px]`,
+estado numa **badge ao lado do nome**, e uma fatura paga acendendo quatro sinais
+de sucesso ao mesmo tempo — fundo do ícone, ícone, valor e badge. A mesma
+informação em Bancos usa um: o status.
+
+Cada row responde quatro perguntas, duas por lado:
+
+```
+ESQUERDA   o que é?                       DIREITA   quanto?
+           o que acontece temporalmente?            qual é o estado?
+```
+
+| Elemento | Antes | Agora |
+|---|---|---|
+| total do summary | `text-[38px]` | **`text-[22px]`**, o token de Bancos/Pessoas |
+| estado | badge ao lado do nome | trailing sob o valor |
+| prazo | ausente | `meta` abaixo do nome |
+| valor | verde quando pago | **neutro em todos os estados** |
+| ícone | `text-paid` quando pago | `text-muted-foreground` sempre |
+
+- Rótulos e tons de fatura vêm de `BANK_TRAILING_LABEL`/`TONE` via
+  `budgetInvoiceStatus` (`lib/budget-row-view.ts`); o prazo, de
+  `invoiceTimingLabel`/`invoiceTimingClass`. A mesma fatura aparece nas duas
+  telas — uma segunda definição de "vencida" a faria sair diferente em cada lugar
+- O prazo de dívida usa `budgetDueTone` → `timingUrgency`
+  (`URGENT_DAYS_WINDOW = 7`), a régua de Bancos, Pessoas e "Atenção agora"
+- Vocabulário de pessoas alinhado com `/persons`: `peopleRowStatusLabel` devolve
+  `VOCÊ DEVE` / `PAGO` / `A RECEBER` / `RECEBIDO`, não mais "Quitado"/"Em aberto"
+- `A PAGAR` fica muted como `FATURA ABERTA`; o âmbar está reservado ao prazo
+- **`Tudo em dia`** (`budgetAllSettled`) usa os agregados `totalPaid`/`totalPending`
+  que o backend já fecha — somar status no cliente abriria espaço para a tela
+  discordar do próprio total. Mês **vazio não recebe a frase**: `totalPending: 0`
+  vale tanto para um mês quitado quanto para um sem nenhuma obrigação
+- `StatusListRow` perdeu `badge`, `subtitle` e `amountTone`, e passou a ter
+  `meta`/`trailing` — os slots que `FinancialListRow` já tinha. Consumidor único
+  (o Orçamento), então nenhuma outra tela foi afetada
+- **Geometria única**: `subtitle` criava um layout `flex-col` com faixa de largura
+  cheia, então a mesma lista tinha duas alturas e o ícone desalinhava
+- Ganho no mobile (390px): o baseline truncava **4 rows**, agora **1** — só um
+  nome de 20 caracteres, por comprimento próprio e não por competição com a badge
+- **Domínio intocado**: `totalToPay`, `invoiceRowView` (bruto / sua parte / de
+  terceiros), classificação de `priorItems`, netting por pessoa e cliques de row
+  seguem idênticos. Backend com zero diff
+- Os **containers das seções** (cards arredondados) foram preservados de
+  propósito: avaliar a nova hierarquia antes de mexer na moldura
+
 ## Feature: Orçamento Mensal — página `/budget` (✅ Implementado)
 
 ### Lógica implementada

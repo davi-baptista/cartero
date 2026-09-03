@@ -702,8 +702,13 @@ describe('peopleRowView — anatomia da linha', () => {
 
     expect(view.status).toBe('settled')
     expect(view.amount).toBe(300)
-    expect(peopleRowStatusLabel(view.status)).toBe('Quitado')
-    // A badge comunica o estado; a linha não repete "Nada em aberto".
+    /*
+      O vocabulário passou a ser o de PESSOAS: a mesma relação com a mesma
+      pessoa aparece em /persons como PAGO, e "Quitado" era um par só desta
+      tela.
+    */
+    expect(peopleRowStatusLabel(view.status, view.direction)).toBe('PAGO')
+    // O trailing comunica o estado; a linha não repete "Nada em aberto".
     expect(view.metadata).toEqual([])
   })
 

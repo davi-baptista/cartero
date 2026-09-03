@@ -596,8 +596,25 @@ export function peopleRowView(
 }
 
 /** Rótulo da badge, por estado. */
-export function peopleRowStatusLabel(status: PeopleRowStatus): string {
-  return status === 'settled' ? 'Quitado' : 'Em aberto'
+export function peopleRowStatusLabel(
+  status: PeopleRowStatus,
+  direction: PeopleRowView['direction'] = 'out',
+): string {
+  /*
+    O vocabulário de PESSOAS, não um terceiro.
+
+    Era "Quitado" / "Em aberto" — correto, mas um par só desta tela. A mesma
+    relação com a mesma pessoa aparece em /persons como `VOCÊ DEVE` / `PAGO`,
+    e duas palavras para o mesmo estado fazem procurar uma diferença que não
+    existe.
+
+    A direção decide o verbo: o Orçamento lista o que SAI, então o caso comum
+    é `VOCÊ DEVE`; um saldo a receber (a pessoa te deve mais do que você deve
+    a ela) contribui com zero para o total, mas a linha continua existindo e
+    precisa dizer a verdade sobre o sentido.
+  */
+  if (status === 'settled') return direction === 'in' ? 'RECEBIDO' : 'PAGO'
+  return direction === 'in' ? 'A RECEBER' : 'VOCÊ DEVE'
 }
 
 /**
