@@ -98,8 +98,11 @@ import {
 } from '@/services/receivables.service'
 import { getPersonStatement, settlePerson } from '@/services/persons.service'
 import {
+  competenceCard,
+  competenceCardSign,
+} from '@/lib/person-competence-card'
+import {
   dueLabel,
-  competenceBalanceLabel,
   dueContext,
   openItemsFor,
   resolvedLabel,
@@ -178,11 +181,16 @@ function StatementRow({
           nomes cedo demais ("Pinga Cer…", "Financiamento Duster …"). A origem
           é contexto, não identidade — foi para a linha de metadata.
         */}
+        {/*
+          Resolvido fica MUTED, nunca tachado.
+
+          O `line-through` cortava o nome e o valor, e um item histórico
+          precisa continuar legível — a lista existe para ser consultada, não
+          só para mostrar que algo acabou. O cinza já diz "isto é passado", e o
+          subtítulo diz quando foi resolvido.
+        */}
         <span
-          className={cn(
-            'truncate text-sm',
-            item.isPaid && 'text-muted-foreground line-through',
-          )}
+          className={cn('truncate text-sm', item.isPaid && 'text-muted-foreground')}
         >
           {item.title}
         </span>
@@ -228,11 +236,15 @@ function StatementRow({
           )}
         </span>
       </div>
+      {/*
+        O valor resolvido também perde o tachado — cortar uma cifra é o pior
+        lugar para fazê-lo, porque é o número que se procura primeiro.
+      */}
       <span
         className={cn(
           'shrink-0 text-sm font-medium tabular-nums',
           item.isPaid
-            ? 'text-muted-foreground line-through'
+            ? 'text-muted-foreground'
             : isReceivable
               ? 'text-receivable/80'
               : 'text-destructive',
@@ -835,6 +847,55 @@ export function PersonStatementDrawer({
   )
 
   /*
+    Quando a competência terminou de ser liquidada.
+
+    A MAIOR data entre os itens resolvidos: o instante em que o último pendente
+    foi quitado, e portanto em que o mês ficou integralmente resolvido — a
+    mesma regra que `aggregateSettledAt` aplica no backend.
+
+    `null` se algum resolvido não tiver `paidAt`: a data de outro item não pode
+    falar pela conclusão que aquele registro não conhece, e o card cai em "Tudo
+    quitado".
+  */
+  const competenceSettledAt = ((): string | null => {
+    const resolvidos = [...historyReceivables, ...historyDebts]
+    if (resolvidos.length === 0) return null
+
+    let maior: string | null = null
+    for (const item of resolvidos) {
+      const dia = item.paidAt?.slice(0, 10)
+      /* Um resolvido sem data torna a conclusão indefensável para o mês. */
+      if (!dia) return null
+      if (maior === null || dia > maior) maior = dia
+    }
+    return maior
+  })()
+
+  /*
+    ── O card segue o MODO da competência ──
+
+    `monthSummary` sai de `openItemsFor(...)`, que filtra só o que está EM
+    ABERTO. Num mês inteiramente quitado as listas voltam vazias e o card dizia
+    "Nada a acertar · R$ 0,00" — verdade sobre a pendência, e inútil como
+    leitura: o mês pode ter movimentado centenas de reais.
+
+    Sem pendência, o valor passa a ser o histórico da competência, que o
+    payload já traz em `period.settled*` (recortado por `belongsToHistory
+    Competence` no backend). Nenhum dado novo foi necessário.
+  */
+  const cardCompetencia = competenceCard({
+    openReceivableTotal: monthSummary.receivableTotal,
+    openDebtTotal: monthSummary.debtTotal,
+    openItemCount: monthSummary.itemCount,
+    settledReceivableTotal: data?.period.settledReceivableTotal ?? 0,
+    settledDebtTotal: data?.period.settledDebtTotal ?? 0,
+    settledItemCount:
+      (data?.period.settledReceivables.length ?? 0) +
+      (data?.period.settledDebts.length ?? 0),
+    settledAt: competenceSettledAt,
+  })
+
+  /*
     Itens ainda não vencidos DENTRO da competência — o universo que a quitação
     agora respeita. O diálogo avisa sobre eles: quitar antecipado é permitido,
     mas precisa ser consciente.
@@ -1143,48 +1204,67 @@ export function PersonStatementDrawer({
                 números da tela não conversavam entre si.
               */}
               <div className="rounded-xl border border-border bg-muted/30 px-4 py-4">
-                <p className="text-xs text-muted-foreground">
-                  {/* Mesma fonte que o PDF usa — os dois não podem divergir. */}
-                  {competenceBalanceLabel(monthSummary)}
+                <p className="text-xs font-medium text-muted-foreground">
+                  {/*
+                    O título nomeia o que o número É: "Saldo a receber" com
+                    pendência, "Saldo final do mês" quando tudo foi liquidado.
+                    Mantê-lo em "Nada a acertar" sobre um valor histórico faria
+                    os dois se contradizerem.
+                  */}
+                  {cardCompetencia.label}
                 </p>
-                <p
-                  className={cn(
-                    'mt-1 text-2xl font-semibold tabular-nums tracking-[-0.02em]',
-                    monthSummary.net > 0.005 && 'text-receivable',
-                    monthSummary.net < -0.005 && 'text-destructive',
-                    Math.abs(monthSummary.net) <= 0.005 && 'text-foreground',
-                  )}
-                >
-                  {monthSummary.net > 0.005 && '+'}
-                  {monthSummary.net < -0.005 && '-'}
-                  {formatCurrency(Math.abs(monthSummary.net))}
+                {/*
+                  Neutro, como em Bancos e no Orçamento.
+
+                  Era verde quando positivo e vermelho quando negativo — cor
+                  por direção, a mesma que a lista de Pessoas já removeu: o
+                  verde colidia com o verde de "quitado", e a direção já está
+                  no sinal e na composição abaixo.
+                */}
+                <p className="mt-1 text-2xl font-semibold tabular-nums tracking-[-0.02em]">
+                  {competenceCardSign(cardCompetencia)}
+                  {formatCurrency(Math.abs(cardCompetencia.net))}
                 </p>
 
-                {!monthSummary.isEmpty && (
+                {cardCompetencia.mode !== 'empty' && (
                   <>
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                       <div className="flex gap-4 text-xs text-muted-foreground">
                         <span>
                           A receber{' '}
-                          <span className="font-medium text-receivable">
-                            {formatCurrency(monthSummary.receivableTotal)}
+                          <span className="font-medium text-foreground">
+                            {formatCurrency(cardCompetencia.receivableTotal)}
                           </span>
                         </span>
                         <span>
                           A pagar{' '}
-                          <span className="font-medium text-destructive">
-                            {formatCurrency(monthSummary.debtTotal)}
+                          <span className="font-medium text-foreground">
+                            {formatCurrency(cardCompetencia.debtTotal)}
                           </span>
                         </span>
                       </div>
-                      <Button
-                        size="sm"
-                        className="gap-1.5"
-                        onClick={() => setSettleOpen(true)}
-                      >
-                        <Check className="size-3.5" />
-                        Quitar pendências
-                      </Button>
+                      {cardCompetencia.showSettleAction ? (
+                        <Button
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() => setSettleOpen(true)}
+                        >
+                          <Check className="size-3.5" />
+                          Quitar pendências
+                        </Button>
+                      ) : (
+                        /*
+                          Sem pendência não há o que quitar — e a conclusão
+                          ocupa o lugar do botão, no verde de sucesso do
+                          produto.
+                        */
+                        cardCompetencia.settledNote && (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-paid">
+                            <Check className="size-3.5" aria-hidden />
+                            {cardCompetencia.settledNote}
+                          </span>
+                        )
+                      )}
                     </div>
 
                     {/*
@@ -1222,13 +1302,14 @@ export function PersonStatementDrawer({
                 vencem nela e o carry-over ainda aberto. Sem chips — a
                 competência já é o filtro.
               */}
-              {monthSummary.isEmpty ? (
-                <p className="py-6 text-center text-xs text-muted-foreground">
+              {monthSummary.itemCount === 0 ? (
+                <p className="py-6 text-center text-[11px] text-muted-foreground">
                   Nenhum valor em aberto para esta competência.
                 </p>
               ) : (
                 <div>
-                  <p className="mb-2 text-xs font-medium text-muted-foreground">
+                  {/* Mesma escala dos cabeçalhos de seção do drawer de Fatura. */}
+                  <p className="mb-2 text-[11px] font-medium text-muted-foreground">
                     Em aberto · {monthSummary.itemCount}{' '}
                     {monthSummary.itemCount === 1 ? 'item' : 'itens'}
                   </p>
@@ -1267,14 +1348,14 @@ export function PersonStatementDrawer({
                 que o acerto pertence, não o mês em que o dinheiro se moveu.
               */}
               <div>
-                <p className="mb-2 text-xs font-medium text-muted-foreground">
+                <p className="mb-2 text-[11px] font-medium text-muted-foreground">
                   Histórico
                 </p>
 
                 {historyReceivables.length === 0 &&
                 historyDebts.length === 0 ? (
                   /* Histórico vazio ≠ nada em aberto: universos diferentes. */
-                  <p className="py-6 text-center text-xs text-muted-foreground">
+                  <p className="py-6 text-center text-[11px] text-muted-foreground">
                     Nenhum item resolvido neste período.
                   </p>
                 ) : (
