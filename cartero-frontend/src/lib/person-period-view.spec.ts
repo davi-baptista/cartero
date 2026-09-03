@@ -2,12 +2,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   hasPeriodActivity,
-  PERSON_ROW_LABEL,
-  PERSON_ROW_TONE,
-  isResolvedStatus,
   periodNetAmount,
   personRowStatus,
-  rowSubtext,
   subtextTone,
   type PeriodBalance,
 } from './person-period-view'
@@ -29,280 +25,56 @@ import { personsSummaryLines } from './persons-summary-text'
 function bal(p: Partial<PeriodBalance> = {}): PeriodBalance {
   return {
     netBalance: 0,
+    receivablePending: 0,
+    debtPending: 0,
     periodReceivableTotal: 0,
     periodDebtTotal: 0,
     settledReceivablesCount: 0,
     settledDebtsCount: 0,
     nextItem: null,
+    settledAt: null,
     ...p,
   }
 }
 
-describe('P-1: o valor histórico sobrevive ao settlement', () => {
-  it('mês inteiramente recebido conserva o valor', () => {
-    /*
-      O caso exato do bug. `netBalance: 0` porque nada resta; o valor exibido
-      vem do período, não do saldo.
-    */
-    const b = bal({
+describe('P-1: o valor histórico continua disponível', () => {
+  /*
+    A conquista da fase anterior, preservada: o histórico da competência não se
+    perde quando os itens são quitados.
+
+    O que MUDOU é quando ele é exibido. A row agora tem dois modos — ACTIVE usa
+    outstanding, SETTLED usa histórico —, e `person-balance-modes.spec.ts`
+    cobre a policy completa. Aqui fica só a invariante do dado.
+  */
+  it('quitar não altera o histórico', () => {
+    const aberta = bal({
+      periodReceivableTotal: 350,
+      receivablePending: 350,
+      netBalance: 350,
+    })
+    const quitada = bal({
       periodReceivableTotal: 350,
       settledReceivablesCount: 1,
-      netBalance: 0,
     })
 
-    expect(periodNetAmount(b)).toBe(350)
-    expect(personRowStatus(b)).toBe('received')
-    expect(PERSON_ROW_LABEL.received).toBe('RECEBIDO')
-  })
-
-  it('mês inteiramente pago conserva o valor, com sinal negativo', () => {
-    const b = bal({
-      periodDebtTotal: 120,
-      settledDebtsCount: 1,
-      netBalance: 0,
-    })
-
-    expect(periodNetAmount(b)).toBe(-120)
-    expect(personRowStatus(b)).toBe('paid')
-    expect(PERSON_ROW_LABEL.paid).toBe('PAGO')
+    expect(periodNetAmount(aberta)).toBe(350)
+    expect(periodNetAmount(quitada)).toBe(350)
   })
 
   it('a convenção de sinal não mudou', () => {
-    /*
-      Positivo = te devem. Passou a ser calculado sobre o histórico, mas o
-      significado da direção é o mesmo de antes.
-    */
+    /* Positivo = te devem. Vale para histórico e outstanding. */
     expect(periodNetAmount(bal({ periodReceivableTotal: 100 }))).toBeGreaterThan(0)
     expect(periodNetAmount(bal({ periodDebtTotal: 100 }))).toBeLessThan(0)
   })
-})
 
-describe('P-2: pendência continua falando do que RESTA', () => {
-  it('em aberto mostra a direção do saldo, não do histórico', () => {
+  it('atividade histórica é reconhecida pelas contagens', () => {
     /*
-      R$ 500 recebidos e R$ 200 ainda a receber: o histórico é +700, mas o que
-      exige ação são os 200 — e o status é sobre ação.
-    */
-    const b = bal({
-      periodReceivableTotal: 700,
-      settledReceivablesCount: 1,
-      netBalance: 200,
-    })
-
-    expect(personRowStatus(b)).toBe('receivable')
-    expect(periodNetAmount(b)).toBe(700)
-  })
-
-  it('dívida em aberto', () => {
-    expect(personRowStatus(bal({ periodDebtTotal: 300, netBalance: -300 }))).toBe(
-      'debt',
-    )
-  })
-
-  it('histórico positivo com saldo devedor não vira RECEBIDO', () => {
-    /*
-      Recebeu R$ 900 e ainda deve R$ 100: o status precisa dizer VOCÊ DEVE. Se
-      olhasse o histórico, diria "recebido" com uma dívida aberta na mesa.
-    */
-    const b = bal({
-      periodReceivableTotal: 900,
-      periodDebtTotal: 100,
-      settledReceivablesCount: 1,
-      netBalance: -100,
-    })
-
-    expect(personRowStatus(b)).toBe('debt')
-  })
-})
-
-describe('P-3: sem movimento nao e o mesmo que resolvido', () => {
-  it('nada em nenhum sentido é SEM SALDO', () => {
-    expect(personRowStatus(bal())).toBe('empty')
-    expect(hasPeriodActivity(bal())).toBe(false)
-  })
-
-  it('resolvido conta como movimento', () => {
-    expect(hasPeriodActivity(bal({ settledDebtsCount: 1 }))).toBe(true)
-  })
-
-  it('a ordem das perguntas: resolvido não cai em empty', () => {
-    /*
-      Inverter as duas condições em `personRowStatus` reintroduz o bug —
-      `netBalance: 0` casaria antes de "houve movimento?".
-    */
-    const b = bal({ periodReceivableTotal: 350, settledReceivablesCount: 1 })
-    expect(personRowStatus(b)).not.toBe('empty')
-  })
-
-  it('valor zerado com contagem ainda é movimento', () => {
-    /*
-      Item de R$ 0 é raro mas legítimo; a contagem é a autoridade sobre "houve
+      Item de R$ 0 é raro mas legítimo: a contagem é a autoridade sobre "houve
       algo", não o valor.
     */
     expect(hasPeriodActivity(bal({ settledReceivablesCount: 1 }))).toBe(true)
-  })
-})
-
-describe('P-4: misto resolvido segue o sinal do líquido', () => {
-  it('recebeu mais do que pagou vira RECEBIDO', () => {
-    const b = bal({
-      periodReceivableTotal: 500,
-      periodDebtTotal: 200,
-      settledReceivablesCount: 1,
-      settledDebtsCount: 1,
-    })
-    expect(personRowStatus(b)).toBe('received')
-    expect(periodNetAmount(b)).toBe(300)
-  })
-
-  it('pagou mais do que recebeu vira PAGO', () => {
-    const b = bal({
-      periodReceivableTotal: 200,
-      periodDebtTotal: 500,
-      settledReceivablesCount: 1,
-      settledDebtsCount: 1,
-    })
-    expect(personRowStatus(b)).toBe('paid')
-  })
-
-  it('líquido zero com movimento nos dois lados não trava', () => {
-    /*
-      R$ 200 de cada lado, tudo quitado: o valor é R$ 0,00 e a lista precisa de
-      UMA palavra. Convenção documentada: `received`.
-    */
-    const b = bal({
-      periodReceivableTotal: 200,
-      periodDebtTotal: 200,
-      settledReceivablesCount: 1,
-      settledDebtsCount: 1,
-    })
-    expect(personRowStatus(b)).toBe('received')
-  })
-})
-
-describe('P-5: resolvido não repete o estado no subtexto', () => {
-  it('D1/D2: resolvido diz QUANDO, não repete o estado', () => {
-    /*
-      Duas correções sucessivas. A original devolvia "Recebido" aqui e o
-      trailing já dizia RECEBIDO — o mesmo estado duas vezes. Omitir resolveu a
-      duplicação e deixou a row sem nada à esquerda, com o nome flutuando.
-
-      `Quitado em 18/08` não repete o trailing e responde outra pergunta: a
-      esquerda diz quando terminou, a direita diz como.
-    */
-    expect(rowSubtext('received', 'Receber em 12d', '2026-08-18')).toBe(
-      'Quitado em 18/08/2026',
-    )
-    expect(rowSubtext('paid', 'Pagar em 3d', '2026-08-18')).toBe(
-      'Quitado em 18/08/2026',
-    )
-  })
-
-  it('sem data confiável, fallback honesto', () => {
-    /*
-      Vários itens podem ter sido resolvidos em dias diferentes, e o backend só
-      afirma `settledAt` quando ele é defensável. Sem ele a linha diz o que
-      sabe — não uma data escolhida para preencher espaço.
-    */
-    expect(rowSubtext('received', 'Receber em 12d', null)).toBe(
-      'Acerto concluído',
-    )
-    expect(rowSubtext('paid', null, undefined)).toBe('Acerto concluído')
-  })
-
-  it('D3: pendente mantém o subtexto de prazo', () => {
-    /* O contrapeso: omitir sempre esconderia a urgência de quem tem pendência. */
-    expect(rowSubtext('receivable', 'Receber em 12d')).toBe('Receber em 12d')
-    expect(rowSubtext('debt', 'Pagar atrasado 6d')).toBe('Pagar atrasado 6d')
-  })
-
-  it('D4: sem evento não inventa subtexto', () => {
-    expect(rowSubtext('empty', null)).toBeNull()
-    expect(rowSubtext('receivable', null)).toBeNull()
-  })
-
-  it('o verbo não repete o trailing', () => {
-    /*
-      "Pago em 18/08" ao lado de `PAGO` seria a duplicação de volta, só com uma
-      data no meio. "Quitado" é um verbo único que serve aos dois sentidos.
-    */
-    for (const st of ['received', 'paid'] as const) {
-      for (const data of ['2026-08-18', null]) {
-        const texto = rowSubtext(st, 'Receber em 12d', data)!
-        expect(texto).not.toMatch(/^(Pago|Recebido)$/)
-        expect(texto).not.toContain('Pago em')
-        expect(texto).not.toContain('Recebido em')
-      }
-    }
-  })
-
-  it('resolvido nunca exibe prazo', () => {
-    /*
-      Mesmo com `nextItem` residual de outra competência: uma linha quitada com
-      "Receber em 12d" afirmaria pendência inexistente — o motivo original da
-      omissão, que continua valendo.
-    */
-    for (const data of ['2026-08-18', null]) {
-      const texto = rowSubtext('received', 'Receber em 12d', data)!
-      expect(texto).not.toContain('Receber em')
-      expect(texto).not.toContain('12d')
-    }
-  })
-
-  it('a policy de "resolvido" é uma só', () => {
-    expect(isResolvedStatus('received')).toBe(true)
-    expect(isResolvedStatus('paid')).toBe(true)
-    expect(isResolvedStatus('receivable')).toBe(false)
-    expect(isResolvedStatus('debt')).toBe(false)
-    expect(isResolvedStatus('empty')).toBe(false)
-  })
-})
-
-describe('P-6: cor comunica ESTADO, nunca direção', () => {
-  it('C3/C4: pendências ficam muted', () => {
-    /*
-      `A RECEBER` era verde e `VOCÊ DEVE` vermelho. O verde colidia com o verde
-      de "resolvido": um recebível em aberto e um já recebido saíam quase
-      idênticos, apesar de pedirem ações opostas.
-
-      A direção continua escrita no texto e no sinal do valor.
-    */
-    expect(PERSON_ROW_TONE.receivable).toBe('text-muted-foreground')
-    expect(PERSON_ROW_TONE.debt).toBe('text-muted-foreground')
-  })
-
-  it('C1/C2: nenhum tom direcional sobrou nos abertos', () => {
-    for (const st of ['receivable', 'debt'] as const) {
-      expect(PERSON_ROW_TONE[st]).not.toContain('text-receivable')
-      expect(PERSON_ROW_TONE[st]).not.toContain('text-destructive')
-    }
-  })
-
-  it('C5/C6: resolvido usa o verde canônico de success', () => {
-    /*
-      `text-paid` — o mesmo de `PAGA` em Bancos e de "Tudo em dia". Não um
-      segundo verde.
-    */
-    expect(PERSON_ROW_TONE.received).toBe('text-paid')
-    expect(PERSON_ROW_TONE.paid).toBe('text-paid')
-  })
-
-  it('só os estados resolvidos têm cor', () => {
-    /*
-      A invariante da fase, e a que Bancos já aplica: se um estado estrutural
-      ganhar cor, a hierarquia se desfaz.
-    */
-    for (const st of ['receivable', 'debt', 'empty'] as const) {
-      expect(PERSON_ROW_TONE[st]).toBe('text-muted-foreground')
-    }
-  })
-
-  it('todo status tem rótulo e tom', () => {
-    /* Sem isso um status novo renderizaria `undefined` na tela. */
-    for (const s of ['receivable', 'debt', 'received', 'paid', 'empty'] as const) {
-      expect(PERSON_ROW_LABEL[s]).toBeTruthy()
-      expect(PERSON_ROW_TONE[s]).toBeTruthy()
-    }
+    expect(hasPeriodActivity(bal({ periodDebtTotal: 10 }))).toBe(true)
+    expect(hasPeriodActivity(bal())).toBe(false)
   })
 })
 
@@ -348,12 +120,24 @@ describe('P-7: centavos não viram estado falso', () => {
       quitada apareceria como devendo fração de centavo.
     */
     const residuo = 0.1 + 0.2 - 0.3
-    const b = bal({
-      periodReceivableTotal: 100,
-      settledReceivablesCount: 1,
-      netBalance: residuo,
-    })
-    expect(personRowStatus(b)).toBe('received')
+
+    /* Resíduo no PENDENTE não cria uma pendência inexistente. */
+    expect(
+      personRowStatus(
+        bal({
+          periodReceivableTotal: 100,
+          settledReceivablesCount: 1,
+          receivablePending: residuo,
+        }),
+      ),
+    ).toBe('finalBalance')
+
+    /* E resíduo no líquido de dois lados abertos não vira `A ACERTAR` falso. */
+    expect(
+      personRowStatus(
+        bal({ receivablePending: 200 + residuo, debtPending: 200 }),
+      ),
+    ).toBe('toSettle')
   })
 })
 
@@ -451,8 +235,12 @@ describe('P-9: a page aplica a policy', () => {
   )
   const code = PAGE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
-  it('a row exibe o líquido do período, não o saldo aberto', () => {
-    expect(code).toContain('periodNetAmount(balance)')
+  it('a row exibe o valor do MODO', () => {
+    /*
+      Era `periodNetAmount` incondicional — sempre o histórico. Agora
+      `personRowAmount` escolhe: outstanding em ACTIVE, histórico em SETTLED.
+    */
+    expect(code).toContain('personRowAmount(balance)')
     expect(code).toContain('personRowStatus(balance)')
   })
 

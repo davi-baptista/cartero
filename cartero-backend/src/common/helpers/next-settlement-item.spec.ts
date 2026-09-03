@@ -99,20 +99,56 @@ describe('a direção segue o saldo', () => {
 });
 
 describe('P11: saldo zero', () => {
-  it('saldo zero não destaca evento, mesmo com pendências abertas', () => {
+  it('saldo zero COM pendência devolve o mais urgente GLOBAL', () => {
     /*
-      Saldo zero NÃO significa ausência de pendência: pode haver R$ 500
-      abertos de cada lado. Mas também não há um sentido a mostrar — a row
-      diria "SEM SALDO" e o subtexto teria de escolher um lado
-      arbitrariamente.
+      Devolvia `null`, com a justificativa de que a row diria "SEM SALDO" e o
+      subtexto teria de escolher um lado arbitrariamente.
+
+      A premissa mudou: aquela row diz `A ACERTAR`, que não promete sentido
+      nenhum — então o evento pode vir de qualquer um dos dois lados, e ficar
+      sem evento era perder a única informação temporal de um estado que exige
+      ação dos DOIS lados.
+
+      Aqui o recebível vence antes.
     */
-    const receivables = [item('2026-09-03')];
-    const debts = [item('2026-09-04')];
-    expect(nextSettlementItem(receivables, debts, 0)).toBeNull();
+    expect(
+      nextSettlementItem([item('2026-09-03')], [item('2026-09-04')], 0),
+    ).toEqual({ direction: 'receive', dueDate: '2026-09-03' });
   });
 
-  it('a tolerância evita que centavos decidam a direção', () => {
-    expect(nextSettlementItem([item('2026-09-03')], [], 0.001)).toBeNull();
+  it('saldo zero: a dívida mais urgente também é elegível', () => {
+    /* O contrapeso — a escolha é por DATA, não por lado preferido. */
+    expect(
+      nextSettlementItem([item('2026-09-10')], [item('2026-09-02')], 0),
+    ).toEqual({ direction: 'pay', dueDate: '2026-09-02' });
+  });
+
+  it('saldo zero: empate de data desempata determinístico', () => {
+    /*
+      Sem desempate explícito a ordem viria do array, e a row poderia alternar
+      de verbo entre requisições sem nenhum fato novo.
+    */
+    const mesmaData = () =>
+      nextSettlementItem([item('2026-09-05')], [item('2026-09-05')], 0);
+
+    expect(mesmaData()).toEqual(mesmaData());
+    expect(mesmaData()?.dueDate).toBe('2026-09-05');
+  });
+
+  it('saldo zero SEM pendência continua null', () => {
+    /* Nada aberto: não há evento a inventar. */
+    expect(nextSettlementItem([], [], 0)).toBeNull();
+  });
+
+  it('a tolerância trata centavos como saldo zero', () => {
+    /*
+      0,001 não é um lado — é resíduo. Cai no ramo global, que aqui só tem o
+      recebível.
+    */
+    expect(nextSettlementItem([item('2026-09-03')], [], 0.001)).toEqual({
+      direction: 'receive',
+      dueDate: '2026-09-03',
+    });
   });
 });
 

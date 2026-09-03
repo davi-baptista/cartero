@@ -155,11 +155,16 @@ describe('Pessoas ganhou o subtexto', () => {
     expect(PERSONS).toContain('PERSON_ROW_LABEL[status]')
 
     const view = code(ler('./person-period-view.ts'))
+    /*
+      `RECEBIDO`/`PAGO` deram lugar a `SALDO FINAL`: no estado resolvido o
+      número passa a ser o histórico, e "Recebido" descreveria o evento sem
+      avisar que a base mudou. `A ACERTAR` cobre o líquido zero com pendência.
+    */
     for (const rotulo of [
       'A RECEBER',
       'VOCÊ DEVE',
-      'RECEBIDO',
-      'PAGO',
+      'A ACERTAR',
+      'SALDO FINAL',
       'SEM SALDO',
     ]) {
       expect(view).toContain(rotulo)

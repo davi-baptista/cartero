@@ -40,10 +40,11 @@ import {
 } from '@/lib/person-month-order'
 import { personsSummaryLines } from '@/lib/persons-summary-text'
 import {
+  hasOpenObligation,
   hasPeriodActivity,
   PERSON_ROW_LABEL,
   PERSON_ROW_TONE,
-  periodNetAmount,
+  personRowAmount,
   personRowStatus,
   rowSubtext,
   rowSubtextTone,
@@ -203,6 +204,9 @@ function PersonFormSheet({
  */
 const VAZIO = {
   netBalance: 0,
+  /* Nada em aberto dos dois lados — é o que faz a row cair em EMPTY. */
+  receivablePending: 0,
+  debtPending: 0,
   periodReceivableTotal: 0,
   periodDebtTotal: 0,
   settledReceivablesCount: 0,
@@ -427,6 +431,8 @@ export default function PersonsPage() {
           ...person,
           netBalance: balance.netBalance,
           nextItem: balance.nextItem,
+          receivablePending: balance.receivablePending,
+          debtPending: balance.debtPending,
           periodReceivableTotal: balance.periodReceivableTotal,
           periodDebtTotal: balance.periodDebtTotal,
           settledReceivablesCount: balance.settledReceivablesCount,
@@ -450,34 +456,55 @@ export default function PersonsPage() {
   */
   const summary = useMemo(() => {
     /*
-      O resumo passou a somar o HISTÓRICO da competência.
+      ══════════════════════════════════════════════════════════════════════
+      O resumo segue o MESMO modo da lista
+      ══════════════════════════════════════════════════════════════════════
 
-      Somava `netBalance` — o saldo em aberto —, então um mês inteiramente
-      quitado exibia "R$ 0,00 · Sem valores em aberto neste mês" mesmo tendo
-      movimentado milhares. A leitura histórica desaparecia junto com a
-      pendência.
+      ACTIVE  → outstanding: "quanto ainda falta acertar no mês"
+      SETTLED → histórico:   "quanto o mês movimentou"
 
-      Os totais por LADO, não pelo líquido de cada pessoa: quem recebeu R$ 500
-      e pagou R$ 200 contribui com os dois números, não com R$ 300 num deles.
+      Somava sempre o histórico, então uma competência com R$ 500 a receber e
+      R$ 300 já recebidos anunciava R$ 500 — o mesmo desencontro que a row
+      tinha. E media pendência por `Math.abs(netBalance)`, que é zero quando
+      há R$ 200 abertos de cada lado.
+
+      Os totais por LADO, não pelo líquido de cada pessoa: quem tem R$ 500 a
+      receber e R$ 200 a pagar contribui com os dois números, não com R$ 300
+      num deles.
     */
-    let toReceive = 0
-    let toPay = 0
-    let outstanding = 0
+    let outstandingReceber = 0
+    let outstandingPagar = 0
+    let historicoReceber = 0
+    let historicoPagar = 0
+    let comPendencia = 0
     let comMovimento = 0
 
     for (const b of balances ?? []) {
-      toReceive += b.periodReceivableTotal
-      toPay += b.periodDebtTotal
-      outstanding += Math.abs(b.netBalance)
+      outstandingReceber += b.receivablePending
+      outstandingPagar += b.debtPending
+      historicoReceber += b.periodReceivableTotal
+      historicoPagar += b.periodDebtTotal
+      if (hasOpenObligation(b)) comPendencia += 1
       if (hasPeriodActivity(b)) comMovimento += 1
     }
+
+    /*
+      Uma pendência em qualquer pessoa mantém o resumo em ACTIVE: o mês só
+      terminou de ser acertado quando ninguém tem nada aberto.
+    */
+    const ativo = comPendencia > 0
+    const toReceive = ativo ? outstandingReceber : historicoReceber
+    const toPay = ativo ? outstandingPagar : historicoPagar
 
     return {
       toReceive,
       toPay,
       net: toReceive - toPay,
-      /* Quanto ainda falta acertar, somando os dois sentidos. */
-      outstanding,
+      /*
+        A contagem, não a soma dos líquidos: R$ 200 de cada lado dá líquido
+        zero com duas obrigações vivas, e "Tudo em dia" ali seria falso.
+      */
+      outstanding: comPendencia,
       /* Distingue "nenhum movimento" de "tudo resolvido". */
       comMovimento,
     }
@@ -634,15 +661,21 @@ export default function PersonsPage() {
               const balance = balanceById.get(person.id) ?? VAZIO
 
               /*
-                O valor é o HISTÓRICO da competência, não o saldo em aberto.
+                ── O valor depende do MODO ──
 
-                Antes um mês inteiramente quitado virava R$ 0,00 em todas as
-                linhas, e a lista deixava de dizer quem devia a quem. Mesma
-                separação de Bancos: uma fatura paga conserva o valor e muda o
-                status.
+                ACTIVE  → outstanding: "quanto ainda falta acertar"
+                SETTLED → histórico:   "qual foi o saldo do mês"
+
+                A fase anterior exibia sempre o histórico, para não perder o
+                valor do mês quando tudo era quitado. Certo no fim, cedo demais
+                no meio: com R$ 500 a receber e R$ 300 já recebidos, a row
+                seguia dizendo R$ 500 quando o número útil era R$ 200.
+
+                A troca é sinalizada pelo trailing (`SALDO FINAL`), senão
+                quitar o último item faria o valor SUBIR e pareceria bug.
               */
-              const net = periodNetAmount(balance)
               const status = personRowStatus(balance)
+              const net = personRowAmount(balance)
 
               /*
                 Resolvido não tem subtexto.

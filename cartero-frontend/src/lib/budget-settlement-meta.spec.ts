@@ -334,7 +334,11 @@ describe('F6: a page aplica a policy sem mexer no resto', () => {
 
   it('amount e trailing seguem intactos', () => {
     expect(BUDGET_CODE).toContain('peopleRowStatusLabel(view.status, view.direction)')
-    expect(BUDGET_CODE).toContain('amount={quitado ? view.amount : Math.abs(view.amount)}')
+    /*
+      A bifurcação de sinal saiu junto com a das bases: `budget.payable` é
+      magnitude por construção, então não há sinal a normalizar.
+    */
+    expect(BUDGET_CODE).toContain('amount={view.amount}')
     expect(BUDGET_CODE).toContain('cfg.trailingLabel')
   })
 

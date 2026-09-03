@@ -164,8 +164,7 @@ describe('Pessoas · row resolvida', () => {
     */
     const residual = { direction: 'pay' as const, dueDate: '2020-01-01' }
 
-    expect(rowSubtextTone('received', residual)).toBe(ROW_RESOLVED_TONE)
-    expect(rowSubtextTone('paid', residual)).toBe(ROW_RESOLVED_TONE)
+    expect(rowSubtextTone('finalBalance', residual)).toBe(ROW_RESOLVED_TONE)
   })
 
   it('resolvido é verde nas duas formas de chamada', () => {
@@ -173,19 +172,21 @@ describe('Pessoas · row resolvida', () => {
       Segundo guardião: com e sem `today`, com e sem item residual. Uma probe
       que zere o retorno do resolvido passa a matar este também.
     */
-    for (const st of ['received', 'paid'] as const) {
-      expect(rowSubtextTone(st, null)).toBe('text-paid')
-      expect(rowSubtextTone(st, null, new Date(2026, 8, 10))).toBe('text-paid')
-      expect(
-        rowSubtextTone(st, { direction: 'pay', dueDate: '2026-09-15' }),
-      ).toBe('text-paid')
-    }
+    expect(rowSubtextTone('finalBalance', null)).toBe('text-paid')
+    expect(
+      rowSubtextTone('finalBalance', null, new Date(2026, 8, 10)),
+    ).toBe('text-paid')
+    expect(
+      rowSubtextTone('finalBalance', { direction: 'pay', dueDate: '2026-09-15' }),
+    ).toBe('text-paid')
   })
 
-  it('os dois sentidos resolvidos compartilham o verde', () => {
-    expect(rowSubtextTone('received', null)).toBe(
-      rowSubtextTone('paid', null),
-    )
+  it('o líquido zero ABERTO não recebe o verde', () => {
+    /*
+      `toSettle` é pendência — o verde é conclusão, e pintá-lo ali afirmaria
+      uma quitação que não houve.
+    */
+    expect(rowSubtextTone('toSettle', null)).not.toBe(ROW_RESOLVED_TONE)
   })
 
   it('row aberta mantém a régua canônica', () => {

@@ -885,7 +885,16 @@ export default function BudgetPage() {
                       {peopleRowStatusLabel(view.status, view.direction)}
                     </span>
                   }
-                  amount={quitado ? view.amount : Math.abs(view.amount)}
+                  /*
+                    A contribuição ao orçamento, igual nos dois estados.
+
+                    Era `quitado ? amount : Math.abs(amount)` — uma segunda
+                    bifurcação pelo mesmo motivo da primeira: as duas bases
+                    tinham sinais diferentes. `budget.payable` é magnitude por
+                    construção (quem me deve mais contribui com ZERO, nunca com
+                    crédito), então não há sinal a normalizar.
+                  */
+                  amount={view.amount}
                 />
               )
             })}

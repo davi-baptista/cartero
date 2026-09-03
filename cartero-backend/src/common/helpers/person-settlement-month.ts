@@ -255,29 +255,81 @@ function civilDay(date: Date): string {
 }
 
 /**
- * O item mais urgente do lado indicado, ou `null` quando não há nenhum.
+ * O item mais urgente, ou `null` quando não há nenhum aberto.
  *
- * `netBalance` decide o lado: positivo, a pessoa te deve e olhamos os
- * recebíveis; negativo, o inverso. Saldo ZERO não significa ausência de
- * pendência — pode haver R$ 500 abertos de cada lado —, e nesse caso a lista
- * não tem um sentido a mostrar, então também não tem evento a destacar.
+ * ── Com um lado no saldo: o item DAQUELE lado ──
+ *
+ * `netBalance` positivo, a pessoa te deve e olhamos os recebíveis; negativo, o
+ * inverso. É o que impede a row de se contradizer — "VOCÊ DEVE" com "Receber
+ * amanhã" embaixo é factualmente correto e exige do leitor um esforço que a
+ * lista existe para evitar.
+ *
+ * ── Saldo ZERO com pendência: o mais urgente GLOBAL ──
+ *
+ * Devolvia `null`: sem lado do saldo, não havia como escolher. Mas saldo zero
+ * não significa ausência de pendência — pode haver R$ 200 abertos de cada
+ * lado —, e a row ficava sem dizer quando algo acontece, justamente num estado
+ * que exige ação dos dois lados.
+ *
+ * Aqui não há contradição a evitar: o trailing daquela row é `A ACERTAR`, que
+ * não promete sentido nenhum, então o evento pode vir de qualquer um dos dois.
+ * A copy segue o item escolhido ("Pagar ..." ou "Receber ...").
  */
 export function nextSettlementItem(
   receivables: SettleableItem[],
   debts: SettleableItem[],
   netBalance: number,
 ): NextSettlementItem | null {
-  if (Math.abs(netBalance) < 0.005) return null;
+  const semLado = Math.abs(netBalance) < 0.005;
 
-  const direction: SettlementDirection = netBalance > 0 ? 'receive' : 'pay';
-  const pool = direction === 'receive' ? receivables : debts;
+  /*
+    Candidatos: um lado quando o saldo tem sentido, os dois quando não tem.
 
-  let melhor: Date | null = null;
-  for (const item of pool) {
-    if (item.isPaid) continue;
-    /* O mais próximo vence: vencidos têm data menor, então lideram sozinhos. */
-    if (melhor === null || item.dueDate < melhor) melhor = item.dueDate;
+    A prioridade é a MESMA nos dois casos — menor `dueDate` vence, e vencidos
+    têm data menor, então lideram sozinhos sem um `if` de urgência.
+  */
+  const candidatos: Array<{ direction: SettlementDirection; dueDate: Date }> =
+    [];
+
+  const coletar = (
+    itens: SettleableItem[],
+    direction: SettlementDirection,
+  ) => {
+    for (const item of itens) {
+      if (item.isPaid) continue;
+      candidatos.push({ direction, dueDate: item.dueDate });
+    }
+  };
+
+  if (semLado) {
+    coletar(receivables, 'receive');
+    coletar(debts, 'pay');
+  } else if (netBalance > 0) {
+    coletar(receivables, 'receive');
+  } else {
+    coletar(debts, 'pay');
   }
 
-  return melhor === null ? null : { direction, dueDate: civilDay(melhor) };
+  let melhor: { direction: SettlementDirection; dueDate: Date } | null = null;
+  for (const c of candidatos) {
+    if (melhor === null) {
+      melhor = c;
+      continue;
+    }
+    if (c.dueDate < melhor.dueDate) melhor = c;
+    /*
+      Empate de data: `pay` lidera. Desempate determinístico — sem ele a ordem
+      viria do array e a row poderia alternar de verbo entre requisições.
+    */
+    else if (
+      c.dueDate.getTime() === melhor.dueDate.getTime() &&
+      c.direction === 'pay'
+    ) {
+      melhor = c;
+    }
+  }
+
+  return melhor === null
+    ? null
+    : { direction: melhor.direction, dueDate: civilDay(melhor.dueDate) };
 }

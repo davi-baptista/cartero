@@ -25,6 +25,8 @@ function p(
   return {
     name,
     netBalance: 0,
+    receivablePending: 0,
+    debtPending: 0,
     periodReceivableTotal: 0,
     periodDebtTotal: 0,
     settledReceivablesCount: 0,

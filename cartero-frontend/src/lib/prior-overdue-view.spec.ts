@@ -55,14 +55,21 @@ function person(over: {
   return {
     personId: over.personId ?? 'p-1',
     personName: 'Eva',
+    /*
+      A contribuição derivada do próprio cenário.
+
+      `payable = max(dívidas − recebíveis, 0)`, o netting por pessoa que o
+      backend aplica — e a base que a row exibe. Fixá-la em zero fazia o
+      fixture testar a base antiga (`open.net`).
+    */
     budget: {
       receivableDueInMonth: 0,
-      openDueInMonth: 0,
+      openDueInMonth: over.debtTotal ?? 0,
       currentOpenPrior: 0,
       paidInMonth: 0,
-      receivableAmount: 0,
-      payable: 0,
-      debtTotal: 0,
+      receivableAmount: over.receivableTotal ?? 0,
+      payable: Math.max((over.debtTotal ?? 0) - (over.receivableTotal ?? 0), 0),
+      debtTotal: over.debtTotal ?? 0,
       automaticReceivable: 0,
     },
     open,
@@ -272,6 +279,11 @@ describe('Cor do valor: estado, não direção', () => {
       brl,
     )
 
-    expect(view.amount).toBe(-1)
+    /*
+      A contribuição: `max(11 − 10, 0)` = 1, magnitude. O sinal vem de
+      `direction`, e é o mesmo número que o total da seção soma.
+    */
+    expect(view.amount).toBe(1)
+    expect(view.direction).toBe('out')
   })
 })

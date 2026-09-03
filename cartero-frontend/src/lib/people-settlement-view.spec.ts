@@ -700,14 +700,25 @@ describe('shouldRenderPeopleSettlement', () => {
 })
 
 describe('peopleRowView — anatomia da linha', () => {
-  it('item 45: sem nada aberto, o destaque é o quitado', () => {
+  /*
+    ── O amount destas rows é a CONTRIBUIÇÃO ao orçamento ──
+
+    Os casos abaixo verificavam `open.net` aberto e `budget.debtTotal`
+    resolvido — duas bases, nenhuma igual à do total da seção. Agora todas
+    leem `budget.payable`, e os fixtures o declaram explicitamente.
+
+    `budget-contribution.spec.ts` cobre a invariante em detalhe; aqui o que
+    importa é a anatomia da linha continuar correta.
+  */
+  it('item 45: sem nada aberto, o destaque é a contribuição do mês', () => {
     const eva = person({
-      budget: { paidInMonth: 300, debtTotal: 300 },
+      budget: { paidInMonth: 300, debtTotal: 300, payable: 300 },
       open: { itemCount: 0 },
     })
     const view = peopleRowView(eva, brl)
 
     expect(view.status).toBe('settled')
+    /* A contribuição, a mesma base que o total da seção soma. */
     expect(view.amount).toBe(300)
     /*
       O vocabulário passou a ser o de PESSOAS: a mesma relação com a mesma
@@ -722,6 +733,7 @@ describe('peopleRowView — anatomia da linha', () => {
   it('item 43: só dívida aberta destaca o saldo devedor', () => {
     const view = peopleRowView(
       person({
+        budget: { openDueInMonth: 300, debtTotal: 300, payable: 300 },
         open: { debtTotal: 300, net: -300, itemCount: 1 },
       }),
       brl,
@@ -729,7 +741,8 @@ describe('peopleRowView — anatomia da linha', () => {
 
     expect(view.status).toBe('open')
     expect(view.direction).toBe('out')
-    expect(view.amount).toBe(-300)
+    /* A contribuição é magnitude; a direção vem de `direction`. */
+    expect(view.amount).toBe(300)
     // Um lado só: o valor já diz tudo, sem composição redundante.
     expect(view.metadata).toEqual([])
   })
@@ -737,6 +750,12 @@ describe('peopleRowView — anatomia da linha', () => {
   it('item 44: bilateral mostra a composição', () => {
     const view = peopleRowView(
       person({
+        /*
+          Credora: recebe 610,90 e deve 330. Pelo netting por pessoa,
+          `payable = max(330 − 610,90, 0)` = ZERO — quem me deve mais do que eu
+          devo não vira crédito no orçamento.
+        */
+        budget: { receivableAmount: 610.9, openDueInMonth: 330, payable: 0 },
         open: {
           receivableTotal: 610.9,
           debtTotal: 330,
@@ -748,7 +767,17 @@ describe('peopleRowView — anatomia da linha', () => {
     )
 
     expect(view.direction).toBe('in')
-    expect(view.amount).toBeCloseTo(280.9, 2)
+    /*
+      ZERO, não 280,90.
+
+      O valor da row é a CONTRIBUIÇÃO ao orçamento, e esta pessoa não
+      acrescenta nada: o que ela me deve é menor do que o que me deve a mim.
+      280,90 é o líquido em aberto da RELAÇÃO — informação de Pessoas, não do
+      Orçamento.
+
+      A composição bilateral continua na metadata, dizendo os dois lados.
+    */
+    expect(view.amount).toBe(0)
     expect(view.metadata[0]).toContain('a receber')
     expect(view.metadata[0]).toContain('a pagar')
   })
@@ -773,7 +802,7 @@ describe('peopleRowView — anatomia da linha', () => {
   it('item 46: pago + aberto mostra os dois', () => {
     const view = peopleRowView(
       person({
-        budget: { paidInMonth: 300, debtTotal: 400 },
+        budget: { paidInMonth: 300, debtTotal: 400, payable: 100 },
         open: { debtTotal: 100, net: -100, itemCount: 1 },
       }),
       brl,
@@ -781,7 +810,8 @@ describe('peopleRowView — anatomia da linha', () => {
 
     // Ainda existe o que resolver: o estado principal é "Em aberto".
     expect(view.status).toBe('open')
-    expect(view.amount).toBe(-100)
+    /* Magnitude: a direção vem de `direction`. */
+    expect(view.amount).toBe(100)
     // E o desembolso já feito não desaparece.
     expect(view.metadata.some((m) => m.includes('quitados neste mês'))).toBe(
       true,
@@ -813,7 +843,7 @@ describe('peopleRowView — anatomia da linha', () => {
     )
     const quitado = peopleRowAriaLabel(
       person({
-        budget: { paidInMonth: 300, debtTotal: 300 },
+        budget: { paidInMonth: 300, debtTotal: 300, payable: 300 },
         open: { itemCount: 0 },
       }),
       brl,
@@ -914,7 +944,7 @@ describe('Cores: direção no valor, urgência no ícone', () => {
     */
     const view = peopleRowView(
       person({
-        budget: { paidInMonth: 300, debtTotal: 300 },
+        budget: { paidInMonth: 300, debtTotal: 300, payable: 300 },
         open: { itemCount: 0 },
       }),
       brl,

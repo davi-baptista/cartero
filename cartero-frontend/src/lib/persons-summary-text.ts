@@ -35,7 +35,13 @@ export interface PersonsSummary {
   toReceive: number
   /** Total histórico a pagar no período. */
   toPay: number
-  /** Soma dos dois sentidos do que ainda está aberto. */
+  /**
+   * Quantas pessoas ainda têm obrigação aberta.
+   *
+   * CONTAGEM, não soma: R$ 200 abertos de cada lado dão líquido zero com duas
+   * obrigações vivas, e um total zerado faria o resumo anunciar "Tudo em dia"
+   * com trabalho de settlement pendente.
+   */
   outstanding: number
   /** Quantas pessoas movimentaram algo na competência. */
   comMovimento: number
@@ -47,8 +53,6 @@ export interface PersonsSummaryLine {
   kind: SummaryLineKind
   text: string
 }
-
-const EPSILON = 0.005
 
 /** `Intl` compartilhado — instanciar por chamada custa em lista longa. */
 const BRL = new Intl.NumberFormat('pt-BR', {
@@ -88,7 +92,7 @@ export function personsSummaryLines(s: PersonsSummary): PersonsSummaryLine[] {
     linha — dizer "Tudo em dia" com uma dívida em atraso seria falso, e a row
     urgente já aparece com seu próprio sinal.
   */
-  if (s.outstanding <= EPSILON) {
+  if (s.outstanding === 0) {
     linhas.push({ kind: 'settled', text: 'Tudo em dia' })
   }
 

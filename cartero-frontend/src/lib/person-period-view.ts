@@ -27,20 +27,31 @@ import { ROW_RESOLVED_TONE } from '@/components/ui/financial-list-row'
  */
 
 export type PersonRowStatus =
+  /* ACTIVE: ainda falta acertar, e o saldo tem um lado. */
   | 'receivable'
   | 'debt'
-  | 'received'
-  | 'paid'
+  /* ACTIVE com saldo zero: os dois lados abertos se anulam no líquido. */
+  | 'toSettle'
+  /* SETTLED: a competência terminou de ser liquidada. */
+  | 'finalBalance'
+  /* EMPTY: não houve atividade. */
   | 'empty'
 
 /** O mínimo que a row precisa saber da competência. */
 export interface PeriodBalance {
+  /** Outstanding: quanto AINDA falta acertar. Muda ao quitar. */
   netBalance: number
+  /** Outstanding, por lado. */
+  receivablePending: number
+  debtPending: number
+  /** Histórico: quanto a competência MOVIMENTOU. Invariável ao settlement. */
   periodReceivableTotal: number
   periodDebtTotal: number
   settledReceivablesCount: number
   settledDebtsCount: number
   nextItem?: NextSettlementItem | null
+  /** `YYYY-MM-DD` da liquidação integral, ou `null`. */
+  settledAt?: string | null
 }
 
 const EPSILON = 0.005
@@ -74,69 +85,141 @@ export function hasPeriodActivity(b: PeriodBalance): boolean {
  * produto: menos vocabulário na lista, e a composição dos dois lados fica no
  * drawer, onde há espaço para ela.
  */
-export function personRowStatus(b: PeriodBalance): PersonRowStatus {
-  if (!hasPeriodActivity(b)) return 'empty'
-
-  /* Ainda há pendência: o status fala do que resta, não do que já foi. */
-  if (Math.abs(b.netBalance) > EPSILON) {
-    return b.netBalance > 0 ? 'receivable' : 'debt'
-  }
-
-  /*
-    Nada em aberto, mas houve movimento — o mês está resolvido.
-
-    O líquido histórico decide a palavra. Zero histórico com movimento (R$ 200
-    de cada lado, tudo quitado) cai em `received` por convenção: a lista
-    precisa de UMA palavra, e "resolvido" nos dois sentidos não distingue nada
-    que o valor já não diga.
-  */
-  return periodNetAmount(b) < -EPSILON ? 'paid' : 'received'
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * A row tem dois MODOS, e o número muda de significado entre eles
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ *   ACTIVE    "quanto ainda falta acertar?"    → outstanding
+ *   SETTLED   "qual foi o saldo do mês?"       → histórico
+ *   EMPTY     não houve atividade              → zero
+ *
+ * A fase anterior fez a row exibir o histórico para não perder o valor do mês
+ * quando tudo era quitado. Correto no fim, mas cedo demais no meio: com R$ 500
+ * a receber e R$ 300 já recebidos, a row seguia dizendo R$ 500 — e o número
+ * útil ali é R$ 200, o que falta.
+ *
+ * ── Por que o modo NÃO pode sair de `netBalance === 0` ──
+ *
+ * Com R$ 200 abertos de cada lado o líquido é zero e as duas obrigações
+ * continuam vivas. `personRowStatus` decidia por `Math.abs(netBalance)`, então
+ * essa pessoa caía no ramo resolvido — a row dizia RECEBIDO com trabalho de
+ * settlement pendente.
+ *
+ * A pergunta certa é "existe pendência?", e ela se responde pelos LADOS
+ * (`receivablePending`/`debtPending`), não pelo líquido deles.
+ */
+export function hasOpenObligation(b: PeriodBalance): boolean {
+  return b.receivablePending > EPSILON || b.debtPending > EPSILON
 }
 
-/** Copy oficial do trailing. Texto, nunca só cor. */
+/** O líquido do que AINDA falta acertar — o valor do modo ACTIVE. */
+export function outstandingNetAmount(b: PeriodBalance): number {
+  return b.receivablePending - b.debtPending
+}
+
+/**
+ * O status da row.
+ *
+ * ── A ordem das perguntas ──
+ *
+ *   1. há pendência?     → ACTIVE (mesmo com líquido zero)
+ *   2. houve atividade?  → SETTLED
+ *   3. nenhuma das duas  → EMPTY
+ *
+ * Pendência vem primeiro de propósito: é o único estado que pede ação, e
+ * confundi-lo com resolvido é o erro mais caro dos três.
+ */
+export function personRowStatus(b: PeriodBalance): PersonRowStatus {
+  if (hasOpenObligation(b)) {
+    const liquido = outstandingNetAmount(b)
+
+    /*
+      Líquido zero COM pendência: não há um lado do saldo para nomear, e
+      chamar de "A RECEBER" ou "VOCÊ DEVE" escolheria um arbitrariamente.
+      `A ACERTAR` diz o que é verdade — falta acertar, nos dois sentidos.
+    */
+    if (Math.abs(liquido) <= EPSILON) return 'toSettle'
+
+    return liquido > 0 ? 'receivable' : 'debt'
+  }
+
+  if (!hasPeriodActivity(b)) return 'empty'
+
+  /*
+    Sem pendência e com atividade: a competência foi integralmente liquidada.
+
+    O valor volta a ser o HISTÓRICO, e é justamente por isso que o trailing
+    muda para `SALDO FINAL`: um número que "cresce" depois da quitação
+    pareceria bug sem a indicação explícita de que a base mudou.
+
+    Um estado só para os dois sentidos — o sinal do valor já diz qual foi, e
+    `RECEBIDO`/`PAGO` prometeriam um sentido que o líquido zero não tem.
+  */
+  return 'finalBalance'
+}
+
+/**
+ * Copy oficial do trailing. Texto, nunca só cor.
+ *
+ * `SALDO FINAL` substituiu `RECEBIDO`/`PAGO` no estado resolvido: o número
+ * daquela row é o saldo HISTÓRICO do mês, não o que falta, e a mudança de
+ * base precisa estar dita. "Recebido" descreveria o evento sem avisar que o
+ * valor ao lado passou a significar outra coisa.
+ *
+ * `A ACERTAR` é o líquido zero com pendência: nenhum dos dois sentidos manda,
+ * mas há trabalho a fazer.
+ */
 export const PERSON_ROW_LABEL: Record<PersonRowStatus, string> = {
   receivable: 'A RECEBER',
   debt: 'VOCÊ DEVE',
-  received: 'RECEBIDO',
-  paid: 'PAGO',
+  toSettle: 'A ACERTAR',
+  finalBalance: 'SALDO FINAL',
   empty: 'SEM SALDO',
 }
 
 /**
- * ══════════════════════════════════════════════════════════════════════════
- * Tom do trailing: cor comunica ESTADO, nunca direção
- * ══════════════════════════════════════════════════════════════════════════
+ * Tom do trailing.
  *
- * `A RECEBER` era verde e `VOCÊ DEVE` vermelho — cor por direção do dinheiro.
- * O problema é que verde já significa OUTRA coisa no resto do produto: pago,
- * resolvido, tudo em dia. Os dois estados abaixo ficavam quase idênticos:
+ * Cor comunica ESTADO, nunca direção: `A RECEBER` era verde e `VOCÊ DEVE`
+ * vermelho, e o verde colidia com o verde de resolvido — um recebível em
+ * aberto saía igual a um já recebido.
  *
- *   Eva   R$ 462,22 [verde]   A RECEBER [verde]   ainda falta receber
- *   Eva   R$ 720,45 [verde]   RECEBIDO  [verde]   já foi recebido
- *
- * Duas situações que exigem ações opostas, pintadas da mesma cor.
- *
- * A direção já está escrita — "A RECEBER" e "VOCÊ DEVE" são texto, e o sinal
- * do valor a repete. Cor não precisava carregar essa informação, e ao carregá-la
- * ficava indisponível para o que só a cor comunica bem: o que mudou de estado.
- *
- * É a policy que `BANK_TRAILING_TONE` já aplica em Bancos: só `paid` e
- * `overdue` ganham cor; `Fatura aberta` e `Fatura fechada` são estruturais e
- * ficam muted. O verde é o mesmo `text-paid` — não um segundo verde.
+ * `A ACERTAR` é muted como as outras pendências: é o estado normal de uma
+ * lista de acertos, e o âmbar fica reservado ao prazo.
  */
 export const PERSON_ROW_TONE: Record<PersonRowStatus, string> = {
-  /* Pendências são o estado NORMAL de uma lista de acertos. */
   receivable: 'text-muted-foreground',
   debt: 'text-muted-foreground',
+  toSettle: 'text-muted-foreground',
   /* Conclusão — o único fato que a cor precisa anunciar aqui. */
-  received: 'text-paid',
-  paid: 'text-paid',
+  finalBalance: ROW_RESOLVED_TONE,
   empty: 'text-muted-foreground',
 }
 
-/** Um mês resolvido não tem mais nada a fazer nele. */
+/** A competência terminou de ser liquidada? */
 export function isResolvedStatus(status: PersonRowStatus): boolean {
-  return status === 'received' || status === 'paid'
+  return status === 'finalBalance'
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * O valor da row, pelo modo
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ *   ACTIVE    outstanding — "quanto ainda falta"
+ *   SETTLED   histórico   — "qual foi o saldo do mês"
+ *   EMPTY     zero
+ *
+ * A troca é deliberada e sinalizada: em ACTIVE o trailing diz A RECEBER /
+ * VOCÊ DEVE / A ACERTAR; em SETTLED diz `SALDO FINAL`, que é o aviso de que a
+ * base do número mudou.
+ *
+ * Sem esse aviso, quitar o último item faria o valor SUBIR (de R$ 200 que
+ * faltavam para R$ 500 que houve no mês) e pareceria bug.
+ */
+export function personRowAmount(b: PeriodBalance): number {
+  return hasOpenObligation(b) ? outstandingNetAmount(b) : periodNetAmount(b)
 }
 
 /**

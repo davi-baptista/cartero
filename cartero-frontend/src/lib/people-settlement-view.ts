@@ -499,6 +499,45 @@ export interface PeopleRowView {
  * "Quitado" em vez de "Pago" porque a relação envolve dinheiro nos dois
  * sentidos — o que eu paguei e o que recebi.
  */
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * O amount da row de Acerto: a contribuição da pessoa ao Orçamento
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `budget.payable` é `max(dívidas − recebíveis, 0)`, decidido no backend, e é
+ * o valor que o total da seção soma — "R$ X no orçamento" no cabeçalho.
+ *
+ * ── O bug que isto fecha ──
+ *
+ * A row usava TRÊS bases diferentes, e nenhuma delas era esta:
+ *
+ *   aberta          `open.net`           outstanding líquido
+ *   resolvida       `budget.debtTotal`   dívida BRUTA
+ *   total da seção  `budget.payable`     contribuição
+ *
+ * Com R$ 10 a receber e R$ 11 a pagar, a row dizia R$ 1 aberta e R$ 11 depois
+ * de quitar, enquanto o total continuava R$ 1. Settlement trocava a matemática
+ * da linha — e a linha nunca reconciliou com o próprio total.
+ *
+ * ── Por que não alternar como Pessoas faz ──
+ *
+ * Em Pessoas a troca outstanding → histórico é deliberada e sinalizada por
+ * `SALDO FINAL`: a pergunta muda de "quanto falta" para "quanto houve".
+ *
+ * Aqui a pergunta é uma só — "quanto esta pessoa acrescenta ao orçamento
+ * DESTA competência?" — e a resposta é um fato do mês, não do estado de
+ * pagamento. Quitar não altera o custo do mês; altera quem já pagou.
+ *
+ * ── Sinal ──
+ *
+ * `payable` é magnitude (nunca negativa: quem me deve mais contribui com
+ * ZERO, jamais com crédito). O sinal exibido continua vindo de `direction`,
+ * que a row já resolve pelo lado do saldo.
+ */
+function budgetContribution(person: PersonSettlement): number {
+  return person.budget.payable
+}
+
 export function peopleRowView(
   person: PersonSettlement,
   formatCurrency: (value: number) => string,
@@ -558,7 +597,7 @@ export function peopleRowView(
 
     return {
       status: 'open',
-      amount: person.open.net,
+      amount: budgetContribution(person),
       direction:
         person.open.net > EPSILON
           ? 'in'
@@ -582,7 +621,15 @@ export function peopleRowView(
   */
   return {
     status: 'settled',
-    amount: person.budget.debtTotal,
+    /*
+      A MESMA base do estado aberto.
+
+      Era `budget.debtTotal` — a dívida BRUTA. Com R$ 10 a receber e R$ 11 a
+      pagar, a row mostrava R$ 1 aberta e saltava para R$ 11 depois de quitar,
+      enquanto o total da seção seguia somando R$ 1. Settlement mudava a
+      MATEMÁTICA da linha, não só o estado dela.
+    */
+    amount: budgetContribution(person),
     /*
       Valor NEUTRO, não verde: o dinheiro de uma dívida quitada saiu do bolso.
       Pintá-lo de verde sugeriria recebimento. O verde do estado concluído

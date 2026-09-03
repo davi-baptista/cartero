@@ -257,6 +257,13 @@ describe('itens 13, 40 e 57: a página entrou no design system', () => {
     expect(view).toContain("'A RECEBER'")
     expect(view).toContain("'VOCÊ DEVE'")
     expect(view).toContain("'SEM SALDO'")
+    /*
+      Dois estados novos: `A ACERTAR` para líquido zero COM pendência, e
+      `SALDO FINAL` para a competência liquidada — onde o número volta a ser o
+      histórico e a mudança de base precisa estar dita.
+    */
+    expect(view).toContain("'A ACERTAR'")
+    expect(view).toContain("'SALDO FINAL'")
 
     /*
       A COR deixou de dizer direção: verde colidia com o verde de "resolvido".
@@ -264,7 +271,8 @@ describe('itens 13, 40 e 57: a página entrou no design system', () => {
     */
     expect(view).toContain("receivable: 'text-muted-foreground'")
     expect(view).toContain("debt: 'text-muted-foreground'")
-    expect(view).toContain("received: 'text-paid'")
+    /* `finalBalance` substituiu `received`/`paid` como estado resolvido. */
+    expect(view).toContain('finalBalance: ROW_RESOLVED_TONE')
 
     /*
       Zero é neutro: nem verde nem vermelho. A cor vem de `ROW_AMOUNT_TONE`,
