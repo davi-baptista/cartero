@@ -195,7 +195,11 @@ export function rowSubtext(
  * julho selecionado. O atraso não deixa de existir por eu estar olhando um mês
  * antigo — é o mesmo princípio de "Atenção agora", que ignora o seletor.
  */
-export function subtextTone(item: NextSettlementItem | null): string {
+export function subtextTone(
+  item: NextSettlementItem | null,
+  /* Injetável para teste; em produção é sempre o relógio real. */
+  today: Date = new Date(),
+): string {
   if (!item) return ''
 
   /*
@@ -204,7 +208,7 @@ export function subtextTone(item: NextSettlementItem | null): string {
   */
   const [year, month, day] = item.dueDate.slice(0, 10).split('-').map(Number)
 
-  switch (timingUrgency(new Date(year, month - 1, day))) {
+  switch (timingUrgency(new Date(year, month - 1, day), today)) {
     case 'overdue':
       return 'text-destructive'
     case 'today':

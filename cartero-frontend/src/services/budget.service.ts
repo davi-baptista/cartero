@@ -1,3 +1,4 @@
+import type { NextSettlementItem } from '@/lib/person-next-item'
 import { api } from '@/lib/api'
 import type { Invoice } from '@/types'
 
@@ -163,6 +164,33 @@ export interface BudgetSummary {
        */
       hasOverdue: boolean
       automaticReceivable: number
+      /**
+       * O próximo acerto do MESMO sentido do saldo, ou `null`.
+       *
+       * Dado, não texto: `person-next-item` decide o verbo ("Pagar"/"Receber")
+       * e a distância ("em 5d"). A mesma forma que a lista de Pessoas recebe,
+       * pela mesma policy — o líquido escolhe o lado, e o menor vencimento
+       * daquele lado é o evento.
+       *
+       * `null` quando não há pendência, ou quando o saldo é zero: com R$ 200
+       * abertos de cada lado não existe um sentido a destacar.
+       */
+      nextItem: NextSettlementItem | null
+    }
+    /**
+     * QUANDO o acerto terminou de ser liquidado.
+     *
+     * `settledAt` é a MAIOR data de liquidação entre os itens resolvidos da
+     * competência — o instante em que o último pendente foi quitado e,
+     * portanto, em que a relação daquele mês ficou integralmente resolvida.
+     *
+     * `null` quando nada foi resolvido; a tela cai num fallback neutro em vez
+     * de afirmar uma data que não existe.
+     */
+    settled: {
+      /** `YYYY-MM-DD` civil de Fortaleza. */
+      settledAt: string | null
+      itemCount: number
     }
   }>
   /**
@@ -209,6 +237,21 @@ export interface BudgetSummary {
     isPaid: boolean
     /** Numa pessoa com várias dívidas, atraso domina o status. */
     status: 'PAID' | 'OVERDUE' | 'PENDING'
+    /**
+     * Próximo vencimento ABERTO, `YYYY-MM-DD` civil.
+     *
+     * `null` quando nada resta a vencer — numa linha inteiramente paga,
+     * devolver uma data afirmaria pendência que não existe.
+     */
+    dueDate: string | null
+    /**
+     * Quando a linha terminou de ser liquidada, `YYYY-MM-DD` civil.
+     *
+     * Numa pessoa com várias dívidas é a MAIOR data entre elas — o momento em
+     * que a última pendência foi quitada. `null` enquanto houver item aberto,
+     * ou sem data defensável.
+     */
+    settledAt: string | null
   }>
 }
 

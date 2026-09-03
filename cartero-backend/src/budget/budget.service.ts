@@ -19,6 +19,58 @@ const DIRECT_PAYMENT_TYPES: TransactionType[] = [
 ];
 
 /** O item em aberto já está VENCIDO hoje? Dia civil de Fortaleza. */
+/**
+ * O mais próximo entre dois vencimentos.
+ *
+ * Vencido tem data MENOR, então lidera sozinho — a mesma propriedade que
+ * `nextSettlementItem` usa em Pessoas, e a razão de não haver um `if` de
+ * urgência aqui: prioridade por data já ordena atrasado → hoje → futuro.
+ */
+function menorData(atual: Date | null, candidata: Date | null): Date | null {
+  if (!candidata) return atual;
+  if (!atual) return candidata;
+  return candidata < atual ? candidata : atual;
+}
+
+/**
+ * A MAIOR entre duas datas de liquidação.
+ *
+ * Representa quando o último item pendente foi quitado — o momento em que o
+ * agregado ficou integralmente resolvido.
+ */
+function maiorData(atual: Date | null, candidata: Date | null): Date | null {
+  if (!candidata) return atual;
+  if (!atual) return candidata;
+  return candidata > atual ? candidata : atual;
+}
+
+/**
+ * O evento aberto mais urgente do MESMO sentido do saldo.
+ *
+ * Espelha `nextSettlementItem` (Pessoas) sobre os mínimos já acumulados: aqui
+ * a agregação percorre os itens uma vez e guarda o menor por lado, então não
+ * há array para reprocessar — mas a POLICY é idêntica, e é isso que importa
+ * para as duas telas não divergirem.
+ *
+ * Saldo zero devolve `null`: não há um sentido a mostrar, então não há evento.
+ */
+function nextOpenItem(
+  entry: { openNextReceivableDue: Date | null; openNextDebtDue: Date | null },
+  netBalance: number,
+): { direction: 'receive' | 'pay'; dueDate: string } | null {
+  if (Math.abs(netBalance) < 0.005) return null;
+
+  const direction = netBalance > 0 ? 'receive' : 'pay';
+  const escolhido =
+    direction === 'receive'
+      ? entry.openNextReceivableDue
+      : entry.openNextDebtDue;
+
+  return escolhido === null
+    ? null
+    : { direction, dueDate: civilDay(escolhido) };
+}
+
 function isOverdueToday(
   dueDate: Date | null | undefined,
   now: Date = new Date(),
@@ -373,6 +425,8 @@ export class BudgetService {
           amount: true,
           personId: true,
           person: { select: { id: true, name: true } },
+          /* Para `settledAt`: quando o acerto terminou de ser liquidado. */
+          paidAt: true,
         },
       }),
 
@@ -602,9 +656,71 @@ export class BudgetService {
       openHasOverdue: boolean;
       /** Parcela do que está EM ABERTO originada de compra no cartão. */
       openAutomaticReceivable: number;
+      /*
+        ── Universo C: QUANDO ──
+
+        Os dois universos acima respondem "quanto". A lista do Orçamento
+        precisava de uma terceira resposta: "quando isto acontece?". Antes o
+        payload só levava `openHasOverdue` — existe algo vencido, sim ou não —,
+        então a tela sabia que havia urgência mas não sabia dizer "Pagar em 5d",
+        e caía na composição bilateral como metadata de recurso.
+
+        `dueDate` já era lido nos quatro laços de pendência aberta, só para
+        derivar aquele booleano, e descartado depois. O mínimo por LADO é
+        acumulado na mesma passagem — nenhuma consulta nova, nenhuma consulta
+        por pessoa.
+
+        Um por lado, não um global: a row mostra o evento do MESMO sentido do
+        saldo, e um mínimo único obrigaria a escolher o lado antes de saber
+        qual é.
+      */
+      openNextReceivableDue: Date | null;
+      openNextDebtDue: Date | null;
+      /*
+        ── Quando o agregado terminou de ser liquidado ──
+
+        `settledAt` é a MAIOR data entre os itens resolvidos: o instante em que
+        o último pendente foi quitado e, portanto, em que a relação daquela
+        competência ficou integralmente resolvida. Não é "a última que
+        apareceu" — é um fato com significado próprio.
+
+        ── Por que não existe um `settledUnknown` ──
+
+        As duas consultas de resolvidos filtram `paidAt` na janela do mês, e o
+        legado pago SEM data não casa com o range: ele nunca chega aqui. Um
+        campo para marcar essa ausência seria inalcançável por construção, e
+        código morto que aparenta cobrir um caso é pior que a ausência dele.
+
+        A ambiguidade honesta que SOBRA é `settledAtMax === null`, quando nada
+        foi resolvido na competência — e a tela já trata isso.
+      */
+      settledAtMax: Date | null;
+      settledCount: number;
     }
 
     const settlementByPerson = new Map<string, SettlementAccumulator>();
+
+    /**
+     * Registra um item RESOLVIDO da competência.
+     *
+     * `settledAt` fica com a MAIOR data: o momento em que o último item
+     * pendente foi liquidado e, portanto, em que o agregado ficou
+     * integralmente resolvido. Não é "a última que apareceu" — é um fato com
+     * significado próprio, e é o que a row afirma ao dizer "Quitado em 18/08".
+     *
+     * `paidAt` ausente é defensivo, não um caso real: as consultas de
+     * resolvidos filtram `paidAt` na janela, então o legado pago sem data não
+     * chega até aqui. Se chegasse, a data não seria afirmada — nunca a de
+     * outro item como se fosse a conclusão.
+     */
+    function registrarLiquidacao(
+      entry: SettlementAccumulator,
+      paidAt: Date | null | undefined,
+    ): void {
+      entry.settledCount += 1;
+      if (!paidAt) return;
+      entry.settledAtMax = maiorData(entry.settledAtMax, paidAt);
+    }
 
     function settlementEntry(
       personId: string,
@@ -628,6 +744,10 @@ export class BudgetService {
         openItemCount: 0,
         openHasOverdue: false,
         openAutomaticReceivable: 0,
+        openNextReceivableDue: null,
+        openNextDebtDue: null,
+        settledAtMax: null,
+        settledCount: 0,
       };
       settlementByPerson.set(personId, fresh);
       return fresh;
@@ -670,10 +790,12 @@ export class BudgetService {
     */
     for (const receivable of receivedInMonth) {
       if (!receivable.personId) continue;
-      settlementEntry(
+      const entry = settlementEntry(
         receivable.personId,
         receivable.person?.name ?? 'Pessoa',
-      ).budgetReceivableAmount += Number(receivable.amount);
+      );
+      entry.budgetReceivableAmount += Number(receivable.amount);
+      registrarLiquidacao(entry, receivable.paidAt);
     }
 
     /*
@@ -702,10 +824,12 @@ export class BudgetService {
     for (const debt of paidInMonth) {
       if (!debt.personId) continue;
       if (classifyDebtForBudget(debt, selectedPeriod) === 'prior') continue;
-      settlementEntry(
+      const entry = settlementEntry(
         debt.personId,
         debt.person?.name ?? 'Pessoa',
-      ).budgetPriorPaidInMonth += Number(debt.amount);
+      );
+      entry.budgetPriorPaidInMonth += Number(debt.amount);
+      registrarLiquidacao(entry, debt.paidAt);
     }
 
     /*
@@ -739,6 +863,10 @@ export class BudgetService {
       entry.budgetReceivableAmount += amount;
       entry.openItemCount += 1;
       if (isOverdueToday(receivable.dueDate)) entry.openHasOverdue = true;
+      entry.openNextReceivableDue = menorData(
+        entry.openNextReceivableDue,
+        receivable.dueDate,
+      );
       if (receivable.transactionId) entry.openAutomaticReceivable += amount;
     }
 
@@ -751,6 +879,7 @@ export class BudgetService {
       entry.openDebtInMonth += Number(debt.amount);
       entry.openItemCount += 1;
       if (isOverdueToday(debt.dueDate)) entry.openHasOverdue = true;
+      entry.openNextDebtDue = menorData(entry.openNextDebtDue, debt.dueDate);
     }
 
     for (const receivable of openPriorReceivables) {
@@ -764,6 +893,15 @@ export class BudgetService {
       entry.budgetReceivableAmount += amount;
       entry.openItemCount += 1;
       if (isOverdueToday(receivable.dueDate)) entry.openHasOverdue = true;
+      /*
+        Pendência anterior entra no MESMO mínimo: a regra do Budget já carrega
+        o atraso de meses passados, e um item vencido em agosto é o evento mais
+        urgente de setembro — não um item de outro universo.
+      */
+      entry.openNextReceivableDue = menorData(
+        entry.openNextReceivableDue,
+        receivable.dueDate,
+      );
       if (receivable.transactionId) entry.openAutomaticReceivable += amount;
     }
 
@@ -776,6 +914,7 @@ export class BudgetService {
       entry.openPriorDebt += Number(debt.amount);
       entry.openItemCount += 1;
       if (isOverdueToday(debt.dueDate)) entry.openHasOverdue = true;
+      entry.openNextDebtDue = menorData(entry.openNextDebtDue, debt.dueDate);
     }
 
     /*
@@ -961,6 +1100,50 @@ export class BudgetService {
             /** Urgência: existe item vencido, de qualquer lado. */
             hasOverdue: entry.openHasOverdue,
             automaticReceivable: entry.openAutomaticReceivable,
+            /*
+              ── O próximo acerto, do MESMO sentido do saldo ──
+
+              A regra é a de `nextSettlementItem`, em Pessoas: o líquido decide
+              o lado, e o menor `dueDate` daquele lado é o evento. Vencido tem
+              data menor, então lidera sozinho — atrasado, hoje e futuro saem
+              ordenados sem um `if` de urgência.
+
+              Seguir o sentido do saldo é o que impede a row de se contradizer:
+              "VOCÊ DEVE" com "Receber amanhã" embaixo é factualmente correto e
+              exige do leitor o esforço que a lista existe para evitar. O custo
+              é conhecido — uma dívida vencendo amanhã não aparece quando o
+              saldo é a receber —, e o extrato da pessoa é onde ela está.
+
+              Saldo ZERO não tem sentido a mostrar (pode haver R$ 500 abertos
+              de cada lado), então também não tem evento a destacar.
+
+              DADO, nunca copy: o verbo e a distância são decisões de
+              apresentação, e a mesma informação alimenta a lista hoje e
+              poderia alimentar um push amanhã, com outro vocabulário.
+            */
+            nextItem: nextOpenItem(entry, openReceivableTotal - openDebtTotal),
+          },
+
+          /*
+            ── QUANDO o acerto terminou de ser liquidado ──
+
+            `settledAt` é a MAIOR data de liquidação entre os itens resolvidos
+            da competência: o instante em que o último pendente foi quitado.
+            Não é conveniência de layout — é o momento em que a relação daquele
+            mês ficou integralmente resolvida.
+
+            `null` quando nada foi resolvido na competência — e a tela cai num
+            fallback neutro, porque não existe data a afirmar. O legado pago
+            sem `paidAt` não produz esse caso: ele não casa com a janela das
+            consultas de resolvidos e nunca chega ao agregado.
+          */
+          settled: {
+            /** `YYYY-MM-DD` civil, ou `null` quando não há data defensável. */
+            settledAt: entry.settledAtMax
+              ? civilDay(entry.settledAtMax)
+              : null,
+            /** Quantos itens da competência estão resolvidos. */
+            itemCount: entry.settledCount,
           },
         };
       });
@@ -1124,6 +1307,8 @@ export class BudgetService {
     debts: Array<{
       amount: unknown;
       isPaid: boolean;
+      /** Quando o dinheiro saiu. `null` no legado pago sem data. */
+      paidAt?: Date | null;
       title: string;
       dueDate: Date;
       personId: string | null;
@@ -1144,6 +1329,10 @@ export class BudgetService {
         count: number;
         allPaid: boolean;
         anyOverdue: boolean;
+        /* Menor vencimento ABERTO: o próximo evento. */
+        nextDue: Date | null;
+        /* Maior liquidação: quando o último pendente foi quitado. */
+        settledAt: Date | null;
       }
     >();
     const standalone: Array<{
@@ -1153,6 +1342,8 @@ export class BudgetService {
       amount: number;
       isPaid: boolean;
       status: DebtStatus;
+      dueDate: string | null;
+      settledAt: string | null;
     }> = [];
 
     const statusOf = (debt: { isPaid: boolean; dueDate: Date }): DebtStatus =>
@@ -1166,13 +1357,31 @@ export class BudgetService {
           count: 0,
           allPaid: true,
           anyOverdue: false,
+          nextDue: null as Date | null,
+          settledAt: null as Date | null,
         };
         entry.amount += Number(debt.amount);
         entry.count += 1;
         if (!debt.isPaid) entry.allPaid = false;
         if (statusOf(debt) === 'OVERDUE') entry.anyOverdue = true;
+        /*
+          Aberta alimenta o PRÓXIMO evento; paga alimenta a CONCLUSÃO. Cada
+          item contribui para um só dos dois, e a linha usa o que o estado
+          agregado pedir.
+        */
+        if (debt.isPaid) {
+          entry.settledAt = maiorData(entry.settledAt, debt.paidAt ?? null);
+        } else {
+          entry.nextDue = menorData(entry.nextDue, debt.dueDate);
+        }
         byPerson.set(debt.personId, entry);
       } else {
+        /*
+          Dívida avulsa é UM item: a data é inequívoca por natureza, sem
+          agregação a desambiguar. `dueDate` quando aberta (o prazo a cumprir)
+          e `paidAt` quando paga (quando o dinheiro saiu) — nunca as duas, para
+          a tela não ter de escolher.
+        */
         standalone.push({
           kind: 'debt',
           id: null,
@@ -1180,6 +1389,9 @@ export class BudgetService {
           amount: Number(debt.amount),
           isPaid: debt.isPaid,
           status: statusOf(debt),
+          dueDate: debt.isPaid ? null : civilDay(debt.dueDate),
+          settledAt:
+            debt.isPaid && debt.paidAt ? civilDay(debt.paidAt) : null,
         });
       }
     }
@@ -1198,6 +1410,17 @@ export class BudgetService {
         : entry.anyOverdue
           ? 'OVERDUE'
           : 'PENDING') as DebtStatus,
+      /*
+        Só quando há algo ABERTO: numa pessoa inteiramente paga o próximo
+        vencimento não existe, e devolver um seria afirmar pendência.
+      */
+      dueDate: entry.nextDue ? civilDay(entry.nextDue) : null,
+      /*
+        Só quando TUDO está pago. Com item aberto, a relação não terminou de
+        ser liquidada — a data do que já foi pago não é a conclusão dela.
+      */
+      settledAt:
+        entry.allPaid && entry.settledAt ? civilDay(entry.settledAt) : null,
     }));
 
     // Urgência primeiro — vencida, a pagar, paga — e valor como desempate.

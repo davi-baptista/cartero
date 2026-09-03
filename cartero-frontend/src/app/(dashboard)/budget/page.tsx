@@ -18,6 +18,7 @@ import {
   ROW_ICON_CLASS,
   ROW_TRAILING_LABEL_CLASS,
 } from '@/components/ui/financial-list-row'
+import { debtRowMeta, settlementRowMeta } from '@/lib/budget-settlement-meta'
 import {
   budgetAllSettled,
   budgetDueTone,
@@ -765,6 +766,10 @@ export default function BudgetPage() {
               */
               const view = peopleRowView(person, formatCurrency)
               const quitado = view.status === 'settled'
+              const metaAcerto = settlementRowMeta(view.status, {
+                nextItem: person.open.nextItem,
+                settledAt: person.settled.settledAt,
+              })
 
               return (
                 <StatusListRow
@@ -793,21 +798,26 @@ export default function BudgetPage() {
                   }
                   title={person.personName}
                   /*
-                    Resolvido não repete o estado.
+                    ── Prazo à esquerda, estado à direita ──
 
-                    O trailing já diz PAGO; um "Pago" abaixo do nome exibiria
-                    o mesmo fato duas vezes. Em aberto, a metadata explica o
-                    valor — composição bilateral ou pendência anterior, o que
-                    `peopleRowView` já prioriza.
+                    Aberta mostra o próximo acerto ("Pagar em 5d"), pelos
+                    helpers de Pessoas. Antes mostrava a composição bilateral,
+                    metadata de recurso de quando o payload não trazia
+                    `dueDate` — a composição continua no drawer, que é a
+                    superfície de detalhe.
 
-                    Sem prazo aqui: `peopleSettlements` traz agregados, não
-                    datas. Inventar "Pagar em Xd" a partir de um agregado
-                    afirmaria um vencimento que o payload não conhece.
+                    Resolvida mostra QUANDO o acerto terminou ("Quitado em
+                    18/08"), nunca "Pago": o trailing já diz PAGO, e repetir a
+                    palavra seria a duplicação que a fase anterior removeu. Sem
+                    data defensável, "Acerto concluído" — honesto em vez de
+                    inventado.
                   */
                   meta={
-                    quitado || view.metadata.length === 0
-                      ? undefined
-                      : view.metadata[0]
+                    metaAcerto && (
+                      <span className={metaAcerto.tone}>
+                        {metaAcerto.text}
+                      </span>
+                    )
                   }
                   trailing={
                     <span
@@ -854,6 +864,7 @@ export default function BudgetPage() {
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
             {standaloneDebtRows.map((item) => {
               const cfg = DEBT_STATUS_CONFIG[item.status]
+              const metaDivida = debtRowMeta(item)
               return (
                 <StatusListRow
                   key={`${item.kind}-${item.id ?? item.name}`}
@@ -868,15 +879,24 @@ export default function BudgetPage() {
                   tone={cfg.tone}
                   title={item.name}
                   /*
-                    Sem metadata: `debts` traz o valor agregado da competência,
-                    não o vencimento de cada dívida. O prazo apareceria com
-                    prazer, mas o payload não o conhece — e derivá-lo de um
-                    agregado seria inventar uma data.
+                    O prazo, agora que o payload o conhece.
 
-                    O subtítulo anterior dizia "já descontado R$ X que
-                    <pessoa> te deve" — a compensação afirmada na tela. Ela
-                    não existe mais: o valor é a dívida íntegra.
+                    Antes esta row não tinha metadata: `debtBreakdown` levava
+                    só somas e status, e derivar uma data de um agregado seria
+                    inventá-la. Passou a trazer o menor vencimento aberto e a
+                    maior liquidação — o próximo evento e a conclusão.
+
+                    O subtítulo mais antigo dizia "já descontado R$ X que
+                    <pessoa> te deve" — a compensação afirmada na tela. Ela não
+                    existe mais: o valor é a dívida íntegra.
                   */
+                  meta={
+                    metaDivida && (
+                      <span className={metaDivida.tone}>
+                        {metaDivida.text}
+                      </span>
+                    )
+                  }
                   trailing={
                     <span
                       className={cn(ROW_TRAILING_LABEL_CLASS, cfg.trailingTone)}

@@ -1108,6 +1108,80 @@ ESQUERDA   o que é?                       DIREITA   quanto?
 - Os **containers das seções** (cards arredondados) foram preservados de
   propósito: avaliar a nova hierarquia antes de mexer na moldura
 
+## Orçamento — prazo dos acertos (Fase BUDGET UI1.1) ✅
+
+A fase anterior alinhou a hierarquia visual, mas as rows de acerto e dívida
+ficaram sem metadata temporal: o payload levava somas e um booleano
+(`hasOverdue`), então a tela sabia que havia urgência sem saber **quando**.
+`dueDate` era lido na agregação só para derivar aquele booleano e descartado —
+e a row caía na composição bilateral (`R$ 10 a receber · R$ 11 a pagar`) como
+metadata de recurso.
+
+### Read model enriquecido (sem schema, sem migration)
+
+| Campo | Onde | Responde |
+|---|---|---|
+| `open.nextItem` | `peopleSettlements` | `{direction, dueDate}` — o próximo acerto |
+| `settled.settledAt` | `peopleSettlements` | quando o agregado terminou de ser liquidado |
+| `dueDate` / `settledAt` | `debtBreakdown` | idem, por linha de dívida |
+
+- **Zero consulta nova**: `dueDate` e `paidAt` já vinham nas queries set-based;
+  passaram a sobreviver à agregação. `1x /budget` com 4 pessoas na tela,
+  `0x persons/statement` — medido no browser
+- `nextOpenItem` espelha `nextSettlementItem` (Pessoas): o **líquido decide o
+  lado** e o menor vencimento daquele lado é o evento. Vencido tem data menor,
+  então lidera sem `if` de urgência. Saldo zero → `null` (não há sentido a
+  mostrar)
+- **Pendência anterior é evento legítimo**: a regra do Budget já carrega atraso
+  de meses passados, e filtrar pela competência exibida esconderia a obrigação
+  mais urgente da tela
+- `civilDay` (America/Fortaleza) em todas as datas — nunca `toISOString` cru
+
+### `settledAt` é a MAIOR data, e isso tem significado
+
+Não é `max(paidAt)` por conveniência de layout: é **quando o último item
+pendente foi liquidado**, portanto quando a relação daquela competência ficou
+integralmente resolvida. Múltiplas datas diferentes **não** tornam o agregado
+ambíguo.
+
+- Só quando **tudo** está resolvido; com item aberto, a relação não terminou
+- `null` quando nada foi resolvido → fallback `Acerto concluído`
+- **Não existe `settledUnknown`**: as duas consultas de resolvidos filtram
+  `paidAt` na janela, e o legado pago sem data não casa com o range — um campo
+  para marcá-lo seria inalcançável por construção
+
+### Apresentação (`lib/budget-settlement-meta.ts`)
+
+| Estado | Metadata | Trailing |
+|---|---|---|
+| aberta | `Pagar em 5d` · `Pagar atrasado 3d` · `Receber amanhã` | `VOCÊ DEVE` / `A RECEBER` muted |
+| resolvida | **`Quitado em 18/08`** | `PAGO` / `RECEBIDO` verde |
+| resolvida sem data | `Acerto concluído` | idem |
+| dívida paga sem data | `Pagamento concluído` | `PAGA` |
+
+- Texto e tom vêm de `nextItemLabel` / `subtextTone` — os helpers de Pessoas,
+  com a janela `URGENT_DAYS_WINDOW = 7`: vermelho no atraso, âmbar em ≤7 dias,
+  neutro no resto
+- **`Quitado`, não `Pago`/`Recebido`**: o trailing já diz PAGO, e repetir a
+  palavra seria a duplicação removida na fase anterior. A esquerda responde
+  QUANDO, o trailing responde COMO — verbo único serve aos dois sentidos
+- Nunca `Vence em` para acerto entre pessoas: o verbo é a informação que diz
+  quem paga quem
+- A **composição bilateral** saiu da hierarquia principal, não do domínio —
+  continua no read model e no drawer da pessoa
+- Metadata é **UMA** linha: prazo e composição juntos empilhariam três níveis
+  à esquerda
+- Alturas medidas: 76-78px em fatura, acerto aberto, acerto resolvido e dívida —
+  a row resolvida deixou de parecer solta sem ficar mais alta
+
+`subtextTone` ganhou parâmetro `today` (injetável), sem o qual o tom era
+intestável — usava sempre o relógio real.
+
+**Achado incidental corrigido**: nenhum teste cobria a virada de fuso do
+`civilDay` canônico. Uma probe que removia a conversão de UTC-3 não matava
+nenhum teste; `budget-settlement-timing.spec.ts` passou a fixar o caso (10/09
+01h UTC = 09/09 em Fortaleza).
+
 ## Feature: Orçamento Mensal — página `/budget` (✅ Implementado)
 
 ### Lógica implementada

@@ -37,6 +37,7 @@ const brl = (value: number) =>
 function person(overrides: {
   budget?: Partial<PersonSettlement['budget']>
   open?: Partial<PersonSettlement['open']>
+  settled?: Partial<PersonSettlement['settled']>
   name?: string
 }): PersonSettlement {
   return {
@@ -65,7 +66,13 @@ function person(overrides: {
       itemCount: 0,
       hasOverdue: false,
       automaticReceivable: 0,
+      nextItem: null,
       ...overrides.open,
+    },
+    settled: {
+      settledAt: null,
+      itemCount: 0,
+      ...overrides.settled,
     },
   }
 }

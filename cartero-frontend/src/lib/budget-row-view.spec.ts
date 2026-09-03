@@ -302,19 +302,30 @@ describe('B19-B24: a row de pessoa e de dívida', () => {
 
   it('B23/probe 7: resolvido não duplica o status no subtexto', () => {
     /*
-      O trailing já diz PAGO; um "Pago" abaixo do nome exibiria o mesmo fato
-      duas vezes — a mesma correção feita em Pessoas.
+      O trailing diz PAGO; "Pago" abaixo do nome exibiria o mesmo fato duas
+      vezes. A metadata resolvida passou a dizer QUANDO ("Quitado em 18/08"),
+      que é informação nova — a esquerda responde quando, a direita como.
     */
-    expect(BUDGET_CODE).toContain('quitado || view.metadata.length === 0')
+    expect(BUDGET_CODE).toContain('settlementRowMeta(view.status,')
+
+    const meta = semComentarios(ler('./budget-settlement-meta.ts'))
+    expect(meta).toContain('Quitado em ')
+    /* O verbo é único: nunca "Pago em"/"Recebido em" ao lado de PAGO/RECEBIDO. */
+    expect(meta).not.toContain('`Pago em ')
+    expect(meta).not.toContain('`Recebido em ')
   })
 
-  it('B21: em aberto, a metadata explica o valor', () => {
+  it('B21: em aberto, a metadata é o PRAZO', () => {
     /*
-      Sem prazo aqui: `peopleSettlements` traz agregados, não datas. Inventar
-      "Pagar em Xd" a partir de um agregado afirmaria um vencimento que o
-      payload não conhece.
+      A composição bilateral era metadata de recurso: o payload não trazia
+      `dueDate`, então a linha exibia "R$ 10 a receber · R$ 11 a pagar" — que
+      explica o valor mas não diz quando algo acontece.
+
+      Com `open.nextItem` no read model, o prazo assume. A composição continua
+      no drawer, que é a superfície de detalhe.
     */
-    expect(BUDGET_CODE).toContain('view.metadata[0]')
+    expect(BUDGET_CODE).toContain('nextItem: person.open.nextItem')
+    expect(BUDGET_CODE).not.toContain('view.metadata[0]')
   })
 
   it('B19/B20: o vocabulário é o de Pessoas', () => {
