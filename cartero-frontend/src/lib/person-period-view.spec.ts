@@ -481,7 +481,7 @@ describe('P-9: a page aplica a policy', () => {
       `subtextTone` delega a `timingUrgency`. Um `atrasado && 'text-destructive'`
       solto voltaria a cobrir só uma das pontas.
     */
-    expect(code).toContain('subtextTone(balance.nextItem)')
+    expect(code).toContain('rowSubtextTone(status, balance.nextItem)')
     expect(code).not.toContain("atrasado && 'text-destructive'")
   })
 

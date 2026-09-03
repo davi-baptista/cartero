@@ -281,12 +281,17 @@ describe('B13-B18: a cor da fatura', () => {
     expect(BUDGET_CODE).toContain('invoiceRowPresentation(inv)')
   })
 
-  it('resolvido não colore a data do vencimento', () => {
+  it('resolvido usa o verde de conclusão, não a régua temporal', () => {
     /*
-      `PAGA` no trailing já diz o estado; pintar o vencimento de verde faria a
-      data parecer o fato comemorado.
+      Saía neutro, e a row ficava meio-concluída: data cinza ao lado de um
+      `PAGA` verde, os dois falando do MESMO fato resolvido.
+
+      Vale mesmo para dívida paga COM atraso — manter a data vermelha faria a
+      row afirmar duas coisas opostas. O atraso passou a ser contexto de qual
+      obrigação era, não um alerta pendente.
     */
-    expect(budgetDueTone('2020-01-01', true)).toBe('')
+    expect(budgetDueTone('2020-01-01', true)).toBe('text-paid')
+    expect(budgetDueTone('2020-01-01', true)).not.toBe('text-destructive')
   })
 })
 

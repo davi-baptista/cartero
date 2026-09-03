@@ -46,7 +46,7 @@ import {
   periodNetAmount,
   personRowStatus,
   rowSubtext,
-  subtextTone,
+  rowSubtextTone,
 } from '@/lib/person-period-view'
 import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
@@ -657,8 +657,18 @@ export default function PersonsPage() {
                 nextItemLabel(balance.nextItem),
                 balance.settledAt,
               )
-              /* Régua canônica de urgência — a mesma de Bancos e da Atenção. */
-              const prazoTone = subtextTone(balance.nextItem)
+              /*
+                O tom segue o ESTADO da row, não só o prazo.
+
+                Resolvido usa o verde de conclusão — o mesmo do trailing e o
+                mesmo que Bancos aplica ao "Venceu em" de uma fatura paga.
+                Antes saía neutro, e a row ficava meio-concluída: "Quitado em
+                18/08" em cinza ao lado de `PAGO` em verde.
+
+                Aberto mantém a régua canônica de urgência (vermelho no
+                atraso, âmbar em ≤7 dias, neutro no resto).
+              */
+              const prazoTone = rowSubtextTone(status, balance.nextItem)
 
               /*
                 ── O valor é NEUTRO ──

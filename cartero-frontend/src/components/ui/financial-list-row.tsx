@@ -41,6 +41,35 @@ import { cn } from '@/lib/utils'
 export const ROW_TITLE_CLASS =
   'truncate text-sm font-medium leading-tight sm:text-[15px]'
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * O tom do subtexto quando a row está RESOLVIDA
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * O trailing de uma row quitada é verde (`PAGA`, `PAGO`, `RECEBIDO`), mas o
+ * subtexto abaixo do nome saía neutro — e os dois falam do MESMO fato:
+ *
+ *   Curso online                             R$ 420,00
+ *   Venceu em 25/08/2026 · Eva [cinza]            PAGA [verde]
+ *
+ * Meia linha concluída. Com a cor compartilhada, a row se lê como resolvida de
+ * relance, sem o leitor precisar cruzar os dois lados.
+ *
+ * ── Verde é SUCESSO, não direção ──
+ *
+ * Nesta rodada verde significa quitado/pago/recebido. Não é "dinheiro
+ * entrando": um recebível pendente continua sem verde, e o valor principal
+ * segue neutro em todos os estados.
+ *
+ * ── Um token, três superfícies ──
+ *
+ * Bancos já aplicava a regra (via `invoice-row-presenter`); Orçamento e
+ * Pessoas não. Três definições de "o verde do resolvido" divergiriam na
+ * primeira mudança — e a divergência que esta rodada corrige nasceu
+ * exatamente assim.
+ */
+export const ROW_RESOLVED_TONE = 'text-paid'
+
 /** Metadata compacta abaixo do título. */
 export const ROW_META_CLASS =
   'flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] text-muted-foreground'

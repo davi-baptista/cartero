@@ -1,3 +1,4 @@
+import { ROW_RESOLVED_TONE } from '@/components/ui/financial-list-row'
 import { formatDateValue } from '@/lib/date'
 import { formatDate } from '@/lib/formatters'
 import {
@@ -105,16 +106,24 @@ export function openSettlementMeta(
  * Sem data: `Acerto concluído`. Honesto em vez de inventado — nada aqui
  * escolhe uma data qualquer para preencher a linha.
  *
- * Sempre neutro: um acerto concluído não tem prazo a cumprir, e o verde de
- * conclusão já está no trailing. Pintar a data também faria a linha inteira
- * comunicar sucesso duas vezes.
+ * ── Verde, o mesmo do trailing ──
+ *
+ * Saía neutro, com o argumento de que o verde do trailing bastava. Mas os dois
+ * falam do MESMO fato resolvido, e meia linha colorida se lê como meia
+ * conclusão — o leitor precisava cruzar os dois lados para concluir que a
+ * relação terminou.
+ *
+ * `ROW_RESOLVED_TONE` é o token compartilhado: o mesmo que Bancos aplica ao
+ * "Venceu em" de uma fatura paga.
  */
 export function settledSettlementMeta(
   source: SettlementMetaSource,
 ): SettlementMeta {
-  if (!source.settledAt) return { text: 'Acerto concluído', tone: '' }
+  const tone = ROW_RESOLVED_TONE
 
-  return { text: `Quitado em ${formatDate(source.settledAt)}`, tone: '' }
+  if (!source.settledAt) return { text: 'Acerto concluído', tone }
+
+  return { text: `Quitado em ${formatDate(source.settledAt)}`, tone }
 }
 
 /**
@@ -160,14 +169,18 @@ export function debtRowMeta(
   today: string = formatDateValue(),
 ): SettlementMeta | null {
   if (row.isPaid) {
+    /* Verde de conclusão, o mesmo do trailing `PAGA`. */
     return row.settledAt
-      ? { text: `Quitado em ${formatDate(row.settledAt)}`, tone: '' }
+      ? {
+          text: `Quitado em ${formatDate(row.settledAt)}`,
+          tone: ROW_RESOLVED_TONE,
+        }
       : /*
           Paga sem data defensável. "Acerto concluído" é a frase das rows
           agregadas; aqui a linha é uma obrigação, e "Pagamento concluído"
           diria o mesmo sobre o objeto certo.
         */
-        { text: 'Pagamento concluído', tone: '' }
+        { text: 'Pagamento concluído', tone: ROW_RESOLVED_TONE }
   }
 
   if (!row.dueDate) return null

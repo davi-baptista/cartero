@@ -189,14 +189,20 @@ describe('F7-F9: row resolvida', () => {
     }
   })
 
-  it('resolvido é sempre neutro', () => {
+  it('resolvido usa o verde de conclusão, com ou sem data', () => {
     /*
-      Um acerto concluído não tem prazo a cumprir, e o verde já está no
-      trailing. Pintar a data faria a linha comunicar sucesso duas vezes.
+      Um acerto concluído não tem prazo a cumprir, então não passa pela régua
+      temporal — mas também não fica neutro: o subtexto e o trailing falam do
+      mesmo fato, e meia linha colorida se lê como meia conclusão.
+
+      O token é compartilhado (`ROW_RESOLVED_TONE`): o mesmo que Bancos aplica
+      ao "Venceu em" de uma fatura paga.
     */
-    expect(settledSettlementMeta({ nextItem: null, settledAt: '2026-08-18' }).tone)
-      .toBe('')
-    expect(settledSettlementMeta({ nextItem: null, settledAt: null }).tone).toBe('')
+    for (const settledAt of ['2026-08-18', null]) {
+      expect(
+        settledSettlementMeta({ nextItem: null, settledAt }).tone,
+      ).toBe('text-paid')
+    }
   })
 
   it('a row resolvida nunca fica sem metadata', () => {

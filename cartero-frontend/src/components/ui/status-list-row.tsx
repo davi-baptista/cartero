@@ -57,10 +57,18 @@ const TONE_CLASSES: Record<StatusRowTone, { bg: string; icon: string }> = {
   fazia o Orçamento parecer vazio — não havia ar demais, havia conteúdo de
   menos para ocupá-lo.
 */
-export const STATUS_ROW_TITLE_CLASS = cn(
-  ROW_TITLE_CLASS,
-  'transition-colors group-hover:text-primary',
-)
+/*
+  ── Sem realce azul no hover ──
+
+  O `group-hover:text-primary` pintava o NOME de azul ao passar o mouse
+  (`--primary` é `oklch(0.640 0.210 272)` no tema dark). Bancos e Pessoas não
+  fazem isso: o hover delas é só o fundo `bg-muted/30`, e a affordance de
+  "isto abre" vem do chevron, que já está ao lado do título.
+
+  O fundo do hover nunca divergiu — as três superfícies sempre usaram
+  `hover:bg-muted/30`. Era o texto que acendia azul só aqui.
+*/
+export const STATUS_ROW_TITLE_CLASS = ROW_TITLE_CLASS
 
 /*
   Valor na escala do Extrato (`ROW_AMOUNT_CLASS`).
@@ -166,8 +174,19 @@ export function StatusListRow({
     alta pelo conteúdo. `items-start` mantém ícone, texto e valor alinhados
     pelo topo quando isso acontece.
   */
+  /*
+    Hover e foco iguais aos de Bancos e Pessoas.
+
+    O fundo (`hover:bg-muted/30`) nunca divergiu; o que faltava era o ANEL DE
+    FOCO. `FinancialListRow` traz `outline-none focus-visible:ring-3` e estas
+    rows não tinham nenhum — navegando por teclado, o Orçamento não mostrava
+    onde estava o cursor.
+
+    O `px-4` continua próprio: estas rows vivem dentro dos cards do Orçamento e
+    o respiro lateral vem da própria linha, não do container da página.
+  */
   const classes = cn(
-    'group flex w-full cursor-pointer items-start gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/30 active:bg-muted/50 sm:gap-4 sm:py-4',
+    'group flex w-full cursor-pointer items-start gap-3 px-4 py-3.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 active:bg-muted/50 sm:gap-4 sm:py-4',
   )
 
   const conteudo = (

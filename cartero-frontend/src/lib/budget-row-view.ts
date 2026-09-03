@@ -1,3 +1,4 @@
+import { ROW_RESOLVED_TONE } from '@/components/ui/financial-list-row'
 import { timingUrgency } from '@/lib/invoice-timing'
 
 /**
@@ -39,11 +40,20 @@ import { timingUrgency } from '@/lib/invoice-timing'
  *   hoje/≤7d   pending       ainda dá tempo, mas não muito
  *   depois     neutro        é informação, não alerta
  *
- * Resolvido não passa por aqui: uma dívida paga não tem prazo a cumprir, e
- * colorir a data faria a linha parecer pendente.
+ * ── Resolvido usa o verde de conclusão ──
+ *
+ * Não passa pela régua temporal: uma dívida paga não tem prazo a cumprir, e o
+ * vermelho de atraso numa linha quitada contradiria o `PAGA` do trailing.
+ *
+ * Devolvia neutro, e a row ficava meio-concluída — data cinza ao lado de um
+ * estado verde. Agora acompanha o trailing pelo token compartilhado.
+ *
+ * Vale mesmo para dívida paga COM atraso: o trailing diz `PAGA`, e manter a
+ * data vermelha faria a mesma row afirmar duas coisas opostas. O atraso é
+ * contexto de qual obrigação era, não um alerta pendente.
  */
 export function budgetDueTone(dueDate: string, resolved = false): string {
-  if (resolved) return ''
+  if (resolved) return ROW_RESOLVED_TONE
 
   /*
     Dia civil por string, nunca `new Date('YYYY-MM-DD')` — este último é lido

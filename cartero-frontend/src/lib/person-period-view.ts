@@ -1,6 +1,7 @@
 import type { NextSettlementItem } from '@/lib/person-next-item'
 import { timingUrgency } from '@/lib/invoice-timing'
 import { formatDate } from '@/lib/formatters'
+import { ROW_RESOLVED_TONE } from '@/components/ui/financial-list-row'
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -232,4 +233,25 @@ export function subtextTone(
     case 'later':
       return ''
   }
+}
+
+/**
+ * O tom do subtexto da row, pelo seu ESTADO.
+ *
+ * `subtextTone` responde sobre um PRAZO, e uma row resolvida não tem prazo: o
+ * `nextItem` dela pode estar preenchido (item de outra competência), e aplicar
+ * a régua temporal ali pintaria de vermelho uma linha que diz `PAGO`.
+ *
+ * Resolvido usa `ROW_RESOLVED_TONE` — o mesmo verde do trailing, e o mesmo que
+ * Bancos aplica ao "Venceu em" de uma fatura paga. Os dois falam do mesmo
+ * fato, e sair em cores diferentes fazia a row parecer meio-concluída.
+ */
+export function rowSubtextTone(
+  status: PersonRowStatus,
+  item: NextSettlementItem | null,
+  today?: Date,
+): string {
+  if (isResolvedStatus(status)) return ROW_RESOLVED_TONE
+
+  return subtextTone(item, today)
 }

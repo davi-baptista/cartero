@@ -132,12 +132,18 @@ describe('Pessoas ganhou o subtexto', () => {
 
       Pintar todo evento futuro continua barrado: `later` devolve string vazia.
     */
-    expect(PERSONS).toContain('subtextTone(balance.nextItem)')
+    /*
+      A chamada passou por `rowSubtextTone`, que decide pelo ESTADO: resolvido
+      usa o verde de conclusão, aberto delega à régua. A régua continua sendo
+      `timingUrgency` — o que este teste protege.
+    */
+    expect(PERSONS).toContain('rowSubtextTone(status, balance.nextItem)')
     expect(PERSONS).not.toContain("atrasado && 'text-destructive'")
 
     const view = code(ler('./person-period-view.ts'))
     expect(view).toContain('timingUrgency(')
     expect(view).toContain("case 'later':")
+    expect(view).toContain('return subtextTone(item, today)')
   })
 
   it('o status do saldo continua no trailing, não vira badge', () => {
