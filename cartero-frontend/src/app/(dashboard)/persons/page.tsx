@@ -33,19 +33,20 @@ import {
   ROW_TRAILING_LABEL_CLASS,
   ROW_ICON_CLASS,
 } from '@/components/ui/financial-list-row'
+import { nextItemLabel } from '@/lib/person-next-item'
 import {
-  isNextItemOverdue,
-  nextItemLabel,
-  sortPeopleByPriority,
-} from '@/lib/person-next-item'
-import { personsSummaryText } from '@/lib/persons-summary-text'
+  personRowsCycle,
+  sortPersonRowsForMonth,
+} from '@/lib/person-month-order'
+import { personsSummaryLines } from '@/lib/persons-summary-text'
 import {
   hasPeriodActivity,
   PERSON_ROW_LABEL,
   PERSON_ROW_TONE,
   periodNetAmount,
   personRowStatus,
-  resolvedSubtext,
+  rowSubtext,
+  subtextTone,
 } from '@/lib/person-period-view'
 import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
@@ -407,17 +408,32 @@ export default function PersonsPage() {
   const orderedPersons = useMemo(() => {
     if (balancesLoading) return persons
 
-    return sortPeopleByPriority(
+    /*
+      ── A ordem depende do mês ──
+
+      No corrente/futuro a pergunta é "quem precisa da minha atenção?" e a
+      resposta é urgência. Num mês encerrado nada mais vai vencer, e essa
+      pergunta não tem resposta: a lista caía em ordem alfabética. O passado
+      pergunta "quem movimentou mais dinheiro?".
+
+      O ciclo vem de `monthCycleOf`, o mesmo helper de Bancos.
+    */
+    return sortPersonRowsForMonth(
       persons.map((person) => {
-        const balance = balanceById.get(person.id)
+        const balance = balanceById.get(person.id) ?? VAZIO
         return {
           ...person,
-          netBalance: balance?.netBalance ?? 0,
-          nextItem: balance?.nextItem ?? null,
+          netBalance: balance.netBalance,
+          nextItem: balance.nextItem,
+          periodReceivableTotal: balance.periodReceivableTotal,
+          periodDebtTotal: balance.periodDebtTotal,
+          settledReceivablesCount: balance.settledReceivablesCount,
+          settledDebtsCount: balance.settledDebtsCount,
         }
       }),
+      personRowsCycle(period),
     )
-  }, [persons, balanceById, balancesLoading])
+  }, [persons, balanceById, balancesLoading, period])
 
   /*
     ── O resumo sai das MESMAS linhas ──
@@ -511,18 +527,35 @@ export default function PersonsPage() {
             </p>
           ) : (
             <>
-              <p
-                className={cn(
-                  'mt-0.5 text-[22px] font-semibold tabular-nums tracking-[-0.02em]',
-                  summary.net > 0 && 'text-receivable',
-                  summary.net < 0 && 'text-destructive',
-                )}
-              >
+              {/*
+                Neutro, como o total de Bancos.
+
+                Era verde quando positivo e vermelho quando negativo — direção
+                do dinheiro pela cor. Mas a direção já está no sinal do número
+                e nos componentes abaixo, e o verde ficava indistinguível do
+                verde de "tudo resolvido".
+              */}
+              <p className="mt-0.5 text-[22px] font-semibold tabular-nums tracking-[-0.02em]">
                 {formatCurrency(summary.net)}
               </p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {personsSummaryText(summary)}
-              </p>
+              {personsSummaryLines(summary).map((linha) => (
+                <p
+                  key={linha.kind}
+                  className={cn(
+                    'mt-0.5 text-[11px]',
+                    /*
+                      Só a conclusão ganha cor — o mesmo `text-paid` e o mesmo
+                      "Tudo em dia" que Bancos usa. A composição é informação
+                      estrutural e fica muted, sem semântica direcional.
+                    */
+                    linha.kind === 'settled'
+                      ? 'font-medium text-paid'
+                      : 'text-muted-foreground',
+                  )}
+                >
+                  {linha.text}
+                </p>
+              ))}
             </>
           )}
         </div>
@@ -610,21 +643,36 @@ export default function PersonsPage() {
               const status = personRowStatus(balance)
 
               /*
-                Resolvido troca o subtexto: deixar "Receber em 12d" numa linha
-                quitada afirmaria uma pendência que já não existe.
-              */
-              const resolvido = resolvedSubtext(status)
-              const proximoAcerto = resolvido ?? nextItemLabel(balance.nextItem)
-              const atrasado =
-                resolvido === null && isNextItemOverdue(balance.nextItem)
+                Resolvido não tem subtexto.
 
-              /* Direção do dinheiro, pelos tons compartilhados. */
+                A versão anterior trocava o prazo por "Recebido" — mas o
+                trailing já diz RECEBIDO, e a row repetia o mesmo estado duas
+                vezes. Omitir é o certo: o prazo de uma pendência inexistente
+                seria falso, e repetir a conclusão não informa.
+              */
+              const proximoAcerto = rowSubtext(
+                status,
+                nextItemLabel(balance.nextItem),
+              )
+              /* Régua canônica de urgência — a mesma de Bancos e da Atenção. */
+              const prazoTone = subtextTone(balance.nextItem)
+
+              /*
+                ── O valor é NEUTRO ──
+
+                Era verde/vermelho pela direção do dinheiro. Mas verde já
+                significa "resolvido" no resto do produto, e um recebível em
+                aberto saía da mesma cor de um já recebido — dois estados que
+                pedem ações opostas.
+
+                A direção continua dita pelo sinal do valor e pelo texto do
+                trailing. Mesmo princípio de Bancos, onde o valor da fatura não
+                tem cor e o status carrega o significado.
+              */
               const tone =
-                net > 0.005
-                  ? ROW_AMOUNT_TONE.in
-                  : net < -0.005
-                    ? ROW_AMOUNT_TONE.out
-                    : ROW_AMOUNT_TONE.muted
+                Math.abs(net) <= 0.005
+                  ? ROW_AMOUNT_TONE.muted
+                  : ROW_AMOUNT_TONE.neutral
 
               const label = PERSON_ROW_LABEL[status]
               const labelTone = PERSON_ROW_TONE[status]
@@ -677,8 +725,12 @@ export default function PersonsPage() {
                         <span
                           className={cn(
                             'truncate',
-                            /* Só o atraso ganha tom de atenção. */
-                            atrasado && 'text-destructive',
+                            /*
+                              Atraso em vermelho, prazo curto em âmbar, o resto
+                              muted — a régua de `timingUrgency`, não uma
+                              escolha local.
+                            */
+                            prazoTone,
                           )}
                         >
                           {proximoAcerto}

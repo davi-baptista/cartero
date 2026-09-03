@@ -259,11 +259,26 @@ describe('itens 13, 40 e 57: a página entrou no design system', () => {
     expect(view).toContain("'SEM SALDO'")
 
     /*
+      A COR deixou de dizer direção: verde colidia com o verde de "resolvido".
+      Só a conclusão é colorida, como em `BANK_TRAILING_TONE`.
+    */
+    expect(view).toContain("receivable: 'text-muted-foreground'")
+    expect(view).toContain("debt: 'text-muted-foreground'")
+    expect(view).toContain("received: 'text-paid'")
+
+    /*
       Zero é neutro: nem verde nem vermelho. A cor vem de `ROW_AMOUNT_TONE`,
       a fonte única — as classes estavam escritas à mão em cada tela.
     */
-    expect(PAGINA).toContain('ROW_AMOUNT_TONE.in')
-    expect(PAGINA).toContain('ROW_AMOUNT_TONE.out')
+    /*
+      O valor deixou de ter tom direcional: `in`/`out` pintavam verde/vermelho
+      pela direção, e o verde ficava indistinguível do verde de "resolvido".
+      Zero segue muted; o resto é neutro, como o total de Bancos.
+    */
+    expect(PAGINA).toContain('ROW_AMOUNT_TONE.neutral')
+    expect(PAGINA).toContain('ROW_AMOUNT_TONE.muted')
+    expect(PAGINA).not.toContain('ROW_AMOUNT_TONE.in')
+    expect(PAGINA).not.toContain('ROW_AMOUNT_TONE.out')
     expect(PAGINA).toContain('ROW_AMOUNT_TONE.muted')
   })
 
@@ -297,7 +312,11 @@ describe('itens 12, 43 e 44: a lista continua sendo de contatos', () => {
     expect(PAGINA).toContain('{orderedPersons.map((person, i) => {')
     expect(PAGINA).toContain('persons.map((person) => {')
     expect(PAGINA).toContain('balanceById.get(person.id)')
-    expect(PAGINA).toContain('?.netBalance ?? 0')
+    /*
+      Contato sem linha no lote resolve para um balanço neutro — some da lista
+      seria pior: a página também é lista de contatos.
+    */
+    expect(PAGINA).toContain('balanceById.get(person.id) ?? VAZIO')
     /* Nenhum filtro entre a fonte e a renderização. */
     expect(code(PAGINA)).not.toContain('persons.filter(')
   })
@@ -308,7 +327,14 @@ describe('itens 12, 43 e 44: a lista continua sendo de contatos', () => {
       outra fase". O que continua barrado é ordenar por VALOR: R$ 1.000
       vencendo em 30 dias não é mais urgente que R$ 50 vencidos ontem.
     */
-    expect(code(PAGINA)).toContain('sortPeopleByPriority(')
+    /*
+      A ordem passou a depender do mês: urgência no corrente/futuro, magnitude
+      histórica no passado. O que este teste barra continua valendo — ordenar
+      pelo SALDO EM ABERTO por valor, que faria R$ 1.000 vencendo em 30 dias
+      passar na frente de R$ 50 vencidos ontem.
+    */
+    expect(code(PAGINA)).toContain('sortPersonRowsForMonth(')
+    expect(code(PAGINA)).toContain('personRowsCycle(period)')
     expect(code(PAGINA)).not.toContain('sort((a, b) => b.netBalance')
     expect(code(PAGINA)).not.toContain('orderBy')
   })
@@ -319,6 +345,15 @@ describe('itens 12, 43 e 44: a lista continua sendo de contatos', () => {
   })
 
   it('item 45: mês sem movimento tem frase própria', () => {
-    expect(PAGINA).toContain('Sem valores em aberto neste mês')
+    /*
+      A copy vive em `persons-summary-text`, a fonte única — e distingue "nada
+      aconteceu" de "aconteceu e foi resolvido", que antes diziam a mesma
+      coisa.
+    */
+    expect(PAGINA).toContain('personsSummaryLines(summary)')
+
+    const resumo = code(ler('./persons-summary-text.ts'))
+    expect(resumo).toContain('Nenhuma movimentação neste mês')
+    expect(resumo).toContain('Tudo em dia')
   })
 })

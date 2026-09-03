@@ -1,4 +1,5 @@
 import type { NextSettlementItem } from '@/lib/person-next-item'
+import { timingUrgency } from '@/lib/invoice-timing'
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -100,30 +101,116 @@ export const PERSON_ROW_LABEL: Record<PersonRowStatus, string> = {
 }
 
 /**
- * Tom do trailing.
+ * ══════════════════════════════════════════════════════════════════════════
+ * Tom do trailing: cor comunica ESTADO, nunca direção
+ * ══════════════════════════════════════════════════════════════════════════
  *
- * Resolvido usa o verde de sucesso — o mesmo `text-paid` de uma fatura paga.
- * Pendente mantém a direção econômica que a lista já comunicava.
+ * `A RECEBER` era verde e `VOCÊ DEVE` vermelho — cor por direção do dinheiro.
+ * O problema é que verde já significa OUTRA coisa no resto do produto: pago,
+ * resolvido, tudo em dia. Os dois estados abaixo ficavam quase idênticos:
+ *
+ *   Eva   R$ 462,22 [verde]   A RECEBER [verde]   ainda falta receber
+ *   Eva   R$ 720,45 [verde]   RECEBIDO  [verde]   já foi recebido
+ *
+ * Duas situações que exigem ações opostas, pintadas da mesma cor.
+ *
+ * A direção já está escrita — "A RECEBER" e "VOCÊ DEVE" são texto, e o sinal
+ * do valor a repete. Cor não precisava carregar essa informação, e ao carregá-la
+ * ficava indisponível para o que só a cor comunica bem: o que mudou de estado.
+ *
+ * É a policy que `BANK_TRAILING_TONE` já aplica em Bancos: só `paid` e
+ * `overdue` ganham cor; `Fatura aberta` e `Fatura fechada` são estruturais e
+ * ficam muted. O verde é o mesmo `text-paid` — não um segundo verde.
  */
 export const PERSON_ROW_TONE: Record<PersonRowStatus, string> = {
-  receivable: 'text-receivable',
-  debt: 'text-destructive',
+  /* Pendências são o estado NORMAL de uma lista de acertos. */
+  receivable: 'text-muted-foreground',
+  debt: 'text-muted-foreground',
+  /* Conclusão — o único fato que a cor precisa anunciar aqui. */
   received: 'text-paid',
   paid: 'text-paid',
   empty: 'text-muted-foreground',
 }
 
+/** Um mês resolvido não tem mais nada a fazer nele. */
+export function isResolvedStatus(status: PersonRowStatus): boolean {
+  return status === 'received' || status === 'paid'
+}
+
 /**
- * Subtexto de um mês resolvido.
+ * ══════════════════════════════════════════════════════════════════════════
+ * Mês resolvido não tem subtexto
+ * ══════════════════════════════════════════════════════════════════════════
  *
- * Ocupa o lugar do próximo evento, que já não existe — deixar "Receber em 12d"
- * numa linha quitada seria afirmar uma pendência inexistente.
+ * A versão anterior devolvia "Recebido"/"Pago" aqui, para ocupar o lugar do
+ * prazo — deixar "Receber em 12d" numa linha quitada afirmaria uma pendência
+ * inexistente, e isso continua verdade.
  *
- * Sem data: várias obrigações podem ter sido resolvidas em dias diferentes, e
- * escolher uma seria inventar. A data real de cada uma está no drawer.
+ * Mas o trailing já diz `RECEBIDO`, então a row passou a repetir o mesmo
+ * estado duas vezes:
+ *
+ *   Eva
+ *   Recebido        R$ 720,45
+ *                    RECEBIDO
+ *
+ * A segunda ocorrência não acrescenta nada. A correção certa era OMITIR o
+ * subtexto, não substituí-lo.
+ *
+ * ── Por que não "Recebido em 28/08" ──
+ *
+ * Seria útil com uma obrigação só. Mas uma pessoa pode ter vários itens
+ * resolvidos em datas diferentes, e escolher uma seria inventar um fato — as
+ * datas reais de cada um estão no drawer, onde há espaço para todas.
  */
-export function resolvedSubtext(status: PersonRowStatus): string | null {
-  if (status === 'received') return 'Recebido'
-  if (status === 'paid') return 'Pago'
-  return null
+export function rowSubtext(
+  status: PersonRowStatus,
+  prazo: string | null,
+): string | null {
+  return isResolvedStatus(status) ? null : prazo
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * O tom do prazo
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Só o atraso ganhava cor, então "Receber amanhã" e "Receber em 18d" saíam no
+ * mesmo cinza: a urgência aparecia apenas se o usuário lesse o número.
+ *
+ * A régua é `timingUrgency` — a MESMA de Bancos e da "Atenção agora", com
+ * `URGENT_DAYS_WINDOW = 7`. Não é uma escolha nova: o produto tem uma régua de
+ * urgência, e telas que divergem dela fazem o mesmo prazo parecer urgente num
+ * lugar e não no outro.
+ *
+ *   atrasado   destructive   exige ação agora
+ *   hoje       pending       o prazo acaba hoje
+ *   ≤7 dias    pending       ainda dá tempo, mas não muito
+ *   depois     muted         é informação, não alerta
+ *
+ * Pintar todo evento futuro encheria a lista de tons sem hierarquia.
+ *
+ * ── O prazo é do PRESENTE, não do mês exibido ──
+ *
+ * Uma dívida de julho ainda aberta mostra "Receber atrasado 65d" mesmo com
+ * julho selecionado. O atraso não deixa de existir por eu estar olhando um mês
+ * antigo — é o mesmo princípio de "Atenção agora", que ignora o seletor.
+ */
+export function subtextTone(item: NextSettlementItem | null): string {
+  if (!item) return ''
+
+  /*
+    Dia civil por string, nunca `new Date('YYYY-MM-DD')` — este último é
+    interpretado como UTC e, em fuso negativo, devolve o dia anterior.
+  */
+  const [year, month, day] = item.dueDate.slice(0, 10).split('-').map(Number)
+
+  switch (timingUrgency(new Date(year, month - 1, day))) {
+    case 'overdue':
+      return 'text-destructive'
+    case 'today':
+    case 'soon':
+      return 'text-pending'
+    case 'later':
+      return ''
+  }
 }

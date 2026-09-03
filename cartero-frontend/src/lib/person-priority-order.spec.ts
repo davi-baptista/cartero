@@ -249,14 +249,19 @@ describe('a página consome a policy', () => {
   const code = PAGE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
   it('ordena pela policy compartilhada, não por sort local', () => {
-    expect(code).toContain('sortPeopleByPriority(')
+    /*
+      A policy passou a escolher entre urgência e magnitude histórica pelo
+      ciclo do mês — `personPriorityRank`, que este arquivo protege, continua
+      sendo a autoridade do ramo de urgência.
+    */
+    expect(code).toContain('sortPersonRowsForMonth(')
     expect(code).toContain('orderedPersons')
   })
 
   it('a ordem usa o nextItem dos saldos', () => {
     /* O join com os saldos é onde a urgência vive. */
-    expect(code).toContain('nextItem: balance?.nextItem ?? null')
-    expect(code).toContain('netBalance: balance?.netBalance ?? 0')
+    expect(code).toContain('nextItem: balance.nextItem')
+    expect(code).toContain('netBalance: balance.netBalance')
   })
 
   it('não ordena antes dos saldos chegarem', () => {

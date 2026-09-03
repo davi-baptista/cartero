@@ -871,6 +871,63 @@ histórico; o **status fala do que RESTA**. Recebeu R$ 900 e ainda deve R$ 100 �
 valores em aberto" nos dois casos. Não copia o `Tudo em dia` de Bancos: lá a
 frase fala de PRAZO, aqui o fato é que as obrigações foram liquidadas.
 
+**Cor comunica ESTADO, nunca direção** (Fase PEOPLE2.1). `A RECEBER` era verde e
+`VOCÊ DEVE` vermelho — e verde já significa *resolvido* no resto do produto, então
+`R$ 462,22 A RECEBER` e `R$ 720,45 RECEBIDO` saíam quase idênticos, apesar de
+pedirem ações opostas. A direção já está no texto e no sinal do valor.
+
+| Elemento | Tom |
+|---|---|
+| valor da row e do resumo | **neutro** (`muted` só quando zero) |
+| `A RECEBER` · `VOCÊ DEVE` · `SEM SALDO` | `text-muted-foreground` |
+| `RECEBIDO` · `PAGO` · `Tudo em dia` | `text-paid` |
+| prazo em atraso | `text-destructive` |
+| prazo em ≤7 dias | `text-pending` |
+| prazo distante | neutro |
+
+- É a policy que `BANK_TRAILING_TONE` já aplicava: só `paid` e `overdue` ganham cor
+- O prazo usa `timingUrgency` / `URGENT_DAYS_WINDOW = 7`, a **mesma régua** de Bancos
+  e da "Atenção agora" — antes só o atraso tinha cor, e "Receber amanhã" saía no
+  mesmo cinza de "Receber em 18d"
+- O prazo é do **presente**: uma dívida de julho ainda aberta mostra "Receber
+  atrasado 65d" com julho selecionado. O atraso não deixa de existir por eu estar
+  olhando um mês antigo
+- `ROW_AMOUNT_TONE` **não** foi alterado (8 consumidores) — Pessoas passou a
+  escolher `neutral` em vez de `in`/`out`
+
+**Resolvido não repete o estado.** `resolvedSubtext` devolvia "Recebido" para
+ocupar o lugar do prazo, mas o trailing já dizia `RECEBIDO` e a row exibia o mesmo
+fato duas vezes. `rowSubtext` **omite** — a correção que a fase anterior deveria ter
+feito. Sem data: vários itens podem ter sido resolvidos em dias diferentes, e
+escolher um seria inventar; as datas reais estão no drawer.
+
+**O resumo responde duas perguntas independentes** (`personsSummaryLines`):
+composição ("de onde veio esse saldo?") e quitação ("ainda falta algo?"). Eram
+excludentes, então um mês resolvido exibia `R$ 1.335,77` sem nunca dizer que aquilo
+era `R$ 1.335,77 a receber · R$ 0,00 a pagar`. `Tudo em dia` substituiu `Tudo
+resolvido neste mês` — a frase que Bancos já usa para o mesmo fato, no mesmo lugar,
+no mesmo token. Mês passado com pendência mantém a composição e **não** ganha a
+conclusão.
+
+**A ordem depende da pergunta** (`person-month-order.ts`):
+
+| Período | Policy | Pergunta |
+|---|---|---|
+| corrente / futuro | urgência (`personPriorityRank`) | "quem precisa da minha atenção?" |
+| **passado** | `abs(líquido histórico)` desc | "quem movimentou mais dinheiro?" |
+
+- `abs`, não valor assinado: com +700, −500 e +300, o assinado afundaria os R$ 500
+  pagos para o fim, quando foram a segunda relação mais relevante do mês
+- O **líquido**, não o bruto: a row exibe o líquido, e a ordem tem de explicar o que
+  está na tela
+- Três níveis: `hasPeriodActivity` → magnitude → nome. O primeiro existe porque
+  R$ 200 de cada lado dão magnitude **zero**, e sem ele essa pessoa cairia junto de
+  quem nunca teve nada — o contrato que a fase anterior criou
+- A ordem do passado **ignora quitação**: R$ 700 recebidos ficam acima de R$ 300 em
+  aberto. O status está no trailing
+- O ciclo vem de `personRowsCycle` → `monthCycleOf`, dentro do helper: a página
+  observa a competência global e não reresolve "hoje"
+
 **O dublê de teste honra o `where`.** `mockResolvedValue` fixo devolvia os
 resolvidos mesmo com `isPaid: false` no filtro, e reintroduzir o bug na origem
 não fazia nenhum teste falhar — o mesmo recurso de `budget-temporality.spec.ts`.

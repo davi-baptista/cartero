@@ -96,8 +96,11 @@ describe('Pessoas ganhou o subtexto', () => {
       quitada afirmaria pendência inexistente.
     */
     expect(PERSONS).toContain('nextItemLabel(balance.nextItem)')
-    expect(PERSONS).toContain('isNextItemOverdue(balance.nextItem)')
-    expect(PERSONS).toContain('resolvido ?? nextItemLabel(')
+    /*
+      Resolvido agora OMITE o subtexto em vez de substituí-lo: o trailing já
+      diz RECEBIDO, e a versão anterior exibia o mesmo estado duas vezes.
+    */
+    expect(PERSONS).toContain('rowSubtext(')
   })
 
   it('o subtexto usa o slot `meta`, como Bancos', () => {
@@ -116,9 +119,21 @@ describe('Pessoas ganhou o subtexto', () => {
     expect(PERSONS).not.toContain('Tudo certo')
   })
 
-  it('só o atraso ganha cor', () => {
-    /* Pintar todos os estados transformaria a lista numa árvore de Natal. */
-    expect(PERSONS).toContain("atrasado && 'text-destructive'")
+  it('o prazo é colorido pela régua canônica, não por escolha local', () => {
+    /*
+      Antes só o atraso tinha cor, então "Receber amanhã" e "Receber em 18d"
+      saíam no mesmo cinza — a urgência só aparecia se o número fosse lido.
+      `subtextTone` delega a `timingUrgency` (`URGENT_DAYS_WINDOW = 7`), a
+      MESMA janela de Bancos e da "Atenção agora".
+
+      Pintar todo evento futuro continua barrado: `later` devolve string vazia.
+    */
+    expect(PERSONS).toContain('subtextTone(balance.nextItem)')
+    expect(PERSONS).not.toContain("atrasado && 'text-destructive'")
+
+    const view = code(ler('./person-period-view.ts'))
+    expect(view).toContain('timingUrgency(')
+    expect(view).toContain("case 'later':")
   })
 
   it('o status do saldo continua no trailing, não vira badge', () => {

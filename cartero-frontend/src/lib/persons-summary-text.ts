@@ -1,37 +1,51 @@
 /**
  * ══════════════════════════════════════════════════════════════════════════
- * A linha secundária do resumo de Pessoas
+ * O resumo de Pessoas responde DUAS perguntas
  * ══════════════════════════════════════════════════════════════════════════
  *
- * O valor grande passou a ser o LÍQUIDO HISTÓRICO da competência — o que houve
- * no mês, quitado ou não. Isso deixa uma pergunta que o número não responde:
- * **ainda falta acertar algo?**
+ * O valor grande é o líquido HISTÓRICO da competência. Ele deixa duas perguntas
+ * em aberto, e elas são independentes:
  *
- * Antes o total era o saldo em aberto, e a resposta vinha de graça: R$ 0,00
- * significava nada pendente. Ao preservar o histórico, "R$ 350,00" passa a
- * valer tanto para um mês em aberto quanto para um já recebido, e a distinção
- * precisa de texto.
+ *   composição   "de onde veio esse saldo?"
+ *   quitação     "ainda existe algo pendente?"
  *
- * ── Por que não copiar "Tudo em dia" de Bancos ──
+ * A versão anterior tratava as duas como uma escolha excludente: com tudo
+ * resolvido, exibia só "Tudo resolvido neste mês" e a composição DESAPARECIA.
+ * Então um mês encerrado dizia R$ 1.335,77 sem nunca informar que aquilo eram
+ * R$ 1.335,77 a receber e R$ 0,00 a pagar — o saldo ficava sem origem.
  *
- * Em Bancos a frase fala de PRAZO: não há fatura vencida nem por vencer. Aqui o
- * fato é outro — as obrigações do mês foram liquidadas —, e "em dia" sugeriria
- * pontualidade, que este domínio não mede. "Tudo resolvido" diz o que houve.
+ * Agora são linhas separadas, porque são fatos separados.
  *
- * ── Mês sem movimento ≠ mês resolvido ──
+ * ── Por que "Tudo em dia", e não "Tudo resolvido neste mês" ──
+ *
+ * É a frase que Bancos já usa para o mesmo estado, no mesmo lugar da tela, no
+ * mesmo `text-paid`. Duas frases para o mesmo fato fariam o usuário procurar a
+ * diferença que não existe.
+ *
+ * ── Mês sem movimento não recebe elogio ──
  *
  * Nunca ter tido nada com ninguém e ter quitado tudo são fatos diferentes.
- * Parabenizar quem simplesmente não emprestou nem pediu nada afirmaria uma
- * conclusão que não existiu.
+ * "Tudo em dia" sobre um mês vazio afirmaria uma conclusão que não houve — é a
+ * mesma razão pela qual Bancos diz "Nenhuma fatura neste mês" em vez de
+ * parabenizar quem simplesmente não gastou.
  */
 
 export interface PersonsSummary {
+  /** Total histórico a receber no período. */
   toReceive: number
+  /** Total histórico a pagar no período. */
   toPay: number
   /** Soma dos dois sentidos do que ainda está aberto. */
   outstanding: number
   /** Quantas pessoas movimentaram algo na competência. */
   comMovimento: number
+}
+
+export type SummaryLineKind = 'empty' | 'composition' | 'settled'
+
+export interface PersonsSummaryLine {
+  kind: SummaryLineKind
+  text: string
 }
 
 const EPSILON = 0.005
@@ -46,23 +60,37 @@ function money(v: number): string {
   return BRL.format(v)
 }
 
-export function personsSummaryText(s: PersonsSummary): string {
-  if (s.comMovimento === 0) return 'Nenhuma movimentação neste mês'
+/**
+ * As linhas abaixo do total.
+ *
+ * No máximo duas: composição e, quando tudo está resolvido, a conclusão. Acima
+ * disso o resumo começa a competir com a lista, que é o conteúdo da tela.
+ *
+ * Não existe linha de "Em aberto": a própria lista e os status das rows já
+ * comunicam pendência, e uma terceira linha só repetiria.
+ */
+export function personsSummaryLines(s: PersonsSummary): PersonsSummaryLine[] {
+  if (s.comMovimento === 0) {
+    return [{ kind: 'empty', text: 'Nenhuma movimentação neste mês' }]
+  }
 
-  const composicao = `${money(s.toReceive)} a receber · ${money(s.toPay)} a pagar`
+  const linhas: PersonsSummaryLine[] = [
+    {
+      kind: 'composition',
+      text: `${money(s.toReceive)} a receber · ${money(s.toPay)} a pagar`,
+    },
+  ]
 
   /*
-    Resolvido encerra a linha.
+    A conclusão é sobre o que RESTA, não sobre o histórico.
 
-    Repetir a composição depois de "Tudo resolvido" faria o leitor procurar o
-    que ainda falta — e não falta nada.
+    Um mês passado com pendência vencida mantém a composição e NÃO ganha esta
+    linha — dizer "Tudo em dia" com uma dívida em atraso seria falso, e a row
+    urgente já aparece com seu próprio sinal.
   */
-  if (s.outstanding <= EPSILON) return 'Tudo resolvido neste mês'
+  if (s.outstanding <= EPSILON) {
+    linhas.push({ kind: 'settled', text: 'Tudo em dia' })
+  }
 
-  /*
-    Com pendência, a composição é o fato útil: diz os dois lados do mês. O
-    quanto resta em aberto aparece pessoa por pessoa nas rows, que é onde a
-    ação acontece.
-  */
-  return composicao
+  return linhas
 }
