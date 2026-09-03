@@ -112,8 +112,24 @@ export function compareUrgencyRows(
   b: OrderablePerson,
   today?: string,
 ): number {
-  const rankA = personPriorityRank(a, today)
-  const rankB = personPriorityRank(b, today)
+  /*
+    `hasActivity` é o que separa SETTLED de EMPTY.
+
+    Sem ele o rank decidia os dois últimos grupos por `Math.abs(netBalance)` —
+    outstanding, que ZERA no settlement. Uma pessoa com −R$ 1 quitados e outra
+    sem nenhuma relação no mês ficavam no mesmo grupo, e o nome desempatava:
+    "C6" aparecia entre "Breno" e "Fabricio", ambos com saldo final.
+
+    A informação existe no balanço; faltava chegar até aqui.
+  */
+  const rankA = personPriorityRank(
+    { ...a, hasActivity: hasPeriodActivity(a) },
+    today,
+  )
+  const rankB = personPriorityRank(
+    { ...b, hasActivity: hasPeriodActivity(b) },
+    today,
+  )
   if (rankA !== rankB) return rankA - rankB
 
   /* Dentro do grupo, a data mais próxima lidera. */

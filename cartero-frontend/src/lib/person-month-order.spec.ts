@@ -36,6 +36,33 @@ function p(
   }
 }
 
+/** SETTLED: houve movimento e tudo foi resolvido. Sem pendência. */
+function settled(name: string, historico: number): OrderablePerson {
+  const base =
+    historico >= 0
+      ? { periodReceivableTotal: historico, settledReceivablesCount: 1 }
+      : { periodDebtTotal: -historico, settledDebtsCount: 1 }
+
+  return p(name, base)
+}
+
+/** EMPTY: nenhuma atividade na competência. */
+function vazio(name: string): OrderablePerson {
+  return p(name)
+}
+
+/** ACTIVE com líquido zero: os dois lados abertos se anulam. */
+function aAcertar(name: string, dueDate = '2026-09-20'): OrderablePerson {
+  return p(name, {
+    receivablePending: 200,
+    debtPending: 200,
+    periodReceivableTotal: 200,
+    periodDebtTotal: 200,
+    netBalance: 0,
+    nextItem: { direction: 'pay', dueDate },
+  })
+}
+
 /** Uma relação histórica de valor `v` — positivo recebe, negativo paga. */
 function hist(name: string, v: number, resolvido = true): OrderablePerson {
   const base = v > 0
@@ -323,5 +350,188 @@ describe('propriedades da ordenação', () => {
   it('lista vazia e de um item não quebram', () => {
     expect(ordem([], 'past')).toEqual([])
     expect(ordem([hist('Só', 1)], 'past')).toEqual(['Só'])
+  })
+})
+
+describe('SORT-S1..S5: a fronteira SETTLED → EMPTY', () => {
+  /**
+   * A regressão relatada:
+   *
+   *   Breno      R$ 48,48   SALDO FINAL
+   *   C6         R$ 0,00    SEM SALDO     ← atravessou
+   *   Fabricio  -R$ 1,00    SALDO FINAL
+   *
+   * `personPriorityRank` decidia os dois últimos grupos por
+   * `Math.abs(netBalance)` — outstanding, que ZERA no settlement. Fabricio
+   * (quitado) e C6 (sem nada) ficavam ambos com `netBalance: 0`, caíam no
+   * mesmo rank e o nome desempatava.
+   *
+   * Não era o sinal do amount cruzando a fronteira: era a fronteira não
+   * existir. `SALDO FINAL` é atividade real resolvida; `SEM SALDO` é ausência
+   * de atividade — e a primeira sempre precede a segunda.
+   */
+  it('SORT-S1: SETTLED negativo precede EMPTY zero', () => {
+    /* O caso exato: -R$ 1 resolvido não pode perder para R$ 0 vazio. */
+    expect(ordem([vazio('C6'), settled('Fabricio', -1)], 'current')).toEqual([
+      'Fabricio',
+      'C6',
+    ])
+  })
+
+  it('SORT-S2: SETTLED com líquido zero precede EMPTY', () => {
+    /*
+      R$ 200 de cada lado, tudo quitado: o líquido histórico é zero, mas houve
+      movimento. Sem `hasActivity` os dois seriam indistinguíveis.
+    */
+    const zeroComMovimento = p('Zerada', {
+      periodReceivableTotal: 200,
+      periodDebtTotal: 200,
+      settledReceivablesCount: 1,
+      settledDebtsCount: 1,
+    })
+
+    expect(ordem([vazio('Alfa'), zeroComMovimento], 'current')).toEqual([
+      'Zerada',
+      'Alfa',
+    ])
+  })
+
+  it('SORT-S3: entre dois EMPTY, o nome desempata', () => {
+    expect(
+      ordem([vazio('Zilda'), vazio('Ana'), vazio('Marta')], 'current'),
+    ).toEqual(['Ana', 'Marta', 'Zilda'])
+  })
+
+  it('SORT-S4: ACTIVE `A ACERTAR` precede SETTLED e EMPTY', () => {
+    /*
+      Líquido zero COM pendência é ACTIVE — tem `nextItem`, então entra pelo
+      grupo de urgência, antes de qualquer coisa resolvida.
+    */
+    expect(
+      ordem(
+        [vazio('C6'), settled('Breno', 48.48), aAcertar('PH')],
+        'current',
+      ),
+    ).toEqual(['PH', 'Breno', 'C6'])
+  })
+
+  it('SORT-S5: nenhum amount assinado atravessa a fronteira', () => {
+    /*
+      Propriedade, não caso: para qualquer valor resolvido — negativo, zero ou
+      positivo — o EMPTY fica depois.
+    */
+    for (const valor of [-9999, -1, 0, 1, 9999]) {
+      const [primeiro] = ordem(
+        [vazio('Aaa'), settled('Zzz', valor)],
+        'current',
+      )
+      expect(primeiro, `historico ${valor}`).toBe('Zzz')
+    }
+  })
+
+  it('a regressão completa, reproduzida', () => {
+    /* Os quatro do relato, na ordem em que apareceram. */
+    const lista = [
+      settled('Breno', 48.48),
+      vazio('C6'),
+      settled('Fabricio', -1),
+      vazio('Leonardo'),
+    ]
+
+    expect(ordem(lista, 'current')).toEqual([
+      'Breno',
+      'Fabricio',
+      'C6',
+      'Leonardo',
+    ])
+  })
+
+  it('a ordem dos grupos é a canônica', () => {
+    /*
+      1 overdue · 2 hoje · 3 futuro · 4 outro ACTIVE · 5 SETTLED · 6 EMPTY.
+      Um exemplar de cada, embaralhado na entrada.
+    */
+    const overdue = p('Atrasado', {
+      netBalance: 100,
+      receivablePending: 100,
+      periodReceivableTotal: 100,
+      nextItem: { direction: 'receive', dueDate: '2026-09-01' },
+    })
+    const hoje = p('Hoje', {
+      netBalance: 50,
+      receivablePending: 50,
+      periodReceivableTotal: 50,
+      nextItem: { direction: 'receive', dueDate: '2026-09-03' },
+    })
+    const futuro = p('Futuro', {
+      netBalance: 80,
+      receivablePending: 80,
+      periodReceivableTotal: 80,
+      nextItem: { direction: 'receive', dueDate: '2026-09-25' },
+    })
+    /* Saldo aberto SEM data: o grupo 4. */
+    const semData = p('SemData', {
+      netBalance: 70,
+      receivablePending: 70,
+      periodReceivableTotal: 70,
+    })
+
+    expect(
+      ordem(
+        [
+          vazio('Vazio'),
+          settled('Resolvido', 500),
+          semData,
+          futuro,
+          overdue,
+          hoje,
+        ],
+        'current',
+      ),
+    ).toEqual([
+      'Atrasado',
+      'Hoje',
+      'Futuro',
+      'SemData',
+      'Resolvido',
+      'Vazio',
+    ])
+  })
+})
+
+describe('SORT-S: o passado mantém a policy histórica', () => {
+  it('atividade histórica precede ausência, mesmo com líquido zero', () => {
+    /*
+      Já valia — `hasPeriodActivity` é o primeiro critério de
+      `comparePastRows`. O caso existe para a correção do mês corrente não
+      introduzir divergência entre os dois comparadores.
+    */
+    const zeroComMovimento = p('Zerada', {
+      periodReceivableTotal: 200,
+      periodDebtTotal: 200,
+      settledReceivablesCount: 1,
+      settledDebtsCount: 1,
+    })
+
+    expect(ordem([vazio('Alfa'), zeroComMovimento], 'past')).toEqual([
+      'Zerada',
+      'Alfa',
+    ])
+  })
+
+  it('e continua ordenando por magnitude, não por urgência', () => {
+    expect(
+      ordem(
+        [settled('Menor', 10), vazio('Vazio'), settled('Maior', 900)],
+        'past',
+      ),
+    ).toEqual(['Maior', 'Menor', 'Vazio'])
+  })
+
+  it('SETTLED negativo também precede EMPTY no passado', () => {
+    expect(ordem([vazio('C6'), settled('Fabricio', -1)], 'past')).toEqual([
+      'Fabricio',
+      'C6',
+    ])
   })
 })

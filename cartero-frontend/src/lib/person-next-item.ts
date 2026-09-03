@@ -144,13 +144,38 @@ export function isNextItemOverdue(
  * R$ 1.000 vencendo em 30 dias não é mais urgente que R$ 50 vencidos ontem.
  * O montante não participa da ordem.
  */
-export type PersonPriorityRank = 0 | 1 | 2 | 3 | 4
+export type PersonPriorityRank = 0 | 1 | 2 | 3 | 4 | 5
 
-/** O mínimo para posicionar uma pessoa na lista. */
+/**
+ * O mínimo para posicionar uma pessoa na lista.
+ *
+ * ── Por que `hasActivity` é necessário ──
+ *
+ * O rank decidia os dois últimos grupos por `Math.abs(netBalance)`, que é
+ * OUTSTANDING — e zera no settlement. Uma pessoa com −R$ 1 quitados e outra
+ * que nunca teve nada ficavam com o mesmo `netBalance: 0` e caíam no mesmo
+ * grupo, com o nome desempatando:
+ *
+ *   Breno      R$ 48,48   SALDO FINAL
+ *   C6         R$ 0,00    SEM SALDO     ← atravessou
+ *   Fabricio  -R$ 1,00    SALDO FINAL
+ *
+ * Não era o sinal do amount cruzando a fronteira: era a fronteira não existir.
+ * O rank foi escrito quando a lista ainda não distinguia resolvido de vazio, e
+ * `netBalance` não carrega essa diferença.
+ */
 export interface SortablePerson {
   name: string
   netBalance: number
   nextItem: NextSettlementItem | null | undefined
+  /**
+   * Houve movimento financeiro na competência, resolvido ou não?
+   *
+   * `false` é o único caso de "SEM SALDO", e o que separa o grupo 4 do 5.
+   * Opcional para não quebrar quem ordena sem contexto de competência — a
+   * ausência é lida como "não sei", e o comportamento anterior é mantido.
+   */
+  hasActivity?: boolean
 }
 
 const SEM_SALDO = 0.005
@@ -168,8 +193,25 @@ export function personPriorityRank(
     return 2
   }
 
-  /* Sem evento datado, mas com saldo: ainda há algo a acertar. */
-  return Math.abs(person.netBalance) > SEM_SALDO ? 3 : 4
+  /* Sem evento datado, mas com saldo em aberto: ainda há algo a acertar. */
+  if (Math.abs(person.netBalance) > SEM_SALDO) return 3
+
+  /*
+    ── A fronteira que faltava ──
+
+    Sem pendência, restam dois fatos MUITO diferentes:
+
+      4  houve movimento e foi resolvido   ("SALDO FINAL")
+      5  não houve movimento               ("SEM SALDO")
+
+    Separá-los é o que impede uma pessoa sem nenhuma relação no mês de
+    aparecer entre duas que tiveram — o que acontecia porque os dois estados
+    compartilhavam `netBalance: 0`.
+
+    `undefined` cai em 4: sem saber se houve atividade, tratar como resolvido
+    preserva a ordem anterior para quem ordena fora de uma competência.
+  */
+  return person.hasActivity === false ? 5 : 4
 }
 
 /**
