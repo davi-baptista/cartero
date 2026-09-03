@@ -39,9 +39,12 @@ import { invoiceSectionParts } from '@/lib/invoice-composition'
 /**
  * Em que ciclo o mês exibido está, em relação a hoje.
  *
- * Subiu para cá do trailing das rows: ali se repetia linha a linha e
- * atrapalhava a leitura do estado de cada fatura. No resumo vale uma vez para
- * o mês inteiro, que é o escopo natural da informação.
+ * Já não é EXIBIDO: "Faturas atuais"/"Faturas futuras" saíram do resumo por
+ * redundância — o seletor no topo e a label "Faturas de setembro 2026" já
+ * dizem o mês, duas vezes, logo acima.
+ *
+ * O tipo sobrevive porque o ciclo continua viajando na linha de pendência
+ * (`kind: 'cycle'`), disponível para quem precise dele sem voltar a rotulá-lo.
  */
 export type MonthCycle = 'current' | 'future' | 'past'
 
@@ -67,26 +70,15 @@ export type SummaryLine =
   | {
       kind: 'cycle'
       cycle: MonthCycle
-      /** `null` quando o valor pendente repetiria o total exibido acima. */
-      remaining: number | null
-      /** Contagem, quando não há complemento nem terceiros a mostrar. */
-      count: string | null
+      /**
+       * O valor que falta quitar.
+       *
+       * A linha só é emitida quando ele existe — com nada pago o pendente É o
+       * total exibido acima, e repeti-lo não informa nada.
+       */
+      remaining: number
     }
   | { kind: 'settled'; text: string }
-
-/** Rótulo do ciclo. `past` fica sem rótulo — ver `cycleLabel`. */
-export const CYCLE_LABEL: Record<MonthCycle, string | null> = {
-  current: 'Faturas atuais',
-  future: 'Faturas futuras',
-  /*
-    Mês passado não recebe rótulo.
-
-    "Faturas passadas" seria redundante — o seletor já diz o mês, e o estado
-    de cada fatura aparece na row. O caso relevante do passado é a fatura em
-    atraso, e essa se anuncia sozinha: vermelho na row e no "Faltam".
-  */
-  past: null,
-}
 
 /** O ciclo do mês exibido contra o mês de hoje. */
 export function monthCycleOf(
@@ -148,36 +140,28 @@ export function bankMonthSummaryLines(
   }
 
   /*
-    ── Duas decisões independentes ──
-
-    O CICLO é um fato do calendário: o mês exibido é o corrente, um futuro ou
-    um passado. Não muda quando uma fatura é paga.
-
-    O COMPLEMENTO é um fato de quitação, e só aparece quando acrescenta
-    informação: com nada pago, o valor pendente É o total logo acima, e
-    repeti-lo não informa nada.
+    O COMPLEMENTO de quitação só aparece quando acrescenta informação: com
+    nada pago, o valor pendente É o total logo acima, e repeti-lo não informa
+    nada.
   */
   const nadaPago = Math.abs(summary.unpaid - summary.total) <= EPSILON
   const remaining = nadaPago ? null : summary.unpaid
 
   /*
-    A contagem é o último recurso: existe para a linha não ficar vazia quando
-    não há complemento de quitação, nem composição, nem rótulo de ciclo — o
-    caso do mês passado com nada pago e sem terceiros.
-  */
-  const precisaContagem =
-    remaining === null && !temTerceiros && CYCLE_LABEL[cycle] === null
+    ── Sem conteúdo, sem linha ──
 
-  linhas.push({
-    kind: 'cycle',
-    cycle,
-    remaining,
-    count: precisaContagem
-      ? `${summary.invoiceCount} ${
-          summary.invoiceCount === 1 ? 'fatura em aberto' : 'faturas em aberto'
-        }`
-      : null,
-  })
+    Com os rótulos de ciclo esta linha sempre tinha algo a dizer. Agora só
+    existe quando há progresso de quitação a informar.
+
+    A CONTAGEM ("1 fatura em aberto") saiu junto. Ela era o último recurso
+    para a linha do mês passado não ficar vazia — `past` nunca teve rótulo —,
+    e sem linha vazia para preencher deixou de ter função. Mantê-la faria o
+    mês corrente sem terceiros e nada pago trocar "Faturas atuais" por outra
+    copy, quando o pedido era remover a informação redundante, não substituí-la.
+  */
+  if (remaining === null) return linhas
+
+  linhas.push({ kind: 'cycle', cycle, remaining })
 
   return linhas
 }

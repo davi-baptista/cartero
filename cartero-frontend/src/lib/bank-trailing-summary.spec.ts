@@ -9,7 +9,6 @@ import {
 } from './bank-invoice-selection'
 import {
   bankMonthSummaryLines,
-  CYCLE_LABEL,
   monthCycleOf,
 } from './bank-month-summary-lines'
 
@@ -166,24 +165,21 @@ const inv = (
 ) => invoice(bankId, status, { totalAmount: total, reimbursable } as Partial<Invoice>)
 
 describe('S1-S10: o resumo só diz o que o total não conta', () => {
-  it('S1: uma fatura, nada pago, sem terceiros → só a contagem', () => {
+  it('S1: uma fatura, nada pago, sem terceiros → NENHUMA linha', () => {
     /*
-      A repetição que motivou a fase: o valor em aberto É o total, então
-      dizê-lo de novo não informa nada.
+      A repetição que motivou a fase original: o valor em aberto É o total,
+      então dizê-lo de novo não informa nada.
+
+      Sobrava o rótulo de ciclo para ocupar a linha; sem ele, o resumo termina
+      no valor. Emitir um `<p>` vazio deixaria 2px de espaço morto.
     */
-    const linhas = bankMonthSummaryLines(resumo([inv('b1', 1173.95)]))
-    expect(linhas).toEqual([
-      { kind: 'cycle', cycle: 'current', remaining: null, count: null },
-    ])
+    expect(bankMonthSummaryLines(resumo([inv('b1', 1173.95)]))).toEqual([])
   })
 
-  it('S2: várias faturas, nada pago → contagem no plural', () => {
-    const linhas = bankMonthSummaryLines(
-      resumo([inv('b1', 500), inv('b2', 300)]),
-    )
-    expect(linhas).toEqual([
-      { kind: 'cycle', cycle: 'current', remaining: null, count: null },
-    ])
+  it('S2: várias faturas, nada pago → idem', () => {
+    expect(
+      bankMonthSummaryLines(resumo([inv('b1', 500), inv('b2', 300)])),
+    ).toEqual([])
   })
 
   it('S3: terceiros e nada pago → só a composição', () => {
@@ -194,8 +190,14 @@ describe('S1-S10: o resumo só diz o que o total não conta', () => {
     const linhas = bankMonthSummaryLines(
       resumo([inv('b1', 1173.95, InvoiceStatus.OPEN, 240)]),
     )
-    /* Composição + o rótulo de ciclo, que NÃO depende de pagamento. */
-    expect(linhas.map((l) => l.kind)).toEqual(['composition', 'cycle'])
+    /*
+      Só a composição. A linha de ciclo existia para o rótulo; sem ele e sem
+      progresso de quitação, não há segundo fato a contar.
+
+      Este é o cenário do relato: "R$ 991,13 sua parte · R$ 472,36 de outras
+      pessoas" seguido de "Faturas atuais", que o seletor já dizia.
+    */
+    expect(linhas.map((l) => l.kind)).toEqual(['composition'])
     if (linhas[0].kind === 'composition') {
       expect(linhas[0].parts).toEqual([
         { kind: 'own', amount: 933.95 },
@@ -212,8 +214,9 @@ describe('S1-S10: o resumo só diz o que o total não conta', () => {
     const linhas = bankMonthSummaryLines(
       resumo([inv('b1', 800, InvoiceStatus.PAID), inv('b2', 1200)]),
     )
+    /* O valor e a condição são os mesmos — só o prefixo do ciclo saiu. */
     expect(linhas).toEqual([
-      { kind: 'cycle', cycle: 'current', remaining: 1200, count: null },
+      { kind: 'cycle', cycle: 'current', remaining: 1200 },
     ])
   })
 
@@ -358,9 +361,14 @@ describe('a página consome as policies compartilhadas', () => {
   })
 })
 
-describe('o ciclo do mês, no resumo do topo', () => {
+describe('o ciclo do mês continua sendo derivado', () => {
   const HOJE = { month: 9, year: 2026 }
 
+  /*
+    O ciclo deixou de ser EXIBIDO ("Faturas atuais"/"Faturas futuras" saíram
+    por redundância), mas continua sendo derivado e viajando na linha de
+    pendência. Estes casos protegem o cálculo, não a apresentação.
+  */
   it('reconhece atual, futuro e passado', () => {
     expect(monthCycleOf({ month: 9, year: 2026 }, HOJE)).toBe('current')
     expect(monthCycleOf({ month: 10, year: 2026 }, HOJE)).toBe('future')
@@ -372,56 +380,102 @@ describe('o ciclo do mês, no resumo do topo', () => {
     expect(monthCycleOf({ month: 1, year: 2027 }, HOJE)).toBe('future')
     expect(monthCycleOf({ month: 12, year: 2025 }, HOJE)).toBe('past')
   })
+})
 
-  it('Caso 1: mês atual com pendência leva "Faturas atuais"', () => {
-    const linhas = bankMonthSummaryLines(
-      resumo([inv('b1', 800, InvoiceStatus.PAID), inv('b2', 1200)]),
-      'current',
-    )
-    expect(linhas[0]).toMatchObject({ kind: 'cycle', cycle: 'current', remaining: 1200 })
-    expect(CYCLE_LABEL.current).toBe('Faturas atuais')
-  })
-
-  it('Caso 2: mês totalmente pago diz só "Tudo em dia"', () => {
-    /*
-      Sem prefixo de ciclo: "Tudo em dia" já é conclusivo, e nada resta a
-      fazer seja o mês qual for.
-    */
-    const linhas = bankMonthSummaryLines(
-      resumo([inv('b1', 500, InvoiceStatus.PAID)]),
-      'current',
-    )
-    expect(linhas).toEqual([{ kind: 'settled', text: 'Tudo em dia' }])
-  })
-
-  it('Caso 3: mês futuro leva "Faturas futuras"', () => {
-    const linhas = bankMonthSummaryLines(resumo([inv('b1', 320)]), 'future')
-    expect(linhas[0]).toMatchObject({ kind: 'cycle', cycle: 'future' })
-    expect(CYCLE_LABEL.future).toBe('Faturas futuras')
-  })
-
-  it('Caso 4: mês passado NÃO recebe rótulo', () => {
-    /*
-      "Faturas passadas" seria redundante — o seletor já diz o mês. O caso
-      relevante do passado é o atraso, e ele se anuncia sozinho em vermelho.
-    */
-    expect(CYCLE_LABEL.past).toBeNull()
-
-    const linhas = bankMonthSummaryLines(resumo([inv('b1', 320)]), 'past')
-    expect(linhas[0]).toMatchObject({ cycle: 'past' })
-  })
-
-  it('o rótulo de ciclo NUNCA aparece na linha de composição', () => {
-    /*
-      A composição fala de dinheiro (sua parte / de terceiros), não de tempo.
-      Prefixá-la com o ciclo misturaria dois assuntos numa linha só.
-    */
-    const linhas = bankMonthSummaryLines(
+describe('os rótulos de ciclo NÃO são mais renderizados', () => {
+  /**
+   * "Faturas atuais" e "Faturas futuras" diziam em que ciclo o mês exibido
+   * estava — informação que o seletor no topo e a label "Faturas de setembro
+   * 2026" já dão, duas vezes, imediatamente acima do valor.
+   *
+   * Removidos, não substituídos: a intenção era eliminar redundância, e trocar
+   * por outra copy manteria a linha ocupada sem ganho.
+   */
+  it('nenhuma linha do resumo carrega os rótulos', () => {
+    const cenarios = [
+      resumo([inv('b1', 1000)]),
       resumo([inv('b1', 1000, InvoiceStatus.OPEN, 240)]),
-      'future',
+      resumo([inv('b1', 800, InvoiceStatus.PAID), inv('b2', 1200)]),
+      resumo([inv('b1', 1000, InvoiceStatus.PAID)]),
+    ]
+
+    for (const cycle of ['current', 'future', 'past'] as const) {
+      for (const cenario of cenarios) {
+        const texto = JSON.stringify(bankMonthSummaryLines(cenario, cycle))
+        expect(texto, cycle).not.toContain('Faturas atuais')
+        expect(texto, cycle).not.toContain('Faturas futuras')
+      }
+    }
+  })
+
+  it('a página não tem mais componente nem TEXTO de rótulo', () => {
+    /*
+      As duas formas de reintroduzir: o componente, ou a copy escrita direto no
+      JSX. Verificar só o componente deixaria a segunda passar.
+    */
+    const pagina = ler('../app/(dashboard)/banks/page.tsx')
+    /* Sem comentários: eles CITAM os rótulos para explicar a remoção. */
+    const codigo = pagina
+      .replace(/\{?\/\*[\s\S]*?\*\/\}?/g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+
+    expect(pagina).not.toContain('CycleLabel')
+    expect(pagina).not.toContain('CYCLE_LABEL')
+    expect(codigo).not.toContain('Faturas atuais')
+    expect(codigo).not.toContain('Faturas futuras')
+    expect(ler('./bank-month-summary-lines.ts')).not.toContain('CYCLE_LABEL')
+  })
+
+  it('a contagem também saiu', () => {
+    /*
+      "N faturas em aberto" era o último recurso para a linha do mês passado
+      não ficar vazia — `past` nunca teve rótulo. Sem linha vazia para
+      preencher, perdeu a função; mantê-la trocaria "Faturas atuais" por outra
+      copy no mês corrente.
+    */
+    for (const cycle of ['current', 'future', 'past'] as const) {
+      const texto = JSON.stringify(
+        bankMonthSummaryLines(resumo([inv('b1', 1000)]), cycle),
+      )
+      expect(texto, cycle).not.toContain('fatura em aberto')
+      expect(texto, cycle).not.toContain('faturas em aberto')
+    }
+  })
+
+  it('a linha desaparece quando o ciclo era sua única informação', () => {
+    /*
+      O pedido literal: "se a única informação da linha for `Faturas futuras`,
+      a linha deve simplesmente desaparecer".
+    */
+    for (const cycle of ['current', 'future', 'past'] as const) {
+      expect(bankMonthSummaryLines(resumo([inv('b1', 1000)]), cycle)).toEqual([])
+    }
+  })
+
+  it('mas o que NÃO era redundante sobrevive', () => {
+    /* Os três fatos que a linha podia carregar além do ciclo. */
+    const comTerceiros = bankMonthSummaryLines(
+      resumo([inv('b1', 1000, InvoiceStatus.OPEN, 240)]),
     )
-    expect(linhas[0].kind).toBe('composition')
-    expect(linhas[0]).not.toHaveProperty('cycle')
+    expect(comTerceiros.map((l) => l.kind)).toEqual(['composition'])
+
+    const quitando = bankMonthSummaryLines(
+      resumo([inv('b1', 800, InvoiceStatus.PAID), inv('b2', 1200)]),
+    )
+    expect(quitando).toEqual([{ kind: 'cycle', cycle: 'current', remaining: 1200 }])
+
+    const tudoPago = bankMonthSummaryLines(
+      resumo([inv('b1', 1000, InvoiceStatus.PAID)]),
+    )
+    expect(tudoPago).toEqual([{ kind: 'settled', text: 'Tudo em dia' }])
+  })
+
+  it('a página renderiza "Faltam ... para quitar" sem prefixo', () => {
+    const pagina = ler('../app/(dashboard)/banks/page.tsx')
+
+    expect(pagina).toContain('Faltam{')
+    expect(pagina).toContain('para quitar')
+    expect(pagina).not.toContain('withSeparator')
   })
 })
 
@@ -455,151 +509,20 @@ describe('a fatura paga tinge o prazo de verde', () => {
     )
   })
 
-  it('o rótulo de ciclo usa azul — cor de contexto', () => {
+  it('o resumo não usa mais cor de contexto', () => {
     /*
-      Os tons de valor (âmbar, vermelho, verde) já significam prazo e
-      resolução; reusar um deles no ciclo sugeriria que o MÊS é urgente ou
-      resolvido.
+      O `text-primary` (azul) existia para o rótulo de ciclo: os tons de valor
+      — âmbar, vermelho, verde — já significam prazo e resolução, e reusar um
+      deles no ciclo sugeriria que o MÊS era urgente ou resolvido.
+
+      Sem rótulo, o resumo tem só dois tons: muted na composição e na pendência,
+      `text-paid` em "Tudo em dia". Nenhuma cor de orientação sobrou.
     */
-    const cycleLabel = code.slice(
-      code.indexOf('function CycleLabel'),
-      code.indexOf('function MonthInvoiceAmount'),
-    )
-    expect(cycleLabel).toContain('text-primary')
-  })
-})
-
-describe('o ciclo é independente do pagamento', () => {
-  /**
-   * O bug que esta seção fixa.
-   *
-   * O rótulo do ciclo viajava DENTRO das linhas de quitação (`remaining` e
-   * `count`), e cada uma tinha sua própria condição de existir. No mês
-   * corrente sem nada pago e COM terceiros, nenhuma das duas era emitida —
-   * então "Faturas atuais" só nascia depois de o usuário pagar alguma fatura.
-   *
-   * Pagar uma fatura não pode fazer o mês virar "atual": isso é fato do
-   * calendário, não de quitação.
-   */
-  const cicloDe = (linhas: ReturnType<typeof bankMonthSummaryLines>) =>
-    linhas.find((l) => l.kind === 'cycle')
-
-  it('S1/S2: mês atual com ZERO pago já mostra o ciclo', () => {
-    const linhas = bankMonthSummaryLines(resumo([inv('b1', 1463.49)]), 'current')
-    expect(cicloDe(linhas)).toMatchObject({ cycle: 'current' })
-  })
-
-  it('S2: e NÃO mostra "Faltam", que repetiria o total', () => {
-    const linhas = bankMonthSummaryLines(resumo([inv('b1', 1463.49)]), 'current')
-    expect(cicloDe(linhas)).toMatchObject({ remaining: null })
-  })
-
-  it('a regressão exata do relato: com terceiros e nada pago', () => {
-    /*
-      O caso que sumia. `temTerceiros` desviava para a composição e o ramo da
-      contagem não rodava, levando o ciclo embora.
-    */
-    const linhas = bankMonthSummaryLines(
-      resumo([inv('b1', 1463.49, InvoiceStatus.OPEN, 240)]),
-      'current',
-    )
-    expect(linhas.map((l) => l.kind)).toEqual(['composition', 'cycle'])
-    expect(cicloDe(linhas)).toMatchObject({ cycle: 'current', remaining: null })
-  })
-
-  it('S3: pagar UMA fatura não faz o ciclo nascer — só o complemento', () => {
-    /*
-      A invariante central: o rótulo é o mesmo antes e depois do pagamento.
-      O que muda é apenas o `remaining`.
-    */
-    const antes = bankMonthSummaryLines(
-      resumo([inv('b1', 180.51), inv('b2', 1282.98)]),
-      'current',
-    )
-    const depois = bankMonthSummaryLines(
-      resumo([inv('b1', 180.51, InvoiceStatus.PAID), inv('b2', 1282.98)]),
-      'current',
+    const resumoJsx = code.slice(
+      code.indexOf('bankMonthSummaryLines('),
+      code.indexOf('{/* Invoice list */}'),
     )
 
-    expect(cicloDe(antes)).toMatchObject({ cycle: 'current', remaining: null })
-    expect(cicloDe(depois)).toMatchObject({
-      cycle: 'current',
-      remaining: 1282.98,
-    })
-  })
-
-  it('S4: todas pagas continua "Tudo em dia", sem ciclo', () => {
-    const linhas = bankMonthSummaryLines(
-      resumo([inv('b1', 500, InvoiceStatus.PAID)]),
-      'current',
-    )
-    expect(linhas).toEqual([{ kind: 'settled', text: 'Tudo em dia' }])
-    expect(cicloDe(linhas)).toBeUndefined()
-  })
-
-  it('S5/S6: mês futuro mostra o ciclo com zero pago', () => {
-    const linhas = bankMonthSummaryLines(resumo([inv('b1', 320)]), 'future')
-    expect(cicloDe(linhas)).toMatchObject({ cycle: 'future', remaining: null })
-    expect(CYCLE_LABEL.future).toBe('Faturas futuras')
-  })
-
-  it('S7: mês futuro mantém o ciclo após pagamento parcial', () => {
-    const linhas = bankMonthSummaryLines(
-      resumo([inv('b1', 200, InvoiceStatus.PAID), inv('b2', 320)]),
-      'future',
-    )
-    expect(cicloDe(linhas)).toMatchObject({ cycle: 'future', remaining: 320 })
-  })
-
-  it('S8: mês passado não ganha rótulo de ciclo', () => {
-    /*
-      Decisão preservada da BANKS1.4: "Faturas passadas" seria redundante — o
-      seletor já diz o mês. A linha existe, mas com a contagem no lugar do
-      rótulo, para não ficar vazia.
-    */
-    const linhas = bankMonthSummaryLines(resumo([inv('b1', 320)]), 'past')
-    expect(CYCLE_LABEL.past).toBeNull()
-    expect(cicloDe(linhas)).toMatchObject({
-      cycle: 'past',
-      count: '1 fatura em aberto',
-    })
-  })
-
-  it('S9: zero faturas não mostra ciclo algum', () => {
-    const linhas = bankMonthSummaryLines(resumo([]), 'current')
-    expect(linhas).toEqual([
-      { kind: 'empty', text: 'Nenhuma fatura neste mês' },
-    ])
-    expect(cicloDe(linhas)).toBeUndefined()
-  })
-
-  it('S10: a composição segue independente das duas decisões', () => {
-    /*
-      Terceiros é fato de DINHEIRO; ciclo é de calendário; quitação é de
-      pagamento. As três não se condicionam.
-    */
-    const semTerceiros = bankMonthSummaryLines(resumo([inv('b1', 500)]), 'current')
-    const comTerceiros = bankMonthSummaryLines(
-      resumo([inv('b1', 500, InvoiceStatus.OPEN, 100)]),
-      'current',
-    )
-
-    expect(semTerceiros.some((l) => l.kind === 'composition')).toBe(false)
-    expect(comTerceiros.some((l) => l.kind === 'composition')).toBe(true)
-    /* E o ciclo está nos dois. */
-    expect(cicloDe(semTerceiros)).toMatchObject({ cycle: 'current' })
-    expect(cicloDe(comTerceiros)).toMatchObject({ cycle: 'current' })
-  })
-
-  it('o rótulo sozinho não leva separador na tela', () => {
-    /*
-      "Faturas atuais ·" com nada depois deixaria um ponto órfão. O separador
-      é responsabilidade de quem desenha, e só aparece quando há complemento.
-    */
-    const PAGE = readFileSync(
-      new URL('../app/(dashboard)/banks/page.tsx', import.meta.url),
-      'utf-8',
-    )
-    expect(PAGE).toContain('withSeparator={linha.remaining !== null || linha.count !== null}')
+    expect(resumoJsx).not.toContain('text-primary')
   })
 })

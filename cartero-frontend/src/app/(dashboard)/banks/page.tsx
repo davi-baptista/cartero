@@ -43,9 +43,7 @@ import type { Bank, Invoice } from '@/types'
 import { invoiceRowPresentation } from '@/lib/invoice-row-presenter'
 import {
   bankMonthSummaryLines,
-  CYCLE_LABEL,
   monthCycleOf,
-  type MonthCycle,
 } from '@/lib/bank-month-summary-lines'
 import {
   BANK_TRAILING_LABEL,
@@ -62,39 +60,6 @@ import { useDetailNavigation } from '@/lib/detail-navigation'
 import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-
-/**
- * Rótulo do ciclo, prefixando a linha de pendência do resumo.
- *
- * Azul porque é CONTEXTO, não estado financeiro: os tons de valor
- * (âmbar, vermelho, verde) já significam prazo e resolução, e reusar um deles
- * aqui sugeriria que o mês em si é urgente ou resolvido. `text-primary` é a
- * cor que o design system reserva para orientação.
- *
- * Mês passado não recebe rótulo — `CYCLE_LABEL.past` é `null`.
- */
-function CycleLabel({
-  cycle,
-  withSeparator = true,
-}: {
-  cycle: MonthCycle
-  /** `false` quando o rótulo é a linha inteira — não há o que separar. */
-  withSeparator?: boolean
-}) {
-  const label = CYCLE_LABEL[cycle]
-  if (!label) return null
-
-  return (
-    <>
-      <span className="font-medium text-primary">{label}</span>
-      {withSeparator && (
-        <span className="mx-1.5 text-muted-foreground/40" aria-hidden>
-          ·
-        </span>
-      )}
-    </>
-  )
-}
 
 // The amount alone, standing as the row's primary stat.
 function MonthInvoiceAmount({ amount }: { amount: number }) {
@@ -810,31 +775,21 @@ export default function BanksPage() {
                       className="mt-0.5 text-[11px] text-muted-foreground"
                     >
                       {/*
-                        O rótulo do ciclo é INDEPENDENTE do progresso de
-                        quitação: ele diz em que mês estamos, não quanto foi
-                        pago. Antes viajava dentro das linhas de quitação, e
-                        no mês corrente sem nada pago com terceiros nenhuma
-                        delas era emitida — o rótulo sumia por acidente.
+                        Só o progresso de quitação.
+
+                        O rótulo do ciclo ("Faturas atuais"/"Faturas futuras")
+                        saiu: dizia em que mês estamos, e o seletor no topo mais
+                        a label "Faturas de setembro 2026" já dizem isso duas
+                        vezes acima.
+
+                        Neutro: pendência é o estado normal de um mês em curso,
+                        e o âmbar fica reservado ao prazo nas rows.
                       */}
-                      <CycleLabel
-                        cycle={linha.cycle}
-                        /* Sozinho, o rótulo não leva o separador. */
-                        withSeparator={linha.remaining !== null || linha.count !== null}
-                      />
-                      {linha.remaining !== null && (
-                        <>
-                          {/*
-                            Neutro: pendência é o estado normal de um mês em
-                            curso, e o âmbar fica reservado ao prazo nas rows.
-                          */}
-                          Faltam{' '}
-                          <span className="font-medium">
-                            {formatCurrency(linha.remaining)}
-                          </span>{' '}
-                          para quitar
-                        </>
-                      )}
-                      {linha.count}
+                      Faltam{' '}
+                      <span className="font-medium">
+                        {formatCurrency(linha.remaining)}
+                      </span>{' '}
+                      para quitar
                     </p>
                   )
                 }
