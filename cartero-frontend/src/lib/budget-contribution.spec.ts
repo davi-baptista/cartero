@@ -46,6 +46,7 @@ function pessoa(o: {
   budget?: Partial<PersonSettlement['budget']>
   open?: Partial<PersonSettlement['open']>
   settled?: Partial<PersonSettlement['settled']>
+  contribution?: Partial<PersonSettlement['contribution']>
 }): PersonSettlement {
   return {
     personId: 'p1',
@@ -77,6 +78,19 @@ function pessoa(o: {
       ...o.open,
     },
     settled: { settledAt: null, itemCount: 0, ...o.settled },
+    /*
+      A contribuição derivada do cenário: `planned` é o `payable`, e a
+      cobertura segue o estado bilateral por padrão. Os casos que separam as
+      duas perguntas passam `contribution` explicitamente.
+    */
+    contribution: {
+      planned: o.budget?.payable ?? 0,
+      paid: (o.open?.itemCount ?? 0) === 0 ? (o.budget?.payable ?? 0) : 0,
+      remaining: (o.open?.itemCount ?? 0) === 0 ? 0 : (o.budget?.payable ?? 0),
+      isSettled: (o.open?.itemCount ?? 0) === 0,
+      settledAt: o.settled?.settledAt ?? null,
+      ...o.contribution,
+    },
   }
 }
 
@@ -259,5 +273,75 @@ describe('B40: os três conceitos são distintos', () => {
 
     const chamadas = VIEW.match(/amount: budgetContribution\(person\)/g) ?? []
     expect(chamadas.length).toBe(2)
+  })
+})
+
+describe('S1-S3: o estado do Orçamento é independente da relação', () => {
+  /**
+   * ── O contrato deliberado desta fase ──
+   *
+   * Com R$ 11 devidos e R$ 10 a receber, pagar a dívida cobre a saída de R$ 1.
+   * O recebível continua aberto — a RELAÇÃO não terminou —, mas o Orçamento já
+   * não espera mais desembolso.
+   *
+   * A row usava `open.itemCount > 0` e voltava a "A RECEBER" depois de o
+   * dinheiro ter saído.
+   */
+  const dividaPagaRecebivelAberto = pessoa({
+    budget: { receivableAmount: 10, paidInMonth: 11, debtTotal: 11, payable: 1 },
+    /* A relação continua viva: falta receber os R$ 10. */
+    open: { receivableTotal: 10, net: 10, itemCount: 1 },
+    settled: { settledAt: null, itemCount: 1 },
+    /* Mas a saída de R$ 1 já foi coberta. */
+    contribution: {
+      planned: 1,
+      paid: 1,
+      remaining: 0,
+      isSettled: true,
+      settledAt: '2026-09-02',
+    },
+  })
+
+  it('S1: o Budget fica PAGO sem a relação estar liquidada', () => {
+    const v = peopleRowView(dividaPagaRecebivelAberto, brl)
+
+    expect(v.status).toBe('settled')
+    expect(v.amount).toBe(1)
+  })
+
+  it('S2: e a página Pessoas continua vendo pendência', () => {
+    /*
+      As duas superfícies leem campos diferentes do MESMO payload, e é isso
+      que as mantém independentes: `open` para a relação, `contribution` para
+      a saída de caixa.
+    */
+    expect(dividaPagaRecebivelAberto.open.itemCount).toBe(1)
+    expect(dividaPagaRecebivelAberto.contribution.isSettled).toBe(true)
+  })
+
+  it('S3: quando a relação enfim liquida, a base não muda', () => {
+    const tudoLiquidado = pessoa({
+      budget: { receivableAmount: 10, paidInMonth: 11, debtTotal: 11, payable: 1 },
+      open: { itemCount: 0 },
+      settled: { settledAt: '2026-09-18', itemCount: 2 },
+      contribution: {
+        planned: 1,
+        paid: 1,
+        remaining: 0,
+        isSettled: true,
+        settledAt: '2026-09-02',
+      },
+    })
+
+    expect(peopleRowView(tudoLiquidado, brl).amount).toBe(1)
+    expect(peopleRowView(dividaPagaRecebivelAberto, brl).amount).toBe(1)
+  })
+
+  it('a row não decide o estado pelo itemCount', () => {
+    const view = semComentarios(ler('./people-settlement-view.ts'))
+
+    expect(view).toContain('const temAberto = !contribuicaoCoberta(person)')
+    expect(view).toContain('person.contribution.isSettled')
+    expect(view).not.toContain('const temAberto = person.open.itemCount > 0')
   })
 })

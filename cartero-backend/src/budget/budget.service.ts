@@ -3,6 +3,7 @@ import { TransactionType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SalaryService } from 'src/salary/salary.service';
 import { civilDay } from 'src/common/helpers/date-only.helper';
+import { resolveContribution } from 'src/common/helpers/budget-contribution.helper';
 import {
   classifyDebtForBudget,
   type BudgetPeriod,
@@ -696,6 +697,15 @@ export class BudgetService {
       */
       settledAtMax: Date | null;
       settledCount: number;
+      /*
+        Os pagamentos de DÍVIDA da competência, para derivar quando a
+        contribuição do orçamento ficou coberta.
+
+        Só dívidas: recebimentos não cobrem saída de caixa. Guardados como
+        pares (valor, data) porque a resposta depende da ORDEM cronológica —
+        ver `budgetSettledAt`.
+      */
+      debtPayments: Array<{ amount: number; paidAt: Date | null }>;
     }
 
     const settlementByPerson = new Map<string, SettlementAccumulator>();
@@ -748,6 +758,7 @@ export class BudgetService {
         openNextDebtDue: null,
         settledAtMax: null,
         settledCount: 0,
+        debtPayments: [],
       };
       settlementByPerson.set(personId, fresh);
       return fresh;
@@ -830,6 +841,10 @@ export class BudgetService {
       );
       entry.budgetPriorPaidInMonth += Number(debt.amount);
       registrarLiquidacao(entry, debt.paidAt);
+      entry.debtPayments.push({
+        amount: Number(debt.amount),
+        paidAt: debt.paidAt ?? null,
+      });
     }
 
     /*
@@ -1145,6 +1160,32 @@ export class BudgetService {
             /** Quantos itens da competência estão resolvidos. */
             itemCount: entry.settledCount,
           },
+
+          /*
+            ── O estado da CONTRIBUIÇÃO ao orçamento ──
+
+            Responde "a saída líquida desta relação já foi coberta?", que é
+            outra pergunta de "a relação bilateral terminou?" (`settled`).
+
+            Devendo R$ 11 a quem me deve R$ 10, pagar a dívida cobre a saída de
+            R$ 1 — mesmo com o recebível aberto. Acoplar os dois faria o
+            orçamento dizer "a pagar R$ 1" depois de o dinheiro ter saído, só
+            porque falta alguém me pagar.
+
+            `paid` é limitado por `planned`: R$ 130 quitados com R$ 80 a
+            receber deram R$ 50 de saída, não R$ 130 — e é o que mantém
+            `paid + remaining = planned`.
+          */
+          contribution: resolveContribution(
+            Math.max(
+              entry.budgetDebtDueInMonth +
+                entry.budgetCurrentOpenPrior +
+                entry.budgetPriorPaidInMonth -
+                entry.budgetReceivableAmount,
+              0,
+            ),
+            entry.debtPayments,
+          ),
         };
       });
 
@@ -1160,7 +1201,40 @@ export class BudgetService {
 
       Valor íntegro: sem compensação, o pago não pode superar o total.
     */
-    const paidDebts = paidInMonthTotal;
+    /*
+      ══════════════════════════════════════════════════════════════════════
+      O pago de uma dívida COM pessoa é limitado pela contribuição dela
+      ══════════════════════════════════════════════════════════════════════
+
+      `paidInMonthTotal` é o BRUTO de tudo que foi quitado, e o total do
+      orçamento usa o netting por pessoa. Devendo R$ 30 a alguém que me deve
+      R$ 50, a contribuição é ZERO — a relação não é saída líquida nenhuma —,
+      mas quitar a dívida somava R$ 30 ao "pago".
+
+      O usuário via "R$ 30 pago" sem nenhuma row de origem: com contribuição
+      zero a pessoa nem aparece em "Acertos com pessoas".
+
+      O `Math.min(..., totalToPay)` logo abaixo é um teto GLOBAL: impede o
+      absurdo de "pagou mais que o total", não o vazamento por pessoa. Com
+      qualquer outra despesa dando folga, os R$ 30 passavam.
+
+      ── O teto por pessoa ──
+
+      `min(contribuição, dívidas quitadas)` — o pago nunca ultrapassa o que
+      aquela relação planejou tirar do bolso. Dívida SEM pessoa não passa por
+      aqui: sem contraparte, não há recebível com quem compensar, e a regra
+      antiga vale sem alteração.
+    */
+    const paidPorPessoa = peopleSettlements.reduce(
+      (soma, pessoa) => soma + pessoa.contribution.paid,
+      0,
+    );
+
+    const paidDebtsSemPessoa = paidInMonth
+      .filter((debt) => !debt.personId)
+      .reduce((soma, debt) => soma + Number(debt.amount), 0);
+
+    const paidDebts = paidDebtsSemPessoa + paidPorPessoa;
     const paidDebtsCount = paidInMonth.length;
 
     /*

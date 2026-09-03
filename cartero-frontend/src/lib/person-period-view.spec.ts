@@ -256,7 +256,11 @@ describe('P-9: a page aplica a policy', () => {
     */
     expect(code).not.toContain('ROW_AMOUNT_TONE.in')
     expect(code).not.toContain('ROW_AMOUNT_TONE.out')
-    expect(code).toContain('ROW_AMOUNT_TONE.neutral')
+    /*
+      O tom passou a sair do MODO, não do valor: `Math.abs(net) <= 0.005`
+      deixava ACTIVE e SETTLED com R$ 0,00 cinzas, iguais a EMPTY.
+    */
+    expect(code).toContain('ROW_AMOUNT_TONE[personAmountTone(status)]')
   })
 
   it('D1/D2: o subtexto resolvido é omitido, não substituído', () => {

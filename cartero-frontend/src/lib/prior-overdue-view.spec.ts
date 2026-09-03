@@ -73,6 +73,21 @@ function person(over: {
       automaticReceivable: 0,
     },
     open,
+    settled: { settledAt: null, itemCount: 0 },
+    /*
+      Derivada do cenário, como `budget.payable`: a cobertura segue o estado
+      bilateral por padrão — sem item aberto, a saída já saiu.
+    */
+    contribution: {
+      planned: Math.max((over.debtTotal ?? 0) - (over.receivableTotal ?? 0), 0),
+      paid: 0,
+      remaining: Math.max(
+        (over.debtTotal ?? 0) - (over.receivableTotal ?? 0),
+        0,
+      ),
+      isSettled: (over.itemCount ?? 1) === 0,
+      settledAt: null,
+    },
   } as PersonSettlement
 }
 

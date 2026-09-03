@@ -538,11 +538,34 @@ function budgetContribution(person: PersonSettlement): number {
   return person.budget.payable
 }
 
+/**
+ * A contribuição desta pessoa ao orçamento já foi coberta?
+ *
+ * ── Por que NÃO é `open.itemCount === 0` ──
+ *
+ * Aquilo responde "a relação bilateral terminou?". Com R$ 11 devidos e R$ 10 a
+ * receber, pagar a dívida cobre a saída de R$ 1 — mas o recebível segue aberto,
+ * e a row do Orçamento dizia `A RECEBER` depois de o dinheiro já ter saído.
+ *
+ * O Orçamento pergunta outra coisa: "ainda vai sair dinheiro daqui neste mês?".
+ * A resposta vem de `contribution.isSettled`, decidido no backend sobre os
+ * pagamentos de DÍVIDA — recebimentos não cobrem saída de caixa.
+ */
+function contribuicaoCoberta(person: PersonSettlement): boolean {
+  return person.contribution.isSettled
+}
+
 export function peopleRowView(
   person: PersonSettlement,
   formatCurrency: (value: number) => string,
 ): PeopleRowView {
-  const temAberto = person.open.itemCount > 0
+  /*
+    O estado da row segue a CONTRIBUIÇÃO, não a relação bilateral.
+
+    Era `open.itemCount > 0`: com a dívida paga e o recebível aberto, a row
+    voltava a "A RECEBER" — depois de o desembolso já ter acontecido.
+  */
+  const temAberto = !contribuicaoCoberta(person)
   const metadata: string[] = []
 
   if (temAberto) {

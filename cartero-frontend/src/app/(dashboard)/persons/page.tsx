@@ -44,6 +44,7 @@ import {
   hasPeriodActivity,
   PERSON_ROW_LABEL,
   PERSON_ROW_TONE,
+  personAmountTone,
   personRowAmount,
   personRowStatus,
   rowSubtext,
@@ -715,10 +716,14 @@ export default function PersonsPage() {
                 trailing. Mesmo princípio de Bancos, onde o valor da fatura não
                 tem cor e o status carrega o significado.
               */
-              const tone =
-                Math.abs(net) <= 0.005
-                  ? ROW_AMOUNT_TONE.muted
-                  : ROW_AMOUNT_TONE.neutral
+              /*
+                O tom vem do MODO, não do valor.
+
+                Era `Math.abs(net) <= 0.005`: uma pessoa com R$ 200 abertos de
+                cada lado exibe R$ 0,00 e saía cinza, visualmente igual a quem
+                nunca teve relação nenhuma. Só ausência é muted.
+              */
+              const tone = ROW_AMOUNT_TONE[personAmountTone(status)]
 
               const label = PERSON_ROW_LABEL[status]
               const labelTone = PERSON_ROW_TONE[status]

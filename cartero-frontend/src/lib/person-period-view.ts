@@ -338,3 +338,25 @@ export function rowSubtextTone(
 
   return subtextTone(item, today)
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * O tom do valor sai do MODO, nunca de `amount === 0`
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * A row usava `Math.abs(net) <= 0.005` para escolher entre muted e neutro —
+ * o VALOR, não o estado. Três situações muito diferentes exibem R$ 0,00:
+ *
+ *   ACTIVE   R$ 200 abertos de cada lado, se anulando   → exige ação
+ *   SETTLED  R$ 200 de cada lado, tudo liquidado        → concluído
+ *   EMPTY    nenhuma relação no mês                     → nada houve
+ *
+ * As duas primeiras saíam cinzas, visualmente idênticas à terceira. Uma
+ * pendência real parecia ausência de relação.
+ *
+ * Só EMPTY é ausência, e só ela fica muted: o cinza diz "não há nada aqui", e
+ * dizê-lo sobre uma obrigação viva é falso.
+ */
+export function personAmountTone(status: PersonRowStatus): 'muted' | 'neutral' {
+  return status === 'empty' ? 'muted' : 'neutral'
+}

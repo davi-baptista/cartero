@@ -283,11 +283,21 @@ describe('itens 13, 40 e 57: a página entrou no design system', () => {
       pela direção, e o verde ficava indistinguível do verde de "resolvido".
       Zero segue muted; o resto é neutro, como o total de Bancos.
     */
-    expect(PAGINA).toContain('ROW_AMOUNT_TONE.neutral')
-    expect(PAGINA).toContain('ROW_AMOUNT_TONE.muted')
+    /*
+      Os dois tons continuam em uso, agora escolhidos pelo MODO: só EMPTY é
+      muted, porque só ela é ausência de relação.
+    */
+    expect(PAGINA).toContain('ROW_AMOUNT_TONE[personAmountTone(status)]')
+    expect(code(ler('./person-period-view.ts'))).toContain(
+      "status === 'empty' ? 'muted' : 'neutral'",
+    )
     expect(PAGINA).not.toContain('ROW_AMOUNT_TONE.in')
     expect(PAGINA).not.toContain('ROW_AMOUNT_TONE.out')
-    expect(PAGINA).toContain('ROW_AMOUNT_TONE.muted')
+    /*
+      `muted` e `neutral` continuam sendo os dois tons — a escolha entre eles
+      passou a ser indexada pelo MODO, não escrita à mão pelo valor.
+    */
+    expect(code(ler('./person-period-view.ts'))).toContain("'muted' : 'neutral'")
   })
 
   it('item 16: o kebab é IRMÃO da row, não filho', () => {

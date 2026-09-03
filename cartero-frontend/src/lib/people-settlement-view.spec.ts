@@ -38,6 +38,7 @@ function person(overrides: {
   budget?: Partial<PersonSettlement['budget']>
   open?: Partial<PersonSettlement['open']>
   settled?: Partial<PersonSettlement['settled']>
+  contribution?: Partial<PersonSettlement['contribution']>
   name?: string
 }): PersonSettlement {
   return {
@@ -73,6 +74,22 @@ function person(overrides: {
       settledAt: null,
       itemCount: 0,
       ...overrides.settled,
+    },
+    /*
+      A contribuição derivada do próprio cenário.
+
+      `isSettled` responde "a saída líquida já foi coberta?" — outra pergunta
+      de "a relação terminou?". Aqui o default segue o estado bilateral (sem
+      item aberto → coberta), que é o comportamento destes casos; os testes
+      que separam as duas perguntas passam `contribution` explicitamente.
+    */
+    contribution: {
+      planned: overrides.budget?.payable ?? 0,
+      paid: 0,
+      remaining: overrides.budget?.payable ?? 0,
+      isSettled: (overrides.open?.itemCount ?? 0) === 0,
+      settledAt: overrides.settled?.settledAt ?? null,
+      ...overrides.contribution,
     },
   }
 }

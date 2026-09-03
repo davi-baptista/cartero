@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   hasOpenObligation,
+  personAmountTone,
   outstandingNetAmount,
   periodNetAmount,
   personRowAmount,
@@ -431,5 +432,77 @@ describe('a página aplica a policy', () => {
     expect(bloco).toContain('netBalance: balance.netBalance')
     expect(bloco).toContain('receivablePending: balance.receivablePending')
     expect(bloco).not.toContain('personRowAmount')
+  })
+})
+
+describe('P1-P5: o tom do valor sai do MODO', () => {
+  /**
+   * Três situações exibem R$ 0,00, e só uma é ausência:
+   *
+   *   ACTIVE   R$ 200 abertos de cada lado    → exige ação
+   *   SETTLED  os mesmos, liquidados          → concluído
+   *   EMPTY    nenhuma relação no mês         → nada houve
+   *
+   * O tom saía de `Math.abs(net) <= 0.005` — o VALOR —, então as duas
+   * primeiras ficavam cinzas, visualmente idênticas à terceira. Uma pendência
+   * real parecia ausência de relação.
+   */
+  it('P1: EMPTY com zero é muted', () => {
+    expect(personAmountTone('empty')).toBe('muted')
+  })
+
+  it('P2: ACTIVE com zero é foreground', () => {
+    /* `A ACERTAR` — R$ 200 de cada lado, ambos abertos. */
+    expect(personAmountTone('toSettle')).toBe('neutral')
+  })
+
+  it('P3: SETTLED com zero é foreground', () => {
+    expect(personAmountTone('finalBalance')).toBe('neutral')
+  })
+
+  it('os estados com lado definido também', () => {
+    expect(personAmountTone('receivable')).toBe('neutral')
+    expect(personAmountTone('debt')).toBe('neutral')
+  })
+
+  it('P4/P5: o valor zero não muda o status', () => {
+    /*
+      A separação que torna o tom correto possível: `personRowStatus` decide
+      por atividade e pendência, nunca pelo número.
+    */
+    const ativoZero = bal({
+      receivablePending: 200,
+      debtPending: 200,
+      periodReceivableTotal: 200,
+      periodDebtTotal: 200,
+    })
+    const resolvidoZero = bal({
+      periodReceivableTotal: 200,
+      periodDebtTotal: 200,
+      settledReceivablesCount: 1,
+      settledDebtsCount: 1,
+    })
+
+    expect(personRowAmount(ativoZero)).toBe(0)
+    expect(personRowAmount(resolvidoZero)).toBe(0)
+    expect(personRowAmount(bal())).toBe(0)
+
+    expect(personRowStatus(ativoZero)).toBe('toSettle')
+    expect(personRowStatus(resolvidoZero)).toBe('finalBalance')
+    expect(personRowStatus(bal())).toBe('empty')
+  })
+
+  it('só a ausência é muted — os três zeros se distinguem', () => {
+    /* A invariante desta correção, num único assert. */
+    expect([
+      personAmountTone('toSettle'),
+      personAmountTone('finalBalance'),
+      personAmountTone('empty'),
+    ]).toEqual(['neutral', 'neutral', 'muted'])
+  })
+
+  it('a page não decide o tom pelo valor', () => {
+    expect(PERSONS).toContain('ROW_AMOUNT_TONE[personAmountTone(status)]')
+    expect(PERSONS).not.toContain('Math.abs(net) <= 0.005')
   })
 })

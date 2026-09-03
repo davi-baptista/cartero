@@ -192,6 +192,26 @@ export interface BudgetSummary {
       settledAt: string | null
       itemCount: number
     }
+    /**
+     * O estado da CONTRIBUIÇÃO desta pessoa ao orçamento.
+     *
+     * Responde "a saída líquida desta relação já foi coberta?" — outra
+     * pergunta de "a relação bilateral terminou?" (`settled`). Devendo R$ 11 a
+     * quem me deve R$ 10, pagar a dívida cobre a saída de R$ 1 mesmo com o
+     * recebível aberto.
+     *
+     * `planned = paid + remaining`, por construção.
+     */
+    contribution: {
+      /** `max(dívidas − recebíveis, 0)` — a saída líquida do mês. */
+      planned: number
+      /** Quanto dela já saiu. Nunca ultrapassa `planned`. */
+      paid: number
+      remaining: number
+      isSettled: boolean
+      /** Quando a cobertura se completou, ou `null` sem data defensável. */
+      settledAt: string | null
+    }
   }>
   /**
    * A Receber no mês — INFORMATIVO.
