@@ -438,8 +438,19 @@ export default function BudgetPage() {
         </p>
       </div>
 
-      {/* Summary — single block with hierarchy, no identical card grid */}
-      <div className="space-y-4">
+      {/*
+        Resumo — um bloco, na anatomia de Bancos e Pessoas:
+
+          label      "Saídas de setembro 2026"
+          valor      R$ 1.473,85
+          composição de onde vem o número
+          estado     "Tudo em dia" / "R$ X pago · R$ Y a pagar"
+
+        Sem `space-y`: cada linha traz o próprio `mt-0.5`, e o container tinha
+        um `space-y-4` que já não espaçava nada — as linhas de estado eram
+        irmãs dele e herdavam 16px, o que deixava "Tudo em dia" solto.
+      */}
+      <div>
         {/*
           Falha de API não pode exibir "R$ 0,00" de comprometimento — seria
           afirmar que o mês está livre.
@@ -450,13 +461,32 @@ export default function BudgetPage() {
             isFetching={isFetching}
             onRetry={() => void refetch()}
           />
-        ) : isLoading ? (
-          /* Só o total: o esqueleto acompanha o que a tela passou a mostrar. */
-          <Skeleton className="h-10 w-52" />
         ) : (
-          <>
-            {/* Hero: total a pagar no mês */}
-            <div>
+          <div>
+            {/*
+              ── A label que ancora o número ──
+
+              O bloco começava direto no valor, e "R$ 1.473,85" sozinho não
+              diz de que competência é nem do que se trata. Bancos e Pessoas
+              abrem com uma linha curta ("Faturas de setembro 2026", "Saldo com
+              pessoas"), e o Orçamento era a única das três sem ela.
+
+              Nomeia o conteúdo e a competência, como em Bancos. "Saídas"
+              cobre faturas, pagamentos, dívidas e acertos — dizer só um deles
+              prometeria menos do que o total soma.
+
+              Fica FORA do ramo de carregamento: não depende dos dados, e
+              some-la enquanto carrega faria o bloco saltar quando chegassem.
+            */}
+            <p className="text-xs font-medium text-muted-foreground">
+              Saídas de {formatMonthYear(period.month, period.year)}
+            </p>
+
+            {isLoading ? (
+              /* Só o valor: a label acima já está no lugar definitivo. */
+              <Skeleton className="mt-1.5 h-7 w-32" />
+            ) : (
+              <>
               {/*
                 Neutro de propósito — nunca `text-destructive`. O número não é
                 erro nem atraso: é o custo normal da competência.
@@ -479,7 +509,9 @@ export default function BudgetPage() {
               {summary.totalToPay === 0 ? (
                 /* Mesma escala da composição: as duas ocupam o mesmo lugar
                    sob o total, uma no lugar da outra. */
-                <p className="mt-2 text-xs text-muted-foreground">nada a pagar neste mês</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  nada a pagar neste mês
+                </p>
               ) : (
                 /*
                   De onde vem o número. Discreta de propósito: explica o
@@ -490,7 +522,7 @@ export default function BudgetPage() {
                 */
                 breakdownParts.length > 0 && (
                   <p
-                    className="mt-2 text-xs text-muted-foreground"
+                    className="mt-0.5 text-[11px] text-muted-foreground"
                     aria-label={budgetBreakdownAriaLabel(
                       breakdownParts,
                       summary.totalToPay,
@@ -519,29 +551,46 @@ export default function BudgetPage() {
                 número principal para explicar algo que a página mostra logo
                 abaixo, item a item.
               */}
-            </div>
 
-            {/* Paid / pending — inline, without a separate card */}
-            {hasMix && (
-              <p className="text-xs text-muted-foreground">
-                <span className="font-medium text-paid">{formatCurrency(summary.totalPaid)} pago</span>
-                <span className="mx-1.5 text-muted-foreground/40" aria-hidden>·</span>
-                <span className="font-medium">{formatCurrency(summary.totalPending)} a pagar</span>
-              </p>
+              {/*
+                ── As linhas de estado entram no MESMO bloco ──
+
+                Viviam FORA deste `div`, irmãs dele dentro de um `space-y-4`:
+                herdavam 16px de respiro em vez dos 2px do bloco, e "Tudo em
+                dia" ficava solto, longe do resumo que ele conclui.
+
+                Agora seguem o ritmo de Bancos — `mt-0.5` uniforme, do label
+                até a última linha.
+              */}
+              {hasMix && (
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  <span className="font-medium text-paid">
+                    {formatCurrency(summary.totalPaid)} pago
+                  </span>
+                  <span className="mx-1.5 text-muted-foreground/40" aria-hidden>
+                    ·
+                  </span>
+                  <span className="font-medium">
+                    {formatCurrency(summary.totalPending)} a pagar
+                  </span>
+                </p>
+              )}
+
+              {/*
+                A conclusão, no vocabulário de Bancos e Pessoas.
+
+                Complementa `hasMix`: aquela linha mostra a divisão quando
+                ainda falta algo; esta aparece quando nada falta. As duas nunca
+                coexistem — com `totalPending` zerado não há mistura a exibir.
+              */}
+              {tudoEmDia && (
+                <p className="mt-0.5 text-[11px] font-medium text-paid">
+                  Tudo em dia
+                </p>
+              )}
+              </>
             )}
-
-            {/*
-              A conclusão, no vocabulário de Bancos e Pessoas.
-
-              Complementa `hasMix`: aquela linha mostra a divisão quando ainda
-              falta algo; esta aparece quando nada falta. As duas nunca
-              coexistem — com `totalPending` zerado não há mistura a exibir.
-            */}
-            {tudoEmDia && (
-              <p className="text-xs font-medium text-paid">Tudo em dia</p>
-            )}
-
-          </>
+          </div>
         )}
       </div>
 
