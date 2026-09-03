@@ -272,11 +272,18 @@ describe('itens 31 e 55: sem N+1', () => {
     expect(receivableFind).toHaveBeenCalledTimes(1);
   });
 
-  it('só o que está em aberto é carregado', async () => {
+  it('carrega pendências E resolvidos, numa consulta cada', async () => {
     /*
-      `isPaid: false` no `where`, não um filtro depois: item quitado nunca
-      compõe saldo em aberto, e trazê-lo do banco para descartar em memória
-      seria custo puro.
+      O `isPaid: false` saiu do `where` — e era ele que apagava o histórico.
+
+      Com o filtro na origem, um item quitado nunca chegava ao agregado: a
+      competência inteira virava R$ 0,00 assim que tudo era resolvido, e a
+      lista deixava de responder "quem devia a quem naquele mês?".
+
+      A economia que o filtro dava era real, mas pagava com informação. A
+      separação passou para a memória, onde as duas autoridades de competência
+      já vivem — e o que importava de verdade continua garantido: UMA consulta
+      por coleção, nunca uma por pessoa.
     */
     const { debtFind, receivableFind, service } = build({
       persons: [pessoa('p1', 'Mariana')],
@@ -285,11 +292,15 @@ describe('itens 31 e 55: sem N+1', () => {
     await service.monthlySummary(USER_ID, COMPETENCIA);
 
     for (const consulta of [debtFind, receivableFind]) {
-      expect(consulta.mock.calls[0][0].where).toMatchObject({
+      expect(consulta).toHaveBeenCalledTimes(1);
+
+      const where = consulta.mock.calls[0][0].where;
+      expect(where).toMatchObject({
         userId: USER_ID,
-        isPaid: false,
         personId: { not: null },
       });
+      /* O filtro que escondia o histórico não voltou. */
+      expect(where).not.toHaveProperty('isPaid');
     }
   });
 });

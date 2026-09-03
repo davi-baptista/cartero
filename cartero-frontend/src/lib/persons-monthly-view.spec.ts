@@ -89,8 +89,16 @@ describe('itens 18 e 53: o resumo do mês', () => {
 
   it('item 39: o resumo é derivado das rows, não de outro contrato', () => {
     // Mesma fonte: se viesse do backend, poderia discordar do que está na tela.
-    expect(code(PAGINA)).toContain('for (const { netBalance } of balances ?? [])')
+    expect(code(PAGINA)).toContain('for (const b of balances ?? [])')
     expect(code(PAGINA)).not.toContain('summaryFromApi')
+
+    /*
+      Passou a somar o PERÍODO, não o saldo aberto: somando `netBalance`, um
+      mês inteiramente quitado exibia R$ 0,00 e a leitura histórica desaparecia
+      junto com a pendência.
+    */
+    expect(code(PAGINA)).toContain('b.periodReceivableTotal')
+    expect(code(PAGINA)).toContain('b.periodDebtTotal')
   })
 })
 
@@ -238,9 +246,17 @@ describe('itens 13, 40 e 57: a página entrou no design system', () => {
   })
 
   it('itens 9, 10 e 11: três estados de saldo', () => {
-    expect(PAGINA).toContain("'A RECEBER'")
-    expect(PAGINA).toContain("'VOCÊ DEVE'")
-    expect(PAGINA).toContain("'SEM SALDO'")
+    /*
+      Os rótulos vivem em `person-period-view`, a fonte única — e são cinco
+      agora: um mês quitado conserva o valor, então RECEBIDO/PAGO substituem o
+      SEM SALDO que aparecia por engano.
+    */
+    expect(PAGINA).toContain('PERSON_ROW_LABEL[status]')
+
+    const view = code(ler('./person-period-view.ts'))
+    expect(view).toContain("'A RECEBER'")
+    expect(view).toContain("'VOCÊ DEVE'")
+    expect(view).toContain("'SEM SALDO'")
 
     /*
       Zero é neutro: nem verde nem vermelho. A cor vem de `ROW_AMOUNT_TONE`,

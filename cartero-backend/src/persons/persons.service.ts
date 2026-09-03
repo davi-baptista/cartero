@@ -109,11 +109,23 @@ export class PersonsService {
   async monthlySummary(userId: string, competence: SettlementCompetence) {
     const [persons, debts, receivables] = await Promise.all([
       this.prisma.person.findMany({ where: { userId } }),
+      /*
+        SEM `isPaid: false`.
+
+        O filtro na origem era o que apagava o histórico: um item resolvido
+        nunca chegava ao agregado, então a competência inteira virava R$ 0,00
+        assim que tudo era quitado — e a lista deixava de responder "quem devia
+        a quem naquele mês?".
+
+        Agora vêm os dois, e a separação acontece aqui: pendência alimenta o
+        saldo em aberto, resolvido alimenta o histórico. Uma consulta a mais em
+        volume, nenhuma a mais em número — continua sem N+1.
+      */
       this.prisma.debt.findMany({
-        where: { userId, isPaid: false, personId: { not: null } },
+        where: { userId, personId: { not: null } },
       }),
       this.prisma.receivable.findMany({
-        where: { userId, isPaid: false, personId: { not: null } },
+        where: { userId, personId: { not: null } },
         include: { transaction: { select: { date: true } } },
       }),
     ]);
@@ -130,26 +142,53 @@ export class PersonsService {
       {
         debts: (typeof debts)[number][];
         receivables: (typeof receivables)[number][];
+        /* Resolvidos da MESMA competência — o histórico do mês. */
+        settledDebts: (typeof debts)[number][];
+        settledReceivables: (typeof receivables)[number][];
       }
     >();
 
     for (const person of persons) {
-      porPessoa.set(person.id, { debts: [], receivables: [] });
+      porPessoa.set(person.id, {
+        debts: [],
+        receivables: [],
+        settledDebts: [],
+        settledReceivables: [],
+      });
     }
 
+    /*
+      Duas autoridades, uma por estado — as MESMAS que o extrato da pessoa já
+      usa, e por isso lista e drawer não têm como divergir.
+
+      `belongsToCompetence` recusa item pago (a pendência é do presente e
+      arrasta o carry vencido); `belongsToHistoryCompetence` recusa item
+      aberto e casa pelo `dueMonth` exato. Nenhum item entra nos dois.
+    */
     for (const debt of debts) {
-      if (!belongsToCompetence(debt, competence)) continue;
       /*
         `personId` não-nulo veio do `where`, mas a FK é `ON DELETE SET NULL`:
         um contato excluído deixa o registro vivo e órfão. Ele não pertence a
         nenhuma linha desta tela.
       */
-      porPessoa.get(debt.personId!)?.debts.push(debt);
+      const bucket = porPessoa.get(debt.personId!);
+      if (!bucket) continue;
+
+      if (belongsToCompetence(debt, competence)) bucket.debts.push(debt);
+      else if (belongsToHistoryCompetence(debt, competence)) {
+        bucket.settledDebts.push(debt);
+      }
     }
 
     for (const receivable of receivables) {
-      if (!belongsToCompetence(receivable, competence)) continue;
-      porPessoa.get(receivable.personId!)?.receivables.push(receivable);
+      const bucket = porPessoa.get(receivable.personId!);
+      if (!bucket) continue;
+
+      if (belongsToCompetence(receivable, competence)) {
+        bucket.receivables.push(receivable);
+      } else if (belongsToHistoryCompetence(receivable, competence)) {
+        bucket.settledReceivables.push(receivable);
+      }
     }
 
     return persons.map((person) => {
@@ -166,6 +205,25 @@ export class PersonsService {
         netBalance: summary.netBalance,
         receivablePending: summary.receivablePending,
         debtPending: summary.debtPending,
+        /*
+          ── O histórico da competência ──
+
+          `netBalance` e `*Pending` respondem "quanto AINDA falta"; estes
+          respondem "quanto HOUVE naquele mês". Nomes distintos de propósito:
+          reaproveitar `netBalance` com significado novo faria todo consumidor
+          existente passar a ler outra coisa em silêncio.
+
+          Somam pendências E resolvidos — é o total que a competência
+          movimentou, invariável ao settlement. Quitar muda o status da row,
+          não o valor histórico dela, exatamente como uma Invoice paga
+          conserva o `totalAmount`.
+        */
+        periodReceivableTotal:
+          summary.receivablePending + sumAmounts(bucket.settledReceivables),
+        periodDebtTotal: summary.debtPending + sumAmounts(bucket.settledDebts),
+        /* Contagens para o frontend distinguir "nada houve" de "tudo resolvido". */
+        settledReceivablesCount: bucket.settledReceivables.length,
+        settledDebtsCount: bucket.settledDebts.length,
         /*
           O próximo acerto que merece atenção, para a lista dizer QUANDO algo
           acontece — não só quanto.

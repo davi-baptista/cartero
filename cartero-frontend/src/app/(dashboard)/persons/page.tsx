@@ -38,6 +38,15 @@ import {
   nextItemLabel,
   sortPeopleByPriority,
 } from '@/lib/person-next-item'
+import { personsSummaryText } from '@/lib/persons-summary-text'
+import {
+  hasPeriodActivity,
+  PERSON_ROW_LABEL,
+  PERSON_ROW_TONE,
+  periodNetAmount,
+  personRowStatus,
+  resolvedSubtext,
+} from '@/lib/person-period-view'
 import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 import {
@@ -184,6 +193,21 @@ function PersonFormSheet({
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Balanço neutro para contato sem linha no lote.
+ *
+ * Acontece enquanto os saldos carregam, e para quem foi criado depois da
+ * resposta. Zerar tudo é o estado honesto: nada foi movimentado que saibamos.
+ */
+const VAZIO = {
+  netBalance: 0,
+  periodReceivableTotal: 0,
+  periodDebtTotal: 0,
+  settledReceivablesCount: 0,
+  settledDebtsCount: 0,
+  nextItem: null,
+} as const
 
 export default function PersonsPage() {
   const qc = useQueryClient()
@@ -407,15 +431,38 @@ export default function PersonsPage() {
     não quita e não escreve nada.
   */
   const summary = useMemo(() => {
+    /*
+      O resumo passou a somar o HISTÓRICO da competência.
+
+      Somava `netBalance` — o saldo em aberto —, então um mês inteiramente
+      quitado exibia "R$ 0,00 · Sem valores em aberto neste mês" mesmo tendo
+      movimentado milhares. A leitura histórica desaparecia junto com a
+      pendência.
+
+      Os totais por LADO, não pelo líquido de cada pessoa: quem recebeu R$ 500
+      e pagou R$ 200 contribui com os dois números, não com R$ 300 num deles.
+    */
     let toReceive = 0
     let toPay = 0
+    let outstanding = 0
+    let comMovimento = 0
 
-    for (const { netBalance } of balances ?? []) {
-      if (netBalance > 0) toReceive += netBalance
-      else if (netBalance < 0) toPay += Math.abs(netBalance)
+    for (const b of balances ?? []) {
+      toReceive += b.periodReceivableTotal
+      toPay += b.periodDebtTotal
+      outstanding += Math.abs(b.netBalance)
+      if (hasPeriodActivity(b)) comMovimento += 1
     }
 
-    return { toReceive, toPay, net: toReceive - toPay }
+    return {
+      toReceive,
+      toPay,
+      net: toReceive - toPay,
+      /* Quanto ainda falta acertar, somando os dois sentidos. */
+      outstanding,
+      /* Distingue "nenhum movimento" de "tudo resolvido". */
+      comMovimento,
+    }
   }, [balances])
 
   return (
@@ -474,14 +521,7 @@ export default function PersonsPage() {
                 {formatCurrency(summary.net)}
               </p>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {summary.toReceive === 0 && summary.toPay === 0 ? (
-                  'Sem valores em aberto neste mês'
-                ) : (
-                  <>
-                    {formatCurrency(summary.toReceive)} a receber ·{' '}
-                    {formatCurrency(summary.toPay)} a pagar
-                  </>
-                )}
+                {personsSummaryText(summary)}
               </p>
             </>
           )}
@@ -556,26 +596,38 @@ export default function PersonsPage() {
         ) : (
           <div>
             {orderedPersons.map((person, i) => {
-              const balance = balanceById.get(person.id)
-              const net = balance?.netBalance ?? 0
-              const proximoAcerto = nextItemLabel(balance?.nextItem)
-              const atrasado = isNextItemOverdue(balance?.nextItem)
+              const balance = balanceById.get(person.id) ?? VAZIO
 
               /*
-                Três estados, três vocabulários. Saldo zero é neutro — nem
-                verde nem vermelho: não há nada em aberto a comemorar ou
-                temer.
+                O valor é o HISTÓRICO da competência, não o saldo em aberto.
+
+                Antes um mês inteiramente quitado virava R$ 0,00 em todas as
+                linhas, e a lista deixava de dizer quem devia a quem. Mesma
+                separação de Bancos: uma fatura paga conserva o valor e muda o
+                status.
               */
+              const net = periodNetAmount(balance)
+              const status = personRowStatus(balance)
+
+              /*
+                Resolvido troca o subtexto: deixar "Receber em 12d" numa linha
+                quitada afirmaria uma pendência que já não existe.
+              */
+              const resolvido = resolvedSubtext(status)
+              const proximoAcerto = resolvido ?? nextItemLabel(balance.nextItem)
+              const atrasado =
+                resolvido === null && isNextItemOverdue(balance.nextItem)
+
               /* Direção do dinheiro, pelos tons compartilhados. */
               const tone =
-                net > 0
+                net > 0.005
                   ? ROW_AMOUNT_TONE.in
-                  : net < 0
+                  : net < -0.005
                     ? ROW_AMOUNT_TONE.out
                     : ROW_AMOUNT_TONE.muted
 
-              const label =
-                net > 0 ? 'A RECEBER' : net < 0 ? 'VOCÊ DEVE' : 'SEM SALDO'
+              const label = PERSON_ROW_LABEL[status]
+              const labelTone = PERSON_ROW_TONE[status]
 
               return (
               <MotionRow key={person.id} index={i}>
@@ -646,7 +698,7 @@ export default function PersonsPage() {
                           <span className={cn(ROW_AMOUNT_CLASS, tone)}>
                             {formatCurrency(net)}
                           </span>
-                          <span className={ROW_TRAILING_LABEL_CLASS}>
+                          <span className={cn(ROW_TRAILING_LABEL_CLASS, labelTone)}>
                             {label}
                           </span>
                         </>

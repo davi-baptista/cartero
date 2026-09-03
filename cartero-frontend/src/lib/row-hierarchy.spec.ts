@@ -89,8 +89,15 @@ describe('U7: a ordenação de BANKS1.1 não foi tocada', () => {
 
 describe('Pessoas ganhou o subtexto', () => {
   it('o próximo acerto vem da policy compartilhada', () => {
-    expect(PERSONS).toContain('nextItemLabel(balance?.nextItem)')
-    expect(PERSONS).toContain('isNextItemOverdue(balance?.nextItem)')
+    /*
+      O acesso deixou de ser opcional: a row resolve o balanço ausente para um
+      neutro antes de derivar qualquer coisa. E um mês resolvido troca o
+      subtexto de prazo pelo de conclusão — "Receber em 12d" numa linha
+      quitada afirmaria pendência inexistente.
+    */
+    expect(PERSONS).toContain('nextItemLabel(balance.nextItem)')
+    expect(PERSONS).toContain('isNextItemOverdue(balance.nextItem)')
+    expect(PERSONS).toContain('resolvido ?? nextItemLabel(')
   })
 
   it('o subtexto usa o slot `meta`, como Bancos', () => {
@@ -115,8 +122,22 @@ describe('Pessoas ganhou o subtexto', () => {
   })
 
   it('o status do saldo continua no trailing, não vira badge', () => {
-    for (const rotulo of ['A RECEBER', 'VOCÊ DEVE', 'SEM SALDO']) {
-      expect(PERSONS).toContain(rotulo)
+    /*
+      Os rótulos saíram da page para `person-period-view`, que é agora a fonte
+      única — e ganharam dois estados, porque um mês quitado conserva o valor
+      e precisa dizer RECEBIDO/PAGO em vez de SEM SALDO.
+    */
+    expect(PERSONS).toContain('PERSON_ROW_LABEL[status]')
+
+    const view = code(ler('./person-period-view.ts'))
+    for (const rotulo of [
+      'A RECEBER',
+      'VOCÊ DEVE',
+      'RECEBIDO',
+      'PAGO',
+      'SEM SALDO',
+    ]) {
+      expect(view).toContain(rotulo)
     }
   })
 })

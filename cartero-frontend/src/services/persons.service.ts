@@ -47,6 +47,28 @@ export interface PersonMonthlyBalance {
    * mesmo lote — nenhuma consulta por pessoa.
    */
   nextItem: NextSettlementItem | null
+  /**
+   * ── O que HOUVE na competência ──
+   *
+   * `netBalance` e `*Pending` acima respondem "quanto ainda falta"; estes
+   * respondem "quanto o mês movimentou", somando pendências E resolvidos.
+   *
+   * A distinção existe porque um mês inteiramente quitado zerava a lista
+   * toda, e ela deixava de dizer quem devia a quem. É a mesma separação de
+   * Invoice: `totalAmount` não vira zero quando a fatura é paga — o status
+   * muda.
+   */
+  periodReceivableTotal: number
+  periodDebtTotal: number
+  /**
+   * Quantos itens da competência já foram resolvidos.
+   *
+   * É o que distingue "nada aconteceu" de "tudo foi resolvido": os dois
+   * produzem saldo zero, e sem a contagem a row diria "SEM SALDO" para um mês
+   * que movimentou.
+   */
+  settledReceivablesCount: number
+  settledDebtsCount: number
 }
 
 export async function getPersonsMonthlySummary(params: {

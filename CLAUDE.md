@@ -828,6 +828,53 @@ Cache de leitura da renda de HOJE, para telas sem mês (perfil, cabeçalhos). **
 - `isFullySettled` olha as **contagens**, nunca `netBalance === 0`: R$ 500 dos dois lados dá saldo zero com duas obrigações abertas
 - 4 queries paralelas, sem N+1
 
+### A lista mensal preserva o histórico (Fase PEOPLE2)
+
+`GET /persons/monthly-summary` filtrava `isPaid: false` na ORIGEM, então um item
+resolvido nunca chegava ao agregado: quitado o último item de julho, todas as
+linhas viravam **R$ 0,00 · SEM SALDO** e a lista deixava de responder "quem devia
+a quem naquele mês?". Reconstruir exigia abrir pessoa por pessoa.
+
+É a mesma separação que `Invoice` já tem — `totalAmount` não vira zero quando a
+fatura é paga, o **status** muda:
+
+| Par de campos | Responde | Muda ao quitar? |
+|---|---|---|
+| `netBalance` / `*Pending` | quanto ainda falta | sim |
+| `period{Receivable,Debt}Total` | quanto houve no mês | **não** |
+
+- Os nomes são deliberadamente distintos: um consumidor que leia o par errado
+  recebe outro universo, e sem nomes separados não teria como perceber
+- A separação por estado usa as **duas autoridades que já existiam** —
+  `belongsToCompetence` (pendência + carry vencido) e
+  `belongsToHistoryCompetence` (`isPaid` + `dueMonth` exato). Nenhum item entra
+  nos dois, e não há um terceiro cálculo
+- Continua sem N+1: uma consulta por entidade, agora sem o filtro
+
+**Apresentação** (`lib/person-period-view.ts`, fonte única): o valor é o
+histórico; o **status fala do que RESTA**. Recebeu R$ 900 e ainda deve R$ 100 →
+`VOCÊ DEVE`, não `RECEBIDO`. Cinco estados: `A RECEBER` · `VOCÊ DEVE` ·
+`RECEBIDO` · `PAGO` · `SEM SALDO`, os dois resolvidos em `text-paid`.
+
+- Mês resolvido troca o subtexto de prazo pelo de conclusão — "Receber em 12d"
+  numa linha quitada afirmaria pendência inexistente. **Sem data**: vários itens
+  podem ter sido resolvidos em dias diferentes, e escolher um seria inventar
+- Misto resolvido segue o **sinal do líquido** (decisão de produto): R$ 500
+  recebidos e R$ 200 pagos dizem `RECEBIDO`; a composição fica no drawer
+- Líquido zero **com** movimento é `RECEBIDO`, nunca `SEM SALDO` — R$ 200 de cada
+  lado, tudo quitado, não é o mesmo que nunca ter tido nada com a pessoa
+- A **ordenação não mudou**: continua por urgência (`netBalance` + `nextItem`).
+  Ordenar pelo histórico colocaria um mês quitado acima de uma dívida vencida
+
+**Resumo do topo** (`lib/persons-summary-text.ts`): soma o período, e distingue
+`Nenhuma movimentação neste mês` de **`Tudo resolvido neste mês`** — dizia "Sem
+valores em aberto" nos dois casos. Não copia o `Tudo em dia` de Bancos: lá a
+frase fala de PRAZO, aqui o fato é que as obrigações foram liquidadas.
+
+**O dublê de teste honra o `where`.** `mockResolvedValue` fixo devolvia os
+resolvidos mesmo com `isPaid: false` no filtro, e reintroduzir o bug na origem
+não fazia nenhum teste falhar — o mesmo recurso de `budget-temporality.spec.ts`.
+
 ### Contrato do endpoint (Fase 8C)
 
 `GET /persons/:id/statement` devolve os dois universos com **nomes distintos**. Os espelhos `totalDebts`, `totalReceivables`, `netBalance`, `debts` e `receivables` foram **removidos**: significavam "do mês" antes da Fase 8B e "all-time" depois — o mesmo nome, dois universos, sem como o consumidor saber qual estava rodando.
