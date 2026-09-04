@@ -1490,18 +1490,21 @@ export function PersonStatementDrawer({
               </div>
 
               {/*
-                Nada em aberto: mensagem própria da seção.
+                ── NÃO existe um vazio global depois das seções ──
 
-                Antes o vazio combinava "sem pendências" com "nada quitado no
-                mês" numa frase só — misturando os dois universos que esta
-                reorganização separou. Agora o Histórico tem o seu próprio
-                vazio, e este cobre apenas o consolidado.
+                Havia um, condicionado a `summary.isFullySettled`, e ele
+                sobrava: as duas seções já têm o vazio próprio, cada uma
+                falando do seu universo. Numa competência sem atividade a tela
+                dizia a mesma coisa três vezes — "nada a acertar" no summary,
+                "nenhum valor em aberto para esta competência" e, depois do
+                Histórico, "nenhum valor em aberto com C6".
+
+                A terceira também respondia a pergunta ERRADA no lugar errado:
+                `isFullySettled` é ALL-TIME, então a frase aparecia sob um
+                Histórico que fala de um mês — e continuaria aparecendo num mês
+                vazio de quem tem pendência em outro. O consolidado tem lugar
+                próprio (o card e a mensagem do WhatsApp).
               */}
-              {summary.isFullySettled && (
-                <p className="py-2 text-center text-xs text-muted-foreground">
-                  Nenhum valor em aberto com {person?.name ?? 'esta pessoa'}.
-                </p>
-              )}
             </>
           ) : null}
         </div>

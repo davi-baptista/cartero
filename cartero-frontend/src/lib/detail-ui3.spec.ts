@@ -339,3 +339,84 @@ describe('parte C: a geometria das seções tem uma autoridade', () => {
     expect(PESSOA).toContain('cursor-pointer')
   })
 })
+
+describe('competência sem atividade diz cada coisa UMA vez', () => {
+  /*
+    O contrato do zero-activity. A tela dizia o mesmo fato três vezes:
+
+      Nada a acertar · R$ 0,00                     (summary)
+      Nenhum valor em aberto para esta competência. (seção)
+      Nenhum valor em aberto com C6.                (global, redundante)
+
+    A terceira também respondia a pergunta errada no lugar errado:
+    `isFullySettled` é ALL-TIME, e a frase aparecia logo abaixo de um
+    Histórico que fala de UM mês.
+  */
+
+  const PESSOA = semComentarios(
+    ler('../components/person-statement-drawer.tsx'),
+  )
+
+  /* Contagem por `split`: nada de regex, nada de escapar pontuação. */
+  const ocorrencias = (texto: string) => PESSOA.split(texto).length - 1
+
+  it('o vazio de `Em aberto` existe exatamente uma vez', () => {
+    expect(ocorrencias('Nenhum valor em aberto para esta competência.')).toBe(1)
+  })
+
+  it('o vazio de `Histórico` existe exatamente uma vez', () => {
+    expect(ocorrencias('Nenhum item resolvido neste período.')).toBe(1)
+  })
+
+  it('o fallback global foi removido', () => {
+    expect(PESSOA).not.toContain('Nenhum valor em aberto com ')
+  })
+
+  it('nenhum vazio é renderizado a partir do consolidado all-time', () => {
+    /*
+      `isFullySettled` continua existindo — o WhatsApp fala da relação
+      inteira e precisa dele. O que não pode voltar é ele governar um vazio
+      VISUAL abaixo das seções mensais.
+    */
+    const usos = PESSOA.match(/summary\.isFullySettled/g) ?? []
+
+    expect(usos.length).toBe(1)
+    expect(PESSOA).toContain('if (requirePhone && summary.isFullySettled)')
+  })
+
+  it('cada seção mantém o vazio próprio — nada foi apagado a mais', () => {
+    expect(PESSOA).toContain('DrawerSectionEmpty')
+    expect(PESSOA).toContain('Nenhum valor em aberto para esta competência.')
+    expect(PESSOA).toContain('Nenhum item resolvido neste período.')
+  })
+
+  it('o summary de competência vazia sobrevive', () => {
+    const CARD = semComentarios(ler('./person-competence-card.ts'))
+
+    expect(CARD).toContain("label: 'Nada a acertar'")
+    expect(CARD).toContain("mode: 'empty'")
+  })
+
+  it('`+ Adicionar` continua no cabeçalho de uma competência vazia', () => {
+    /*
+      A ação é a mais útil justamente num mês sem nada, e o cabeçalho é
+      constante — fica fora do condicional de lista vazia.
+    */
+    const secao = PESSOA.slice(PESSOA.indexOf('Em aberto · {monthSummary.itemCount}'))
+    const antesDoCondicional = secao.slice(0, secao.indexOf('monthSummary.itemCount === 0'))
+
+    expect(antesDoCondicional).toContain('Adicionar')
+  })
+
+  it('nenhum texto de vazio aparece duplicado no arquivo', () => {
+    const vazios = [
+      'Nenhum valor em aberto para esta competência.',
+      'Nenhum item resolvido neste período.',
+      'Nenhuma pessoa cadastrada',
+    ]
+
+    for (const texto of vazios) {
+      expect(ocorrencias(texto), texto).toBeLessThanOrEqual(1)
+    }
+  })
+})
