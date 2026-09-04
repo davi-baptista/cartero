@@ -34,14 +34,19 @@ const FATURA = semComentarios(
 describe('objetivo 1: a seção "Em aberto" segue o padrão de Fatura', () => {
   it('o cabeçalho tem a mesma geometria', () => {
     /*
-      `h-11` fixo, borda em cima e embaixo, título à esquerda e ação à direita
-      — a faixa que Fatura usa para "Transações · X".
-    */
-    const faixa =
-      'flex h-11 items-center justify-between gap-2 border-y border-border pl-4 pr-2'
+      `h-11` fixo, borda em cima e embaixo, título à esquerda e ação à direita.
 
-    expect(FATURA).toContain(faixa)
-    expect(DRAWER).toContain(faixa)
+      A faixa deixou de ser escrita em cada drawer: os dois consomem a MESMA
+      primitive, que é onde a geometria vive agora. Duas cópias byte a byte
+      passavam neste teste e ainda assim podiam divergir na edição seguinte.
+    */
+    const PRIMITIVE = semComentarios(ler('../components/ui/drawer-section.tsx'))
+
+    expect(PRIMITIVE).toContain(
+      'flex h-11 items-center justify-between gap-2 border-y border-border pl-4 pr-2',
+    )
+    expect(FATURA).toContain('DrawerSectionHeader')
+    expect(DRAWER).toContain('DrawerSectionHeader')
   })
 
   it('o título conta os itens, como em Fatura', () => {

@@ -103,6 +103,11 @@ import {
 } from '@/lib/person-competence-card'
 import { civilDayOf } from '@/lib/date'
 import {
+  DRAWER_SECTION_INSET,
+  DrawerSectionEmpty,
+  DrawerSectionHeader,
+} from '@/components/ui/drawer-section'
+import {
   dueLabel,
   dueContext,
   openItemsFor,
@@ -162,7 +167,20 @@ function StatementRow({
     : true
 
   return (
-    <div className="flex items-center gap-2.5 border-b border-border py-2.5 last:border-b-0">
+    /*
+      O recuo é da ROW, não herdado de um container acima.
+
+      Antes vinha do `px-6` do scroller, e por isso a faixa da seção — que
+      precisa ir de ponta a ponta — recebia o mesmo recuo e ficava 48px mais
+      estreita que a de Fatura. Com o token aqui, borda e conteúdo ficam
+      independentes: a linha divisória atravessa, o texto respira.
+    */
+    <div
+      className={cn(
+        DRAWER_SECTION_INSET,
+        'flex items-center gap-2.5 border-b border-border py-2.5 last:border-b-0',
+      )}
+    >
       <ToggleButton
         isPaid={item.isPaid}
         onToggle={onToggle}
@@ -1139,7 +1157,19 @@ export function PersonStatementDrawer({
           </div>
         </SheetHeader>
 
-        <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-6 pt-4 pb-5">
+        {/*
+          ── O scroller NÃO tem padding horizontal ──
+
+          Tinha `px-6`, e era ele que estreitava tudo: em 390px as rows de
+          Pessoa ficavam com 320px contra 368px das de Fatura. A faixa de
+          seção nascia recuada, e nada dentro dela alcançava a borda.
+
+          Fatura sempre fez o contrário — scroller neutro, padding aplicado
+          por seção —, e é o que permite as faixas irem de ponta a ponta com
+          só o conteúdo recuado. `DRAWER_SECTION_INSET` é a autoridade desse
+          recuo agora.
+        */}
+        <div className="flex flex-1 flex-col gap-5 overflow-y-auto pt-4 pb-5">
           {/*
             UM seletor governa tudo: card, lista em aberto e histórico.
 
@@ -1148,7 +1178,7 @@ export function PersonStatementDrawer({
             poluído. A competência mensal já responde a pergunta central.
           */}
           {isLoading ? (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 px-4">
               <Skeleton className="h-24 w-full rounded-xl" />
               <Skeleton className="h-32 w-full rounded-xl" />
               <Skeleton className="h-32 w-full rounded-xl" />
@@ -1164,7 +1194,7 @@ export function PersonStatementDrawer({
             */
             <div
               role="alert"
-              className="flex flex-col items-center justify-center py-14 text-center"
+              className="flex flex-col items-center justify-center px-4 py-14 text-center"
             >
               <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-destructive/10">
                 <TriangleAlert
@@ -1202,7 +1232,13 @@ export function PersonStatementDrawer({
                 consolidado all-time enquanto a lista abaixo era filtrada — os
                 números da tela não conversavam entre si.
               */}
-              <div className="rounded-xl border border-border bg-muted/30 px-4 py-4">
+              {/*
+                O card mantém a identidade de card — o resumo da competência é
+                um bloco, não uma seção de lista. Mas a margem passa a ser o
+                MESMO recuo das seções: antes ele herdava o `px-6` do scroller
+                e somava o próprio `px-4`, duas camadas para o mesmo respiro.
+              */}
+              <div className="mx-4 rounded-xl border border-border bg-muted/30 px-4 py-4">
                 <p className="text-xs font-medium text-muted-foreground">
                   {/*
                     O título nomeia o que o número É: "Saldo a receber" com
@@ -1317,11 +1353,14 @@ export function PersonStatementDrawer({
                   encolheria conforme o conteúdo e o cabeçalho mudaria de
                   tamanho entre uma competência aberta e uma quitada.
                 */}
-                <div className="flex h-11 items-center justify-between gap-2 border-y border-border pl-4 pr-2">
-                  <p className="text-[11px] font-medium text-muted-foreground">
-                    Em aberto · {monthSummary.itemCount}{' '}
-                    {monthSummary.itemCount === 1 ? 'item' : 'itens'}
-                  </p>
+                <DrawerSectionHeader
+                  title={
+                    <>
+                      Em aberto · {monthSummary.itemCount}{' '}
+                      {monthSummary.itemCount === 1 ? 'item' : 'itens'}
+                    </>
+                  }
+                  action={
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       className={buttonVariants({
@@ -1351,12 +1390,13 @@ export function PersonStatementDrawer({
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                </div>
+                  }
+                />
 
                 {monthSummary.itemCount === 0 ? (
-                  <p className="py-6 text-center text-[11px] text-muted-foreground">
+                  <DrawerSectionEmpty>
                     Nenhum valor em aberto para esta competência.
-                  </p>
+                  </DrawerSectionEmpty>
                 ) : (
                   <div>
                     {monthReceivables.map((r) => (
@@ -1393,19 +1433,25 @@ export function PersonStatementDrawer({
                 que o acerto pertence, não o mês em que o dinheiro se moveu.
               */}
               <div>
-                <p className="mb-2 text-[11px] font-medium text-muted-foreground">
-                  Histórico
-                </p>
+                {/*
+                  A MESMA faixa de "Em aberto", sem ação à direita.
+
+                  Era um `<p>` solto com `mb-2`: sem altura fixa, sem bordas e
+                  com outro recuo — duas seções da mesma lista desenhadas por
+                  regras diferentes, e a diferença aparecia como um degrau no
+                  meio do drawer.
+                */}
+                <DrawerSectionHeader title="Histórico" />
 
                 {historyReceivables.length === 0 &&
                 historyDebts.length === 0 ? (
                   /* Histórico vazio ≠ nada em aberto: universos diferentes. */
-                  <p className="py-6 text-center text-[11px] text-muted-foreground">
+                  <DrawerSectionEmpty>
                     Nenhum item resolvido neste período.
-                  </p>
+                  </DrawerSectionEmpty>
                 ) : (
                 <div>
-                  <div className="border-t border-border">
+                  <div>
                     {historyReceivables.map((r) => (
                       <StatementRow
                         key={r.id}

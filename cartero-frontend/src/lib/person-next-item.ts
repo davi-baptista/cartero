@@ -27,15 +27,35 @@ import { formatDateValue } from '@/lib/date'
 
 export type SettlementDirection = 'receive' | 'pay'
 
+/**
+ * O sentido que a FRASE revela — nem sempre o do item.
+ *
+ * Uma pessoa com R$ 300 em aberto de cada lado tem líquido zero e pendências
+ * vivas: a row diz `A ACERTAR`, porque nenhum dos dois sentidos manda. Mas a
+ * data continua vindo de um item concreto, que tem lado — e a frase saía
+ * `Receber em 7d` ao lado de um status que acabara de afirmar não haver
+ * direção.
+ *
+ * `settle` existe para esse caso: a data permanece real, o verbo é que deixa
+ * de escolher um lado que o saldo não escolheu.
+ */
+export type LabelDirection = SettlementDirection | 'settle'
+
 export interface NextSettlementItem {
   direction: SettlementDirection
   /** `YYYY-MM-DD`, dia civil. */
   dueDate: string
 }
 
-const VERBO: Record<SettlementDirection, string> = {
+const VERBO: Record<LabelDirection, string> = {
   receive: 'Receber',
   pay: 'Pagar',
+  /*
+    "Acertar" serve aos dois sentidos sem afirmar nenhum — a mesma escolha que
+    `A ACERTAR` faz no trailing. Um verbo direcional aqui contradiria o status
+    a poucos pixels de distância.
+  */
+  settle: 'Acertar',
 }
 
 /**
@@ -70,10 +90,16 @@ function diasEntre(de: string, ate: string): number {
 export function nextItemLabel(
   item: NextSettlementItem | null | undefined,
   today: string = formatDateValue(),
+  /*
+    Quem chama sabe se a row é bilateral: o status vem do LÍQUIDO, e o item
+    não tem como saber que o outro lado o anula. Sobrescrever aqui mantém a
+    escolha da data intacta — só a palavra muda.
+  */
+  direction: LabelDirection = item?.direction ?? 'receive',
 ): string | null {
   if (!item) return null
 
-  const verbo = VERBO[item.direction]
+  const verbo = VERBO[direction]
   const dias = diasEntre(today, item.dueDate)
 
   if (dias < 0) {

@@ -32,6 +32,7 @@ import { toast } from 'sonner'
 import { bankDisplayName } from '@/lib/bank-display'
 import { PersonStatementDrawer } from '@/components/person-statement-drawer'
 import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
+import { detailHref } from '@/lib/detail-navigation'
 import {
   shouldRenderPeopleSettlement,
   summarizePriorOverdue,
@@ -216,11 +217,30 @@ export default function BudgetPage() {
     next.delete('personId')
     next.delete('invoiceId')
     if (value) next.set(key, value)
+
     /*
-      `scroll: false` preserva a posição da página: abrir e fechar o drawer
-      não pode jogar o usuário de volta ao topo do Orçamento.
+      ── Abrir é `push`, fechar é `replace` ──
+
+      O contrato canônico de `useDetailNavigation`, que esta rota replica
+      localmente porque `personId` aqui identifica um drawer e em Dívidas
+      FILTRA a lista — o mesmo motivo registrado em `/persons`.
+
+      Fechar usava `push`, e isso deixava o histórico
+      `[orçamento, detalhe, orçamento]`: o Voltar logo após fechar reabria o
+      drawer que o usuário acabara de dispensar. Com `replace`, a entrada do
+      detalhe é SUBSTITUÍDA.
+
+      Fechar também não pode depender de haver entrada anterior: quem colou
+      `/budget?invoiceId=…` direto não tem nenhuma, e `router.back()` o
+      mandaria para fora do app. `replace` da URL atual funciona nos dois
+      casos, e remove APENAS a identidade do detalhe — mês e demais params
+      sobrevivem.
+
+      `scroll: false` preserva a posição da página.
     */
-    router.push(`${pathname}?${next.toString()}`, { scroll: false })
+    const href = detailHref(pathname, next)
+    if (value) router.push(href, { scroll: false })
+    else router.replace(href, { scroll: false })
   }
 
   const closeDrawers = () => setDrawerParam('personId', null)

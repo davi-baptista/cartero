@@ -368,13 +368,24 @@ describe('a tipografia acompanha o drawer de Fatura', () => {
   )
 
   it('os cabeçalhos de seção usam a mesma escala', () => {
-    const escala = 'text-[11px] font-medium text-muted-foreground'
+    /*
+      A escala deixou de ser repetida em cada drawer: vive na primitive que os
+      dois consomem. Verificar a classe inline aqui passaria a exigir que ela
+      fosse duplicada de volta.
+    */
+    const PRIMITIVE = ler('../components/ui/drawer-section.tsx')
 
-    expect(FATURA).toContain(escala)
-    expect(DRAWER).toContain(escala)
+    expect(PRIMITIVE).toContain('text-[11px] font-medium text-muted-foreground')
+    expect(FATURA).toContain('DrawerSectionHeader')
+    expect(DRAWER).toContain('DrawerSectionHeader')
   })
 
   it('os vazios de seção também', () => {
-    expect(DRAWER).toContain('py-6 text-center text-[11px] text-muted-foreground')
+    const PRIMITIVE = ler('../components/ui/drawer-section.tsx')
+
+    expect(PRIMITIVE).toContain(
+      'py-6 text-center text-[11px] text-muted-foreground',
+    )
+    expect(DRAWER).toContain('DrawerSectionEmpty')
   })
 })

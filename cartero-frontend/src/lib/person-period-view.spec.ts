@@ -79,6 +79,12 @@ describe('P-1: o valor histórico continua disponível', () => {
 })
 
 describe('P-6b: o tom do prazo segue a régua canônica', () => {
+  /*
+    `hoje` é injetado em TODAS as chamadas: `subtextTone` tem o parâmetro
+    justamente para isso, e omiti-lo fazia o teste comparar datas fixas com o
+    relógio real — passava no dia em que foi escrito e quebrava sozinho no
+    seguinte, sem nenhuma mudança de código.
+  */
   const hoje = new Date(2026, 8, 3)
   const emDias = (d: number) => {
     const t = new Date(hoje)
@@ -88,7 +94,7 @@ describe('P-6b: o tom do prazo segue a régua canônica', () => {
   }
 
   it('C7: atraso é vermelho', () => {
-    expect(subtextTone(emDias(-6))).toBe('text-destructive')
+    expect(subtextTone(emDias(-6), hoje)).toBe('text-destructive')
   })
 
   it('C8: hoje e prazo curto usam o âmbar de urgência', () => {
@@ -97,15 +103,15 @@ describe('P-6b: o tom do prazo segue a régua canônica', () => {
       não uma régua local. Antes só o atraso tinha cor, então "Receber amanhã" e
       "Receber em 18d" saíam no mesmo cinza.
     */
-    expect(subtextTone(emDias(0))).toBe('text-pending')
-    expect(subtextTone(emDias(1))).toBe('text-pending')
-    expect(subtextTone(emDias(7))).toBe('text-pending')
+    expect(subtextTone(emDias(0), hoje)).toBe('text-pending')
+    expect(subtextTone(emDias(1), hoje)).toBe('text-pending')
+    expect(subtextTone(emDias(7), hoje)).toBe('text-pending')
   })
 
   it('C9: futuro distante é muted', () => {
     /* Pintar todo evento futuro encheria a lista de tons sem hierarquia. */
-    expect(subtextTone(emDias(8))).toBe('')
-    expect(subtextTone(emDias(18))).toBe('')
+    expect(subtextTone(emDias(8), hoje)).toBe('')
+    expect(subtextTone(emDias(18), hoje)).toBe('')
   })
 
   it('sem evento não há tom', () => {

@@ -1,4 +1,4 @@
-import type { NextSettlementItem } from '@/lib/person-next-item'
+import type { LabelDirection, NextSettlementItem } from '@/lib/person-next-item'
 import { timingUrgency } from '@/lib/invoice-timing'
 import { formatDate } from '@/lib/formatters'
 import { ROW_RESOLVED_TONE } from '@/components/ui/financial-list-row'
@@ -255,6 +255,42 @@ export function personRowAmount(b: PeriodBalance): number {
  * afirma `settledAt` quando ele é defensável. Sem ele, a linha diz o que sabe
  * — não uma data escolhida para preencher espaço.
  */
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * O verbo do prazo sai do STATUS, não do item
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * A row com R$ 300 abertos de cada lado dizia:
+ *
+ *   Receber em 7d                 R$ 0,00
+ *                                 A ACERTAR
+ *
+ * O trailing afirma que nenhum lado manda; a metadata, dois centímetros ao
+ * lado, escolhe um. Os dois saem do mesmo saldo, e discordavam porque o verbo
+ * vinha do ITEM (que tem lado, sempre) e o status vinha do LÍQUIDO (que aqui
+ * não tem).
+ *
+ * ── A data continua sendo real ──
+ *
+ * Nada de prazo agregado inventado: o item mais urgente continua sendo
+ * escolhido pela policy existente — atraso, hoje, menor vencimento futuro,
+ * desempate determinístico. Só a PALAVRA muda.
+ *
+ * ── Por que aqui, e não no call site ──
+ *
+ * `nextItemLabel` aceita a direção como parâmetro opcional, e um opcional que
+ * a página precisa lembrar de passar é o mesmo bug esperando outro consumidor.
+ * Derivar do status — que a row já calcula — deixa a coerência estrutural: quem
+ * exibe `A ACERTAR` não consegue exibir `Receber` sem passar por aqui.
+ */
+export function rowLabelDirection(
+  status: PersonRowStatus,
+  item: NextSettlementItem | null | undefined,
+): LabelDirection {
+  if (status === 'toSettle') return 'settle'
+  return item?.direction ?? 'receive'
+}
+
 export function rowSubtext(
   status: PersonRowStatus,
   prazo: string | null,

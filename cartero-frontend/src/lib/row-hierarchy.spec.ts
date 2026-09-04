@@ -99,7 +99,13 @@ describe('Pessoas ganhou o subtexto', () => {
       subtexto de prazo pelo de conclusão — "Receber em 12d" numa linha
       quitada afirmaria pendência inexistente.
     */
-    expect(PERSONS).toContain('nextItemLabel(balance.nextItem)')
+    expect(PERSONS).toContain('nextItemLabel(')
+    expect(PERSONS).toContain('balance.nextItem')
+    /*
+      A direcao agora vem do STATUS, nao do item: uma row bilateral net-zero
+      diz "Acertar", nao "Receber"/"Pagar".
+    */
+    expect(PERSONS).toContain('rowLabelDirection(status, balance.nextItem)')
     /*
       Resolvido agora OMITE o subtexto em vez de substituí-lo: o trailing já
       diz RECEBIDO, e a versão anterior exibia o mesmo estado duas vezes.

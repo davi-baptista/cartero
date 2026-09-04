@@ -47,6 +47,7 @@ import {
   personAmountTone,
   personRowAmount,
   personRowStatus,
+  rowLabelDirection,
   rowSubtext,
   rowSubtextTone,
 } from '@/lib/person-period-view'
@@ -688,7 +689,17 @@ export default function PersonsPage() {
               */
               const proximoAcerto = rowSubtext(
                 status,
-                nextItemLabel(balance.nextItem),
+                /*
+                  O verbo sai do STATUS: uma row bilateral net-zero diz
+                  `Acertar em 7d`, não `Receber`/`Pagar` — o trailing acabou de
+                  afirmar que nenhum lado manda. A DATA continua a do item mais
+                  urgente, escolhida pela policy de sempre.
+                */
+                nextItemLabel(
+                  balance.nextItem,
+                  undefined,
+                  rowLabelDirection(status, balance.nextItem),
+                ),
                 balance.settledAt,
               )
               /*

@@ -84,6 +84,7 @@ import type { Transaction } from '@/types'
 import { InvoiceStatus, TransactionType, InstallmentScope } from '@/types'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { DrawerSectionHeader } from '@/components/ui/drawer-section'
 
 function statusHeaderStyle(status: InvoiceStatus): React.CSSProperties {
   const c = INVOICE_STATUS_COLOR[status]
@@ -865,15 +866,15 @@ export function InvoiceDetailsDrawer({
                 <>
                   {/* O botão fica no cabeçalho da lista: é uma ação sobre ela,
                       e uma faixa própria custava espaço num painel estreito. */}
-                  {/* Altura fixa: sem ela a faixa encolhe quando o botão não
-                      aparece, e o cabeçalho muda de tamanho entre uma fatura
-                      paga e uma aberta. */}
-                  <div className="flex h-11 items-center justify-between gap-2 border-y border-border pl-4 pr-2">
-                    <p className="text-[11px] font-medium text-muted-foreground">
-                      Transações · {txs.length}
-                      {selectedCategory && ` de ${txCount}`}
-                    </p>
-                    {canEditTransactions && (
+                  <DrawerSectionHeader
+                    title={
+                      <>
+                        Transações · {txs.length}
+                        {selectedCategory && ` de ${txCount}`}
+                      </>
+                    }
+                    action={
+                    canEditTransactions && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -886,8 +887,9 @@ export function InvoiceDetailsDrawer({
                         <Plus className="size-3.5" />
                         Adicionar
                       </Button>
-                    )}
-                  </div>
+                    )
+                    }
+                  />
                   {txs.map((tx, i) => (
                     <motion.div
                       key={tx.id}
