@@ -17,6 +17,7 @@ import {
   ROW_AMOUNT_TONE,
 } from '@/components/ui/financial-list-row'
 import { formatCurrency, formatDate } from '@/lib/formatters'
+import { civilDayOf } from '@/lib/date'
 import {
   canEditSettlementDate,
   settlementDateActionLabel,
@@ -157,7 +158,7 @@ export function DebtDetailDrawer({
           */
           <DetailRow label="Paga em">
             {debt.paidAt ? (
-              formatDate(debt.paidAt)
+              formatDate(civilDayOf(debt.paidAt))
             ) : (
               <span className="text-muted-foreground">não registrada</span>
             )}

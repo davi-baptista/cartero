@@ -101,6 +101,7 @@ import {
   competenceCard,
   competenceCardSign,
 } from '@/lib/person-competence-card'
+import { civilDayOf } from '@/lib/date'
 import {
   dueLabel,
   dueContext,
@@ -863,7 +864,15 @@ export function PersonStatementDrawer({
 
     let maior: string | null = null
     for (const item of resolvidos) {
-      const dia = item.paidAt?.slice(0, 10)
+      /*
+        `civilDayOf`, nunca `slice(0, 10)`.
+
+        `paidAt` é um INSTANTE, e o slice devolve o dia em UTC: um pagamento
+        em 04/09 às 00h30 UTC ocorreu em 03/09 às 21h30 aqui. A lista de
+        Pessoas (que usa `civilDay` no backend) dizia 03/09 e este drawer
+        dizia 04/09 — o mesmo registro com dois dias na mesma tela.
+      */
+      const dia = item.paidAt ? civilDayOf(item.paidAt) : null
       /* Um resolvido sem data torna a conclusão indefensável para o mês. */
       if (!dia) return null
       if (maior === null || dia > maior) maior = dia
@@ -1090,25 +1099,15 @@ export function PersonStatementDrawer({
         <SheetHeader className="px-6 pt-6 pb-0">
           <SheetTitle className="mr-8 truncate">{person?.name}</SheetTitle>
           <SheetDescription>Extrato consolidado de dívidas e cobranças</SheetDescription>
+          {/*
+            A ação de adicionar saiu daqui para o cabeçalho de "Em aberto".
+
+            Ela opera sobre a LISTA, e no padrão de Fatura ("Transações · X" à
+            esquerda, "+ Adicionar" à direita) vive junto do conteúdo que
+            afeta. No topo, ocupava uma faixa inteira do painel para uma ação
+            que a seção já contextualiza.
+          */}
           <div className="flex flex-col gap-2 pt-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger className={buttonVariants({ variant: 'outline', size: 'sm', className: 'gap-1.5' })}>
-                  <Plus className="size-3.5" />
-                  Adicionar dívida ou cobrança
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="min-w-44">
-                  <DropdownMenuItem onClick={openNewReceivable}>
-                    <Plus className="size-3.5" />
-                    Nova cobrança
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={openNewDebt}>
-                    <Plus className="size-3.5" />
-                    Nova dívida
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
@@ -1302,18 +1301,64 @@ export function PersonStatementDrawer({
                 vencem nela e o carry-over ainda aberto. Sem chips — a
                 competência já é o filtro.
               */}
-              {monthSummary.itemCount === 0 ? (
-                <p className="py-6 text-center text-[11px] text-muted-foreground">
-                  Nenhum valor em aberto para esta competência.
-                </p>
-              ) : (
-                <div>
-                  {/* Mesma escala dos cabeçalhos de seção do drawer de Fatura. */}
-                  <p className="mb-2 text-[11px] font-medium text-muted-foreground">
+              <div>
+                {/*
+                  ── O cabeçalho é CONSTANTE ──
+
+                  No padrão de Fatura ("Transações · X" à esquerda, "+
+                  Adicionar" à direita), a faixa existe independentemente de a
+                  lista ter conteúdo: ela nomeia a seção e ancora a ação.
+
+                  Antes, sem itens abertos, o cabeçalho sumia junto e restava
+                  só a frase solta — e a ação de adicionar, que é justamente a
+                  mais útil num mês vazio, ficava longe dali.
+
+                  `h-11` fixo pelo mesmo motivo de Fatura: sem ele a faixa
+                  encolheria conforme o conteúdo e o cabeçalho mudaria de
+                  tamanho entre uma competência aberta e uma quitada.
+                */}
+                <div className="flex h-11 items-center justify-between gap-2 border-y border-border pl-4 pr-2">
+                  <p className="text-[11px] font-medium text-muted-foreground">
                     Em aberto · {monthSummary.itemCount}{' '}
                     {monthSummary.itemCount === 1 ? 'item' : 'itens'}
                   </p>
-                  <div className="border-t border-border">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      className={buttonVariants({
+                        variant: 'ghost',
+                        size: 'sm',
+                        className:
+                          'h-7 cursor-pointer gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground',
+                      })}
+                    >
+                      <Plus className="size-3.5" />
+                      Adicionar
+                    </DropdownMenuTrigger>
+                    {/*
+                      As DUAS opções sobrevivem: aqui a ação é ambígua por
+                      natureza (cobrança ou dívida), diferente de Fatura, onde
+                      só existe transação. Reduzir a um botão simples obrigaria
+                      a escolher um sentido por padrão.
+                    */}
+                    <DropdownMenuContent align="end" className="min-w-44">
+                      <DropdownMenuItem onClick={openNewReceivable}>
+                        <Plus className="size-3.5" />
+                        Nova cobrança
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={openNewDebt}>
+                        <Plus className="size-3.5" />
+                        Nova dívida
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {monthSummary.itemCount === 0 ? (
+                  <p className="py-6 text-center text-[11px] text-muted-foreground">
+                    Nenhum valor em aberto para esta competência.
+                  </p>
+                ) : (
+                  <div>
                     {monthReceivables.map((r) => (
                       <StatementRow
                         key={r.id}
@@ -1337,8 +1382,8 @@ export function PersonStatementDrawer({
                       />
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
               {/*
                 ── Histórico ──

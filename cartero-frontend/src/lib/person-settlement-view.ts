@@ -1,4 +1,4 @@
-import { formatDateValue } from '@/lib/date'
+import { civilDayOf, formatDateValue } from '@/lib/date'
 import type { SettlementCompetence } from '@/types'
 
 /**
@@ -375,6 +375,18 @@ export function resolvedLabel(
     return `Venceu em ${dueDisplay(item.dueDate, item.dueMonth)}`
   }
 
+  /*
+    `paidAt` e um INSTANTE, e o `slice(0, 10)` que `fullDate` faz devolveria o
+    dia em UTC: um recebimento em 04/09 as 00h30 UTC ocorreu em 03/09 as 21h30
+    aqui. A lista de Pessoas usa o dia civil, e a linha do historico dizia o
+    dia seguinte para o MESMO registro.
+
+    A conversao acontece UMA vez: a comparacao de ano abaixo le a mesma string
+    que a exibicao, senao 31/12 as 23h UTC compararia com um ano e imprimiria
+    o outro.
+  */
+  const settledDay = civilDayOf(item.paidAt)
+
   const due = item.dueDate.slice(0, 10)
   const [dueYear, dueMonth] = due.split('-').map(Number)
   const venceuEmOutraCompetencia =
@@ -388,13 +400,13 @@ export function resolvedLabel(
       é de 2026 — o mesmo ano do pagamento —, quando o vencimento é de 2025 e
       a distância entre os dois fatos é justamente o que a linha explica.
     */
-    const anosDivergem = due.slice(0, 4) !== item.paidAt.slice(0, 4)
+    const anosDivergem = due.slice(0, 4) !== settledDay.slice(0, 4)
     const vencimento = anosDivergem
       ? fullDate(due)
       : dueDisplay(due, item.dueMonth)
 
-    return `Venceu em ${vencimento} · ${verb.toLowerCase()} em ${fullDate(item.paidAt)}`
+    return `Venceu em ${vencimento} · ${verb.toLowerCase()} em ${fullDate(settledDay)}`
   }
 
-  return `${verb} em ${fullDate(item.paidAt)}`
+  return `${verb} em ${fullDate(settledDay)}`
 }

@@ -18,6 +18,7 @@ import {
   ROW_AMOUNT_TONE,
 } from '@/components/ui/financial-list-row'
 import { formatCurrency, formatDate } from '@/lib/formatters'
+import { civilDayOf } from '@/lib/date'
 import {
   canEditSettlementDate,
   settlementDateActionLabel,
@@ -180,7 +181,7 @@ export function ReceivableDetailDrawer({
         {receivable.isPaid && (
           <DetailRow label="Recebido em">
             {receivable.paidAt ? (
-              formatDate(receivable.paidAt)
+              formatDate(civilDayOf(receivable.paidAt))
             ) : (
               <span className="text-muted-foreground">não registrada</span>
             )}

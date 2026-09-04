@@ -146,8 +146,16 @@ export const ROW_ICON_CLASS =
  * do container da página, e duplicá-lo aqui roubaria largura do título, que é
  * onde ela faz falta a 390px.
  */
+/*
+  `cursor-pointer` porque a row INTEIRA é o alvo de clique.
+
+  Ela é um `button` ou um `Link`, e o navegador só mostra a mãozinha
+  automaticamente em `<a href>` — num `button` o cursor fica de seta, e a
+  affordance dependia só do fundo do hover. `StatusListRow` (Orçamento) já
+  trazia; estas não.
+*/
 const ROW_SHELL_CLASS =
-  'group flex w-full min-w-0 items-center gap-3 rounded-lg px-0 py-3.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4 sm:px-2 sm:py-4'
+  'group flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg px-0 py-3.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4 sm:px-2 sm:py-4'
 
 /*
   ── Quando existe um controle independente à esquerda ──
@@ -168,8 +176,9 @@ const ROW_SHELL_OUTER_CLASS =
   de fora) e sem hover próprio (idem). Mantém o anel de foco, porque ele é
   deste controle e não da linha.
 */
+/* O mesmo alvo, quando a row tem um controle independente ao lado. */
 const ROW_SHELL_INNER_CLASS =
-  'flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4'
+  'flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4'
 
 export interface FinancialListRowProps {
   /**
