@@ -34,6 +34,12 @@ import { PersonStatementDrawer } from '@/components/person-statement-drawer'
 import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
 import { detailHref } from '@/lib/detail-navigation'
 import {
+  debtBudgetOrder,
+  invoiceBudgetOrder,
+  personBudgetOrder,
+  sortBudgetRows,
+} from '@/lib/budget-row-order'
+import {
   shouldRenderPeopleSettlement,
   summarizePriorOverdue,
   priorOverdueLabel,
@@ -293,8 +299,29 @@ export default function BudgetPage() {
 
   const allInvoices = budget?.invoices ?? []
 
+  /*
+    ── Aberto antes de resolvido, valor só depois ──
+
+    A lista vinha na ordem da API. Ordenar por valor colocaria a fatura de
+    R$ 2.000 já paga acima de uma de R$ 180 que vence amanhã — o maior número
+    da tela sendo o que menos pede ação.
+
+    O valor da ordem é o BRUTO, o mesmo que a row destaca: ordenar pela sua
+    parte faria a sequência não explicar os números visíveis.
+  */
   const invoices = useMemo(
-    () => allInvoices.filter((inv) => Number(inv.totalAmount) > 0),
+    () =>
+      sortBudgetRows(
+        allInvoices.filter((inv) => Number(inv.totalAmount) > 0),
+        (inv) =>
+          invoiceBudgetOrder({
+            status: inv.status,
+            closeDate: inv.closeDate,
+            dueDate: inv.dueDate,
+            bankName: bankDisplayName(inv.bank, 'Banco'),
+            displayedAmount: Number(inv.totalAmount),
+          }),
+      ),
     [allInvoices],
   )
 
@@ -377,10 +404,30 @@ export default function BudgetPage() {
     },
   )
 
-  /* Ordenado pelo impacto no Orçamento — não por recebível escondido. */
-  const visiblePeople = peopleSettlements
-    .filter(shouldRenderPeopleSettlement)
-    .sort((a, b) => b.budget.payable - a.budget.payable)
+  /*
+    ── Urgência enquanto há o que pagar, valor depois ──
+
+    Era só `payable` DESC, e um acerto de R$ 2.000 já coberto ficava acima de
+    um de R$ 50 vencendo amanhã.
+
+    O "resolvido" é `contribution.isSettled` — a MESMA autoridade que
+    `peopleRowView` usa para escolher o trailing. Usar `open.itemCount` faria
+    uma row exibindo `PAGO` ser ordenada como aberta: com R$ 11 pagos e R$ 10
+    a receber, a saída está coberta e a relação bilateral continua viva.
+
+    O valor continua sendo `payable` — o líquido que a row mostra, nunca o
+    bruto da dívida.
+  */
+  const visiblePeople = sortBudgetRows(
+    peopleSettlements.filter(shouldRenderPeopleSettlement),
+    (person) =>
+      personBudgetOrder({
+        contribution: person.contribution,
+        nextItem: person.open.nextItem,
+        personName: person.personName,
+        displayedAmount: person.budget.payable,
+      }),
+  )
 
   /*
     O total da seção é a soma dos payables EXIBIDOS — cabeçalho e linhas
@@ -415,8 +462,15 @@ export default function BudgetPage() {
 
 
   /** Dívidas do mês SEM pessoa — as vinculadas vivem nos acertos. */
-  const standaloneDebtRows = debtBreakdown.filter(
-    (row) => row.kind !== 'person',
+  const standaloneDebtRows = sortBudgetRows(
+    debtBreakdown.filter((row) => row.kind !== 'person'),
+    (row) =>
+      debtBudgetOrder({
+        isPaid: row.isPaid,
+        dueDate: row.dueDate,
+        title: row.name,
+        displayedAmount: row.amount,
+      }),
   )
 
   /*
@@ -429,7 +483,21 @@ export default function BudgetPage() {
     A temporalidade tem precedência sobre a pessoa. O backend já classifica
     assim — este conjunto só passou a mostrar o que ele devolve.
   */
-  const standalonePriorItems = budget?.debts.priorItems ?? []
+  /*
+    A MESMA regra da seção de dívidas — a classificação da seção não muda, só
+    a ordem dentro dela. `paidInMonth` é o "resolvido" aqui: o vencimento
+    original é preservado, e é ele que ordena o que ainda está aberto.
+  */
+  const standalonePriorItems = sortBudgetRows(
+    budget?.debts.priorItems ?? [],
+    (item) =>
+      debtBudgetOrder({
+        isPaid: item.paidInMonth,
+        dueDate: item.dueDate,
+        title: item.title,
+        displayedAmount: item.amount,
+      }),
+  )
   const standalonePriorTotal = standalonePriorItems.reduce(
     (sum, item) => sum + item.amount,
     0,
