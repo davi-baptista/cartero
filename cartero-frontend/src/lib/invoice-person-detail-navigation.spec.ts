@@ -118,7 +118,17 @@ describe('Pessoa: a identidade vem da URL', () => {
     const fechar = PESSOAS.slice(PESSOAS.indexOf('const closePerson'))
 
     expect(abrir.slice(0, abrir.indexOf('\n  }'))).toContain('router.push')
-    expect(fechar.slice(0, fechar.indexOf('\n  }'))).toContain('router.replace')
+
+    /*
+      Fechar usa `history.replaceState`, não `router.replace`: `/persons` é
+      rota ESTÁTICA, e o Next descarta uma troca só de query sobre a mesma
+      entrada de cache — a URL não mudava e o drawer ficava preso no link
+      direto. A semântica de histórico é a mesma: SUBSTITUI a entrada atual,
+      sem empilhar. `router.replace` sobrevive como fallback de SSR.
+    */
+    const corpoFechar = fechar.slice(0, fechar.indexOf('\n  }'))
+    expect(corpoFechar).toContain('window.history.replaceState')
+    expect(corpoFechar).not.toContain('router.push')
     /* Nem abrir nem fechar podem jogar a lista para o topo. */
     expect(PESSOAS).toContain('{ scroll: false }')
   })

@@ -175,9 +175,11 @@ describe('parte B: fechar não depende do histórico', () => {
     */
     const BUDGET = semComentarios(ler('../app/(dashboard)/budget/page.tsx'))
 
-    expect(BUDGET).toContain('if (value) router.push(href, { scroll: false })')
-    expect(BUDGET).toContain('else router.replace(href, { scroll: false })')
+    expect(BUDGET).toContain('router.push(detailHref(pathname, next)')
+    expect(BUDGET).toContain('router.replace(detailHref(atual.path, limpo)')
     expect(BUDGET).not.toContain('router.back()')
+    /* E o fechamento lê a URL do navegador, não a do render. */
+    expect(BUDGET).toContain('liveLocation({')
   })
 
   it('o Orçamento usa `detailHref`, não concatenação crua', () => {
@@ -196,8 +198,9 @@ describe('parte B: fechar não depende do histórico', () => {
       ler('../app/(dashboard)/persons/page.tsx'),
     )
 
-    expect(PERSONS).toContain('router.replace(detailHref(pathname, next)')
+    expect(PERSONS).toContain('router.replace(detailHref(atual.path, next)')
     expect(PERSONS).not.toContain('router.back()')
+    expect(PERSONS).toContain('liveLocation({')
     /* Só o `personId` sai — o mês e os demais params sobrevivem. */
     expect(PERSONS).toContain("next.delete('personId')")
   })
@@ -417,6 +420,109 @@ describe('competência sem atividade diz cada coisa UMA vez', () => {
 
     for (const texto of vazios) {
       expect(ocorrencias(texto), texto).toBeLessThanOrEqual(1)
+    }
+  })
+})
+
+describe('HOTFIX: rota estática descarta `router.replace` de query', () => {
+  /*
+    O bug de produção. Colar `/banks?invoiceId=…` numa aba nova abria o
+    drawer, e o X não fechava — nem no segundo clique.
+
+    `/banks`, `/budget` e `/persons` são rotas ESTÁTICAS (prerenderizadas).
+    Um `router.replace` que muda SÓ a query aponta para a mesma entrada do
+    cache do App Router, e o Next descarta a atualização: a URL não muda, o
+    `searchParams` não muda, e o drawer nunca fecha.
+
+    Em desenvolvimento não aparecia — sem rota prerenderizada, o mesmo
+    `replace` era processado. Foi por isso que passou por vários ciclos de
+    validação local.
+
+    Provado no browser: `onOpenChange` era chamado com `false` (o handler
+    disparava), e `history.replaceState` nativo fechava na hora — enquanto o
+    `router.replace` não produzia efeito nenhum.
+  */
+
+  const NAV = semComentarios(ler('./detail-navigation.ts'))
+  const BANKS = semComentarios(ler('../app/(dashboard)/banks/page.tsx'))
+  const BUDGET = semComentarios(ler('../app/(dashboard)/budget/page.tsx'))
+  const PERSONS = semComentarios(ler('../app/(dashboard)/persons/page.tsx'))
+
+  it('o fechamento usa `history.replaceState`, não o router', () => {
+    expect(NAV).toContain('window.history.replaceState')
+  })
+
+  it('as três superfícies aplicam a mesma correção', () => {
+    /* `/banks` pelo hook; `/budget` e `/persons` têm cópias locais. */
+    expect(BANKS).toContain('useDetailNavigation')
+    expect(BUDGET).toContain('window.history.replaceState')
+    expect(PERSONS).toContain('window.history.replaceState')
+  })
+
+  it('abrir continua sendo `router.push` — o Back precisa fechar', () => {
+    /*
+      Só o FECHAMENTO trocou de mecanismo. Abrir é navegação de verdade e
+      precisa da entrada no histórico.
+    */
+    expect(NAV).toContain('router.push(')
+    expect(PERSONS).toContain('router.push(detailHref(pathname, next)')
+  })
+
+  it('`replaceState` preserva o state do histórico', () => {
+    /*
+      Passar `null` faria o Next perder a própria bookkeeping de rota, e o
+      Back seguinte poderia cair numa entrada sem contexto.
+    */
+    expect(NAV).toContain('window.history.state')
+    expect(BUDGET).toContain('window.history.state')
+    expect(PERSONS).toContain('window.history.state')
+  })
+
+  it('a UI fecha sem esperar a navegação', () => {
+    /*
+      O espelho local é o que torna o X determinístico: se o Next descartar a
+      atualização de rota, o `searchParams` não muda — e sem o espelho a UI
+      continuaria lendo o param antigo.
+    */
+    expect(NAV).toContain('closedSearch')
+    expect(BUDGET).toContain('queryFechada')
+    expect(PERSONS).toContain('queryFechada')
+  })
+
+  it('o espelho guarda a QUERY, não o id', () => {
+    /*
+      Guardar a query inteira faz o espelho se invalidar por construção:
+      qualquer navegação posterior muda a string e o detalhe volta a ser lido
+      da URL. Com o id, abrir a MESMA entidade de novo continuaria fechado.
+    */
+    expect(NAV).toContain('currentSearch === closedSearch')
+    expect(NAV).toContain('setClosedSearch(atual.search)')
+  })
+
+  it('nenhum `useEffect` foi introduzido para limpar o espelho', () => {
+    /*
+      Um efeito que zerasse o espelho poderia reabrir o detalhe que o usuário
+      dispensou — e no Orçamento há a garantia explícita de não haver
+      `useEffect`, para que nada dê snap-back no mês selecionado.
+    */
+    expect(BUDGET).not.toContain('useEffect')
+    expect(NAV).not.toContain('useEffect')
+  })
+
+  it('o SSR mantém o fallback pelo router', () => {
+    /* `window` não existe no servidor; lançar ali seria pior que navegar. */
+    expect(NAV).toContain("typeof window !== 'undefined'")
+    expect(NAV).toContain('router.replace(detailHref(atual.path, limpo)')
+  })
+
+  it('`router.back()` continua fora do fechamento', () => {
+    for (const [nome, src] of [
+      ['nav', NAV],
+      ['banks', BANKS],
+      ['budget', BUDGET],
+      ['persons', PERSONS],
+    ] as const) {
+      expect(src, nome).not.toContain('router.back()')
     }
   })
 })

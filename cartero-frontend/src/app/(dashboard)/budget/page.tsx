@@ -32,7 +32,7 @@ import { toast } from 'sonner'
 import { bankDisplayName } from '@/lib/bank-display'
 import { PersonStatementDrawer } from '@/components/person-statement-drawer'
 import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
-import { detailHref } from '@/lib/detail-navigation'
+import { detailHref, liveLocation } from '@/lib/detail-navigation'
 import {
   debtBudgetOrder,
   invoiceBudgetOrder,
@@ -214,8 +214,24 @@ export default function BudgetPage() {
   const router = useRouter()
   const pathname = usePathname()
 
-  const openPersonId = searchParams.get('personId')
-  const openInvoiceId = searchParams.get('invoiceId')
+  /*
+    ── Espelho local dos params, SEM effect ──
+
+    A UI precisa fechar sem esperar o router propagar a troca de query — numa
+    rota estática o Next pode descartá-la. Mas nada aqui pode ser um
+    `useEffect`: esta página tem a garantia de não conter nenhum, para que
+    nenhum snap-back possa reescrever o mês selecionado.
+
+    A derivação resolve sozinha. Guardar a QUERY fechada e compará-la com a
+    atual faz o espelho se invalidar por construção: qualquer navegação
+    posterior (abrir, Back, Forward, link novo) muda a string e o espelho
+    deixa de casar, sem precisar ser limpo por ninguém.
+  */
+  const [queryFechada, setQueryFechada] = useState<string | null>(null)
+  const searchAtual = searchParams.toString()
+  const drawersAbertos = searchAtual !== queryFechada
+  const openPersonId = drawersAbertos ? searchParams.get('personId') : null
+  const openInvoiceId = drawersAbertos ? searchParams.get('invoiceId') : null
 
   const setDrawerParam = (key: 'personId' | 'invoiceId', value: string | null) => {
     const next = new URLSearchParams(searchParams.toString())
@@ -244,9 +260,36 @@ export default function BudgetPage() {
 
       `scroll: false` preserva a posição da página.
     */
-    const href = detailHref(pathname, next)
-    if (value) router.push(href, { scroll: false })
-    else router.replace(href, { scroll: false })
+    if (value) {
+      router.push(detailHref(pathname, next), { scroll: false })
+      return
+    }
+
+    /*
+      `replaceState`, não `router.replace`: `/budget` é rota ESTÁTICA, e trocar
+      só a query aponta para a mesma entrada do cache do App Router — o Next
+      descarta a atualização e o drawer fica preso. Era o bug do link direto.
+    */
+    const atual = liveLocation({
+      path: pathname,
+      search: searchParams.toString(),
+    })
+    const limpo = new URLSearchParams(atual.search)
+    limpo.delete('personId')
+    limpo.delete('invoiceId')
+    if (limpo.toString() === atual.search) return
+
+    setQueryFechada(atual.search)
+
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(
+        window.history.state,
+        '',
+        detailHref(atual.path, limpo),
+      )
+    } else {
+      router.replace(detailHref(atual.path, limpo), { scroll: false })
+    }
   }
 
   const closeDrawers = () => setDrawerParam('personId', null)

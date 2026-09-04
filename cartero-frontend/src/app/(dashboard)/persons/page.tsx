@@ -71,7 +71,7 @@ import {
   updatePerson,
   deletePerson,
 } from '@/services/persons.service'
-import { detailHref } from '@/lib/detail-navigation'
+import { detailHref, liveLocation } from '@/lib/detail-navigation'
 import { useDetailEntity } from '@/lib/use-detail-entity'
 import {
 } from '@/services/receivables.service'
@@ -249,7 +249,16 @@ export default function PersonsPage() {
   */
   const router = useRouter()
   const pathname = usePathname()
-  const openPersonId = searchParams.get('personId')
+  /*
+    Espelho local do param, SEM effect: a UI fecha sem depender de o router
+    propagar a troca de query numa rota estática. Guardar a QUERY fechada faz
+    o espelho se invalidar por construção — qualquer navegação posterior muda
+    a string e o detalhe volta a ser lido da URL.
+  */
+  const [queryFechada, setQueryFechada] = useState<string | null>(null)
+  const searchAtual = searchParams.toString()
+  const openPersonId =
+    searchAtual === queryFechada ? null : searchParams.get('personId')
 
   const openPerson = (id: string) => {
     const next = new URLSearchParams(searchParams.toString())
@@ -258,10 +267,31 @@ export default function PersonsPage() {
   }
 
   const closePerson = () => {
-    if (!openPersonId) return
-    const next = new URLSearchParams(searchParams.toString())
+    /*
+      `replaceState`, não `router.replace`: `/persons` é rota ESTÁTICA, e uma
+      troca só de query aponta para a mesma entrada do cache do App Router —
+      o Next descarta a atualização, a URL não muda e o drawer fica preso.
+      Era o bug do link direto. Mesma correção de `useDetailNavigation`.
+    */
+    const atual = liveLocation({
+      path: pathname,
+      search: searchParams.toString(),
+    })
+    const next = new URLSearchParams(atual.search)
+    if (!next.has('personId')) return
     next.delete('personId')
-    router.replace(detailHref(pathname, next), { scroll: false })
+
+    setQueryFechada(atual.search)
+
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(
+        window.history.state,
+        '',
+        detailHref(atual.path, next),
+      )
+    } else {
+      router.replace(detailHref(atual.path, next), { scroll: false })
+    }
   }
 
   /*

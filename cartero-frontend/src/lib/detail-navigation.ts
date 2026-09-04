@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 /**
@@ -68,6 +69,28 @@ export function withDetailParam(
   return next
 }
 
+/**
+ * A URL do NAVEGADOR neste instante — não a do render.
+ *
+ * Fechar um detalhe é uma ação, e ela precisa da URL que vale no momento do
+ * clique. `useSearchParams()`/`usePathname()` devolvem o valor do render que
+ * criou o closure, e no build de produção o handler do `Sheet` pode ser
+ * anterior à última sincronização do router: o param aparece ausente, o
+ * fechamento é abortado, e o drawer fica preso.
+ *
+ * No servidor não há `window`; quem chama passa o fallback do render.
+ */
+export function liveLocation(fallback: {
+  path: string
+  search: string
+}): { path: string; search: string } {
+  if (typeof window === 'undefined') return fallback
+  return {
+    path: window.location.pathname,
+    search: window.location.search.replace(/^\?/, ''),
+  }
+}
+
 /** A mesma query, sem NENHUM detalhe aberto. Os demais params ficam. */
 export function withoutDetailParams(
   current: URLSearchParams | string,
@@ -89,30 +112,63 @@ export function detailHref(
 /**
  * Abrir e fechar o detalhe de uma página.
  *
- * ── Por que abrir é `push` e fechar é `replace` ──
+ * ── Por que abrir é `push` e fechar NÃO usa o router ──
  *
  * Abrir é uma navegação de verdade: o usuário foi para algum lugar, e o Back
- * precisa trazê-lo de volta. Isso exige uma entrada no histórico.
+ * precisa trazê-lo de volta. Isso exige uma entrada no histórico, e `push` a
+ * cria.
  *
- * Fechar pelo X não é "voltar": quem chegou por link direto não tem entrada
- * anterior no Cartero, e `router.back()` o mandaria para fora do app. Trocar a
- * entrada atual (`replace`) resolve os dois casos.
+ * Fechar era `router.replace(...)`, e em PRODUÇÃO isso não fazia nada.
  *
- * E evita o pior caso: com `push` no fechar, o histórico ficaria
- * `[lista, detalhe, lista]` — o Back logo após fechar reabriria o detalhe que
- * o usuário acabou de dispensar. Com `replace`, a entrada do detalhe é
- * SUBSTITUÍDA, e o Back leva ao que havia antes dela.
+ * `/banks`, `/budget` e `/persons` são rotas ESTÁTICAS (prerenderizadas). Um
+ * `replace` que muda apenas a query da rota atual aponta para a mesma entrada
+ * do cache do App Router, e o Next descarta a atualização: a URL fica igual,
+ * o `searchParams` não muda, e o drawer nunca fecha. Bastava colar
+ * `/banks?invoiceId=…` numa aba nova para o X ficar inerte.
  *
- * `scroll: false` nos dois: abrir e fechar não podem jogar a lista para o topo.
+ * Em desenvolvimento o bug não aparecia — sem rota prerenderizada, o mesmo
+ * `replace` era processado normalmente. Foi por isso que ele passou por vários
+ * ciclos de validação local.
+ *
+ * A correção tem duas partes:
+ *
+ *   1. `window.history.replaceState` reescreve a URL de fato, sem passar pelo
+ *      cache de rota. É a mesma primitive que o router usa por baixo;
+ *   2. o `openId` ganha estado próprio, para a UI não depender de o
+ *      `useSearchParams` reagir a uma navegação que o Next pode engolir.
+ *
+ * O histórico continua correto: `replaceState` SUBSTITUI a entrada atual, sem
+ * empilhar. O Back logo após fechar leva ao que havia antes do detalhe, nunca
+ * de volta a ele.
+ *
+ * `router.back()` continua fora: quem chegou por link direto não tem entrada
+ * anterior no Cartero, e o mandaria para fora do app.
  */
 export function useDetailNavigation(key: DetailParam) {
   const searchParams = useSearchParams()
   const router = useRouter()
   const pathname = usePathname()
 
-  const openId = searchParams.get(key)
+  const paramId = searchParams.get(key)
+
+  /*
+    ── Espelho local da URL, SEM effect ──
+
+    A fonte continua sendo a URL: este estado só existe para o fechamento não
+    depender de o router propagar a mudança.
+
+    Guardar a QUERY fechada (não só o id) faz o espelho se invalidar por
+    construção: qualquer navegação posterior — abrir outro detalhe, Back,
+    Forward, colar um link novo — muda a string, o espelho deixa de casar, e
+    o detalhe volta a ser lido da URL. Nenhum efeito precisa limpá-lo, o que
+    evita o risco de um snap-back reabrir o que o usuário dispensou.
+  */
+  const [closedSearch, setClosedSearch] = useState<string | null>(null)
+  const currentSearch = searchParams.toString()
+  const openId = currentSearch === closedSearch ? null : paramId
 
   const open = (id: string) => {
+    setClosedSearch(null)
     router.push(
       detailHref(pathname, withDetailParam(searchParams, key, id)),
       { scroll: false },
@@ -120,16 +176,44 @@ export function useDetailNavigation(key: DetailParam) {
   }
 
   /**
-   * Fecha o detalhe. Idempotente de propósito: um `replace` sem nada a mudar
-   * ainda assim reescreveria a entrada atual, e o fluxo de exclusão chama esta
-   * função depois de a URL já ter sido limpa em alguns caminhos.
+   * Fecha o detalhe.
+   *
+   * Idempotente: o fluxo de exclusão chama esta função depois de a URL já ter
+   * sido limpa em alguns caminhos, e aí não há nada a fazer.
    */
   const close = () => {
-    if (!openId) return
-    router.replace(
-      detailHref(pathname, withoutDetailParams(searchParams)),
-      { scroll: false },
-    )
+    /*
+      A URL do NAVEGADOR, não a do render: o handler do `Sheet` pode ter sido
+      criado antes da última sincronização, e a query capturada estaria velha.
+    */
+    const atual = liveLocation({
+      path: pathname,
+      search: searchParams.toString(),
+    })
+    if (new URLSearchParams(atual.search).get(key) === null) return
+
+    /*
+      A UI fecha AGORA, sem esperar navegação — é o que torna o X
+      determinístico mesmo quando o Next descarta a atualização de rota.
+    */
+    setClosedSearch(atual.search)
+
+    const limpo = withoutDetailParams(atual.search)
+
+    if (typeof window !== 'undefined') {
+      /*
+        `replaceState` em vez de `router.replace`: numa rota estática o router
+        trata a troca de query como a mesma entrada de cache e não reescreve a
+        URL. Esta primitive reescreve.
+      */
+      window.history.replaceState(
+        window.history.state,
+        '',
+        detailHref(atual.path, limpo),
+      )
+    } else {
+      router.replace(detailHref(atual.path, limpo), { scroll: false })
+    }
   }
 
   return { openId, open, close }
