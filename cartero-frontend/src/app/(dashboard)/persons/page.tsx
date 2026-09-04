@@ -491,17 +491,29 @@ export default function PersonsPage() {
     }
 
     /*
-      Uma pendência em qualquer pessoa mantém o resumo em ACTIVE: o mês só
-      terminou de ser acertado quando ninguém tem nada aberto.
+      ── O total NÃO alterna de universo ──
+
+      Havia um `const ativo = comPendencia > 0` decidindo se o resumo somava
+      outstanding ou histórico. O mesmo lugar da tela mudava de significado
+      sem avisar: receber R$ 400 fazia o total cair de R$ 1.000 para R$ 600,
+      como se o mês tivesse movimentado menos do que movimentou.
+
+      Agora o total e a composição são SEMPRE históricos, e o que falta vai
+      para a linha própria de "Em aberto". O mês movimentou o que movimentou.
+
+      As ROWS continuam alternando, e isso é intencional — cada superfície
+      responde uma pergunta diferente.
     */
-    const ativo = comPendencia > 0
-    const toReceive = ativo ? outstandingReceber : historicoReceber
-    const toPay = ativo ? outstandingPagar : historicoPagar
+    const toReceive = historicoReceber
+    const toPay = historicoPagar
 
     return {
       toReceive,
       toPay,
       net: toReceive - toPay,
+      /* O progresso é bilateral: os dois lados viajam separados. */
+      openToReceive: outstandingReceber,
+      openToPay: outstandingPagar,
       /*
         A contagem, não a soma dos líquidos: R$ 200 de cada lado dá líquido
         zero com duas obrigações vivas, e "Tudo em dia" ali seria falso.

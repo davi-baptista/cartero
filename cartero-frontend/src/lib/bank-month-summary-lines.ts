@@ -23,11 +23,15 @@ import { invoiceSectionParts } from '@/lib/invoice-composition'
  * Duas linhas no máximo. Acima disso o resumo começa a competir com a lista,
  * que é o conteúdo principal da tela.
  *
- * ── "Faltam X para quitar" não é pagamento parcial ──
+ * ── O progresso é de FATURAS quitadas, não de saldo parcial ──
  *
- * X é a soma das faturas do mês que ainda não estão `PAID` — o valor cai
- * quando uma fatura é quitada INTEIRA. Nenhuma fatura tem saldo parcial neste
- * domínio, e esta linha não introduz um.
+ * "R$ 300,00 pago · R$ 1.163,49 para quitar" conta quantas faturas inteiras
+ * já foram quitadas — nenhuma fatura tem saldo parcial neste domínio, e esta
+ * linha não introduz um. Os dois valores saem da MESMA soma, separados por
+ * `InvoiceStatus.PAID`, então `paid + remaining` fecha com o total.
+ *
+ * Dizer só o que falta escondia o progresso: pagar a primeira de três faturas
+ * mudava um número sem informar que algo havia sido resolvido.
  *
  * ── Nem tudo que está pendente é urgente ──
  *
@@ -77,6 +81,20 @@ export type SummaryLine =
        * total exibido acima, e repeti-lo não informa nada.
        */
       remaining: number
+      /**
+       * O quanto do total já foi quitado.
+       *
+       * Existe junto com `remaining` porque a linha só aparece em quitação
+       * PARCIAL, e nesse estado os dois números são fatos distintos: um diz o
+       * que já saiu do bolso, o outro o que ainda vai sair. Antes a linha só
+       * dizia o que faltava, e o progresso ficava invisível — pagar a primeira
+       * de três faturas mudava um número sem dizer que algo havia sido feito.
+       *
+       * `paid + remaining === total`, por construção: os dois saem da mesma
+       * soma, separados por `InvoiceStatus.PAID` — a autoridade real, nunca uma
+       * derivação de texto.
+       */
+      paid: number
     }
   | { kind: 'settled'; text: string }
 
@@ -161,7 +179,17 @@ export function bankMonthSummaryLines(
   */
   if (remaining === null) return linhas
 
-  linhas.push({ kind: 'cycle', cycle, remaining })
+  /*
+    O pago é o complemento do pendente dentro do total. Derivado aqui, e não
+    somado numa segunda passada, para que a reconciliação seja estrutural: não
+    existe caminho em que os dois números discordem do total.
+  */
+  linhas.push({
+    kind: 'cycle',
+    cycle,
+    remaining,
+    paid: summary.total - summary.unpaid,
+  })
 
   return linhas
 }

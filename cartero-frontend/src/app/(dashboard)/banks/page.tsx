@@ -782,10 +782,22 @@ export default function BanksPage() {
                         a label "Faturas de setembro 2026" já dizem isso duas
                         vezes acima.
 
-                        Neutro: pendência é o estado normal de um mês em curso,
-                        e o âmbar fica reservado ao prazo nas rows.
+                        ── Os dois lados do progresso ──
+
+                        Dizia só "Faltam X para quitar", e o que já havia sido
+                        resolvido ficava invisível: pagar a primeira de três
+                        faturas mudava um número sem informar que algo tinha
+                        sido feito.
+
+                        Só o PAGO recebe verde — é a parte concluída. O que
+                        falta segue neutro: pendência é o estado normal de um
+                        mês em curso, e pintar os dois faria a linha inteira
+                        parecer conclusão.
                       */}
-                      Faltam{' '}
+                      <span className="font-medium text-paid">
+                        {formatCurrency(linha.paid)}
+                      </span>{' '}
+                      pago ·{' '}
                       <span className="font-medium">
                         {formatCurrency(linha.remaining)}
                       </span>{' '}

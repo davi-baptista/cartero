@@ -358,11 +358,27 @@ describe('a ordem das perguntas define o modo', () => {
 })
 
 describe('S1-S6: o resumo segue o mesmo modo', () => {
-  it('S1/S2: com pendência, soma o outstanding', () => {
+  it('S1/S2: o outstanding vai para a linha de "Em aberto"', () => {
+    /*
+      Ele continua sendo somado — mudou o DESTINO. Antes disputava o valor
+      principal com o histórico; agora tem linha própria, e o total ficou
+      estável.
+    */
     expect(PERSONS).toContain('outstandingReceber += b.receivablePending')
     expect(PERSONS).toContain('outstandingPagar += b.debtPending')
-    expect(PERSONS).toContain('const ativo = comPendencia > 0')
-    expect(PERSONS).toContain('const toReceive = ativo ? outstandingReceber')
+    expect(PERSONS).toContain('openToReceive: outstandingReceber')
+    expect(PERSONS).toContain('openToPay: outstandingPagar')
+  })
+
+  it('o total NÃO alterna mais de universo', () => {
+    /*
+      A regressão que esta fase remove: `const ativo = comPendencia > 0`
+      decidia se o valor grande era outstanding ou histórico, e o mesmo lugar
+      da tela mudava de significado quando o usuário recebia algo.
+    */
+    expect(PERSONS).not.toContain('const ativo = comPendencia > 0')
+    expect(PERSONS).not.toContain('ativo ? outstandingReceber')
+    expect(PERSONS).not.toContain('ativo ? outstandingPagar')
   })
 
   it('S3: sem pendência, volta ao histórico', () => {
@@ -370,17 +386,16 @@ describe('S1-S6: o resumo segue o mesmo modo', () => {
     expect(PERSONS).toContain('historicoPagar += b.periodDebtTotal')
   })
 
-  it('S1b: o resumo NUNCA soma histórico e outstanding juntos', () => {
+  it('S1b: o total é histórico PURO, sem mistura', () => {
     /*
-      Segundo guardião: a escolha é exclusiva. Somar os dois produziria um
-      número que não corresponde a nenhuma das duas perguntas.
+      Os dois universos continuam separados — o que mudou é que cada um tem
+      seu lugar fixo. Somá-los produziria um número que não responde a
+      nenhuma das duas perguntas.
     */
-    expect(PERSONS).toContain(
-      'const toPay = ativo ? outstandingPagar : historicoPagar',
-    )
-    /* Sem atribuição incondicional ao histórico, e sem acumular os dois. */
-    expect(PERSONS).not.toContain('const toReceive = historicoReceber\n')
+    expect(PERSONS).toContain('const toReceive = historicoReceber')
+    expect(PERSONS).toContain('const toPay = historicoPagar')
     expect(PERSONS).not.toContain('toReceive += b.periodReceivableTotal')
+    expect(PERSONS).not.toContain('historicoReceber += b.receivablePending')
   })
 
   it('S5b: a contagem de pendência não passa pelo líquido', () => {

@@ -214,9 +214,12 @@ describe('S1-S10: o resumo só diz o que o total não conta', () => {
     const linhas = bankMonthSummaryLines(
       resumo([inv('b1', 800, InvoiceStatus.PAID), inv('b2', 1200)]),
     )
-    /* O valor e a condição são os mesmos — só o prefixo do ciclo saiu. */
+    /*
+      O `paid` acompanha o `remaining`: quitação parcial informa os DOIS
+      fatos, e eles reconciliam com o total (800 + 1200 = 2000).
+    */
     expect(linhas).toEqual([
-      { kind: 'cycle', cycle: 'current', remaining: 1200 },
+      { kind: 'cycle', cycle: 'current', remaining: 1200, paid: 800 },
     ])
   })
 
@@ -462,7 +465,9 @@ describe('os rótulos de ciclo NÃO são mais renderizados', () => {
     const quitando = bankMonthSummaryLines(
       resumo([inv('b1', 800, InvoiceStatus.PAID), inv('b2', 1200)]),
     )
-    expect(quitando).toEqual([{ kind: 'cycle', cycle: 'current', remaining: 1200 }])
+    expect(quitando).toEqual([
+      { kind: 'cycle', cycle: 'current', remaining: 1200, paid: 800 },
+    ])
 
     const tudoPago = bankMonthSummaryLines(
       resumo([inv('b1', 1000, InvoiceStatus.PAID)]),
@@ -470,10 +475,17 @@ describe('os rótulos de ciclo NÃO são mais renderizados', () => {
     expect(tudoPago).toEqual([{ kind: 'settled', text: 'Tudo em dia' }])
   })
 
-  it('a página renderiza "Faltam ... para quitar" sem prefixo', () => {
+  it('a página renderiza os dois lados do progresso, sem prefixo de ciclo', () => {
+    /*
+      "Faltam X para quitar" virou "R$ X pago · R$ Y para quitar": dizer só o
+      que falta escondia o progresso — pagar a primeira de três faturas mudava
+      um número sem informar que algo tinha sido resolvido.
+    */
     const pagina = ler('../app/(dashboard)/banks/page.tsx')
 
-    expect(pagina).toContain('Faltam{')
+    expect(pagina).not.toContain('Faltam{')
+    expect(pagina).toContain('linha.paid')
+    expect(pagina).toContain('pago ·')
     expect(pagina).toContain('para quitar')
     expect(pagina).not.toContain('withSeparator')
   })

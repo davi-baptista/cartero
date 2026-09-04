@@ -152,6 +152,8 @@ describe('P-8: o resumo responde composição E quitação', () => {
     personsSummaryLines({
       toReceive: 0,
       toPay: 0,
+      openToReceive: 0,
+      openToPay: 0,
       outstanding: 0,
       comMovimento: 1,
       ...o,
@@ -181,10 +183,17 @@ describe('P-8: o resumo responde composição E quitação', () => {
     }
   })
 
-  it('S1: mês com pendência mostra composição e NÃO diz "Tudo em dia"', () => {
-    const r = linhas({ toReceive: 500, toPay: 200, outstanding: 300 })
+  it('S1: mês com pendência mostra composição e o que está em aberto', () => {
+    const r = linhas({
+      toReceive: 500,
+      toPay: 200,
+      openToReceive: 300,
+      openToPay: 200,
+      outstanding: 300,
+    })
 
-    expect(r.map((l) => l.kind)).toEqual(['composition'])
+    expect(r.map((l) => l.kind)).toEqual(['composition', 'open'])
+    expect(r.some((l) => l.kind === 'settled')).toBe(false)
   })
 
   it('S7: mês passado parcialmente aberto não é "Tudo em dia"', () => {
@@ -223,14 +232,38 @@ describe('P-8: o resumo responde composição E quitação', () => {
     expect(linhas({ toReceive: 100, outstanding: 50 }).length).toBeLessThanOrEqual(2)
   })
 
-  it('não existe linha de "Em aberto"', () => {
+  it('a linha de "Em aberto" mostra os DOIS lados', () => {
     /*
-      A lista e os status das rows já comunicam pendência; uma terceira linha
-      repetiria.
+      Substituiu a regra anterior, que não emitia esta linha. O total passou a
+      ser sempre histórico, então o que falta precisa de lugar próprio — e a
+      relação é bilateral, logo nunca o líquido.
     */
-    for (const l of linhas({ toReceive: 100, outstanding: 100 })) {
-      expect(l.text).not.toMatch(/Em aberto/i)
-    }
+    const r = linhas({
+      toReceive: 1000,
+      toPay: 300,
+      openToReceive: 600,
+      openToPay: 300,
+      outstanding: 2,
+    })
+    const aberto = r.find((l) => l.kind === 'open')
+
+    /*
+      `Intl` pt-BR separa `R$` do número com espaço NÃO-QUEBRÁVEL (U+00A0).
+      Comparar com espaço comum falha por um caractere invisível, então a
+      normalização é explícita.
+    */
+    expect(aberto?.text.replace(/ /g, ' ')).toBe(
+      'Em aberto: R$ 600,00 a receber · R$ 300,00 a pagar',
+    )
+  })
+
+  it('`open` e `settled` são exclusivas', () => {
+    /* São respostas opostas à mesma pergunta. */
+    const comPendencia = linhas({ toReceive: 100, openToReceive: 50, outstanding: 1 })
+    const resolvido = linhas({ toReceive: 100, outstanding: 0 })
+
+    expect(comPendencia.map((l) => l.kind)).toEqual(['composition', 'open'])
+    expect(resolvido.map((l) => l.kind)).toEqual(['composition', 'settled'])
   })
 })
 
