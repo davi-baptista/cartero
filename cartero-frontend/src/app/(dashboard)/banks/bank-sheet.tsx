@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect } from 'react'
-import { useForm, type Resolver } from 'react-hook-form'
+import { useEffect, useMemo } from 'react'
+import { useForm, useWatch, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Loader2 } from 'lucide-react'
@@ -16,6 +16,12 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  getInvoiceCloseDate,
+  getInvoiceDueDate,
+} from '@/lib/invoice-dates'
+import { formatDate, formatMonthYear } from '@/lib/formatters'
+import { formatDateValue } from '@/lib/date'
 import type { Bank } from '@/types'
 
 const numberField = (message: string) => z.preprocess(
@@ -36,9 +42,23 @@ interface BankSheetProps {
   onOpenChange: (open: boolean) => void
   editTarget: Bank | null
   onSubmit: (data: BankFormData) => Promise<void>
+  /**
+   * Competência de referência da projeção do ciclo.
+   *
+   * Vem da SUPERFÍCIE que abriu o editor — o seletor de `/banks` ou a rota do
+   * cartão —, nunca de `new Date()`: o mês exibido é a autoridade do app, e
+   * projetar sobre outro faria o drawer falar de um ciclo que não é o da tela.
+   */
+  period?: { month: number; year: number }
 }
 
-export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankSheetProps) {
+export function BankSheet({
+  open,
+  onOpenChange,
+  editTarget,
+  onSubmit,
+  period,
+}: BankSheetProps) {
   const isEditing = editTarget !== null
 
 
@@ -46,6 +66,7 @@ export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankShee
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<BankFormData>({
     resolver: zodResolver(schema) as unknown as Resolver<BankFormData>,
@@ -64,6 +85,47 @@ export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankShee
       }
     }
   }, [open, editTarget, reset])
+
+  /*
+    A projeção segue o que está DIGITADO, não o que está salvo: o usuário
+    precisa ver o efeito antes de confirmar. Enquanto o vencimento estiver
+    vazio ou inválido não há ciclo a mostrar — melhor omitir a seção que
+    exibir uma data inventada.
+  */
+  /*
+    `useWatch` em vez de `watch()`: aquele devolve uma função que o React
+    Compiler não consegue memoizar, e o lint avisa que valores derivados dela
+    podem ficar velhos. Este é subscrição declarativa e re-renderiza sozinho.
+  */
+  const dueDay = useWatch({ control, name: 'invoiceDueDate' })
+  const daysAfterClose = useWatch({
+    control,
+    name: 'invoiceDueDaysAfterClose',
+  })
+
+  const ciclo = useMemo(() => {
+    if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return null
+
+    const base = period ?? currentPeriod()
+    const seguinte =
+      base.month === 12
+        ? { month: 1, year: base.year + 1 }
+        : { month: base.month + 1, year: base.year }
+
+    const projetar = (p: { month: number; year: number }) => ({
+      ...p,
+      close: formatDate(
+        formatDateValue(
+          getInvoiceCloseDate(p.year, p.month, dueDay, daysAfterClose),
+        ),
+      ),
+      due: formatDate(
+        formatDateValue(getInvoiceDueDate(p.year, p.month, dueDay)),
+      ),
+    })
+
+    return { atual: projetar(base), proxima: projetar(seguinte) }
+  }, [dueDay, daysAfterClose, period])
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -126,6 +188,58 @@ export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankShee
             )}
           </div>
 
+          {/*
+            ── O que a configuração PRODUZ ──
+
+            Os dois campos acima são abstratos ("dia 6", "7 dias antes"), e o
+            usuário precisa de datas para conferir se acertou. Esta seção
+            projeta o ciclo — e acompanha o que ele digita, então o efeito de
+            uma mudança aparece antes de salvar.
+
+            Read-only de propósito: fechamento é DERIVADO do vencimento menos o
+            intervalo. Transformá-lo em input criaria um terceiro número capaz
+            de contradizer os outros dois.
+          */}
+          {ciclo && (
+            <div className="border-t border-border pt-4">
+              <p className="text-[11px] font-medium text-muted-foreground">
+                Ciclo projetado
+              </p>
+
+              <div className="mt-2 space-y-1.5">
+                <CycleRow
+                  label="Fatura de"
+                  value={capitalize(
+                    formatMonthYear(ciclo.atual.month, ciclo.atual.year),
+                  )}
+                />
+                <CycleRow label="Fecha em" value={ciclo.atual.close} />
+                <CycleRow label="Vence em" value={ciclo.atual.due} />
+              </div>
+
+              <div className="mt-3 space-y-1.5 border-t border-border/60 pt-3">
+                <CycleRow
+                  label="Próxima"
+                  value={capitalize(
+                    formatMonthYear(ciclo.proxima.month, ciclo.proxima.year),
+                  )}
+                />
+                <CycleRow label="Fecha em" value={ciclo.proxima.close} />
+                <CycleRow label="Vence em" value={ciclo.proxima.due} />
+              </div>
+
+              {/*
+                O boundary explicitado. Sem esta frase o usuário não tem como
+                saber, pela tela, em qual fatura cai uma compra feita no
+                próprio dia do fechamento — e é a dúvida mais comum sobre a
+                configuração.
+              */}
+              <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+                Compras feitas no dia do fechamento entram nesta fatura; a
+                partir do dia seguinte, na próxima.
+              </p>
+            </div>
+          )}
         </form>
 
         <SheetFooter className="px-6 pb-6 pt-0">
@@ -140,4 +254,29 @@ export function BankSheet({ open, onOpenChange, editTarget, onSubmit }: BankShee
       </SheetContent>
     </Sheet>
   )
+}
+
+/**
+ * Uma linha da projeção: rótulo à esquerda, valor à direita.
+ *
+ * Mesma anatomia do `DetailRow` dos drawers de detalhe — dois lados, sem
+ * moldura própria. Um card aqui criaria caixa dentro de caixa.
+ */
+function CycleRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <span className="text-xs tabular-nums">{value}</span>
+    </div>
+  )
+}
+
+/** A competência de hoje, quando a superfície não informa uma. */
+function currentPeriod(): { month: number; year: number } {
+  const hoje = new Date()
+  return { month: hoje.getMonth() + 1, year: hoje.getFullYear() }
+}
+
+function capitalize(texto: string): string {
+  return texto.charAt(0).toUpperCase() + texto.slice(1)
 }

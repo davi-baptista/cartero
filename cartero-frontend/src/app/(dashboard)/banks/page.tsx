@@ -956,7 +956,18 @@ export default function BanksPage() {
                   amount={amount}
                   period={period}
                   onOpenInvoice={detail.open}
-                  onEdit={() => setEditBank(bank)}
+                  /*
+                    O alvo E a abertura, nas duas ordens que importam.
+
+                    Faltava o `setSheetOpen(true)`: o menu definia qual banco
+                    editar e o drawer — controlado por `sheetOpen` — nunca
+                    abria. O clique não fazia nada visível, e editar um cartão
+                    exigia entrar em "Ver todas as faturas" para achar o lápis.
+                  */
+                  onEdit={() => {
+                    setEditBank(bank)
+                    setSheetOpen(true)
+                  }}
                   onArchive={() => archiveMut.mutate(bank.id)}
                   onDelete={() => setDeleteTarget(bank)}
                   isArchiving={archiveMut.isPending}
@@ -1012,6 +1023,8 @@ export default function BanksPage() {
         }}
         editTarget={editBank}
         onSubmit={handleSheetSubmit}
+        /* A projeção fala do mês EXIBIDO, não do mês do relógio. */
+        period={period}
       />
 
       {/* Delete confirm — só chega aqui banco sem histórico */}

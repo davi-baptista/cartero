@@ -125,9 +125,27 @@ describe('B20: a gestão do banco continua acessível', () => {
       uma rota que a interface não oferece mais.
     */
     expect(BANKS).toContain('aria-label={`Mais opções de ${bank.name}`}')
-    expect(BANKS).toContain('onEdit={() => setEditBank(bank)}')
     expect(BANKS).toContain('onArchive={')
     expect(BANKS).toContain('onDelete={')
+  })
+
+  it('`Editar` ABRE o drawer, não só define o alvo', () => {
+    /*
+      O teste anterior fixava `onEdit={() => setEditBank(bank)}` — a forma
+      exata do bug. Definir o alvo não abre nada: o `BankSheet` é controlado
+      por `sheetOpen`, e sem `setSheetOpen(true)` o clique não fazia nada
+      visível. Editar um cartão exigia entrar em "Ver todas as faturas".
+
+      Verificar as DUAS chamadas é o que prende a regressão; a string do
+      handler sozinha passava com o bug presente.
+    */
+    const handler = BANKS.slice(
+      BANKS.indexOf('onEdit={() => {'),
+      BANKS.indexOf('onEdit={() => {') + 140,
+    )
+
+    expect(handler).toContain('setEditBank(bank)')
+    expect(handler).toContain('setSheetOpen(true)')
   })
 
   it('B21: a rota dedicada continua existindo, agora pelo menu', () => {
