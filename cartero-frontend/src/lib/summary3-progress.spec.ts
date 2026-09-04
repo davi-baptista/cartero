@@ -18,11 +18,12 @@ import { InvoiceStatus } from '@/types'
  * O progresso respeita o domínio, e é aqui que as duas divergem de propósito:
  *
  *   BANCOS   unidirecional  → "R$ X pago · R$ Y para quitar"
- *   PESSOAS  bilateral      → "Em aberto: R$ X a receber · R$ Y a pagar"
+ *   PESSOAS  bilateral      → "Restam R$ X a receber"
  *
- * Forçar Pessoas na gramática de Bancos exigiria um líquido, e o líquido é
- * exatamente o que mente aqui: R$ 200 abertos de cada lado dão zero com
- * R$ 400 em obrigações vivas.
+ * A gramática difere porque o domínio difere: Bancos separa pago de pendente
+ * num sentido só; Pessoas informa o líquido restante e põe a direção no
+ * texto. E o líquido zero com pendência tem frase própria — R$ 200 abertos de
+ * cada lado dão zero com R$ 400 em obrigações vivas.
  */
 
 const ler = (caminho: string) =>
@@ -70,10 +71,9 @@ describe('P1-P4: o cenário canônico da fase', () => {
     )
   })
 
-  it('P4: a terceira linha usa os totais ABERTOS', () => {
-    expect(linha(pessoas(CENARIO), 'open')).toBe(
-      'Em aberto: R$ 437,64 a receber · R$ 330,00 a pagar',
-    )
+  it('P4: a terceira linha usa o LÍQUIDO em aberto', () => {
+    /* 437,64 − 330,00 = 107,64. A direção vem no texto, não no sinal. */
+    expect(linha(pessoas(CENARIO), 'open')).toBe('Restam R$ 107,64 a receber')
   })
 
   it('as duas linhas coexistem, nessa ordem', () => {
@@ -118,9 +118,8 @@ describe('P1-P4: o cenário canônico da fase', () => {
     })
 
     expect(linha(antes, 'composition')).toBe(linha(depois, 'composition'))
-    expect(linha(depois, 'open')).toBe(
-      'Em aberto: R$ 600,00 a receber · R$ 300,00 a pagar',
-    )
+    /* 600 − 300 = 300 restantes a receber. */
+    expect(linha(depois, 'open')).toBe('Restam R$ 300,00 a receber')
   })
 
   it('P6: pagar muda SÓ o lado de pagar', () => {
@@ -135,9 +134,7 @@ describe('P1-P4: o cenário canônico da fase', () => {
     expect(linha(depois, 'composition')).toBe(
       'R$ 1.000,00 a receber · R$ 300,00 a pagar',
     )
-    expect(linha(depois, 'open')).toBe(
-      'Em aberto: R$ 600,00 a receber · R$ 0,00 a pagar',
-    )
+    expect(linha(depois, 'open')).toBe('Restam R$ 600,00 a receber')
   })
 
   it('P2: o total principal é histórico — a página o calcula assim', () => {
@@ -151,7 +148,7 @@ describe('P1-P4: o cenário canônico da fase', () => {
   })
 })
 
-describe('P7: net-zero aberto mostra os DOIS lados', () => {
+describe('P7: net-zero aberto não é confundido com quitado', () => {
   const NET_ZERO = {
     toReceive: 200,
     toPay: 200,
@@ -160,13 +157,13 @@ describe('P7: net-zero aberto mostra os DOIS lados', () => {
     outstanding: 1,
   }
 
-  it('nunca reduz a um líquido', () => {
+  it('nunca anuncia R$ 0,00 nem conclusão', () => {
     /*
-      R$ 0 anunciaria trabalho concluído com R$ 400 em obrigações vivas — e é
-      o mesmo caso que protege o estado `A ACERTAR` das rows.
+      "Restam R$ 0,00" e "Tudo em dia" afirmariam trabalho concluído com
+      R$ 400 em obrigações vivas — o mesmo caso que protege `A ACERTAR`.
     */
     expect(linha(pessoas(NET_ZERO), 'open')).toBe(
-      'Em aberto: R$ 200,00 a receber · R$ 200,00 a pagar',
+      'Ainda há valores a acertar',
     )
   })
 
@@ -511,9 +508,12 @@ describe('Parte C: o princípio é comum, a gramática não', () => {
 
     /* Bancos: unidirecional, com pago e restante. */
     expect(banco).toMatchObject({ paid: 300, remaining: 700 })
-    /* Pessoas: bilateral, sem líquido. */
-    expect(pessoa).toContain('a receber')
-    expect(pessoa).toContain('a pagar')
+    /*
+      Pessoas: um valor com a direção no texto. 700 − 300 = 400 restantes.
+      Nada de "pago", que pressuporia sentido único.
+    */
+    expect(pessoa).toBe('Restam R$ 400,00 a receber')
+    expect(pessoa).not.toContain('pago')
   })
 
   it('não existe um mega-helper unificando os dois', () => {

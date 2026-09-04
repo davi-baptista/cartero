@@ -45,16 +45,25 @@
  *   resumo      "quanto aconteceu no mês, e quanto ainda está aberto?"
  *   row ACTIVE  "quanto ainda falta acertar com esta pessoa?"
  *
- * ── O progresso de Pessoas é BILATERAL ──
+ * ── O progresso é o LÍQUIDO restante, com a direção no texto ──
  *
- * Bancos pode dizer "R$ X pago · R$ Y para quitar" porque a obrigação tem um
- * sentido só. Aqui podem coexistir valor a receber e valor a pagar, e resolver
- * um lado pode até AUMENTAR o módulo do líquido em aberto.
+ * A linha mostrava os dois lados em aberto, na mesma forma da composição logo
+ * acima: quatro números em duas linhas quase idênticas, e descobrir o que
+ * mudara exigia comparar coluna por coluna.
  *
- * Por isso a linha mostra os dois lados, nunca o líquido: R$ 200 abertos de
- * cada lado dão líquido zero com R$ 400 em obrigações vivas. "Em aberto: R$ 0"
- * anunciaria trabalho concluído que não foi feito — e é o mesmo caso que
- * protege o estado `A ACERTAR`.
+ * Agora é um número — quanto falta — e a palavra diz o sentido: "Restam
+ * R$ 657,30 a receber". O equivalente ao "R$ X pago · R$ Y para quitar" de
+ * Bancos, num domínio onde a obrigação tem dois sentidos.
+ *
+ * ── Mas o líquido zero não pode calar ──
+ *
+ * R$ 200 abertos de cada lado dão restante zero com R$ 400 vivos, e tanto
+ * "Restam R$ 0,00" quanto "Tudo em dia" afirmariam conclusão. Esse estado tem
+ * frase própria — "Ainda há valores a acertar" — e é o ÚNICO que aparece
+ * mesmo antes de qualquer quitação: com o total principal em R$ 0,00, calar
+ * seria lido como ausência de pendência.
+ *
+ * É o mesmo caso que protege o estado `A ACERTAR` nas rows.
  */
 
 export interface PersonsSummary {
@@ -100,6 +109,9 @@ function money(v: number): string {
   return BRL.format(v)
 }
 
+/** Tolerância de centavo, a mesma das outras superfícies financeiras. */
+const EPSILON = 0.005
+
 /**
  * As linhas abaixo do total.
  *
@@ -140,18 +152,58 @@ export function personsSummaryLines(s: PersonsSummary): PersonsSummaryLine[] {
   }
 
   /*
-    ── Os DOIS lados, sempre ──
+    ── O líquido restante, não os dois lados de novo ──
 
-    A gramática é fixa mesmo quando um lado é zero: "Em aberto: R$ 437,64 a
-    receber · R$ 0,00 a pagar" mantém a estrutura previsível, e o olho aprende
-    onde cada número fica. Omitir dinamicamente faria a mesma linha mudar de
-    forma entre dois meses.
+    A linha dizia "Em aberto: R$ 1.087,30 a receber · R$ 430,00 a pagar", e a
+    composição logo acima já mostrava um par de valores na mesma forma: quatro
+    números em duas linhas quase idênticas, e o leitor tinha de comparar
+    coluna por coluna para descobrir o que havia mudado.
 
-    Nunca o líquido: R$ 200 de cada lado dariam "R$ 0" com R$ 400 abertos.
+    O progresso é UM número — quanto ainda falta, líquido — e a direção vem no
+    texto. É o equivalente ao "R$ X pago · R$ Y para quitar" de Bancos,
+    adaptado a um domínio onde a obrigação tem dois sentidos.
+  */
+  const restante = s.openToReceive - s.openToPay
+
+  /*
+    ── Líquido zero com pendência: o caso que não pode calar ──
+
+    R$ 200 abertos de cada lado dão restante zero, e nenhuma das duas frases
+    de valor serviria: "Restam R$ 0,00" e "Tudo em dia" afirmariam conclusão
+    sobre R$ 400 em obrigações vivas.
+
+    Esta linha aparece SEMPRE nesse estado — inclusive antes de qualquer
+    quitação, onde a regra geral omitiria. É a exceção deliberada: com o total
+    principal em R$ 0,00, o silêncio seria lido como ausência de pendência.
+  */
+  if (Math.abs(restante) <= EPSILON) {
+    return [...linhas, { kind: 'open', text: 'Ainda há valores a acertar' }]
+  }
+
+  /*
+    ── Sem progresso, sem linha ──
+
+    Nada quitado ainda: o restante É o líquido histórico logo acima, e
+    repeti-lo em outras palavras não informa. O mesmo princípio de Bancos, que
+    esconde o progresso enquanto o pendente é o próprio total.
+  */
+  const houveProgresso =
+    Math.abs(s.openToReceive - s.toReceive) > EPSILON ||
+    Math.abs(s.openToPay - s.toPay) > EPSILON
+
+  if (!houveProgresso) return linhas
+
+  /*
+    O MÓDULO, com a direção no texto: "Restam -R$ 200,00 a pagar" diria duas
+    vezes a mesma coisa, e uma delas por sinal — que o leitor teria de
+    interpretar junto da palavra.
   */
   linhas.push({
     kind: 'open',
-    text: `Em aberto: ${money(s.openToReceive)} a receber · ${money(s.openToPay)} a pagar`,
+    text:
+      restante > 0
+        ? `Restam ${money(restante)} a receber`
+        : `Restam ${money(Math.abs(restante))} a pagar`,
   })
 
   return linhas

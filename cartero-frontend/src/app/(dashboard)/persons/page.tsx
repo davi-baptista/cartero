@@ -51,7 +51,7 @@ import {
   rowSubtext,
   rowSubtextTone,
 } from '@/lib/person-period-view'
-import { formatCurrency } from '@/lib/formatters'
+import { formatCurrency, formatMonthOfYear } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 import {
   Sheet,
@@ -556,7 +556,8 @@ export default function PersonsPage() {
       <div>
         <div>
           <p className="text-xs font-medium text-muted-foreground">
-            Saldo com pessoas
+            Saldo com pessoas de{' '}
+            {formatMonthOfYear(period.month, period.year)}
           </p>
           {/*
             "Saldo" sozinho seria confundido com saldo bancário; o rótulo diz

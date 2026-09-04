@@ -232,11 +232,10 @@ describe('P-8: o resumo responde composição E quitação', () => {
     expect(linhas({ toReceive: 100, outstanding: 50 }).length).toBeLessThanOrEqual(2)
   })
 
-  it('a linha de "Em aberto" mostra os DOIS lados', () => {
+  it('a linha de progresso mostra o LÍQUIDO restante', () => {
     /*
-      Substituiu a regra anterior, que não emitia esta linha. O total passou a
-      ser sempre histórico, então o que falta precisa de lugar próprio — e a
-      relação é bilateral, logo nunca o líquido.
+      Mostrava os dois lados, repetindo a forma da composição logo acima.
+      Agora é um número — 600 − 300 = 300 — com a direção no texto.
     */
     const r = linhas({
       toReceive: 1000,
@@ -253,7 +252,7 @@ describe('P-8: o resumo responde composição E quitação', () => {
       normalização é explícita.
     */
     expect(aberto?.text.replace(/ /g, ' ')).toBe(
-      'Em aberto: R$ 600,00 a receber · R$ 300,00 a pagar',
+      'Restam R$ 300,00 a receber',
     )
   })
 
