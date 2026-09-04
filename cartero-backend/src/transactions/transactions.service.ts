@@ -23,7 +23,10 @@ import {
   offsetInvoicePeriod,
 } from 'src/common/helpers/invoice.helper';
 import { planTransaction } from './transaction-plan.helper';
-import { round2 } from 'src/common/helpers/installment.helper';
+import {
+  belongsToInstallmentSeries,
+  round2,
+} from 'src/common/helpers/installment.helper';
 import {
   assertRefundHasNoPerson,
   isRefundWithPerson,
@@ -413,9 +416,8 @@ export class TransactionsService {
       userId,
     );
 
-    const isInstallment =
-      existing.parentId !== null ||
-      (await this.hasInstallmentChildren(existing.id, userId));
+    /* A MESMA autoridade do delete: lineage, não cardinalidade atual. */
+    const isInstallment = belongsToInstallmentSeries(existing);
 
     // A data pertence à compra inteira: alterá-la força ALL, como no update.
     const editingInstallmentDate =
@@ -882,9 +884,8 @@ export class TransactionsService {
     const existingTransaction =
       await this.entityValidationService.validateTransaction(id, userId);
 
-    const isInstallment =
-      existingTransaction.parentId !== null ||
-      (await this.hasInstallmentChildren(existingTransaction.id, userId));
+    /* A MESMA autoridade do delete: lineage, não cardinalidade atual. */
+    const isInstallment = belongsToInstallmentSeries(existingTransaction);
 
     // A data representa quando a compra parcelada aconteceu — é a mesma para
     // toda a série, então editá-la sempre afeta todas as parcelas de uma vez,
@@ -1323,9 +1324,13 @@ export class TransactionsService {
       userId,
     );
 
-    const isInstallment =
-      existing.parentId !== null ||
-      (await this.hasInstallmentChildren(existing.id, userId));
+    /*
+      LINEAGE, não cardinalidade: `hasInstallmentChildren` contava filhas que
+      AINDA existem, e a primeira parcela é a raiz — bastava excluir as irmãs
+      para a série deixar de ser reconhecida. A prévia dizia
+      `isInstallment: false` e entregava 1 parcela deletável ao mesmo tempo.
+    */
+    const isInstallment = belongsToInstallmentSeries(existing);
 
     const plan = await this.resolveInstallmentDeletePlan(
       this.prisma,
@@ -1360,9 +1365,13 @@ export class TransactionsService {
       userId,
     );
 
-    const isInstallment =
-      existing.parentId !== null ||
-      (await this.hasInstallmentChildren(existing.id, userId));
+    /*
+      A MESMA autoridade da prévia. Antes eram dois predicates equivalentes
+      por coincidência, e a survivor de uma exclusão parcial caía no lado
+      errado dos dois — mas a UI, que lê o título, continuava oferecendo o
+      fluxo de parcelas.
+    */
+    const isInstallment = belongsToInstallmentSeries(existing);
 
     if (!isInstallment) {
       /*
@@ -1480,7 +1489,11 @@ export class TransactionsService {
       em vez de recortá-la. Roteado antes de `normalizeScope`, que o recusa.
     */
     if (scope === 'OPEN') {
-      return await this.removeOpenInstallments(id, userId, expectedDeletableIds);
+      return await this.removeOpenInstallments(
+        id,
+        userId,
+        expectedDeletableIds,
+      );
     }
 
     const existing = await this.entityValidationService.validateTransaction(
@@ -1666,17 +1679,6 @@ export class TransactionsService {
       if (b.id === seriesRootId) return 1;
       return a.createdAt.getTime() - b.createdAt.getTime();
     });
-  }
-
-  private async hasInstallmentChildren(
-    transactionId: string,
-    userId: string,
-  ): Promise<boolean> {
-    const child = await this.prisma.transaction.findFirst({
-      where: { userId, parentId: transactionId },
-      select: { id: true },
-    });
-    return child !== null;
   }
 
   /**
@@ -1895,9 +1897,7 @@ export class TransactionsService {
     // precisa desmarcar; quem tenta editar precisa desmarcar, corrigir e
     // marcar de novo.
     const action =
-      operation === 'delete'
-        ? 'removê-la'
-        : 'alterar seus dados financeiros';
+      operation === 'delete' ? 'removê-la' : 'alterar seus dados financeiros';
 
     if (debt) {
       throw new ConflictException({

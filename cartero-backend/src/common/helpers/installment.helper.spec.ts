@@ -5,6 +5,8 @@ import {
   splitInstallmentAmount,
   splitInstallmentCents,
   toCents,
+  belongsToInstallmentSeries,
+  parseInstallmentTitle,
 } from './installment.helper';
 
 /**
@@ -218,5 +220,73 @@ describe('invariantes do rateio', () => {
         );
       }
     }
+  });
+});
+
+describe('identidade de parcelamento: lineage, não cardinalidade', () => {
+  /*
+    A survivor de uma exclusão parcial continua sendo parcela. O predicate
+    anterior contava irmãs EXISTENTES, e a primeira parcela é a raiz — bastava
+    apagar as outras para a série deixar de ser reconhecida.
+  */
+
+  it('quem tem `parentId` pertence a uma série', () => {
+    expect(
+      belongsToInstallmentSeries({ parentId: 'raiz', title: 'Qualquer' }),
+    ).toBe(true);
+  });
+
+  it('a RAIZ se identifica pelo sufixo do título', () => {
+    /*
+      É o único vestígio que ela guarda depois de perder as filhas — e o
+      motivo de o bug existir: sem isto, `1/5` sozinha virava compra simples.
+    */
+    expect(
+      belongsToInstallmentSeries({ parentId: null, title: 'Notebook 1/5' }),
+    ).toBe(true);
+  });
+
+  it('sem lineage nenhuma, NÃO é parcelamento', () => {
+    expect(
+      belongsToInstallmentSeries({ parentId: null, title: 'Mercado' }),
+    ).toBe(false);
+  });
+
+  it('`x/1` não é série', () => {
+    /* A criação nunca gera esse sufixo; tratá-lo como série faria uma compra
+       simples entrar no lifecycle de parcelas. */
+    expect(parseInstallmentTitle('Item 1/1')).toBeNull();
+    expect(
+      belongsToInstallmentSeries({ parentId: null, title: 'Item 1/1' }),
+    ).toBe(false);
+  });
+
+  it('sufixo incoerente é rejeitado', () => {
+    /* Parcela além do total não descreve nenhuma série real. */
+    expect(parseInstallmentTitle('Item 7/5')).toBeNull();
+    expect(parseInstallmentTitle('Item 0/5')).toBeNull();
+  });
+
+  it('o número e o total são extraídos', () => {
+    expect(parseInstallmentTitle('Notebook 3/12')).toEqual({
+      number: 3,
+      total: 12,
+    });
+  });
+
+  it('exige o espaço antes do sufixo', () => {
+    /* `1/5` no meio de um nome próprio não deve virar parcelamento. */
+    expect(parseInstallmentTitle('Conta12/24')).toBeNull();
+  });
+
+  it('a resposta NÃO muda quando as irmãs desaparecem', () => {
+    /*
+      A propriedade central: a função nem recebe as irmãs. Não há como a
+      cardinalidade atual influenciar a identidade.
+    */
+    const survivor = { parentId: null, title: 'Notebook 1/5' };
+
+    expect(belongsToInstallmentSeries(survivor)).toBe(true);
+    expect(belongsToInstallmentSeries({ ...survivor })).toBe(true);
   });
 });

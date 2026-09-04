@@ -87,3 +87,83 @@ export function splitInstallmentCents(
 export function splitInstallmentAmount(total: number, count: number): number[] {
   return splitInstallmentCents(toCents(total), count).map(fromCents);
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Identidade de parcelamento — LINEAGE, nunca cardinalidade
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Uma compra não deixa de ser parcelada porque as outras parcelas foram
+ * removidas. `1/5` que sobreviveu a uma exclusão parcial continua sendo a
+ * primeira de cinco: o fato histórico não muda, e a tela continua — com
+ * razão — mostrando `1/5`.
+ *
+ * ── O bug que isto corrige ──
+ *
+ * A decisão era `parentId !== null || temFilhasAgora`. A primeira parcela é a
+ * RAIZ (`parentId` nulo, as outras apontam para ela), então bastava excluir
+ * as irmãs para a série inteira deixar de ser reconhecida:
+ *
+ *   preview   isInstallment: false, deletableCount: 1   ← incoerente consigo
+ *   execute   OPEN_SCOPE_REQUIRES_INSTALLMENT           ← recusa o que o
+ *                                                         preview ofereceu
+ *
+ * A UI usava um terceiro critério — a regex do título, que SOBREVIVE à
+ * exclusão — e por isso abria o fluxo de parcelas para algo que o servidor já
+ * não aceitava.
+ *
+ * ── As duas evidências de lineage ──
+ *
+ * `parentId` prova filiação: quem aponta para uma raiz nasceu numa série.
+ *
+ * O sufixo `N/M` no título prova a origem da RAIZ, e é o único vestígio que
+ * ela guarda depois de perder as filhas. Não é heurística de exibição: a
+ * criação escreve esse sufixo justamente para marcar a série, e
+ * `getInstallmentIndex` já dependia dele para ordenar.
+ *
+ * Nenhum campo novo foi criado: `installmentTotal`/`installmentGroupId` não
+ * existem neste schema, e inventá-los exigiria migration para um fato que o
+ * título já carrega.
+ */
+
+/** O sufixo que a criação escreve em cada parcela: `Nome 3/12`. */
+const INSTALLMENT_TITLE_SUFFIX = /\s(\d+)\/(\d+)$/;
+
+/** `{ number, total }` quando o título numera a parcela, senão `null`. */
+export function parseInstallmentTitle(
+  title: string,
+): { number: number; total: number } | null {
+  const match = title.match(INSTALLMENT_TITLE_SUFFIX);
+  if (!match) return null;
+
+  const number = Number(match[1]);
+  const total = Number(match[2]);
+
+  /*
+    `x/1` não é parcelamento: a criação nunca gera esse sufixo para compra à
+    vista, e tratá-lo como série faria uma transação simples entrar no
+    lifecycle de parcelas.
+  */
+  if (!Number.isInteger(number) || !Number.isInteger(total)) return null;
+  if (total < 2 || number < 1 || number > total) return null;
+
+  return { number, total };
+}
+
+/**
+ * Esta transação pertence a uma compra parcelada?
+ *
+ * Autoridade ÚNICA de prévia e execução. Não consulta o banco: a resposta está
+ * na própria linha, e é isso que a torna estável quando as irmãs já não
+ * existem.
+ *
+ * Uma compra genuinamente simples continua fora — é o que preserva a recusa
+ * `OPEN_SCOPE_REQUIRES_INSTALLMENT` para quem deve recebê-la.
+ */
+export function belongsToInstallmentSeries(transaction: {
+  parentId: string | null;
+  title: string;
+}): boolean {
+  if (transaction.parentId !== null) return true;
+  return parseInstallmentTitle(transaction.title) !== null;
+}

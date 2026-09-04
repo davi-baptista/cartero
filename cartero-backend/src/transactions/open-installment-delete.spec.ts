@@ -289,7 +289,10 @@ describe('preview de exclusão', () => {
     };
 
     const daSetima = await montar(cenario).service.previewDelete('t7', USER_ID);
-    const daDecima = await montar(cenario).service.previewDelete('t10', USER_ID);
+    const daDecima = await montar(cenario).service.previewDelete(
+      't10',
+      USER_ID,
+    );
     const daPrimeira = await montar(cenario).service.previewDelete(
       't1',
       USER_ID,
@@ -315,7 +318,13 @@ describe('preview de exclusão', () => {
   it('S10: compra à vista responde isInstallment=false em vez de erro', async () => {
     const { service } = montar({
       parcelas: [
-        { id: 'avulsa', numero: 1, total: 1, parentId: null, invoiceId: 'inv1' },
+        {
+          id: 'avulsa',
+          numero: 1,
+          total: 1,
+          parentId: null,
+          invoiceId: 'inv1',
+        },
       ],
     });
 
@@ -435,9 +444,7 @@ describe('execução com escopo OPEN', () => {
       faturasPagas: ['inv1', 'inv2', 'inv3'],
     });
 
-    await expect(removeOpen('t1')).rejects.toThrow(
-      ConflictException,
-    );
+    await expect(removeOpen('t1')).rejects.toThrow(ConflictException);
     expect(deletes.transactions).toHaveLength(0);
   });
 
@@ -485,13 +492,17 @@ describe('execução com escopo OPEN', () => {
   it('compra à vista recusa OPEN em vez de apagar como ONE', async () => {
     const { removeOpen, deletes } = montar({
       parcelas: [
-        { id: 'avulsa', numero: 1, total: 1, parentId: null, invoiceId: 'inv1' },
+        {
+          id: 'avulsa',
+          numero: 1,
+          total: 1,
+          parentId: null,
+          invoiceId: 'inv1',
+        },
       ],
     });
 
-    await expect(removeOpen('avulsa')).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(removeOpen('avulsa')).rejects.toThrow(BadRequestException);
     expect(deletes.transactions).toHaveLength(0);
   });
 });
@@ -637,15 +648,18 @@ describe('conjunto obsoleto entre prévia e confirmação', () => {
     });
 
     /* O cliente confirmou um conjunto que já não é o atual. */
-    await expect(
-      removeOpen('t2', ['t1', 't2', 't3', 't4']),
-    ).rejects.toThrow(ConflictException);
+    await expect(removeOpen('t2', ['t1', 't2', 't3', 't4'])).rejects.toThrow(
+      ConflictException,
+    );
 
     expect(deletes.transactions).toHaveLength(0);
   });
 
   it('executa quando o conjunto confirmado ainda vale', async () => {
-    const { removeOpen } = montar({ parcelas: serie(3), faturasPagas: ['inv1'] });
+    const { removeOpen } = montar({
+      parcelas: serie(3),
+      faturasPagas: ['inv1'],
+    });
 
     const resultado = await removeOpen('t2', ['t2', 't3']);
 
@@ -653,7 +667,10 @@ describe('conjunto obsoleto entre prévia e confirmação', () => {
   });
 
   it('a ordem do conjunto confirmado não importa', async () => {
-    const { removeOpen } = montar({ parcelas: serie(3), faturasPagas: ['inv1'] });
+    const { removeOpen } = montar({
+      parcelas: serie(3),
+      faturasPagas: ['inv1'],
+    });
 
     const resultado = await removeOpen('t2', ['t3', 't2']);
 
@@ -735,9 +752,7 @@ describe('atomicidade', () => {
 
     falhar('t3');
 
-    await expect(removeOpen('t1')).rejects.toThrow(
-      'falha simulada',
-    );
+    await expect(removeOpen('t1')).rejects.toThrow('falha simulada');
 
     expect(state.transactions).toHaveLength(4);
     expect(deletes.transactions).toHaveLength(0);
@@ -765,5 +780,178 @@ describe('isolamento do escopo OPEN', () => {
 
     /* ONE apaga só a parcela escolhida — comportamento inalterado. */
     await service.remove('t2', USER_ID, 'ONE');
+  });
+});
+
+describe('O5.1 — a survivor solitária continua sendo parcelamento', () => {
+  /*
+    ══════════════════════════════════════════════════════════════════════════
+    O bug: identidade de parcelamento por CARDINALIDADE
+    ══════════════════════════════════════════════════════════════════════════
+
+    O predicate era `parentId !== null || temFilhasAgora`. A primeira parcela
+    é a RAIZ — `parentId` nulo, as irmãs apontam para ela —, então excluir as
+    irmãs fazia a série inteira deixar de ser reconhecida.
+
+    Medido em dados reais antes da correção, com uma compra 5x cuja cobrança
+    da parcela 1 estava paga:
+
+      exclusão parcial   →  2/5..5/5 apagadas, 1/5 preservada  (correto)
+      preview de 1/5     →  isInstallment: FALSE, deletable: 1  (incoerente)
+      execute de 1/5     →  OPEN_SCOPE_REQUIRES_INSTALLMENT     (recusa)
+
+    A UI usava um TERCEIRO critério — a regex do título, que sobrevive à
+    exclusão — e por isso oferecia o fluxo de parcelas para algo que o
+    servidor já não aceitava.
+
+    Uma compra não deixa de ser parcelada porque as outras parcelas foram
+    removidas: `1/5` continua a primeira de cinco.
+  */
+
+  /** A survivor de uma exclusão parcial: raiz, sem irmãs, título preservado. */
+  const survivorSolitaria = {
+    parcelas: [
+      { id: 't1', numero: 1, total: 5, invoiceId: 'inv-1', parentId: null },
+    ],
+  };
+
+  it('a prévia reconhece a survivor como parcelamento', async () => {
+    const { service } = montar(survivorSolitaria);
+    const preview = await service.previewDelete('t1', USER_ID);
+
+    expect(preview.isInstallment).toBe(true);
+    expect(preview.deletableCount).toBe(1);
+    expect(preview.preservedCount).toBe(0);
+  });
+
+  it('PE4: prévia e execução NUNCA discordam sobre a mesma transação', async () => {
+    /*
+      O invariante da fase. Antes existia um estado estável em que a prévia
+      entregava uma parcela deletável e a execução respondia "não é
+      parcelamento" — sem nada ter mudado entre as duas.
+    */
+    const { service, removeOpen, deletes } = montar(survivorSolitaria);
+    const preview = await service.previewDelete('t1', USER_ID);
+
+    expect(preview.isInstallment).toBe(true);
+
+    const resultado = await removeOpen(
+      't1',
+      preview.deletable.map((item) => item.id),
+    );
+
+    expect(resultado.deletedIds).toEqual(['t1']);
+    expect(deletes.transactions).toEqual(['t1']);
+  });
+
+  it('S2: a survivor não precisa ser a primeira parcela', async () => {
+    const { service } = montar({
+      parcelas: [
+        { id: 't3', numero: 3, total: 5, invoiceId: 'inv-3', parentId: 't1' },
+      ],
+    });
+
+    expect((await service.previewDelete('t3', USER_ID)).isInstallment).toBe(
+      true,
+    );
+  });
+
+  it('S3: série de 2x com apenas a segunda restante', async () => {
+    const { service } = montar({
+      parcelas: [
+        { id: 't2', numero: 2, total: 2, invoiceId: 'inv-2', parentId: 't1' },
+      ],
+    });
+
+    expect((await service.previewDelete('t2', USER_ID)).isInstallment).toBe(
+      true,
+    );
+  });
+
+  it('P1: enquanto a cobrança está PAGA, a survivor é preservada', async () => {
+    /*
+      A proteção que causou a preservação inicial não foi enfraquecida: a
+      parcela continua fora do conjunto deletável.
+    */
+    const { service, removeOpen, deletes } = montar({
+      ...survivorSolitaria,
+      receivables: [{ transactionId: 't1', isPaid: true }],
+    });
+
+    const preview = await service.previewDelete('t1', USER_ID);
+    expect(preview.isInstallment).toBe(true);
+    expect(preview.deletableCount).toBe(0);
+    expect(preview.preservedCount).toBe(1);
+    expect(preview.preserved[0]?.reason).toBe('RECEIVABLE_ALREADY_PAID');
+
+    /*
+      E a execução não apaga nada. A recusa é `Conflict`, não `BadRequest`:
+      a transação É parcelamento (por isso não cai em
+      `OPEN_SCOPE_REQUIRES_INSTALLMENT`) — o que falta é parcela em aberto
+      para excluir. Distinguir os dois importa: o primeiro diria ao usuário
+      para usar outro fluxo, este diz que não há o que fazer aqui.
+    */
+    await expect(removeOpen('t1', [])).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(deletes.transactions).toEqual([]);
+  });
+
+  it('P2: com a cobrança em aberto, a mesma survivor é deletável', async () => {
+    const { service, removeOpen, deletes } = montar({
+      ...survivorSolitaria,
+      receivables: [{ transactionId: 't1', isPaid: false }],
+    });
+
+    const preview = await service.previewDelete('t1', USER_ID);
+    expect(preview.deletableCount).toBe(1);
+
+    const resultado = await removeOpen('t1', ['t1']);
+
+    expect(resultado.deletedIds).toEqual(['t1']);
+    /* A cobrança pendente cascateia com a compra de origem. */
+    expect(resultado.receivablesRemoved).toBe(1);
+    expect(deletes.transactions).toEqual(['t1']);
+  });
+
+  it('S4: compra genuinamente simples continua recusada', async () => {
+    /*
+      O objetivo não é deixar qualquer transação passar. Sem lineage — nem
+      `parentId`, nem sufixo de parcela — o fluxo de parcelas recusa.
+    */
+    const { service } = montar({
+      parcelas: [
+        {
+          id: 'avista',
+          numero: 0,
+          total: 0,
+          invoiceId: 'inv-1',
+          parentId: null,
+        },
+      ],
+    });
+
+    const preview = await service.previewDelete('avista', USER_ID);
+    expect(preview.isInstallment).toBe(false);
+  });
+
+  it('a identidade NÃO depende de quantas irmãs existem agora', async () => {
+    /*
+      A propriedade central: a mesma parcela, com e sem irmãs, responde a
+      mesma coisa. Era exatamente isso que falhava.
+    */
+    const comIrmas = montar({
+      parcelas: [
+        { id: 't1', numero: 1, total: 5, invoiceId: 'inv-1', parentId: null },
+        { id: 't2', numero: 2, total: 5, invoiceId: 'inv-2', parentId: 't1' },
+      ],
+    });
+    const sozinha = montar(survivorSolitaria);
+
+    const a = await comIrmas.service.previewDelete('t1', USER_ID);
+    const b = await sozinha.service.previewDelete('t1', USER_ID);
+
+    expect(a.isInstallment).toBe(b.isInstallment);
+    expect(b.isInstallment).toBe(true);
   });
 });
