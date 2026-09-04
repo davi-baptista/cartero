@@ -174,10 +174,10 @@ export function deriveStatusFromInvoiceDates(
  *
  * Campos de data aqui representam um DIA, não um instante, mas os helpers
  * ancoram em horas diferentes (`parseDateOnly` usa 12h; as datas de fatura,
- * 3h). Comparar os instantes crus faria uma compra registrada no próprio dia
- * do fechamento parecer posterior a ele — 12h > 3h — e cair na fatura errada.
- * Reduzir ambos ao dia civil elimina essa interferência sem exigir que os
- * helpers concordem sobre a âncora.
+ * 3h). Comparar os instantes crus faria a hora decidir a fatura: duas compras
+ * no MESMO dia civil cairiam em competências diferentes só pela âncora, e o
+ * cutoff deixaria de ser determinístico. Reduzir ambos ao dia civil elimina a
+ * interferência sem exigir que os helpers concordem sobre a âncora.
  */
 function toCivilDay(date: Date): number {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
@@ -186,6 +186,17 @@ function toCivilDay(date: Date): number {
 /** `true` se `date` é um dia civil posterior a `reference`. */
 function isAfterCivilDay(date: Date, reference: Date): boolean {
   return toCivilDay(date) > toCivilDay(reference);
+}
+
+/**
+ * `true` se `date` é um dia civil ANTERIOR a `reference`.
+ *
+ * Estrito de propósito: é o comparador do cutoff de fechamento, onde o dia
+ * igual já pertence ao ciclo seguinte. Escrever `!isAfterCivilDay(...)`
+ * incluiria o próprio dia, que é exatamente o contrato que a V2 substituiu.
+ */
+function isBeforeCivilDay(date: Date, reference: Date): boolean {
+  return toCivilDay(date) < toCivilDay(reference);
 }
 
 /**
@@ -205,8 +216,22 @@ const MAX_PERIOD_LOOKAHEAD = 14;
  * de março fecha em 26/02, então uma compra em 27/02 não pertence nem a
  * fevereiro (fechou em 29/01) nem a março, e sim a abril.
  *
- * O dia do fechamento pertence à fatura que fecha nele; só o dia seguinte
- * empurra para a próxima.
+ * ── O dia do fechamento JÁ pertence ao próximo ciclo ──
+ *
+ * O cutoff é EXCLUSIVO: `date < closeDate` fica no ciclo corrente, `date >=
+ * closeDate` vai para o seguinte. Uma compra feita em 10/09 num cartão que
+ * fecha em 10/09 entra na fatura seguinte.
+ *
+ * O contrato anterior era o inverso — o dia do fechamento pertencia à fatura
+ * que fechava nele. Foi substituído deliberadamente: o Cartero modela
+ * fechamento por DIA CIVIL, sem horário de cutoff por emissor, sem timezone
+ * por cartão e sem o momento real de processamento do banco. Sem essas
+ * informações, tratar o dia inteiro como ainda-aberto afirmaria uma
+ * disponibilidade que o app não pode garantir; o início do dia civil de
+ * fechamento é a fronteira determinística.
+ *
+ * A comparação é por dia civil de Fortaleza, então qualquer instante de 10/09
+ * — 00h01, 12h, 23h59 — produz a mesma fatura.
  */
 export function getInvoicePeriodForDate(
   bank: InvoiceSchedule,
@@ -217,7 +242,11 @@ export function getInvoicePeriodForDate(
 
   for (let attempt = 0; attempt < MAX_PERIOD_LOOKAHEAD; attempt++) {
     const closeDate = getInvoiceCloseDateForPeriod(bank, year, month);
-    if (!isAfterCivilDay(transactionDate, closeDate)) {
+    /*
+      ESTRITO: o dia do fechamento não pertence mais a esta competência. Era
+      `!isAfterCivilDay(...)`, que incluía o próprio dia.
+    */
+    if (isBeforeCivilDay(transactionDate, closeDate)) {
       return { year, month };
     }
 

@@ -319,13 +319,19 @@ describe('previewCreate — competência do cartão que fecha no mês anterior',
     expect(preview.installments[0].invoice?.month).toBe(3);
   });
 
-  it('compra em 26/02, no dia do fechamento, ainda é março', async () => {
+  it('compra em 26/02, no dia do fechamento, JÁ é abril', async () => {
+    /*
+      Contrato V2: o cutoff de fechamento é exclusivo. A prévia consome a
+      mesma `getInvoicePeriodForDate` da criação — este teste existe para
+      provar que ela não tem regra própria, e a mudança de policy aparecendo
+      aqui é a evidência disso.
+    */
     const preview = await harnessFor().service.previewCreate(USER_ID, {
       ...baseInput,
       date: '2026-02-26',
     } as any);
 
-    expect(preview.installments[0].invoice?.month).toBe(3);
+    expect(preview.installments[0].invoice?.month).toBe(4);
   });
 
   it('compra em 27/02 salta para abril', async () => {

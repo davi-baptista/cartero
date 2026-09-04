@@ -129,9 +129,15 @@ describe('D1-D8: o conteúdo do drawer', () => {
   })
 
   it('D5: o helper explica o boundary do fechamento', () => {
+    /*
+      Contrato V2: o cutoff é EXCLUSIVO — o dia do fechamento já pertence ao
+      ciclo seguinte. A frase anterior dizia "entram nesta fatura", que era
+      correto sob a policy antiga.
+    */
     expect(SHEET).toContain(
-      'Compras feitas no dia do fechamento entram nesta fatura',
+      'Compras feitas no dia do fechamento entram na próxima fatura.',
     )
+    expect(SHEET).not.toContain('entram nesta fatura')
   })
 
   it('D8: double-submit é bloqueado', () => {

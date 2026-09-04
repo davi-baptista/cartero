@@ -233,10 +233,12 @@ export function BankSheet({
                 saber, pela tela, em qual fatura cai uma compra feita no
                 próprio dia do fechamento — e é a dúvida mais comum sobre a
                 configuração.
+
+                O cutoff é EXCLUSIVO: o dia do fechamento já pertence ao ciclo
+                seguinte. A frase mudou junto com a policy.
               */}
               <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
-                Compras feitas no dia do fechamento entram nesta fatura; a
-                partir do dia seguinte, na próxima.
+                Compras feitas no dia do fechamento entram na próxima fatura.
               </p>
             </div>
           )}

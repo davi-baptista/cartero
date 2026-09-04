@@ -121,11 +121,17 @@ describe('getInvoicePeriodForDate — associação de compra à fatura', () => {
     });
   });
 
-  it('compra no dia do fechamento ainda pertence à fatura corrente', () => {
+  it('compra no dia do fechamento JÁ vai para a fatura seguinte', () => {
+    /*
+      Contrato V2: o cutoff é EXCLUSIVO. Este teste afirmava o oposto — o dia
+      do fechamento pertencia à fatura que fechava nele —, e foi reescrito
+      junto com a policy: sem horário de cutoff por emissor, o início do dia
+      civil de fechamento é a fronteira determinística.
+    */
     const closeDate = getInvoiceCloseDateForPeriod(closesSameMonth, 2026, 3);
     expect(getInvoicePeriodForDate(closesSameMonth, closeDate)).toEqual({
       year: 2026,
-      month: 3,
+      month: 4,
     });
   });
 
@@ -136,14 +142,17 @@ describe('getInvoicePeriodForDate — associação de compra à fatura', () => {
     });
   });
 
-  it('o dia do fechamento pertence à fatura corrente em qualquer horário', () => {
-    // Antes, uma compra date-only (ancorada em 12h) no próprio dia do
-    // fechamento (ancorado em 3h) caía na fatura seguinte só pela diferença
-    // de âncora. A comparação agora é por dia civil.
+  it('o dia do fechamento vai para a seguinte em QUALQUER horário', () => {
+    /*
+      A propriedade que sobrevive à V2: a HORA não decide a fatura. O dia
+      inteiro do fechamento cai no mesmo lugar — antes na corrente, agora na
+      seguinte. Comparar instantes crus faria 00h e 23h59 divergirem, e o
+      cutoff deixaria de ser determinístico.
+    */
     for (const hour of [0, 3, 6, 12, 23]) {
       expect(
         getInvoicePeriodForDate(closesSameMonth, utc(2026, 3, 3, hour)),
-      ).toEqual({ year: 2026, month: 3 });
+      ).toEqual({ year: 2026, month: 4 });
     }
   });
 
@@ -222,11 +231,17 @@ describe('getInvoicePeriodForDate — fechamento no mês anterior ao vencimento'
     ).toEqual({ year: 2026, month: 3 });
   });
 
-  it('compra no dia do fechamento pertence à fatura que fecha nele', () => {
-    // 26/02 é exatamente o fechamento de março → ainda é março.
+  it('compra no dia do fechamento salta a competência, mesmo com fechamento no mês anterior', () => {
+    /*
+      26/02 é exatamente o fechamento de março. Sob a V2 o dia do fechamento
+      já não pertence à competência que fecha nele → abril.
+
+      O caso importa porque aqui o fechamento cai em outro mês civil que a
+      competência: a exclusividade do cutoff vale igual, sem regra especial.
+    */
     expect(
       getInvoicePeriodForDate(closesPreviousMonth, utc(2026, 2, 26)),
-    ).toEqual({ year: 2026, month: 3 });
+    ).toEqual({ year: 2026, month: 4 });
   });
 
   it('compra no dia seguinte ao fechamento salta para a competência seguinte', () => {
@@ -305,8 +320,17 @@ describe('getInvoicePeriodForDate — fechamento no mês anterior ao vencimento'
           previous.month,
         );
 
-        // A competência anterior tem de estar fechada para a compra.
-        expect(toCivilDay(purchase)).toBeGreaterThan(toCivilDay(previousClose));
+        /*
+          A competência anterior tem de estar fechada para a compra.
+
+          `>=` sob a V2: o cutoff é exclusivo, então a compra feita NO dia do
+          fechamento anterior já o considera fechado. Com `>` o invariante
+          recusaria exatamente o caso de fronteira que a policy passou a
+          endereçar.
+        */
+        expect(toCivilDay(purchase)).toBeGreaterThanOrEqual(
+          toCivilDay(previousClose),
+        );
       }
     }
   });
