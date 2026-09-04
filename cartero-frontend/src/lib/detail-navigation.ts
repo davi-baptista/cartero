@@ -152,23 +152,41 @@ export function useDetailNavigation(key: DetailParam) {
   const paramId = searchParams.get(key)
 
   /*
-    ── Espelho local da URL, SEM effect ──
+    ── O espelho conta INTENÇÕES, não endereços ──
 
     A fonte continua sendo a URL: este estado só existe para o fechamento não
-    depender de o router propagar a mudança.
+    depender de o router propagar a mudança — numa rota estática ele pode
+    descartar uma troca só de query.
 
-    Guardar a QUERY fechada (não só o id) faz o espelho se invalidar por
-    construção: qualquer navegação posterior — abrir outro detalhe, Back,
-    Forward, colar um link novo — muda a string, o espelho deixa de casar, e
-    o detalhe volta a ser lido da URL. Nenhum efeito precisa limpá-lo, o que
-    evita o risco de um snap-back reabrir o que o usuário dispensou.
+    A primeira versão guardava a QUERY fechada e a comparava com a atual,
+    supondo que "qualquer navegação posterior muda a string". Isso é falso no
+    caso mais comum: reabrir a MESMA entidade produz uma query byte a byte
+    idêntica à guardada, o espelho volta a casar, e o drawer não abre. Abrir
+    OUTRA funcionava, o que fazia o bug parecer aleatório.
+
+    O que distingue um fechamento não é o endereço, é o MOMENTO. Dois
+    contadores monotônicos resolvem: `close` marca o instante em que o usuário
+    dispensou, `open` marca o instante em que pediu de novo. O detalhe está
+    aberto quando o último pedido é mais recente que a última dispensa — e
+    reabrir a mesma entidade é um pedido novo como qualquer outro.
+
+    Sem `useEffect` de propósito: um efeito que limpasse o espelho poderia
+    reabrir o que foi dispensado, e o Orçamento tem a garantia explícita de
+    não conter nenhum (para que nada dê snap-back no mês selecionado).
   */
-  const [closedSearch, setClosedSearch] = useState<string | null>(null)
-  const currentSearch = searchParams.toString()
-  const openId = currentSearch === closedSearch ? null : paramId
+  const [pedidos, setPedidos] = useState(0)
+  const [dispensas, setDispensas] = useState(0)
+
+  /*
+    `pedidos > dispensas` cobre o reopen; `dispensas === 0` cobre a primeira
+    montagem e o link direto, onde ninguém pediu nem dispensou nada e a URL
+    manda sozinha.
+  */
+  const dispensadoAgora = dispensas > 0 && dispensas >= pedidos
+  const openId = dispensadoAgora ? null : paramId
 
   const open = (id: string) => {
-    setClosedSearch(null)
+    setPedidos((n) => n + 1)
     router.push(
       detailHref(pathname, withDetailParam(searchParams, key, id)),
       { scroll: false },
@@ -196,7 +214,7 @@ export function useDetailNavigation(key: DetailParam) {
       A UI fecha AGORA, sem esperar navegação — é o que torna o X
       determinístico mesmo quando o Next descarta a atualização de rota.
     */
-    setClosedSearch(atual.search)
+    setDispensas((n) => n + 1)
 
     const limpo = withoutDetailParams(atual.search)
 

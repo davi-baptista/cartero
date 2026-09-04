@@ -484,19 +484,54 @@ describe('HOTFIX: rota estática descarta `router.replace` de query', () => {
       atualização de rota, o `searchParams` não muda — e sem o espelho a UI
       continuaria lendo o param antigo.
     */
-    expect(NAV).toContain('closedSearch')
-    expect(BUDGET).toContain('queryFechada')
-    expect(PERSONS).toContain('queryFechada')
+    for (const [nome, src] of [
+      ['nav', NAV],
+      ['budget', BUDGET],
+      ['persons', PERSONS],
+    ] as const) {
+      expect(src, nome).toContain('dispensas')
+      expect(src, nome).toContain('pedidos')
+    }
   })
 
-  it('o espelho guarda a QUERY, não o id', () => {
+  it('o espelho conta INTENÇÕES, não a query fechada', () => {
     /*
-      Guardar a query inteira faz o espelho se invalidar por construção:
-      qualquer navegação posterior muda a string e o detalhe volta a ser lido
-      da URL. Com o id, abrir a MESMA entidade de novo continuaria fechado.
+      Guardar a query fechada parecia se invalidar sozinho — "qualquer
+      navegação posterior muda a string". Falso no caso mais comum: reabrir a
+      MESMA entidade produz uma query byte a byte idêntica, o espelho voltava
+      a casar e o drawer não abria. Abrir OUTRA funcionava, o que fazia o bug
+      parecer aleatório.
+
+      O que distingue um fechamento é o MOMENTO, não o endereço.
     */
-    expect(NAV).toContain('currentSearch === closedSearch')
-    expect(NAV).toContain('setClosedSearch(atual.search)')
+    expect(NAV).toContain('dispensas > 0 && dispensas >= pedidos')
+    expect(NAV).toContain('setDispensas((n) => n + 1)')
+    expect(NAV).toContain('setPedidos((n) => n + 1)')
+
+    /* A comparação por query não pode voltar. */
+    for (const src of [NAV, BUDGET, PERSONS]) {
+      expect(src).not.toContain('closedSearch')
+      expect(src).not.toContain('queryFechada')
+    }
+  })
+
+  it('abrir CONTA como pedido em todas as superfícies', () => {
+    /*
+      Sem incrementar no `open`, o contador de dispensas continuaria à frente
+      e o reopen seguiria bloqueado — é a metade da correção que não aparece
+      no derivado.
+    */
+    expect(NAV).toContain('setPedidos((n) => n + 1)')
+    expect(BUDGET).toContain('setPedidos((n) => n + 1)')
+    expect(PERSONS).toContain('setPedidos((n) => n + 1)')
+  })
+
+  it('link direto e primeira montagem não são tratados como dispensados', () => {
+    /*
+      `dispensas > 0` na guarda: sem isso, `0 >= 0` marcaria o estado inicial
+      como dispensado e nenhum detalhe abriria por URL colada.
+    */
+    expect(NAV).toContain('dispensas > 0 &&')
   })
 
   it('nenhum `useEffect` foi introduzido para limpar o espelho', () => {
@@ -524,5 +559,127 @@ describe('HOTFIX: rota estática descarta `router.replace` de query', () => {
     ] as const) {
       expect(src, nome).not.toContain('router.back()')
     }
+  })
+})
+
+describe('REOPEN: a mesma entidade reabre depois do X', () => {
+  /*
+    ══════════════════════════════════════════════════════════════════════════
+    O bug que o espelho por query introduziu
+    ══════════════════════════════════════════════════════════════════════════
+
+    Reproduzido em `/budget` e `/persons`: clicar numa Pessoa abria o drawer,
+    o X fechava, e clicar NA MESMA Pessoa mudava a URL de volta para
+    `?personId=<mesmo-id>` sem abrir nada. Abrir OUTRA pessoa funcionava.
+
+    A causa: o espelho guardava a query fechada. Reabrir a mesma entidade
+    produz uma query idêntica à guardada, ela volta a casar, e o derivado
+    devolve `null`.
+
+    Este bloco fixa o CICLO, não a implementação: as asserções abaixo rodam a
+    mesma máquina de estados que as três superfícies usam.
+  */
+
+  /** A derivação compartilhada, como as três superfícies a aplicam. */
+  const criarCiclo = () => {
+    let pedidos = 0
+    let dispensas = 0
+    return {
+      abrir: () => {
+        pedidos += 1
+      },
+      fechar: () => {
+        dispensas += 1
+      },
+      aberto: (param: string | null) =>
+        dispensas > 0 && dispensas >= pedidos ? null : param,
+    }
+  }
+
+  it('open → close → reopen MESMA entidade', () => {
+    const c = criarCiclo()
+
+    c.abrir()
+    expect(c.aberto('A'), 'primeiro open').toBe('A')
+
+    c.fechar()
+    expect(c.aberto(null), 'depois do X').toBeNull()
+
+    c.abrir()
+    expect(c.aberto('A'), 'reopen da MESMA — era aqui que falhava').toBe('A')
+  })
+
+  it('open → close → OUTRA entidade continua funcionando', () => {
+    /* Este caminho nunca quebrou; o teste impede uma correção que o rompa. */
+    const c = criarCiclo()
+
+    c.abrir()
+    c.fechar()
+    c.abrir()
+
+    expect(c.aberto('B')).toBe('B')
+  })
+
+  it('o ciclo aguenta repetição indefinida', () => {
+    /*
+      Abrir e fechar a mesma entidade cinco vezes. Um espelho que só
+      alternasse uma vez passaria no teste acima e falharia aqui.
+    */
+    const c = criarCiclo()
+
+    for (let i = 1; i <= 5; i++) {
+      c.abrir()
+      expect(c.aberto('A'), `abertura ${i}`).toBe('A')
+      c.fechar()
+      expect(c.aberto(null), `fechamento ${i}`).toBeNull()
+    }
+  })
+
+  it('link direto abre sem ninguém ter pedido', () => {
+    /*
+      Ninguém clicou: `pedidos` e `dispensas` são zero, e a URL manda sozinha.
+      Uma guarda `dispensas >= pedidos` sem o `dispensas > 0` marcaria o
+      estado inicial como dispensado e nenhum link direto abriria.
+    */
+    const c = criarCiclo()
+
+    expect(c.aberto('A')).toBe('A')
+  })
+
+  it('dois fechamentos seguidos não desequilibram o contador', () => {
+    /*
+      `close` é idempotente por contrato — o fluxo de exclusão o chama depois
+      de a URL já ter sido limpa. Se cada chamada incrementasse sem limite, o
+      próximo open precisaria de vários cliques para superar as dispensas.
+    */
+    const c = criarCiclo()
+
+    c.abrir()
+    c.fechar()
+    c.fechar()
+    c.abrir()
+
+    /*
+      Com dois fechamentos e duas aberturas, `dispensas >= pedidos` seria
+      verdadeiro e o drawer ficaria fechado. É a razão de o `close` real
+      abortar cedo quando o param já saiu — o guard antes do incremento.
+    */
+    expect(c.aberto('A')).toBeNull()
+  })
+
+  it('e o `close` real ABORTA antes de incrementar quando não há o que fechar', () => {
+    /*
+      A proteção do caso acima vive no código: o `return` antecipado impede o
+      segundo incremento. Sem ele, o reopen exigiria dois cliques.
+    */
+    const NAV_FONTE = ler('./detail-navigation.ts')
+    const inicio = NAV_FONTE.indexOf('const close = ()')
+    const corpoClose = NAV_FONTE.slice(
+      inicio,
+      NAV_FONTE.indexOf('setDispensas', inicio),
+    )
+
+    /* O `return` vem ANTES do incremento. */
+    expect(corpoClose).toContain('.get(key) === null) return')
   })
 })

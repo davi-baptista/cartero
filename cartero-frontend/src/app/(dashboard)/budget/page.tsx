@@ -215,21 +215,26 @@ export default function BudgetPage() {
   const pathname = usePathname()
 
   /*
-    ── Espelho local dos params, SEM effect ──
+    ── O espelho conta INTENÇÕES, não endereços ──
 
     A UI precisa fechar sem esperar o router propagar a troca de query — numa
     rota estática o Next pode descartá-la. Mas nada aqui pode ser um
     `useEffect`: esta página tem a garantia de não conter nenhum, para que
     nenhum snap-back possa reescrever o mês selecionado.
 
-    A derivação resolve sozinha. Guardar a QUERY fechada e compará-la com a
-    atual faz o espelho se invalidar por construção: qualquer navegação
-    posterior (abrir, Back, Forward, link novo) muda a string e o espelho
-    deixa de casar, sem precisar ser limpo por ninguém.
+    A versão anterior guardava a QUERY fechada e a comparava com a atual.
+    Reabrir a MESMA pessoa (ou a mesma fatura) produz uma query idêntica à
+    guardada: o espelho voltava a casar e o drawer não abria — enquanto abrir
+    OUTRA funcionava, o que fazia o bug parecer aleatório.
+
+    O que distingue um fechamento é o MOMENTO, não o endereço. Dois
+    contadores monotônicos resolvem, e reabrir a mesma entidade é um pedido
+    novo como qualquer outro.
   */
-  const [queryFechada, setQueryFechada] = useState<string | null>(null)
-  const searchAtual = searchParams.toString()
-  const drawersAbertos = searchAtual !== queryFechada
+  const [pedidos, setPedidos] = useState(0)
+  const [dispensas, setDispensas] = useState(0)
+  /* `dispensas === 0` cobre a primeira montagem e o link direto. */
+  const drawersAbertos = !(dispensas > 0 && dispensas >= pedidos)
   const openPersonId = drawersAbertos ? searchParams.get('personId') : null
   const openInvoiceId = drawersAbertos ? searchParams.get('invoiceId') : null
 
@@ -261,6 +266,7 @@ export default function BudgetPage() {
       `scroll: false` preserva a posição da página.
     */
     if (value) {
+      setPedidos((n) => n + 1)
       router.push(detailHref(pathname, next), { scroll: false })
       return
     }
@@ -279,7 +285,7 @@ export default function BudgetPage() {
     limpo.delete('invoiceId')
     if (limpo.toString() === atual.search) return
 
-    setQueryFechada(atual.search)
+    setDispensas((n) => n + 1)
 
     if (typeof window !== 'undefined') {
       window.history.replaceState(

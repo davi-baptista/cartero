@@ -250,17 +250,23 @@ export default function PersonsPage() {
   const router = useRouter()
   const pathname = usePathname()
   /*
-    Espelho local do param, SEM effect: a UI fecha sem depender de o router
-    propagar a troca de query numa rota estática. Guardar a QUERY fechada faz
-    o espelho se invalidar por construção — qualquer navegação posterior muda
-    a string e o detalhe volta a ser lido da URL.
+    Espelho local, SEM effect: a UI fecha sem depender de o router propagar a
+    troca de query numa rota estática.
+
+    Contadores de INTENÇÃO, não a query fechada: reabrir a mesma pessoa produz
+    uma query idêntica à guardada, e a versão anterior mantinha o drawer
+    fechado — enquanto abrir outra funcionava. O que distingue um fechamento é
+    o momento.
   */
-  const [queryFechada, setQueryFechada] = useState<string | null>(null)
-  const searchAtual = searchParams.toString()
+  const [pedidos, setPedidos] = useState(0)
+  const [dispensas, setDispensas] = useState(0)
   const openPersonId =
-    searchAtual === queryFechada ? null : searchParams.get('personId')
+    dispensas > 0 && dispensas >= pedidos
+      ? null
+      : searchParams.get('personId')
 
   const openPerson = (id: string) => {
+    setPedidos((n) => n + 1)
     const next = new URLSearchParams(searchParams.toString())
     next.set('personId', id)
     router.push(detailHref(pathname, next), { scroll: false })
@@ -281,7 +287,7 @@ export default function PersonsPage() {
     if (!next.has('personId')) return
     next.delete('personId')
 
-    setQueryFechada(atual.search)
+    setDispensas((n) => n + 1)
 
     if (typeof window !== 'undefined') {
       window.history.replaceState(
