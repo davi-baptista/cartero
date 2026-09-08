@@ -193,3 +193,166 @@ describe('§15: a cobertura independe da relação bilateral', () => {
     expect(r.settledAt).toBe('2026-09-02');
   });
 });
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * O recebível abate os DOIS lados — a simetria
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * A versão anterior era assimétrica: o recebível subtraía do alvo e não dos
+ * pagamentos. A folga resultante — exatamente do tamanho do recebível —
+ * absorvia dívida ABERTA, e a competência se declarava quitada com obrigação
+ * vencida em aberto.
+ *
+ * Os casos abaixo são os do contrato aprovado, com o caso real de produção
+ * (T1) na frente. `planned` é sempre `max(dívidas − recebíveis, 0)`; o que
+ * mudou é a cobertura, agora `max(Σ pagas − recebíveis, 0)`.
+ */
+describe('T1-T6: a cobertura é LÍQUIDA de recebíveis', () => {
+  it('T1: o caso real — 85,37 pagas · 11 aberta · 39,13 a receber', () => {
+    /*
+      Produção declarava esta competência QUITADA: `min(57,24, 85,37)` dava
+      cobertura total, porque os 85,37 chegavam brutos. A dívida de R$ 11
+      estava aberta e vencida.
+    */
+    const r = resolveContribution(57.24, [pago(85.37, '2026-08-06')], 39.13);
+
+    expect(r.planned).toBe(57.24);
+    expect(r.paid).toBe(46.24);
+    expect(r.remaining).toBe(11);
+    expect(r.isSettled).toBe(false);
+    expect(r.settledAt).toBeNull();
+  });
+
+  it('T2: a fronteira — aberta igual ao recebível', () => {
+    /* 85,37 − 39,13 = 46,24 de cobertura para um alvo de 85,37. */
+    const r = resolveContribution(85.37, [pago(85.37, '2026-08-06')], 39.13);
+
+    expect(r.paid).toBe(46.24);
+    expect(r.remaining).toBe(39.13);
+    expect(r.isSettled).toBe(false);
+  });
+
+  it('T3: devo 11 a quem me deve 10 — pagar a dívida QUITA a saída de 1', () => {
+    /*
+      O caso que motivou a contribuição líquida, e que precisa continuar
+      valendo: 11 − 10 = 1 de alvo, 11 − 10 = 1 de cobertura.
+    */
+    const r = resolveContribution(1, [pago(11, '2026-09-02')], 10);
+
+    expect(r.planned).toBe(1);
+    expect(r.paid).toBe(1);
+    expect(r.remaining).toBe(0);
+    expect(r.isSettled).toBe(true);
+    expect(r.settledAt).toBe('2026-09-02');
+  });
+
+  it('T4: net zero — dívida 30, recebível 50, nada pago', () => {
+    /*
+      Não é `anyOpenDebt`: existe dívida ABERTA e mesmo assim a relação não
+      tira nada do bolso nesta competência. O netting por pessoa é preservado.
+    */
+    const r = resolveContribution(0, [], 50);
+
+    expect(r.planned).toBe(0);
+    expect(r.paid).toBe(0);
+    expect(r.remaining).toBe(0);
+    expect(r.isSettled).toBe(false);
+  });
+
+  it('T5: misto — 20 pagas, 30 abertas, 40 a receber', () => {
+    /* Os 20 pagos nem chegam a repor o recebível: cobertura ZERO. */
+    const r = resolveContribution(10, [pago(20, '2026-09-05')], 40);
+
+    expect(r.planned).toBe(10);
+    expect(r.paid).toBe(0);
+    expect(r.remaining).toBe(10);
+    expect(r.isSettled).toBe(false);
+  });
+
+  it('T6: sem recebível, o comportamento intuitivo não muda', () => {
+    const r = resolveContribution(57.24, [pago(46.24, '2026-08-18')], 0);
+
+    expect(r.planned).toBe(57.24);
+    expect(r.paid).toBe(46.24);
+    expect(r.remaining).toBe(11);
+    expect(r.isSettled).toBe(false);
+  });
+
+  it('o parâmetro é opcional — quem não passa nada mantém o comportamento antigo', () => {
+    const semArg = resolveContribution(57.24, [pago(46.24, '2026-08-18')]);
+    const comZero = resolveContribution(57.24, [pago(46.24, '2026-08-18')], 0);
+
+    expect(semArg).toEqual(comZero);
+  });
+
+  it('`paid` nunca fica negativo quando o recebível supera os pagamentos', () => {
+    /*
+      O acumulador começa em `−recebíveis`. Sem o piso em zero, `paid` sairia
+      negativo e `paid + remaining = planned` deixaria de fechar.
+    */
+    const r = resolveContribution(10, [pago(5, '2026-09-05')], 40);
+
+    expect(r.paid).toBe(0);
+    expect(r.paid + r.remaining).toBe(r.planned);
+  });
+
+  it('a identidade `planned = paid + remaining` vale com recebível', () => {
+    const casos: Array<[number, number, number]> = [
+      [57.24, 85.37, 39.13],
+      [85.37, 85.37, 39.13],
+      [1, 11, 10],
+      [10, 20, 40],
+      [60, 90, 40],
+    ];
+
+    for (const [planned, pagas, recv] of casos) {
+      const r = resolveContribution(planned, [pago(pagas, '2026-08-06')], recv);
+      expect(Math.abs(r.planned - (r.paid + r.remaining))).toBeLessThan(0.005);
+    }
+  });
+
+  it('`settledAt` só existe quando a cobertura LÍQUIDA se completa', () => {
+    /*
+      Dois pagamentos: o primeiro é inteiramente consumido repondo o
+      recebível, então a data da cobertura é a do SEGUNDO.
+    */
+    const r = resolveContribution(
+      20,
+      [pago(30, '2026-09-05'), pago(30, '2026-09-12')],
+      40,
+    );
+
+    expect(r.isSettled).toBe(true);
+    expect(r.settledAt).toBe('2026-09-12');
+  });
+});
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Duas probes que NÃO morrem — e por quê
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Vale registrar, porque a ausência de teste aqui é deliberada.
+ *
+ * ── `anyOpenDebt` como guard de `isSettled` ──
+ *
+ * Com a cobertura líquida, os dois critérios COINCIDEM em `isSettled`:
+ *
+ *   settled ⟺ (Σpagas − recv) ≥ (Σpagas + abertas − recv) ⟺ abertas ≤ 0
+ *
+ * Não existe estado com dívida aberta e contribuição coberta, então nenhum
+ * teste sobre `isSettled` consegue separar as regras. A diferença real está
+ * em `planned`/`payable`: com dívida 30 e recebível 50 o alvo é ZERO e a
+ * pessoa fica fora do orçamento — é o que o caso net-zero (T4) e o teste de
+ * zero-net do serviço protegem. Escrever um teste de `isSettled` para isso
+ * seria teatro: ele passaria com as duas implementações.
+ *
+ * ── `settledAt` sem o guard `isSettled &&` ──
+ *
+ * `cobertura` só é atribuída dentro do laço quando o acumulado alcança o
+ * alvo — a mesma condição de `isSettled`. Um estado descoberto nunca chega a
+ * registrar data, e o guard é redundância defensiva. A invariante que importa
+ * (`settledAt` só existe com `isSettled`) é afirmada nos testes acima e no
+ * `R2b` do serviço, varrendo estados em vez de fixar um caso.
+ */

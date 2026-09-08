@@ -274,15 +274,31 @@ describe('R1-R4: o caso Fabricio — pago, reaberto, pago de novo', () => {
 
 // ─── A parte que impede o fix ingênuo ───────────────────────────────────────
 
-describe('P1-P3: settlement é ECONÔMICO, não `anyOpenDebt`', () => {
+describe('P1-P3: settlement é ECONÔMICO, e o recebível abate os DOIS lados', () => {
   /*
+    ══════════════════════════════════════════════════════════════════════
+    Contrato REVISADO — a versão anterior destes testes estava errada
+    ══════════════════════════════════════════════════════════════════════
+
     Dívidas de 60 + 30 + 10 = 100, recebível de 40 → planejado 60.
 
-    Com tudo pago, os pagamentos elegíveis somam 100 para cobrir 60: há folga
-    de 40. Reabrir uma dívida pequena consome a folga sem descobrir o
-    planejado, e o Orçamento continua legitimamente coberto.
+    A versão anterior afirmava: "com tudo pago há folga de 40; reabrir uma
+    dívida pequena consome a folga sem descobrir o planejado, e continua
+    coberto". Isso fixou a assimetria que produção expôs.
 
-    Um fix do tipo "qualquer dívida aberta ⇒ não coberta" quebraria aqui.
+    A folga NÃO era folga: era o recebível contado duas vezes. Ele abatia o
+    alvo (100 → 60) e NÃO abatia os pagamentos (100 brutos), então sobravam
+    exatamente 40 — o próprio recebível — livres para absorver dívida aberta.
+
+    Com a cobertura líquida, cada real reaberto reaparece como `remaining`:
+
+      pagas 100, abertas  0  →  netPaid 60  remaining  0   coberto
+      pagas  90, abertas 10  →  netPaid 50  remaining 10   NÃO coberto
+      pagas  60, abertas 40  →  netPaid 20  remaining 40   NÃO coberto
+      pagas  40, abertas 60  →  netPaid  0  remaining 60   NÃO coberto
+
+    O que continua valendo: isto NÃO é `anyOpenDebt`. O teste de net-zero
+    (R9) prova que dívida aberta com recebível maior segue fora do orçamento.
   */
   const D60 = { amount: 60, dueDate: '2026-08-08' };
   const D30 = { amount: 30, dueDate: '2026-08-08' };
@@ -308,7 +324,11 @@ describe('P1-P3: settlement é ECONÔMICO, não `anyOpenDebt`', () => {
     expect(c.isSettled).toBe(true);
   });
 
-  it('P2: reabrir R$ 10 mantém COBERTO — elegível 90 ≥ 60', async () => {
+  it('P2: reabrir R$ 10 DESCOBRE exatamente R$ 10', async () => {
+    /*
+      Era o teste que afirmava "mantém coberto". A cobertura líquida é
+      90 − 40 = 50 contra um alvo de 60: falta o próprio valor reaberto.
+    */
     const c = pessoa(
       await verAgosto({
         receivables: [R40],
@@ -316,12 +336,17 @@ describe('P1-P3: settlement é ECONÔMICO, não `anyOpenDebt`', () => {
       }),
     ).contribution;
 
-    expect(c.isSettled).toBe(true);
-    expect(c.remaining).toBe(0);
+    expect(c.planned).toBe(60);
+    expect(c.paid).toBe(50);
+    expect(c.remaining).toBe(10);
+    expect(c.isSettled).toBe(false);
   });
 
-  it('P2b: reabrir mais R$ 30 ainda mantém coberto — elegível 60 ≥ 60', async () => {
-    /* Exatamente no limite: a fronteira precisa ser inclusiva. */
+  it('P2b: reabrir mais R$ 30 descobre R$ 40 no total', async () => {
+    /*
+      Cobertura líquida 60 − 40 = 20. O `remaining` acompanha o total
+      reaberto (10 + 30), que é a propriedade econômica desejada.
+    */
     const c = pessoa(
       await verAgosto({
         receivables: [R40],
@@ -329,11 +354,13 @@ describe('P1-P3: settlement é ECONÔMICO, não `anyOpenDebt`', () => {
       }),
     ).contribution;
 
-    expect(c.paid).toBe(60);
-    expect(c.isSettled).toBe(true);
+    expect(c.planned).toBe(60);
+    expect(c.paid).toBe(20);
+    expect(c.remaining).toBe(40);
+    expect(c.isSettled).toBe(false);
   });
 
-  it('P3: reabrir o R$ 60 derruba a cobertura — elegível 40 < 60', async () => {
+  it('P3: reabrir o R$ 60 zera a cobertura — 40 pagas − 40 a receber', async () => {
     const c = pessoa(
       await verAgosto({
         receivables: [R40],
@@ -341,9 +368,160 @@ describe('P1-P3: settlement é ECONÔMICO, não `anyOpenDebt`', () => {
       }),
     ).contribution;
 
-    expect(c.paid).toBe(40);
-    expect(c.remaining).toBe(20);
+    expect(c.planned).toBe(60);
+    expect(c.paid).toBe(0);
+    expect(c.remaining).toBe(60);
     expect(c.isSettled).toBe(false);
+  });
+
+  it('P4: o `remaining` acompanha EXATAMENTE o que foi reaberto', async () => {
+    /*
+      A propriedade que a assimetria quebrava: reabrir R$ X sobre uma
+      competência coberta produz `remaining` de R$ X — nunca zero, nunca um
+      valor mascarado pelo recebível.
+    */
+    const casos = [
+      { debts: [pg(D60, '2026-08-11'), pg(D30, '2026-08-12'), D10], reaberto: 10 },
+      { debts: [pg(D60, '2026-08-11'), D30, pg(D10, '2026-08-13')], reaberto: 30 },
+      { debts: [D60, pg(D30, '2026-08-12'), pg(D10, '2026-08-13')], reaberto: 60 },
+    ];
+
+    for (const [i, caso] of casos.entries()) {
+      const c = pessoa(
+        await verAgosto({ receivables: [R40], debts: caso.debts }),
+      ).contribution;
+
+      expect(c.remaining, `caso ${i}`).toBe(caso.reaberto);
+    }
+  });
+});
+
+// ─── O caso de PRODUÇÃO, ponta a ponta ──────────────────────────────────────
+
+describe('PROD: a forma exata do caso Fabricio, com recebível', () => {
+  /*
+    ══════════════════════════════════════════════════════════════════════
+    O cenário que escapou do fixture original
+    ══════════════════════════════════════════════════════════════════════
+
+    O primeiro fixture deste arquivo não tinha RECEBÍVEL, e por isso não
+    reproduzia o bug: sem recebível não há folga entre o bruto pago e o alvo,
+    e a assimetria fica invisível.
+
+    Produção tinha:
+
+      dívidas pagas de agosto   R$ 85,37
+      dívida aberta (Queijo)    R$ 11,00
+      recebíveis recebidos      R$ 39,13
+
+    O agregado declarava a competência QUITADA — `Fabricio · PAGO · Quitado
+    em 18/08` e o resumo `Tudo em dia` — com a dívida de R$ 11 vencida e
+    aberta na mesma competência.
+  */
+  const PAGA_A = { amount: 50, dueDate: '2026-08-05', isPaid: true, paidAt: '2026-08-06' };
+  const PAGA_B = { amount: 35.37, dueDate: '2026-08-05', isPaid: true, paidAt: '2026-08-18' };
+  const QUEIJO = { amount: 11, dueDate: '2026-08-08' };
+  const RECEBIDO = { amount: 39.13, dueDate: '2026-08-05', isPaid: true, paidAt: '2026-08-10' };
+
+  it('a competência NÃO se declara quitada com a dívida aberta', async () => {
+    const c = pessoa(
+      await verAgosto({
+        debts: [PAGA_A, PAGA_B, QUEIJO],
+        receivables: [RECEBIDO],
+      }),
+    ).contribution;
+
+    /*
+      `toBeCloseTo` em vez de `toBe`: os valores vêm de somas de Decimal
+      convertidas para float (85,37 − 39,13 = 46,239999…). A precisão de
+      centavo é o contrato monetário do produto; exigir igualdade binária
+      testaria a representação IEEE, não a regra.
+    */
+    expect(c.planned).toBeCloseTo(57.24, 2);
+    expect(c.paid).toBeCloseTo(46.24, 2);
+    expect(c.remaining).toBeCloseTo(11, 2);
+    expect(c.isSettled).toBe(false);
+    expect(c.settledAt).toBeNull();
+  });
+
+  it('e o resumo deixa de poder dizer "Tudo em dia"', async () => {
+    const b = await verAgosto({
+      debts: [PAGA_A, PAGA_B, QUEIJO],
+      receivables: [RECEBIDO],
+    });
+
+    /* `budgetAllSettled` = totalPaid > 0 && totalPending <= 0. */
+    expect(b.totalPending).toBeGreaterThan(0);
+  });
+
+  it('pagar o Queijo fecha a competência', async () => {
+    const c = pessoa(
+      await verAgosto({
+        debts: [
+          PAGA_A,
+          PAGA_B,
+          { ...QUEIJO, isPaid: true, paidAt: '2026-09-08' },
+        ],
+        receivables: [RECEBIDO],
+      }),
+    ).contribution;
+
+    expect(c.paid).toBeCloseTo(57.24, 2);
+    expect(c.remaining).toBeCloseTo(0, 2);
+    expect(c.isSettled).toBe(true);
+    expect(c.settledAt).not.toBeNull();
+  });
+
+  it('§15: o ciclo é reversível em três toggles', async () => {
+    const comQueijoPago = {
+      debts: [PAGA_A, PAGA_B, { ...QUEIJO, isPaid: true, paidAt: '2026-09-08' }],
+      receivables: [RECEBIDO],
+    };
+    const comQueijoAberto = {
+      debts: [PAGA_A, PAGA_B, QUEIJO],
+      receivables: [RECEBIDO],
+    };
+
+    const estados = [
+      comQueijoPago,
+      comQueijoAberto,
+      comQueijoPago,
+      comQueijoAberto,
+      comQueijoPago,
+    ];
+    const esperado = [true, false, true, false, true];
+
+    for (const [i, setup] of estados.entries()) {
+      const c = pessoa(await verAgosto(setup)).contribution;
+      expect(c.isSettled, `toggle ${i}`).toBe(esperado[i]);
+      /* `settledAt` acompanha: nunca sobrevive a um estado descoberto. */
+      if (!c.isSettled) expect(c.settledAt, `toggle ${i}`).toBeNull();
+    }
+  });
+
+  it('§16: a authority não depende do lado da DÍVIDA', async () => {
+    /*
+      Mexer no RECEBÍVEL reconcilia pela mesma fórmula. Sem o recebido, a
+      cobertura deixa de ser abatida e a competência fecha — com ele, o
+      mesmo conjunto de dívidas descobre R$ 11.
+    */
+    const semRecebivel = pessoa(
+      await verAgosto({ debts: [PAGA_A, PAGA_B, QUEIJO] }),
+    ).contribution;
+    const comRecebivel = pessoa(
+      await verAgosto({
+        debts: [PAGA_A, PAGA_B, QUEIJO],
+        receivables: [RECEBIDO],
+      }),
+    ).contribution;
+
+    /* Sem recebível: alvo 96,37, cobertura 85,37 → falta o Queijo. */
+    expect(semRecebivel.planned).toBeCloseTo(96.37, 2);
+    expect(semRecebivel.remaining).toBeCloseTo(11, 2);
+
+    /* Com recebível: alvo e cobertura caem juntos, e o Queijo segue faltando. */
+    expect(comRecebivel.planned).toBeCloseTo(57.24, 2);
+    expect(comRecebivel.remaining).toBeCloseTo(11, 2);
   });
 });
 

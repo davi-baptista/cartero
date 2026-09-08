@@ -68,10 +68,56 @@ export interface ContributionSettlement {
  * tudo quitado, o pago é R$ 50 — não R$ 130. Acima do planejado o número
  * deixaria de descrever esta competência, e a soma `paid + remaining` pararia
  * de fechar com o total.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * O recebível abate os DOIS lados
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `receivables` existe porque a versão anterior era ASSIMÉTRICA:
+ *
+ *   planned = max(dívidas − recebíveis, 0)   ← o recebível subtraía
+ *   paid    = min(planned, Σ dívidas pagas)  ← o recebível NÃO subtraía
+ *
+ * O mesmo recebível reduzia o alvo e deixava o bruto das dívidas pagas
+ * preencher sozinho o alvo reduzido — dois benefícios da mesma entrada.
+ *
+ * ── O que isso produzia em produção ──
+ *
+ *   dívida aberta   R$  11,00
+ *   dívidas pagas   R$  85,37
+ *   recebíveis      R$  39,13
+ *
+ *   planned = 11 + 85,37 − 39,13 = 57,24
+ *   paid    = min(57,24, 85,37)  = 57,24   →  remaining 0, "PAGO"
+ *
+ * A dívida de R$ 11 estava ABERTA e vencida, e mesmo assim a competência se
+ * declarava quitada: a folga entre 85,37 e 57,24 — que é exatamente o
+ * recebível — absorvia a obrigação em aberto. Qualquer dívida até o valor do
+ * recebível ficava invisível.
+ *
+ * ── A simetria ──
+ *
+ * O acumulador COMEÇA em `−receivables`: os pagamentos primeiro repõem o que
+ * o recebível já descontou do alvo, e só o excedente cobre o planejado.
+ * Equivale a `max(Σ pagas − recebíveis, 0)`, mas preservando a ordem
+ * cronológica que decide `settledAt` — um `max` no fim perderia qual
+ * pagamento completou a cobertura.
+ *
+ *   paid = min(planned, max(Σ pagas − recebíveis, 0)) = 46,24
+ *   remaining = 11,00  →  não quitada, que é o fato
+ *
+ * ── O que NÃO mudou ──
+ *
+ * Isto não é `anyOpenDebt`. Com dívida de R$ 30 e recebível de R$ 50 o
+ * planejado continua ZERO e a pessoa segue fora do orçamento, mesmo com item
+ * aberto — o netting por pessoa está preservado. E o caso de R$ 11 devidos
+ * com R$ 10 a receber continua quitado ao pagar a dívida: 11 − 10 = 1 de
+ * alvo, 11 − 10 = 1 de cobertura.
  */
 export function resolveContribution(
   planned: number,
   payments: readonly DebtPayment[],
+  receivables = 0,
 ): ContributionSettlement {
   const alvo = Math.max(planned, 0);
 
@@ -101,7 +147,14 @@ export function resolveContribution(
     return a.paidAt.getTime() - b.paidAt.getTime();
   });
 
-  let acumulado = 0;
+  /*
+    Começa NEGATIVO no valor dos recebíveis.
+
+    O recebível já foi descontado de `alvo`; contá-lo só ali daria a ele dois
+    efeitos. Partindo de `−recebíveis`, cada pagamento primeiro repõe esse
+    desconto e apenas o excedente cobre o planejado.
+  */
+  let acumulado = -Math.max(receivables, 0);
   let cobertura: Date | null = null;
   let semDataAntesDaCobertura = false;
 
@@ -123,7 +176,12 @@ export function resolveContribution(
     }
   }
 
-  const paid = Math.min(acumulado, alvo);
+  /*
+    `max(acumulado, 0)`: com recebíveis maiores que os pagamentos o acumulado
+    fica negativo, e um `paid` negativo quebraria `paid + remaining = planned`.
+    Zero é a leitura correta — nada da saída planejada foi coberto ainda.
+  */
+  const paid = Math.min(Math.max(acumulado, 0), alvo);
   const isSettled = paid + EPSILON >= alvo;
 
   return {

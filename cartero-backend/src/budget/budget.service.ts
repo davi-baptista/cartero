@@ -1364,6 +1364,17 @@ export class BudgetService {
             receber deram R$ 50 de saída, não R$ 130 — e é o que mantém
             `paid + remaining = planned`.
           */
+          /*
+            O recebível entra nos DOIS argumentos, e é essa a correção.
+
+            Antes ele só abatia o alvo (primeiro argumento). Os pagamentos
+            chegavam brutos, então a folga entre o bruto e o alvo reduzido
+            absorvia dívida ABERTA: com R$ 11 em aberto, R$ 85,37 pagos e
+            R$ 39,13 a receber, a competência se declarava quitada.
+
+            Passando `budgetReceivableAmount` também como terceiro argumento,
+            a cobertura passa a ser líquida — a mesma base do alvo.
+          */
           contribution: resolveContribution(
             Math.max(
               entry.budgetDebtDueInMonth +
@@ -1373,6 +1384,7 @@ export class BudgetService {
               0,
             ),
             entry.debtPayments,
+            entry.budgetReceivableAmount,
           ),
         };
       });

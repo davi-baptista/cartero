@@ -337,10 +337,24 @@ describe('M1-M3: o pago é limitado pelo planejado', () => {
     });
   });
 
-  it('M2: primeira dívida paga → pago 30', () => {
+  it('M2: primeira dívida paga → pago ZERO, porque 30 < 80 a receber', () => {
+    /*
+      ── Contrato REVISADO: a cobertura é líquida ──
+
+      Esperava `paid = 30`, o BRUTO da dívida quitada. Mas o alvo de R$ 50 já
+      nasce líquido (130 − 80), e contar os R$ 30 cheios dava ao recebível
+      dois efeitos: abater o alvo e não abater a cobertura.
+
+      Pagar R$ 30 devendo R$ 130 a quem me deve R$ 80 ainda não moveu nada da
+      saída líquida — ela só começa a ser coberta quando os pagamentos
+      ultrapassam os R$ 80 que voltam. `max(30 − 80, 0) = 0`.
+
+      É a mesma assimetria que, em produção, declarava uma competência
+      quitada com R$ 11 de dívida vencida em aberto.
+    */
     return budgetOf(multiplas(['2026-09-05', null])).then((b) => {
-      expect(b.totalPaid).toBe(30);
-      expect(b.totalPending).toBe(20);
+      expect(b.totalPaid).toBe(0);
+      expect(b.totalPending).toBe(50);
     });
   });
 
