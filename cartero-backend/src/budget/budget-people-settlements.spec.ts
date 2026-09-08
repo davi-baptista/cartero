@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BudgetService } from './budget.service';
+import { routeInvoiceQuery } from 'src/common/testing/invoice-query-double';
 import { SalaryService } from 'src/salary/salary.service';
 import type { PrismaService } from 'src/prisma/prisma.service';
 import {
@@ -129,7 +130,9 @@ function buildService(setup: Setup) {
     salaryHistory: { findFirst: vi.fn(async () => null) },
     user: { findUnique: vi.fn(async () => ({})), update: vi.fn() },
     invoice: {
-      findMany: vi.fn(async () =>
+      /* Honra o `where`: competência exibida vs. fila viva de atrasadas. */
+      findMany: vi.fn(async ({ where }: any) =>
+        routeInvoiceQuery(where,
         setup.invoiceTotal
           ? [
               {
@@ -141,6 +144,7 @@ function buildService(setup: Setup) {
               },
             ]
           : [],
+        ),
       ),
     },
     transaction: {
@@ -759,11 +763,12 @@ describe('Em aberto: antes e depois de quitar', () => {
       orçamento deixaria de fechar com as linhas visíveis.
     */
     /*
-      A dívida foi PAGA nesta competência: pertence a `paidInMonth`, não ao
+      A dívida VENCE nesta competência e já foi paga: pertence a
+      `paidInCompetence`, não ao
       bucket de abertas. O total do mês continua o mesmo.
     */
-    expect(mariana.budget.paidInMonth).toBe(200);
-    expect(budget.debts.paidInMonth).toBe(200);
+    expect(mariana.budget.paidInCompetence).toBe(200);
+    expect(budget.debts.paidInCompetence).toBe(200);
     expect(budget.totalToPay).toBe(200);
   });
 
@@ -843,7 +848,7 @@ describe('Em aberto: renderização da pessoa', () => {
 
     expect(budget.peopleSettlements).toHaveLength(1);
     expect(budget.peopleSettlements[0].open.itemCount).toBe(0);
-    expect(budget.peopleSettlements[0].budget.paidInMonth).toBe(200);
+    expect(budget.peopleSettlements[0].budget.paidInCompetence).toBe(200);
     expect(budget.totalToPay).toBe(200);
   });
 

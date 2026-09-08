@@ -552,23 +552,53 @@ export default function BudgetPage() {
   */
   /*
     A MESMA regra da seção de dívidas — a classificação da seção não muda, só
-    a ordem dentro dela. `paidInMonth` é o "resolvido" aqui: o vencimento
-    original é preservado, e é ele que ordena o que ainda está aberto.
+    a ordem dentro dela. Como a fila é toda de itens abertos, o critério de
+    resolvido é constante: quem ordena é o vencimento ORIGINAL, preservado.
   */
   const standalonePriorItems = sortBudgetRows(
     budget?.debts.priorItems ?? [],
     (item) =>
       debtBudgetOrder({
-        isPaid: item.paidInMonth,
+        /*
+          A seção é uma FILA VIVA: todo item aqui está aberto. O contrato do
+          backend garante isso, e o campo de quitação saiu do payload.
+        */
+        isPaid: false,
         dueDate: item.dueDate,
         title: item.title,
         displayedAmount: item.amount,
       }),
   )
-  const standalonePriorTotal = standalonePriorItems.reduce(
+  /*
+    ── As faturas da mesma fila ──
+
+    Fatura vencida de competência anterior e ainda aberta pertence à mesma
+    seção que a dívida vencida: são a mesma pergunta ("o que ficou para
+    trás e ainda exige ação?"), e separá-las obrigaria o usuário a somar
+    duas seções para saber o tamanho do atraso.
+
+    Ordenadas pelo vencimento — o mais antigo primeiro, como as dívidas.
+  */
+  const priorInvoices = [...(budget?.priorInvoices ?? [])].sort((a, b) =>
+    a.dueDate.localeCompare(b.dueDate),
+  )
+  /*
+    O valor da fatura na fila é a SUA PARTE (`ownAmount`), nunca o bruto.
+
+    É o mesmo número que o backend somou em `totalToPay`: row, total da seção
+    e total geral precisam ter UMA base, ou a tela não reconcilia.
+  */
+  const priorInvoicesTotal = priorInvoices.reduce(
+    (sum, inv) => sum + inv.ownAmount,
+    0,
+  )
+  const standaloneDebtPriorTotal = standalonePriorItems.reduce(
     (sum, item) => sum + item.amount,
     0,
   )
+  const standalonePriorTotal = standaloneDebtPriorTotal + priorInvoicesTotal
+  const hasPriorSection =
+    standalonePriorItems.length > 0 || priorInvoices.length > 0
 
   const monthKey = `${year}-${String(month).padStart(2, '0')}`
   const monthStart = `${monthKey}-01`
@@ -749,6 +779,135 @@ export default function BudgetPage() {
         )}
       </div>
 
+
+      {/*
+        ══════════════════════════════════════════════════════════════════
+        Pendências anteriores — a FILA VIVA, antes de tudo
+        ══════════════════════════════════════════════════════════════════
+
+        Primeira seção operacional, logo abaixo do resumo. Antes vinha por
+        último, depois de Faturas, Acertos e Dívidas: o que já está vencido
+        exige mais ação do que a fatura que ainda vai fechar, e ficava
+        abaixo de tudo que ainda tem prazo.
+
+        Reúne dívidas E faturas: são a mesma pergunta — "o que ficou para
+        trás e ainda exige ação?" — e separá-las obrigaria a somar duas
+        seções para saber o tamanho do atraso.
+
+        Fila VIVA: só entra o que está aberto. Item resolvido volta para a
+        competência do próprio vencimento, na seção normal dela.
+
+        Só renderiza quando existe algo: uma seção "Pendências anteriores —
+        R$ 0" seria ruído, e Faturas sobe naturalmente para o topo.
+      */}
+      {!isLoading && hasPriorSection && (
+        <div>
+          <h2 className={cn(SECTION_TITLE_CLASS, 'mb-3')}>
+            Pendências anteriores
+            <span className={cn(SECTION_SUMMARY_CLASS, 'ml-1.5')}>
+              · {formatCurrency(standalonePriorTotal)}
+            </span>
+          </h2>
+          <p className="mb-3 -mt-1.5 text-xs text-muted-foreground">
+            Venceram antes deste mês.
+          </p>
+
+          <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
+            {/*
+              As faturas primeiro: são o compromisso de maior valor típico, e
+              a ordem estável evita que a lista se reorganize entre meses.
+            */}
+            {priorInvoices.map((inv) => {
+              /*
+                O MESMO presenter de Bancos e da seção Faturas. Derivar o
+                rótulo aqui seria o terceiro caminho de apresentação da
+                mesma entidade — o que a Fase UI-ALIGN fechou.
+              */
+              const apresentacao = invoiceRowPresentation(inv)
+              return (
+                <StatusListRow
+                  key={inv.id}
+                  onClick={() => setDrawerParam('invoiceId', inv.id)}
+                  icon={CreditCard}
+                  tone="negative"
+                  title={bankDisplayName(inv.bank, 'Banco')}
+                  /*
+                    O prazo sai do presenter — "Venceu há Xd", contado desde
+                    o vencimento, que é a régua de OVERDUE em todo o produto.
+                  */
+                  meta={
+                    <span className={apresentacao.timingTone}>
+                      {apresentacao.timingLabel}
+                    </span>
+                  }
+                  trailing={
+                    <span
+                      className={cn(
+                        ROW_TRAILING_LABEL_CLASS,
+                        apresentacao.statusTone,
+                      )}
+                    >
+                      {apresentacao.statusLabel}
+                    </span>
+                  }
+                  /*
+                    ── SUA PARTE, não o bruto ──
+
+                    Divergindo da row da seção Faturas de propósito: lá o
+                    destaque é o bruto, porque é o que o banco cobra naquela
+                    competência. Aqui a linha existe para compor o total de
+                    atraso, e esse total entra em `totalToPay` pela sua
+                    parte. Exibir o bruto faria a soma das rows não fechar
+                    com o número do cabeçalho.
+                  */
+                  amount={inv.ownAmount}
+                />
+              )
+            })}
+            {standalonePriorItems.map((item, index) => (
+              <StatusListRow
+                key={`${item.title}-${item.dueDate}-${index}`}
+                href={
+                  item.personId
+                    ? `/persons?personId=${item.personId}`
+                    : `/debts?endDate=${monthEnd}`
+                }
+                icon={item.personId ? User : HandCoins}
+                tone="negative"
+                title={item.title}
+                /*
+                  Aqui o prazo EXISTE no payload (`dueDate`), e é a razão de
+                  ser da seção: sem o vencimento original a linha não se
+                  explica. Sobe da faixa de largura cheia para a coluna do
+                  título, o lugar que Bancos e Pessoas usam.
+                */
+                meta={
+                  <span className={budgetDueTone(item.dueDate, false)}>
+                    Venceu em {formatDate(item.dueDate)}
+                    {item.personName ? ` · ${item.personName}` : ''}
+                  </span>
+                }
+                /*
+                  ── Sem ramo `PAGA` ──
+
+                  A seção passou a conter somente obrigação aberta, então um
+                  item resolvido aqui é estado INVÁLIDO. Manter a badge como
+                  defesa visual mascararia uma regressão do backend: a tela
+                  exibiria "PAGA" em vez de a falha aparecer.
+                */
+                trailing={
+                  <span
+                    className={cn(ROW_TRAILING_LABEL_CLASS, 'text-destructive')}
+                  >
+                    EM ATRASO
+                  </span>
+                }
+                amount={item.amount}
+              />
+            ))}
+          </div>
+        </div>
+      )}
       {/* Invoice list */}
       <div>
         {/*
@@ -1128,72 +1287,6 @@ export default function BudgetPage() {
                 />
               )
             })}
-          </div>
-        </div>
-      )}
-
-      {/*
-        Pendências anteriores — seção própria.
-
-        Separada de "Dívidas" de propósito: misturá-las faria parecer que
-        venceram neste mês. Cada linha mantém o vencimento ORIGINAL.
-
-        Só renderiza quando existe algo: uma seção "Pendências anteriores —
-        R$ 0" seria ruído.
-      */}
-      {!isLoading && standalonePriorItems.length > 0 && (
-        <div>
-          <h2 className={cn(SECTION_TITLE_CLASS, 'mb-3')}>
-            Pendências anteriores
-            <span className={cn(SECTION_SUMMARY_CLASS, 'ml-1.5')}>
-              · {formatCurrency(standalonePriorTotal)}
-            </span>
-          </h2>
-          <p className="mb-3 -mt-1.5 text-xs text-muted-foreground">
-            Venceram antes deste mês.
-          </p>
-
-          <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
-            {standalonePriorItems.map((item, index) => (
-              <StatusListRow
-                key={`${item.title}-${item.dueDate}-${index}`}
-                href={
-                  item.personId
-                    ? `/persons?personId=${item.personId}`
-                    : `/debts?endDate=${monthEnd}`
-                }
-                icon={item.personId ? User : HandCoins}
-                tone={item.paidInMonth ? 'positive' : 'negative'}
-                title={item.title}
-                /*
-                  Aqui o prazo EXISTE no payload (`dueDate`), e é a razão de
-                  ser da seção: sem o vencimento original a linha não se
-                  explica. Sobe da faixa de largura cheia para a coluna do
-                  título, o lugar que Bancos e Pessoas usam.
-
-                  Resolvido não colore a data: `PAGA` no trailing já diz o
-                  estado, e pintar o vencimento de verde faria a data parecer
-                  o fato comemorado.
-                */
-                meta={
-                  <span className={budgetDueTone(item.dueDate, item.paidInMonth)}>
-                    Venceu em {formatDate(item.dueDate)}
-                    {item.personName ? ` · ${item.personName}` : ''}
-                  </span>
-                }
-                trailing={
-                  <span
-                    className={cn(
-                      ROW_TRAILING_LABEL_CLASS,
-                      item.paidInMonth ? 'text-paid' : 'text-destructive',
-                    )}
-                  >
-                    {item.paidInMonth ? 'PAGA' : 'EM ATRASO'}
-                  </span>
-                }
-                amount={item.amount}
-              />
-            ))}
           </div>
         </div>
       )}

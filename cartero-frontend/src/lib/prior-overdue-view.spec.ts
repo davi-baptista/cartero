@@ -66,7 +66,7 @@ function person(over: {
       receivableDueInMonth: 0,
       openDueInMonth: over.debtTotal ?? 0,
       currentOpenPrior: 0,
-      paidInMonth: 0,
+      paidInCompetence: 0,
       receivableAmount: over.receivableTotal ?? 0,
       payable: Math.max((over.debtTotal ?? 0) - (over.receivableTotal ?? 0), 0),
       debtTotal: over.debtTotal ?? 0,

@@ -9,6 +9,7 @@ import {
   money,
 } from 'src/common/testing/fixtures';
 import { routeDebtQuery } from 'src/common/testing/debt-query-double';
+import { routeInvoiceQuery } from 'src/common/testing/invoice-query-double';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -54,8 +55,16 @@ function buildService(setup: Setup) {
     salaryHistory: { findFirst: vi.fn(async () => null) },
     user: { findUnique: vi.fn(async () => ({})), update: vi.fn() },
     invoice: {
-      findMany: vi.fn(async () =>
-        setup.invoiceTotal ? [{ ...invoice, bank: makeBank() }] : [],
+      /*
+        Honra o `where`: são DUAS consultas (competência exibida e fila viva
+        de atrasadas). Devolver a mesma lista para as duas contaria a fatura
+        duas vezes.
+      */
+      findMany: vi.fn(async ({ where }: any) =>
+        routeInvoiceQuery(
+          where,
+          setup.invoiceTotal ? [{ ...invoice, bank: makeBank() }] : [],
+        ),
       ),
     },
     transaction: {

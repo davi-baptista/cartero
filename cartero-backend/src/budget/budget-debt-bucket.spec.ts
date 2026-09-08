@@ -66,21 +66,32 @@ describe('o bug da tela: paga no mesmo mês do vencimento', () => {
   });
 });
 
-describe('itens 7, 10 e 35: dívida paga segue o paidAt', () => {
-  it('vence 20/07, paga 05/08 → pertence a AGOSTO, como pendência anterior', () => {
+describe('V2: dívida paga fica na competência do VENCIMENTO', () => {
+  /*
+    Contrato substituído deliberadamente. Antes, uma dívida paga pertencia ao
+    mês do desembolso (`paidAt`) — verdadeiro sobre fluxo de caixa, e por isso
+    a regra existiu.
+
+    Mas o Budget é competência e planejamento; o fluxo de caixa é o Extrato.
+    Deslocar a dívida obrigava o usuário a pensar "em que mês eu paguei isso?"
+    para a tela ficar organizada.
+  */
+
+  it('vence 20/07, paga 05/08 → pertence a JULHO', () => {
     const d = debt({
       dueDate: new Date('2026-07-20T00:00:00.000Z'),
       isPaid: true,
       paidAt: new Date('2026-08-05T00:00:00.000Z'),
     });
 
-    expect(classifyDebtForBudget(d, AGOSTO, HOJE)).toBe('prior');
+    /* Na própria competência, resolvida: seção normal, nunca `prior`. */
+    expect(classifyDebtForBudget(d, JULHO, HOJE)).toBe('currentGeneric');
   });
 
-  it('e NÃO conta mais em julho', () => {
+  it('e NÃO aparece em agosto, onde o dinheiro saiu', () => {
     /*
-      Julho não viu esse dinheiro sair. Contá-lo lá afirmaria um desembolso
-      que aconteceu em agosto.
+      A consequência aceita: o mês do desembolso deixa de contá-lo, e o
+      `totalToPay` de agosto diminui. O fato financeiro está no Extrato.
     */
     const d = debt({
       dueDate: new Date('2026-07-20T00:00:00.000Z'),
@@ -88,14 +99,30 @@ describe('itens 7, 10 e 35: dívida paga segue o paidAt', () => {
       paidAt: new Date('2026-08-05T00:00:00.000Z'),
     });
 
-    expect(classifyDebtForBudget(d, JULHO, HOJE)).toBe('excluded');
+    expect(classifyDebtForBudget(d, AGOSTO, HOJE)).toBe('excluded');
   });
 
-  it('item 41: pagamento antecipado conta no mês do pagamento', () => {
+  it('paga NUNCA entra em `Pendências anteriores`', () => {
     /*
-      Vence em setembro, paga em agosto: conta uma vez, em agosto, no balde
-      normal. Chamá-la de "pendência anterior" seria o oposto do que
-      aconteceu — ela foi resolvida ANTES da hora.
+      A seção passou a ser fila viva. Antes, a dívida de julho paga em agosto
+      chegava lá como pendência resolvida — e era o que a fazia reaparecer
+      meses depois.
+    */
+    const d = debt({
+      dueDate: new Date('2026-07-20T00:00:00.000Z'),
+      isPaid: true,
+      paidAt: new Date('2026-08-05T00:00:00.000Z'),
+    });
+
+    for (const mes of [JULHO, AGOSTO, SETEMBRO]) {
+      expect(classifyDebtForBudget(d, mes, HOJE)).not.toBe('prior');
+    }
+  });
+
+  it('pagamento antecipado também segue o vencimento', () => {
+    /*
+      Vence em setembro, paga em agosto: conta em SETEMBRO. Antes contava em
+      agosto, o mês do desembolso.
     */
     const d = debt({
       dueDate: new Date('2026-09-10T00:00:00.000Z'),
@@ -103,8 +130,28 @@ describe('itens 7, 10 e 35: dívida paga segue o paidAt', () => {
       paidAt: new Date('2026-08-03T00:00:00.000Z'),
     });
 
-    expect(classifyDebtForBudget(d, AGOSTO, HOJE)).toBe('currentGeneric');
-    expect(classifyDebtForBudget(d, SETEMBRO, HOJE)).toBe('excluded');
+    expect(classifyDebtForBudget(d, SETEMBRO, HOJE)).toBe('currentGeneric');
+    expect(classifyDebtForBudget(d, AGOSTO, HOJE)).toBe('excluded');
+  });
+
+  it('`paidAt` não influencia a competência, qualquer que seja', () => {
+    /*
+      A propriedade central: mesmo vencimento, três datas de pagamento
+      diferentes, uma única competência.
+    */
+    const base = { dueDate: new Date('2026-07-20T00:00:00.000Z'), isPaid: true };
+    const datas = [
+      new Date('2026-07-01T00:00:00.000Z'),
+      new Date('2026-07-25T00:00:00.000Z'),
+      new Date('2026-12-31T00:00:00.000Z'),
+    ];
+
+    for (const paidAt of datas) {
+      expect(
+        classifyDebtForBudget(debt({ ...base, paidAt }), JULHO, HOJE),
+        paidAt.toISOString(),
+      ).toBe('currentGeneric');
+    }
   });
 
   it('legado pago sem paidAt cai no vencimento', () => {
@@ -183,9 +230,27 @@ describe('itens 15 e 40: o que vence HOJE ainda está no prazo', () => {
 describe('itens 4, 5, 18 e 36: temporalidade vence pessoa', () => {
   it('dívida ANTERIOR com pessoa vai para pendências, não para acertos', () => {
     /*
-      A mudança de produto desta tarefa. Antes o `personId` capturava a
-      dívida antes de qualquer verificação temporal, e ela sumia das
+      A temporalidade decide ANTES da pessoa. Sem isso o `personId` capturava
+      a dívida antes de qualquer verificação temporal, e ela sumia das
       pendências para dentro de "Acertos com pessoas".
+
+      O fixture mudou com a V2: era uma dívida PAGA em outro mês, que agora é
+      `excluded` (a competência é o vencimento). A propriedade testada é a
+      mesma — o que a prova é a dívida ABERTA vinda de mês anterior, que é o
+      único caso que `prior` ainda aceita.
+    */
+    const d = debt({
+      personId: 'rafael',
+      dueDate: new Date('2026-07-20T00:00:00.000Z'),
+    });
+
+    expect(classifyDebtForBudget(d, AGOSTO, HOJE)).toBe('prior');
+  });
+
+  it('e uma dívida com pessoa PAGA fica no acerto da própria competência', () => {
+    /*
+      Resolvida não é pendência anterior sob a V2 — e continua roteada pelo
+      agregado de Pessoa, sem virar dívida bruta individual.
     */
     const d = debt({
       personId: 'rafael',
@@ -194,7 +259,8 @@ describe('itens 4, 5, 18 e 36: temporalidade vence pessoa', () => {
       paidAt: new Date('2026-08-05T00:00:00.000Z'),
     });
 
-    expect(classifyDebtForBudget(d, AGOSTO, HOJE)).toBe('prior');
+    expect(classifyDebtForBudget(d, JULHO, HOJE)).toBe('currentPerson');
+    expect(classifyDebtForBudget(d, AGOSTO, HOJE)).toBe('excluded');
   });
 
   it('anterior com pessoa e ainda aberta também vai para pendências', () => {

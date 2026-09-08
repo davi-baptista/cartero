@@ -465,8 +465,14 @@ describe('civil time de Fortaleza', () => {
       receivable: { findMany: vi.fn(async () => []) },
       debt: {
         findMany: vi.fn(async ({ where }: any) => {
-          /* Só a consulta de RESOLVIDOS devolve algo. */
-          if (!where.paidAt?.gte) return [];
+          /*
+            Só a consulta de RESOLVIDOS devolve algo.
+
+            Sob a V2 ela é `isPaid: true` + vencimento no mês — antes era
+            `paidAt` na janela. O dublê acompanha o `where` real; filtrar pelo
+            antigo faria este teste passar por não devolver nada.
+          */
+          if (where.isPaid !== true) return [];
           return [
             {
               amount: money(100),

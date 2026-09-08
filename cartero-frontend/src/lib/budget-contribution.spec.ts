@@ -55,7 +55,7 @@ function pessoa(o: {
       receivableDueInMonth: 0,
       openDueInMonth: 0,
       currentOpenPrior: 0,
-      paidInMonth: 0,
+      paidInCompetence: 0,
       receivableAmount: 0,
       payable: 0,
       debtTotal: 0,
@@ -108,7 +108,7 @@ const ABERTO = pessoa({
 
 /** O MESMO agregado, inteiramente liquidado. */
 const RESOLVIDO = pessoa({
-  budget: { receivableAmount: 10, paidInMonth: 11, debtTotal: 11, payable: 1 },
+  budget: { receivableAmount: 10, paidInCompetence: 11, debtTotal: 11, payable: 1 },
   open: { itemCount: 0 },
   settled: { settledAt: '2026-09-10', itemCount: 2 },
 })
@@ -288,7 +288,7 @@ describe('S1-S3: o estado do Orçamento é independente da relação', () => {
    * dinheiro ter saído.
    */
   const dividaPagaRecebivelAberto = pessoa({
-    budget: { receivableAmount: 10, paidInMonth: 11, debtTotal: 11, payable: 1 },
+    budget: { receivableAmount: 10, paidInCompetence: 11, debtTotal: 11, payable: 1 },
     /* A relação continua viva: falta receber os R$ 10. */
     open: { receivableTotal: 10, net: 10, itemCount: 1 },
     settled: { settledAt: null, itemCount: 1 },
@@ -321,7 +321,7 @@ describe('S1-S3: o estado do Orçamento é independente da relação', () => {
 
   it('S3: quando a relação enfim liquida, a base não muda', () => {
     const tudoLiquidado = pessoa({
-      budget: { receivableAmount: 10, paidInMonth: 11, debtTotal: 11, payable: 1 },
+      budget: { receivableAmount: 10, paidInCompetence: 11, debtTotal: 11, payable: 1 },
       open: { itemCount: 0 },
       settled: { settledAt: '2026-09-18', itemCount: 2 },
       contribution: {

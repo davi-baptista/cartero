@@ -26,20 +26,32 @@ import { civilDay } from './date-only.helper';
  * dívida antiga com `personId` era capturada por "Acertos com pessoas" antes
  * de qualquer verificação temporal — e sumia das pendências.
  *
- * ── Competência financeira ──
+ * ── Competência: o VENCIMENTO, paga ou não (contrato V2) ──
  *
- * PAGA   → `paidAt`, sempre. É quando o dinheiro saiu, e é a pergunta da
- *          tela. Uma dívida vencida em julho e paga em agosto pertence a
- *          AGOSTO: julho não viu esse dinheiro sair.
+ * A competência de uma dívida é o mês em que ela venceu — o pagamento não a
+ * desloca. Vencida em janeiro e paga em março, ela pertence a JANEIRO.
  *
- * ABERTA → o vencimento, mas só como PLANEJAMENTO — e planejamento só existe
- *          do mês corrente em diante. Reconstruir julho hoje e somar uma
- *          dívida que continua aberta afirmaria um desembolso que nunca
- *          aconteceu.
+ * O contrato anterior usava `paidAt` para a dívida paga, com o argumento de
+ * que "julho não viu esse dinheiro sair". O argumento é verdadeiro sobre
+ * FLUXO DE CAIXA, e foi por isso que a regra existiu. Mas o Budget não é
+ * fluxo de caixa: é competência e planejamento.
  *
- * Legado pago sem `paidAt` cai no vencimento: sem saber quando o dinheiro
- * saiu, o melhor palpite é a data que temos. Exibir a mais é recuperável;
- * sumir com uma obrigação não é.
+ *   BUDGET   competência original + obrigações atrasadas ainda abertas
+ *   EXTRATO  a data real em que o dinheiro movimentou
+ *
+ * Deslocar a dívida para o mês do pagamento fazia o Budget responder a
+ * pergunta do Extrato — e obrigava o usuário a pensar "em que mês eu paguei
+ * isso?" para a tela ficar organizada. Quem abre o app uma vez por semana
+ * não deveria precisar.
+ *
+ * ── A consequência é deliberada ──
+ *
+ * O mês em que o dinheiro efetivamente saiu deixa de contar aquele
+ * desembolso, e `totalToPay` daquele mês diminui. Isso é intencional: o fato
+ * financeiro está no Extrato, e a obrigação está na competência dela.
+ *
+ * `paidAt` continua no modelo — para auditoria, detalhe e histórico da
+ * entidade. Só deixou de decidir posicionamento mensal no Budget.
  */
 
 export interface BudgetPeriod {
@@ -93,13 +105,17 @@ function todayBound(now: Date): Date {
 }
 
 /**
- * A competência FINANCEIRA da dívida: o mês em que ela conta.
+ * A competência da dívida: o mês em que ela VENCEU.
+ *
+ * Não consulta `paidAt` — é o contrato V2. A assinatura mantém
+ * `ClassifiableDebt` porque `classifyDebtForBudget` ainda precisa de `isPaid`
+ * e `personId` para escolher o balde; só a COMPETÊNCIA parou de depender do
+ * pagamento.
  *
  * Exportada porque o serviço precisa da mesma resposta ao montar os totais —
  * derivá-la de novo lá seria a segunda cópia da regra.
  */
 export function debtFinancialPeriod(debt: ClassifiableDebt): BudgetPeriod {
-  if (debt.isPaid && debt.paidAt) return asPeriod(debt.paidAt);
   return asPeriod(debt.dueDate);
 }
 
@@ -114,24 +130,20 @@ export function classifyDebtForBudget(
 
   if (debt.isPaid) {
     /*
-      Paga: só o mês do desembolso. Nunca o vencimento também — era assim que
-      a mesma R$ 300 aparecia em dezembro e em agosto.
+      Paga: pertence à competência do VENCIMENTO, e só a ela.
+
+      Fora dela, nada — inclusive no mês em que o pagamento aconteceu. Era
+      justamente esse deslocamento que fazia a dívida de janeiro reaparecer
+      em março, e que esta fase remove.
     */
-    if (compare(debtFinancialPeriod(debt), selected) !== 0) return 'excluded';
+    if (compare(due, selected) !== 0) return 'excluded';
 
     /*
-      Origem anterior → pendência anterior, mesmo com pessoa.
+      Na própria competência, resolvida: balde normal, nunca `prior`.
 
-      `paidAt > dueDate` NÃO basta: vencer 20/08 e pagar 28/08 é atraso
-      dentro do próprio mês, não obrigação herdada. O que decide é o
-      vencimento ter caído numa competência anterior à selecionada.
-    */
-    if (compare(due, selected) < 0) return 'prior';
-
-    /*
-      Pagamento antecipado (vence em setembro, pago em agosto) cai aqui: conta
-      uma vez, em agosto, no balde normal. Chamá-lo de "pendência anterior"
-      seria o oposto do que aconteceu.
+      `Pendências anteriores` passou a ser uma fila VIVA — só entra o que
+      ainda exige ação. Uma dívida paga na sua própria competência aparece
+      ali como PAGA, na seção dela.
     */
     return debt.personId ? 'currentPerson' : 'currentGeneric';
   }

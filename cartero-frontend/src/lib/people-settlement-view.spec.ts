@@ -48,7 +48,7 @@ function person(overrides: {
       receivableDueInMonth: 0,
       openDueInMonth: 0,
       currentOpenPrior: 0,
-      paidInMonth: 0,
+      paidInCompetence: 0,
       receivableAmount: 0,
       payable: 0,
       debtTotal: 0,
@@ -226,21 +226,29 @@ describe('openPriorLabel', () => {
   })
 })
 
-describe('budgetContextLabel — pendência anterior paga na competência', () => {
+describe('budgetContextLabel — dívida da competência já quitada', () => {
   /*
-    Com a competência de EVENTO, o contexto do orçamento não é mais "o que
-    sobrou de outro mês": é o desembolso que aconteceu AQUI, mesmo que a
-    obrigação tenha nascido antes.
+    A competência de uma dívida é o VENCIMENTO, paga ou não. Quitada, ela
+    continua sendo obrigação daquele mês e continua dentro do total — só
+    deixou de ter algo em aberto.
   */
-  it('pendência anterior paga neste mês aparece', () => {
+  it('a dívida já quitada explica a linha, sem afirmar quando o dinheiro saiu', () => {
     const pagaAqui = person({
-      budget: { paidInMonth: 330, debtTotal: 330 },
+      budget: { paidInCompetence: 330, debtTotal: 330 },
       open: { itemCount: 0 },
     })
     const label = budgetContextLabel(pagaAqui, brl)
 
     expect(label).toContain('330')
-    expect(label).toContain('pagas neste mês')
+    expect(label).toContain('já quitados')
+    /*
+      A copy antiga afirmava o MÊS DO PAGAMENTO. Sob a V2 nada posiciona por
+      `paidAt`: olhando janeiro, "pagas neste mês" falaria de dinheiro que
+      talvez só tenha saído em março.
+    */
+    expect(label).not.toContain('neste mês')
+    /* Tampouco "anterior": a competência dela é esta. */
+    expect(label).not.toContain('anterior')
   })
 
   it('dívida do próprio mês não vira contexto de pendência anterior', () => {
@@ -278,7 +286,7 @@ describe('budgetContextLabel — pendência anterior paga na competência', () =
 
   it('não repete a competência — ela já está no título da seção', () => {
     const pagaAqui = person({
-      budget: { paidInMonth: 330, debtTotal: 330 },
+      budget: { paidInCompetence: 330, debtTotal: 330 },
       open: { itemCount: 0 },
     })
     expect(budgetContextLabel(pagaAqui, brl)).not.toMatch(
@@ -310,15 +318,21 @@ describe('settlementAriaLabel', () => {
   it('depois da quitação diz nada em aberto, sem perder o contexto', () => {
     const label = settlementAriaLabel(
       person({
-        budget: { paidInMonth: 200, debtTotal: 200 },
+        budget: { paidInCompetence: 200, debtTotal: 200 },
         open: { itemCount: 0 },
       }),
       brl,
     )
 
     expect(label).toContain('nada em aberto')
-    // O contexto que reconcilia o total continua audível.
-    expect(label).toContain('pagas neste mês')
+    /*
+      O contexto que reconcilia o total continua audível — sem ele o leitor
+      de tela ouviria o nome seguido de "nada em aberto" e nenhuma pista de
+      por que a linha existe.
+    */
+    expect(label).toContain('já quitados')
+    // Sem afirmar o mês do desembolso: isso é pergunta do Extrato.
+    expect(label).not.toContain('neste mês')
     // Não pode sugerir pendência viva.
     expect(label).not.toMatch(/em aberto, R\$/)
   })
@@ -343,7 +357,7 @@ describe('coerência entre os universos', () => {
     const depoisDeQuitar = person({
       budget: {
         receivableDueInMonth: 200,
-        paidInMonth: 200,
+        paidInCompetence: 200,
         debtTotal: 200,
       },
       open: { itemCount: 0 },
@@ -366,7 +380,7 @@ describe('coerência entre os universos', () => {
         receivableDueInMonth: 9999,
         openDueInMonth: 9999,
         currentOpenPrior: 9999,
-        paidInMonth: 9999,
+        paidInCompetence: 9999,
         debtTotal: 19998,
         automaticReceivable: 9999,
       },
@@ -567,7 +581,7 @@ describe('Projeção por pessoa dos três buckets do orçamento', () => {
    * O bug: `budgetContextLabel` lia SÓ `priorPaidInMonth`.
    *
    * Em dezembro, uma dívida de R$ 300 que vence no mês e foi paga depois tem
-   * `openDueInMonth: 300` e `paidInMonth: 0` — o rótulo voltava `null`,
+   * `openDueInMonth: 300` e `paidInCompetence: 0` — o rótulo voltava `null`,
    * a linha ficava sem contexto, e como a dívida já estava quitada o lado em
    * aberto também estava vazio. Uma linha em branco, enquanto os R$ 300
    * seguiam dentro do total do mês.
@@ -608,22 +622,32 @@ describe('Projeção por pessoa dos três buckets do orçamento', () => {
     expect(budgetDebtContribution(aberta)).toBe(300)
   })
 
-  it('itens 14-15: prior paid usa vocabulário próprio', () => {
+  it('itens 14-15: a dívida quitada usa vocabulário próprio', () => {
     const agosto = person({
-      budget: { paidInMonth: 2580, debtTotal: 2580 },
+      budget: { paidInCompetence: 2580, debtTotal: 2580 },
       open: { itemCount: 0 },
     })
 
     const label = budgetContextLabel(agosto, brl)
-    expect(label).toContain('pendências anteriores pagas neste mês')
-    // Não nasceram em agosto — chamá-las de "dívidas deste mês" seria falso.
-    expect(label).not.toContain('deste mês já')
+    expect(label).toContain('já quitados')
+    /*
+      Distinto de "em dívidas deste mês", que descreve o que continua ABERTO
+      vencendo aqui. Os dois buckets convivem na mesma competência e não
+      podem compartilhar frase.
+    */
     expect(label).not.toMatch(/em dívidas deste mês/)
+    /*
+      E nada de "pendências anteriores": sob a V2 a competência é o
+      vencimento, então uma dívida quitada que vence aqui é DESTE mês —
+      chamá-la de anterior a mandaria para a fila viva, onde só entra o que
+      ainda exige ação.
+    */
+    expect(label).not.toContain('anteriores')
   })
 
   it('item 23: os dois componentes aparecem juntos', () => {
     const misto = person({
-      budget: { openDueInMonth: 300, paidInMonth: 200, debtTotal: 500 },
+      budget: { openDueInMonth: 300, paidInCompetence: 200, debtTotal: 500 },
       open: { itemCount: 0 },
     })
 
@@ -653,7 +677,7 @@ describe('Projeção por pessoa dos três buckets do orçamento', () => {
       open: { priorOverdueDebt: 300, debtTotal: 300, net: -300, itemCount: 1 },
     })
     const depois = person({
-      budget: { paidInMonth: 300, debtTotal: 300 },
+      budget: { paidInCompetence: 300, debtTotal: 300 },
       open: { itemCount: 0 },
     })
 
@@ -662,7 +686,7 @@ describe('Projeção por pessoa dos três buckets do orçamento', () => {
 
     // O que muda é a explicação, não o valor.
     expect(budgetContextLabel(antes, brl)).toBeNull()
-    expect(budgetContextLabel(depois, brl)).toContain('pagas neste mês')
+    expect(budgetContextLabel(depois, brl)).toContain('já quitados')
   })
 })
 
@@ -729,7 +753,7 @@ describe('peopleRowView — anatomia da linha', () => {
   */
   it('item 45: sem nada aberto, o destaque é a contribuição do mês', () => {
     const eva = person({
-      budget: { paidInMonth: 300, debtTotal: 300, payable: 300 },
+      budget: { paidInCompetence: 300, debtTotal: 300, payable: 300 },
       open: { itemCount: 0 },
     })
     const view = peopleRowView(eva, brl)
@@ -819,7 +843,7 @@ describe('peopleRowView — anatomia da linha', () => {
   it('item 46: pago + aberto mostra os dois', () => {
     const view = peopleRowView(
       person({
-        budget: { paidInMonth: 300, debtTotal: 400, payable: 100 },
+        budget: { paidInCompetence: 300, debtTotal: 400, payable: 100 },
         open: { debtTotal: 100, net: -100, itemCount: 1 },
       }),
       brl,
@@ -830,9 +854,13 @@ describe('peopleRowView — anatomia da linha', () => {
     /* Magnitude: a direção vem de `direction`. */
     expect(view.amount).toBe(100)
     // E o desembolso já feito não desaparece.
-    expect(view.metadata.some((m) => m.includes('quitados neste mês'))).toBe(
-      true,
-    )
+    expect(view.metadata.some((m) => m.includes('já quitados'))).toBe(true)
+    /*
+      Sem "neste mês": o mês do pagamento deixou de posicionar qualquer coisa
+      no Orçamento, e afirmá-lo aqui mentiria em toda competência que não
+      fosse a do desembolso.
+    */
+    expect(view.metadata.some((m) => m.includes('neste mês'))).toBe(false)
   })
 
   it('item 42: origem em compra no cartão vira metadata', () => {
@@ -860,7 +888,7 @@ describe('peopleRowView — anatomia da linha', () => {
     )
     const quitado = peopleRowAriaLabel(
       person({
-        budget: { paidInMonth: 300, debtTotal: 300, payable: 300 },
+        budget: { paidInCompetence: 300, debtTotal: 300, payable: 300 },
         open: { itemCount: 0 },
       }),
       brl,
@@ -869,7 +897,14 @@ describe('peopleRowView — anatomia da linha', () => {
     expect(aberto).toContain('Em aberto')
     expect(aberto).toContain('a receber')
     expect(quitado).toContain('Quitado')
-    expect(quitado).toContain('pagos nesta competência')
+    expect(quitado).toContain('já pagos')
+    /*
+      Quem usa leitor de tela recebe a MESMA linha, não uma versão técnica
+      dela: nada de "competência", e nada de datar o desembolso — o mês do
+      pagamento deixou de posicionar qualquer coisa no Orçamento.
+    */
+    expect(quitado).not.toContain('competência')
+    expect(quitado).not.toContain('neste mês')
   })
 })
 
@@ -961,7 +996,7 @@ describe('Cores: direção no valor, urgência no ícone', () => {
     */
     const view = peopleRowView(
       person({
-        budget: { paidInMonth: 300, debtTotal: 300, payable: 300 },
+        budget: { paidInCompetence: 300, debtTotal: 300, payable: 300 },
         open: { itemCount: 0 },
       }),
       brl,

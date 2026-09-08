@@ -169,11 +169,13 @@ export class BudgetService {
     const [
       salary,
       invoices,
+      /** Vencidas de competências anteriores — a fila viva de faturas. */
+      overdueInvoicesFromPast,
       directPayments,
       openDueInMonth,
       monthReceivables,
       currentOpenPrior,
-      paidInMonth,
+      paidInCompetence,
       openReceivablesInMonth,
       openDebtsInMonth,
       openPriorReceivables,
@@ -190,6 +192,41 @@ export class BudgetService {
       this.salaryService.resolve(userId, { year, month }),
       this.prisma.invoice.findMany({
         where: { userId, month, year },
+        include: { bank: true },
+      }),
+
+      /*
+        ══════════════════════════════════════════════════════════════════
+        Faturas VENCIDAS de competências anteriores, ainda não pagas
+        ══════════════════════════════════════════════════════════════════
+
+        Dívida vencida sempre carregou para `Pendências anteriores`; fatura
+        vencida não. A inconsistência era da consulta acima, fechada em
+        `month/year` — não havia predicado a corrigir, faltava a pergunta.
+
+        Uma fatura de agosto que venceu e continua aberta é dinheiro que ainda
+        precisa sair. Em setembro ela pertence à fila.
+
+        ── O recorte ──
+
+        `status: OVERDUE` é a autoridade temporal já existente: o cron a move
+        de CLOSED para OVERDUE no vencimento, e `deriveStatusFromInvoiceDates`
+        faz o mesmo inline. Usar `dueDate < hoje` aqui seria uma segunda
+        definição de "vencida".
+
+        Isso também resolve o caso de fechada-mas-não-vencida: fatura que
+        fecha em 25/08 e vence em 05/09 está CLOSED, não OVERDUE, e não entra
+        na fila — ela pertence à competência dela.
+
+        Competência ANTERIOR à exibida: a fatura do próprio mês já vem na
+        consulta acima, e trazê-la aqui a contaria duas vezes.
+      */
+      this.prisma.invoice.findMany({
+        where: {
+          userId,
+          status: 'OVERDUE',
+          OR: [{ year: { lt: year } }, { year, month: { lt: month } }],
+        },
         include: { bank: true },
       }),
       this.prisma.transaction.findMany({
@@ -274,9 +311,9 @@ export class BudgetService {
              agora, e por isso acompanha o presente, não cada snapshot
              passado.
 
-          B. `paidInMonth` — dívida antiga cujo pagamento ACONTECEU nesta
-             competência. É desembolso real do mês, e some dos meses
-             intermediários onde nada aconteceu.
+          B. `paidInCompetence` — dívida que VENCE nesta competência e já
+             foi resolvida. Fica na competência dela, exibida como paga, e
+             NÃO viaja para o mês em que o pagamento aconteceu.
 
         A consulta (A) é condicional: fora do mês corrente ela não seria usada,
         e buscá-la seria uma ida ao banco desperdiçada.
@@ -293,21 +330,26 @@ export class BudgetService {
         : Promise.resolve([]),
 
       /*
-        Dívidas PAGAS nesta competência — qualquer vencimento.
+        Dívidas que VENCEM nesta competência e já foram pagas.
 
-        O recorte por `dueDate < monthStart` saiu: uma dívida paga no próprio
-        mês do vencimento, ou paga ANTES de vencer, também teve o desembolso
-        aqui. A competência financeira de uma dívida resolvida é `paidAt`,
-        ponto — sem exceção por onde ela venceu.
+        ── Contrato V2: a competência é o vencimento ──
 
-        `paidAt: null` (legado pago sem data) não casa com o range e fica de
-        fora: sem saber QUANDO o dinheiro saiu, nenhum mês pode reivindicar o
-        desembolso, e inventar um seria pior que omitir.
+        A consulta era `paidAt` dentro do mês — "pagas nesta competência,
+        qualquer vencimento". Ela deslocava a dívida para o mês do
+        desembolso: vencida em janeiro e paga em março, aparecia em MARÇO.
+
+        O Budget é competência, não fluxo de caixa. Quem responde "quando o
+        dinheiro saiu" é o Extrato. Agora o recorte é o vencimento, e o
+        pagamento só decide que a linha aparece como resolvida.
+
+        `paidAt` não é mais consultado aqui — nem o legado pago sem data
+        precisa de tratamento especial, porque a competência não depende dele.
       */
       this.prisma.debt.findMany({
         where: {
           userId,
-          paidAt: { gte: monthStart, lt: monthEnd },
+          isPaid: true,
+          dueDate: { gte: monthStart, lt: monthEnd },
         },
         select: PRIOR_DEBT_SELECT,
       }),
@@ -408,7 +450,7 @@ export class BudgetService {
       /*
         Recebíveis de pessoa RECEBIDOS nesta competência.
 
-        Espelha `paidInMonth` do lado da dívida. Sem ele, o netting mensal
+        Espelha `paidInCompetence` do lado da dívida. Sem ele, o netting mensal
         veria só o que continua aberto: uma dívida de 120 paga em agosto
         contra um recebível de 100 recebido em agosto daria 120 de saída
         líquida, quando o mês custou 20.
@@ -453,7 +495,17 @@ export class BudgetService {
       0,
     );
 
-    const invoiceIds = invoices.map((inv) => inv.id);
+    /*
+      As faturas carregadas entram no MESMO agrupamento de terceiros.
+
+      É o que garante que a fatura em `Pendências anteriores` use a sua parte
+      econômica, e não o bruto: a autoridade é uma só, a mesma que a row
+      normal do Budget usa.
+    */
+    const invoiceIds = [
+      ...invoices.map((inv) => inv.id),
+      ...overdueInvoicesFromPast.map((inv) => inv.id),
+    ];
 
     // Agrupado por fatura em vez de um total único: a mesma soma, com o
     // detalhe que a tela precisa para dizer, linha a linha, quanto de cada
@@ -483,7 +535,35 @@ export class BudgetService {
       (sum, value) => sum + value,
       0,
     );
-    const netAmount = totalInvoices - totalReimbursable;
+    /*
+      `totalReimbursable` agora abrange as faturas carregadas também, então o
+      desconto de terceiros do próprio mês precisa ser isolado — senão
+      `netAmount` (a parte do mês) descontaria terceiros de outra competência.
+    */
+    const reimbursableThisMonth = invoices.reduce(
+      (sum, inv) => sum + (reimbursablePerInvoice.get(inv.id) ?? 0),
+      0,
+    );
+    const netAmount = totalInvoices - reimbursableThisMonth;
+
+    /*
+      ── A fila viva de faturas entra no total ──
+
+      Uma fatura vencida e aberta é dinheiro que ainda precisa sair; enquanto
+      ela permanece na fila, participa do total operacional do mês exibido.
+
+      Ao ser paga, `status` deixa de ser OVERDUE, ela sai da consulta, e o
+      total daquele mês diminui — a retroatividade deliberada do contrato.
+
+      Pela SUA PARTE, nunca pelo bruto: é a mesma decomposição da row normal.
+    */
+    const overdueInvoicesOwnTotal = overdueInvoicesFromPast.reduce(
+      (sum, inv) =>
+        sum +
+        Number(inv.totalAmount) -
+        (reimbursablePerInvoice.get(inv.id) ?? 0),
+      0,
+    );
 
     // `totalAmount` continua bruto — é o que o banco cobra. `reimbursable` e
     // `ownAmount` são leituras derivadas, não substituem a obrigação.
@@ -500,15 +580,35 @@ export class BudgetService {
       (sum, tx) => sum + Number(tx.amount),
       0,
     );
+    const selectedPeriod: BudgetPeriod = { year, month };
+
     /*
       O detalhamento por linha reúne os três conjuntos — é o que a tela lista
       abaixo do total, e precisa fechar com ele.
+
+      ── Menos as que vão para `Pendências anteriores` ──
+
+      `debtBreakdown` alimenta a seção "Dívidas" e `priorItems` alimenta a
+      fila. Sem este filtro os dois conjuntos se sobrepõem: `currentOpenPrior`
+      entrava inteiro nos dois, e a MESMA dívida aparecia nas duas seções da
+      mesma tela — "Pendências anteriores · R$ 300,00" e "Dívidas · R$ 300,00"
+      sendo a mesma obrigação.
+
+      Os totais nunca dobraram (`debts.total` sempre usou os baldes
+      separados), então nenhuma soma estava errada: o defeito era de
+      APRESENTAÇÃO, e a tela contradizia o próprio número ao listar duas
+      linhas sob um total que contava uma.
+
+      Quem decide continua sendo `classifyDebtForBudget` — o balde é único por
+      construção, e este filtro só o respeita em vez de reimplementá-lo.
     */
     const allDebtRows = [
       ...openDueInMonth,
       ...currentOpenPrior,
-      ...paidInMonth,
-    ];
+      ...paidInCompetence,
+    ].filter(
+      (debt) => classifyDebtForBudget(debt, selectedPeriod) !== 'prior',
+    );
     const debtBreakdown = this.buildDebtBreakdown(allDebtRows);
 
     const sumAmount = (rows: readonly { amount: unknown }[]) =>
@@ -540,11 +640,28 @@ export class BudgetService {
     /** Venceu antes, continua aberta — só no mês corrente. */
     const currentOpenPriorTotal = sumAmount(currentOpenPrior);
 
-    /** Paga NESTA competência, qualquer que tenha sido o vencimento. */
-    const paidInMonthTotal = sumAmount(paidInMonth);
+    /** Vence nesta competência e já foi paga. */
+    const paidInCompetenceTotal = sumAmount(paidInCompetence);
 
-    const dueInMonth = openDueTotal;
-    const priorTotal = currentOpenPriorTotal + paidInMonthTotal;
+    /*
+      Obrigação da competência: abertas E pagas que vencem aqui.
+
+      As pagas saíram de `priorTotal` — elas não são pendência anterior
+      nenhuma sob o contrato V2 — e entram aqui, onde a competência delas
+      realmente é. Sem isto, uma dívida paga no próprio mês do vencimento
+      desapareceria do total.
+    */
+    const dueInMonth = openDueTotal + paidInCompetenceTotal;
+
+    /*
+      `Pendências anteriores` é uma FILA VIVA: só o que ainda exige ação.
+
+      O total somava as pagas — porque elas viajavam para o mês do pagamento
+      e apareciam ali como pendência resolvida. Sob o contrato V2 elas ficam
+      na própria competência, na seção normal, e o total desta seção passa a
+      refletir apenas obrigação aberta.
+    */
+    const priorTotal = currentOpenPriorTotal;
 
     /*
       Tipo explícito: sem ele o spread das duas listas alarga para `any` e o
@@ -553,39 +670,33 @@ export class BudgetService {
     type PriorRow = (typeof currentOpenPrior)[number];
 
     /*
-      ── A CAUSA do bug de duplicação ──
+      ── Somente obrigação ABERTA ──
 
-      Este conjunto recebia TODAS as dívidas pagas na competência, com
-      `settled: true`, sem olhar o vencimento. Uma dívida vencida em 20/07 e
-      paga em 28/07 entrava aqui como "pendência anterior" ao mesmo tempo que
-      `buildDebtBreakdown` a colocava em "Dívidas" — a mesma entidade nas duas
-      seções, cada uma somando R$ 600,00.
+      A lista recebia também as dívidas pagas, com `settled: true`. Isso fazia
+      sentido enquanto a competência de uma dívida paga era o mês do
+      pagamento: ela chegava aqui como "pendência anterior resolvida".
 
-      `paidAt > dueDate` não significa "veio de um mês anterior": pagar com
-      alguns dias de atraso dentro do próprio mês é atraso, não herança.
+      Sob o contrato V2 a competência é o vencimento, e `Pendências
+      anteriores` passou a ser uma fila viva — o que foi resolvido pertence à
+      seção normal da competência dele.
 
-      Agora quem decide é `classifyDebtForBudget`, o mesmo classificador que
-      o resto da tela usa. O balde é único por construção.
+      O filtro por `classifyDebtForBudget` permanece: ele já devolve
+      `excluded` para paga fora da própria competência e nunca `prior` para
+      paga. Manter a checagem torna a seção imune a uma consulta futura que
+      traga algo a mais.
     */
-    const selectedPeriod: BudgetPeriod = { year, month };
-
-    const priorBreakdown = [
-      ...currentOpenPrior.map((debt: PriorRow) => ({ debt, settled: false })),
-      ...paidInMonth.map((debt: PriorRow) => ({ debt, settled: true })),
-    ]
+    const priorBreakdown = currentOpenPrior
       .filter(
-        ({ debt }: { debt: PriorRow }) =>
+        (debt: PriorRow) =>
           classifyDebtForBudget(debt, selectedPeriod) === 'prior',
       )
-      .map(({ debt, settled }: { debt: PriorRow; settled: boolean }) => ({
+      .map((debt: PriorRow) => ({
         title: debt.title,
         amount: Number(debt.amount),
         /** Vencimento ORIGINAL — não reescrito como se fosse deste mês. */
         dueDate: debt.dueDate,
         personId: debt.personId,
         personName: debt.person?.name ?? null,
-        /** `true` quando o pagamento aconteceu NESTA competência. */
-        paidInMonth: settled,
       }));
 
     /*
@@ -626,8 +737,15 @@ export class BudgetService {
       budgetDebtDueInMonth: number;
       /** Anteriores ainda abertas (só no mês corrente). */
       budgetCurrentOpenPrior: number;
-      /** Anteriores pagas nesta competência. */
-      budgetPriorPaidInMonth: number;
+      /**
+       * Dívidas desta pessoa que VENCEM na competência e já foram pagas.
+       *
+       * O nome era `budgetPriorPaidInMonth` — "anteriores pagas neste mês" —,
+       * duas afirmações que a V2 desfez: elas não são anteriores (a
+       * competência é o vencimento) nem "deste mês" (o mês do pagamento
+       * deixou de posicionar). O valor econômico é o mesmo; o nome mentia.
+       */
+      budgetPaidInCompetence: number;
       /**
        * Recebíveis DESTA pessoa relevantes para a competência.
        *
@@ -744,7 +862,7 @@ export class BudgetService {
         budgetReceivableDueInMonth: 0,
         budgetDebtDueInMonth: 0,
         budgetCurrentOpenPrior: 0,
-        budgetPriorPaidInMonth: 0,
+        budgetPaidInCompetence: 0,
         budgetReceivableAmount: 0,
         budgetAutomaticReceivable: 0,
         openReceivableInMonth: 0,
@@ -819,9 +937,9 @@ export class BudgetService {
       fecha — compensada silenciosamente dentro de "Acertos com pessoas" E
       exibida como pendência anterior, a mesma obrigação contando duas vezes.
 
-      `budgetPriorPaidInMonth` continua recebendo a dívida paga cuja ORIGEM é
-      deste mês (vence e paga em agosto, por exemplo): essa é do próprio
-      período e pertence ao netting normalmente.
+      `budgetPaidInCompetence` recebe a dívida paga cuja competência é ESTA —
+      e sob a V2 isso é toda dívida paga que vence aqui, qualquer que tenha
+      sido a data do pagamento. Ela pertence ao netting normalmente.
     */
     for (const debt of currentOpenPrior) {
       if (!debt.personId) continue;
@@ -832,14 +950,14 @@ export class BudgetService {
       ).budgetCurrentOpenPrior += Number(debt.amount);
     }
 
-    for (const debt of paidInMonth) {
+    for (const debt of paidInCompetence) {
       if (!debt.personId) continue;
       if (classifyDebtForBudget(debt, selectedPeriod) === 'prior') continue;
       const entry = settlementEntry(
         debt.personId,
         debt.person?.name ?? 'Pessoa',
       );
-      entry.budgetPriorPaidInMonth += Number(debt.amount);
+      entry.budgetPaidInCompetence += Number(debt.amount);
       registrarLiquidacao(entry, debt.paidAt);
       entry.debtPayments.push({
         amount: Number(debt.amount),
@@ -942,7 +1060,7 @@ export class BudgetService {
       entry.budgetReceivableDueInMonth +
       entry.budgetDebtDueInMonth +
       entry.budgetCurrentOpenPrior +
-      entry.budgetPriorPaidInMonth +
+      entry.budgetPaidInCompetence +
       entry.openReceivableInMonth +
       entry.openDebtInMonth +
       entry.openPriorReceivable +
@@ -988,7 +1106,7 @@ export class BudgetService {
     const personDebtTotal = [
       ...openDueInMonth,
       ...currentOpenPrior,
-      ...paidInMonth,
+      ...paidInCompetence,
     ]
       .filter(
         (debt) =>
@@ -1012,7 +1130,7 @@ export class BudgetService {
         Math.max(
           entry.budgetDebtDueInMonth +
             entry.budgetCurrentOpenPrior +
-            entry.budgetPriorPaidInMonth -
+            entry.budgetPaidInCompetence -
             entry.budgetReceivableAmount,
           0,
         ),
@@ -1025,9 +1143,19 @@ export class BudgetService {
     */
     const totalDebts = genericDebtTotal + peopleBudgetPayableTotal;
 
-    // Faturas e dívidas já quitadas continuam somando: o número representa o
-    // custo real do mês, não só o que ainda falta desembolsar.
-    const totalToPay = netAmount + totalDirectPayments + totalDebts;
+    /*
+      Faturas e dívidas já quitadas continuam somando: o número representa o
+      custo da competência, não só o que ainda falta desembolsar.
+
+      `overdueInvoicesOwnTotal` é a fila viva de faturas — obrigação de outra
+      competência que ainda precisa sair. Enquanto aberta, participa; ao ser
+      paga, sai da consulta e o total deste mês diminui.
+    */
+    const totalToPay =
+      netAmount +
+      totalDirectPayments +
+      totalDebts +
+      overdueInvoicesOwnTotal;
 
     const peopleSettlements = [...settlementByPerson.values()]
       /*
@@ -1060,7 +1188,11 @@ export class BudgetService {
             receivableDueInMonth: entry.budgetReceivableDueInMonth,
             openDueInMonth: entry.budgetDebtDueInMonth,
             currentOpenPrior: entry.budgetCurrentOpenPrior,
-            paidInMonth: entry.budgetPriorPaidInMonth,
+            /*
+              Vence nesta competência e já foi paga. Era `paidInMonth`, que
+              afirmava o MÊS DO PAGAMENTO — o que a V2 deixou de usar.
+            */
+            paidInCompetence: entry.budgetPaidInCompetence,
             /** Recebíveis desta pessoa relevantes para a competência. */
             receivableAmount: entry.budgetReceivableAmount,
             /**
@@ -1072,7 +1204,7 @@ export class BudgetService {
             payable: Math.max(
               entry.budgetDebtDueInMonth +
                 entry.budgetCurrentOpenPrior +
-                entry.budgetPriorPaidInMonth -
+                entry.budgetPaidInCompetence -
                 entry.budgetReceivableAmount,
               0,
             ),
@@ -1080,7 +1212,7 @@ export class BudgetService {
             debtTotal:
               entry.budgetDebtDueInMonth +
               entry.budgetCurrentOpenPrior +
-              entry.budgetPriorPaidInMonth,
+              entry.budgetPaidInCompetence,
             automaticReceivable: entry.budgetAutomaticReceivable,
           },
 
@@ -1180,7 +1312,7 @@ export class BudgetService {
             Math.max(
               entry.budgetDebtDueInMonth +
                 entry.budgetCurrentOpenPrior +
-                entry.budgetPriorPaidInMonth -
+                entry.budgetPaidInCompetence -
                 entry.budgetReceivableAmount,
               0,
             ),
@@ -1193,7 +1325,7 @@ export class BudgetService {
       .filter((inv) => inv.status === 'PAID')
       .reduce((sum, inv) => sum + Number(inv.totalAmount), 0);
     /*
-      A parcela JÁ PAGA do mês vem de `paidInMonth`.
+      A parcela JÁ PAGA do mês vem de `paidInCompetence`.
 
       Antes saía de `openDueInMonth` filtrando `isPaid`, mas aquele conjunto
       agora só traz dívidas abertas — o filtro devolveria sempre zero, e a
@@ -1206,7 +1338,7 @@ export class BudgetService {
       O pago de uma dívida COM pessoa é limitado pela contribuição dela
       ══════════════════════════════════════════════════════════════════════
 
-      `paidInMonthTotal` é o BRUTO de tudo que foi quitado, e o total do
+      `paidInCompetenceTotal` é o BRUTO de tudo que foi quitado, e o total do
       orçamento usa o netting por pessoa. Devendo R$ 30 a alguém que me deve
       R$ 50, a contribuição é ZERO — a relação não é saída líquida nenhuma —,
       mas quitar a dívida somava R$ 30 ao "pago".
@@ -1230,12 +1362,12 @@ export class BudgetService {
       0,
     );
 
-    const paidDebtsSemPessoa = paidInMonth
+    const paidDebtsSemPessoa = paidInCompetence
       .filter((debt) => !debt.personId)
       .reduce((soma, debt) => soma + Number(debt.amount), 0);
 
     const paidDebts = paidDebtsSemPessoa + paidPorPessoa;
-    const paidDebtsCount = paidInMonth.length;
+    const paidDebtsCount = paidInCompetence.length;
 
     /*
       Pagamentos diretos já aconteceram por definição — a transação só existe
@@ -1311,11 +1443,42 @@ export class BudgetService {
         openDueInMonth: openDueTotal,
         /** Anteriores ainda abertas — zero fora do mês corrente. */
         currentOpenPrior: currentOpenPriorTotal,
-        /** PAGAS nesta competência, qualquer vencimento. */
-        paidInMonth: paidInMonthTotal,
+        /** Vencem nesta competência e já estão pagas. */
+        paidInCompetence: paidInCompetenceTotal,
         total: totalDebts,
         priorItems: priorBreakdown,
       },
+
+      /*
+        ── A fila viva de FATURAS ──
+
+        Faturas vencidas de competências anteriores, ainda abertas. Campo
+        próprio em vez de misturar com `debts.priorItems`: a row de fatura tem
+        identidade visual e navegação próprias, e achatá-las num item genérico
+        perderia isso.
+
+        O valor é a SUA PARTE — a mesma decomposição da row normal do
+        Orçamento, nunca o bruto.
+      */
+      /*
+        A MESMA forma de `invoices` — o registro inteiro mais a decomposição.
+
+        Um objeto reduzido (só nome do banco e valor) obrigaria a tela a
+        montar a row de fatura por um segundo caminho, e foi exatamente isso
+        que fez Bancos e Orçamento divergirem antes da Fase UI-ALIGN.
+        `status` e `closeDate` vêm junto porque o presenter canônico os pede.
+      */
+      priorInvoices: overdueInvoicesFromPast.map((invoice) => {
+        const reimbursable = reimbursablePerInvoice.get(invoice.id) ?? 0;
+        return {
+          ...invoice,
+          reimbursable,
+          /** O que sai do bolso do usuário — o valor que soma no total. */
+          ownAmount: Number(invoice.totalAmount) - reimbursable,
+        };
+      }),
+      /** Σ da sua parte das faturas carregadas — entra em `totalToPay`. */
+      priorInvoicesTotal: overdueInvoicesOwnTotal,
       /**
        * De onde vem o `totalToPay` — a composição exibida sob o número.
        *
@@ -1331,7 +1494,17 @@ export class BudgetService {
       },
       totalDebts,
       debtsCount: openDueInMonth.length,
-      priorCount: currentOpenPrior.length + paidInMonth.length,
+      /*
+        Quantos itens estão na FILA VIVA de pendências anteriores.
+
+        Somava `paidInCompetence` — as dívidas pagas, que na V1 chegavam à
+        seção como pendência resolvida. Sob a V2 elas pertencem à competência
+        do vencimento, e contá-las aqui faria a contagem discordar do que a
+        seção realmente renderiza.
+
+        As faturas carregadas entram porque são itens da mesma seção.
+      */
+      priorCount: currentOpenPrior.length + overdueInvoicesFromPast.length,
       paidDebtsCount,
 
       /** Informativo: NÃO entra em `totalToPay`. */

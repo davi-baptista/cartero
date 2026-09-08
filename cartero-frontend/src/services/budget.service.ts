@@ -47,9 +47,9 @@ export interface BudgetSummary {
     /**
      * Vence no mês e continua ABERTA.
      *
-     * Dívida resolvida NÃO entra aqui: ela pertence financeiramente ao mês em
-     * que o dinheiro saiu (`paidInMonth`). Contá-la nos dois representaria a
-     * mesma obrigação duas vezes.
+     * Dívida resolvida NÃO entra aqui: ela vai para `paidInCompetence`, o
+     * balde das que vencem neste mês e já foram pagas. Contá-la nos dois
+     * representaria a mesma obrigação duas vezes.
      */
     openDueInMonth: number
     /**
@@ -61,10 +61,18 @@ export interface BudgetSummary {
      * consumidor calcular errado sem aviso.
      */
     currentOpenPrior: number
-    /** PAGAS nesta competência, qualquer que tenha sido o vencimento. */
-    paidInMonth: number
-    /** `openDueInMonth + currentOpenPrior + paidInMonth`. */
+    /** Vencem nesta competência e já estão pagas. */
+    paidInCompetence: number
+    /** `openDueInMonth + currentOpenPrior + paidInCompetence`. */
     total: number
+    /**
+     * A FILA VIVA de dívidas: venceram antes deste mês e continuam ABERTAS.
+     *
+     * Não existe campo de quitação aqui, e a ausência é o contrato: um item
+     * resolvido não pertence a esta lista — ele volta para a competência do
+     * próprio vencimento. Sem o campo, nenhum consumidor consegue renderizar
+     * um ramo "paga" que mascararia a regressão.
+     */
     priorItems: Array<{
       title: string
       amount: number
@@ -72,14 +80,27 @@ export interface BudgetSummary {
       dueDate: string
       personId: string | null
       personName: string | null
-      /** Se já havia sido paga dentro do mês consultado. */
-      paidInMonth: boolean
     }>
   }
+  /**
+   * A FILA VIVA de faturas: vencidas em competências anteriores e ainda
+   * abertas. Mesma seção que `debts.priorItems`, identidade própria.
+   *
+   * Como as dívidas, só contém item NÃO resolvido: uma fatura paga sai da
+   * fila e permanece apenas na competência dela.
+   *
+   * `BudgetInvoice`, o mesmo tipo de `invoices` — a row é montada pelo mesmo
+   * presenter, com a mesma decomposição. Um tipo reduzido aqui abriria o
+   * segundo caminho de apresentação que a Fase UI-ALIGN fechou.
+   */
+  priorInvoices: BudgetInvoice[]
+  /** Σ da SUA PARTE das faturas carregadas — a parcela delas em `totalToPay`. */
+  priorInvoicesTotal: number
   /** Espelho de `debts.total`. */
   totalDebts: number
   /** Quantidade de dívidas com vencimento dentro do mês. */
   debtsCount: number
+  /** Quantos itens estão na fila viva de pendências anteriores. */
   priorCount: number
   /** Quantas dessas dívidas já estão pagas. */
   paidDebtsCount: number
@@ -89,7 +110,7 @@ export interface BudgetSummary {
    * Eles respondem perguntas diferentes e nunca devem ser somados entre si:
    *
    *   `budget` → "o que dessa pessoa pertenceu ao orçamento desta
-   *              competência?". Temporal, reconstruído por `paidAt`. Inclui
+   *              competência?". Temporal, recortado pelo VENCIMENTO. Inclui
    *              item já quitado, porque ele continuou sendo obrigação daquele
    *              mês. É o que permite a tela fechar com `debts.total` e
    *              `totalToPay`.
@@ -114,8 +135,8 @@ export interface BudgetSummary {
       openDueInMonth: number
       /** Anteriores ainda abertas (só no mês corrente). */
       currentOpenPrior: number
-      /** Pagas nesta competência, qualquer vencimento. */
-      paidInMonth: number
+      /** Vencem nesta competência e já estão pagas. */
+      paidInCompetence: number
       /** Recebíveis desta pessoa relevantes para a competência. */
       receivableAmount: number
       /**
@@ -126,7 +147,7 @@ export interface BudgetSummary {
        * obrigações com terceiros.
        */
       payable: number
-      /** `openDueInMonth + currentOpenPrior + paidInMonth`. */
+      /** `openDueInMonth + currentOpenPrior + paidInCompetence`. */
       debtTotal: number
       automaticReceivable: number
     }

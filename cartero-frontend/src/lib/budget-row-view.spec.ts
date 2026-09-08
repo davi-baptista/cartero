@@ -168,10 +168,23 @@ describe('B5-B12: a row de fatura', () => {
     expect(dividas).toContain('trailing={')
     expect(dividas).toContain('cfg.trailingLabel')
 
-    /* Pendências anteriores. */
+    /*
+      Pendências anteriores — a FILA VIVA.
+
+      Trailing sem ternário: a seção contém SÓ obrigação aberta, então
+      `EM ATRASO` é o único estado possível. Um ramo `PAGA` aqui seria defesa
+      contra um payload que o contrato proíbe — e mascararia a regressão,
+      exibindo "PAGA" em vez de deixar a falha aparecer.
+    */
     const anteriores = bloco('standalonePriorItems.map(')
     expect(anteriores).toContain('trailing={')
-    expect(anteriores).toContain("'PAGA' : 'EM ATRASO'")
+    expect(anteriores).toContain('EM ATRASO')
+    expect(anteriores).not.toContain('PAGA')
+
+    /* Faturas na mesma fila: pelo presenter, como a row normal de fatura. */
+    const faturasAnteriores = bloco('priorInvoices.map(')
+    expect(faturasAnteriores).toContain('trailing={')
+    expect(faturasAnteriores).toContain('apresentacao.statusLabel')
   })
 
   it('B11: o prazo fica abaixo do nome, no slot canônico', () => {
@@ -351,7 +364,12 @@ describe('B19-B24: a row de pessoa e de dívida', () => {
   it('pendência anterior conserva o vencimento ORIGINAL', () => {
     /* Sem ele a linha não se explica: é a razão de ser da seção. */
     expect(BUDGET).toContain('Venceu em {formatDate(item.dueDate)}')
-    expect(BUDGET_CODE).toContain('budgetDueTone(item.dueDate, item.paidInMonth)')
+    /*
+      O segundo argumento é a constante `false`, não um campo do item: a fila
+      é toda de obrigação aberta, e o payload não carrega estado de quitação
+      para a tela consultar.
+    */
+    expect(BUDGET_CODE).toContain('budgetDueTone(item.dueDate, false)')
   })
 })
 

@@ -223,10 +223,35 @@ export function budgetContextParts(
     parts.push(`${formatCurrency(person.budget.openDueInMonth)} em dívidas deste mês`)
   }
 
-  if (person.budget.paidInMonth > EPSILON) {
-    parts.push(
-      `${formatCurrency(person.budget.paidInMonth)} de pendências anteriores pagas neste mês`,
-    )
+  /*
+    ── O quitado da competência, sem afirmar QUANDO ──
+
+    A frase era "R$ X de pendências anteriores pagas neste mês", e as duas
+    metades caíram com a V2:
+
+      "pendências anteriores"  `Pendências anteriores` virou uma fila viva —
+                               o que está lá está aberto, e uma dívida paga
+                               não é pendência de nada.
+
+      "pagas neste mês"        o mês do pagamento deixou de posicionar. Uma
+                               dívida que vence em janeiro e é paga em março
+                               pertence a JANEIRO, e olhando janeiro a frase
+                               diria "pagas neste mês" sobre dinheiro que só
+                               saiu em março.
+
+    O que sobrevive é o FATO ECONÔMICO: essa pessoa tem, nesta competência,
+    um valor já quitado que continua dentro de `debtTotal` e portanto dentro
+    do total do mês. Sem a frase, a pessoa cuja única contribuição é uma
+    dívida já paga volta a `null` aqui — e o leitor de tela ouviria o nome
+    seguido de "nada em aberto", sem nenhuma explicação de por que a linha
+    existe. É exatamente a linha em branco que o cabeçalho deste módulo
+    documenta como bug.
+
+    `já quitados` é a mesma copy da row visível (`peopleRowView`): o Extrato
+    é quem responde a data do desembolso.
+  */
+  if (person.budget.paidInCompetence > EPSILON) {
+    parts.push(`${formatCurrency(person.budget.paidInCompetence)} já quitados`)
   }
 
   /*
@@ -612,9 +637,13 @@ export function peopleRowView(
       omite que já houve desembolso no mês. As duas juntas são o único caso
       de duas faixas, e só ocorre quando ambas existem.
     */
-    if (person.budget.paidInMonth > EPSILON) {
+    if (person.budget.paidInCompetence > EPSILON) {
       metadata.push(
-        `${formatCurrency(person.budget.paidInMonth)} quitados neste mês`,
+        /*
+          Sem "neste mês": a competência não é o mês do pagamento, e afirmar
+          quando o dinheiro saiu é papel do Extrato.
+        */
+        `${formatCurrency(person.budget.paidInCompetence)} já quitados`,
       )
     }
 
@@ -699,7 +728,15 @@ export function peopleRowAriaLabel(
   const view = peopleRowView(person, formatCurrency)
 
   if (view.status === 'settled') {
-    return `${person.personName}. Quitado. ${formatCurrency(view.amount)} pagos nesta competência.`
+    /*
+      "pagos nesta competência" dizia duas coisas que a UI não deve dizer:
+      expunha o jargão interno a quem usa leitor de tela — que recebe a
+      MESMA linha, não uma versão técnica dela — e datava o desembolso,
+      quando o mês do pagamento deixou de posicionar qualquer coisa aqui.
+
+      `já pagos` espelha o `já quitados` da row visível.
+    */
+    return `${person.personName}. Quitado. ${formatCurrency(view.amount)} já pagos.`
   }
 
   const direcao =

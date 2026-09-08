@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BudgetService } from './budget.service';
+import { routeInvoiceQuery } from 'src/common/testing/invoice-query-double';
 import type { PrismaService } from 'src/prisma/prisma.service';
 import { SalaryService } from 'src/salary/salary.service';
 import {
@@ -70,11 +71,17 @@ function buildPrisma(data: {
       update: vi.fn(),
     },
     invoice: {
-      findMany: vi
-        .fn()
-        .mockResolvedValue(
+      /*
+        Honra o `where`: são DUAS consultas — a competência exibida e a fila
+        viva de atrasadas. Um `mockResolvedValue` fixo devolvia a mesma
+        fatura para as duas, e ela entrava duas vezes em `invoiceIds`.
+      */
+      findMany: vi.fn(async ({ where }: any) =>
+        routeInvoiceQuery(
+          where,
           invoices.map((invoice) => ({ ...invoice, bank: makeBank() })),
         ),
+      ),
     },
     transaction: {
       findMany: vi.fn().mockResolvedValue(data.directPayments ?? []),
@@ -565,19 +572,28 @@ describe('BudgetService — status das dívidas no breakdown', () => {
   });
 
   it('atraso domina quando a pessoa tem uma dívida vencida entre outras', async () => {
+    /*
+      As duas vencem DENTRO de agosto/2026, a competência consultada: uma
+      antes de `HOJE` (vencida) e outra depois (pendente).
+
+      As datas eram 2020 e 2099. Fora da competência, `classifyDebtForBudget`
+      as manda para `Pendências anteriores` ou as exclui, e nenhuma chega ao
+      `debtBreakdown` — o que este teste exercita é a derivação de STATUS
+      dentro da seção "Dívidas", não o roteamento entre seções.
+    */
     const prisma = buildPrisma({
       debts: [
         debtRow({
           amount: '50',
           personId: 'person-1',
           person: personEva,
-          dueDate: utcDate(2020, 1, 1),
+          dueDate: utcDate(2026, 8, 10),
         }),
         debtRow({
           amount: '50',
           personId: 'person-1',
           person: personEva,
-          dueDate: utcDate(2099, 1, 1),
+          dueDate: utcDate(2026, 8, 28),
         }),
       ],
     });
@@ -609,10 +625,15 @@ describe('BudgetService — status das dívidas no breakdown', () => {
     const prisma = buildPrisma({
       debts: [
         debtRow({ amount: '10', title: 'Paga', isPaid: true }),
+        /*
+          Vencida DENTRO de agosto/2026: antes de `HOJE` (19/08), mas na
+          competência consultada. Com 2020 ela caía em `Pendências
+          anteriores` e não chegava a esta seção.
+        */
         debtRow({
           amount: '20',
           title: 'Vencida',
-          dueDate: utcDate(2020, 1, 1),
+          dueDate: utcDate(2026, 8, 10),
         }),
         /*
           Vence DEPOIS de `HOJE` e dentro do mês consultado: é PENDING de
@@ -649,10 +670,15 @@ describe('BudgetService — status das dívidas no breakdown', () => {
       OVERDUE. Separada de propósito: um teste protege o status, outro o
       desempate, e nenhum mascara a falha do outro.
     */
+    /*
+      Ambas vencidas DENTRO de agosto/2026 — mesmo status, valores
+      diferentes. Com 2020 as duas iam para `Pendências anteriores` e a
+      seção "Dívidas" ficava vazia, sem desempate nenhum a exercitar.
+    */
     const prisma = buildPrisma({
       debts: [
-        debtRow({ amount: '20', title: 'Menor', dueDate: utcDate(2020, 1, 1) }),
-        debtRow({ amount: '30', title: 'Maior', dueDate: utcDate(2020, 1, 1) }),
+        debtRow({ amount: '20', title: 'Menor', dueDate: utcDate(2026, 8, 10) }),
+        debtRow({ amount: '30', title: 'Maior', dueDate: utcDate(2026, 8, 10) }),
       ],
     });
 
@@ -766,7 +792,11 @@ describe('BudgetService — getFocusPeriod', () => {
     debts?: { dueDate: Date }[];
   }) {
     return {
-      invoice: { findMany: vi.fn().mockResolvedValue(data.invoices ?? []) },
+      invoice: {
+        findMany: vi.fn(async ({ where }: any) =>
+          routeInvoiceQuery(where, (data.invoices ?? []) as any),
+        ),
+      },
       debt: {
         findMany: vi.fn(({ where }: any) =>
           Promise.resolve(
