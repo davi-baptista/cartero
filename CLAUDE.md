@@ -2,8 +2,6 @@
 
 ## Regras para o Assistente
 
-- **Não mexa no backend sem permissão explícita do usuário.** Toda alteração em `cartero-backend/` precisa ser solicitada diretamente. O usuário cuida do backend.
-
 ## Browser Automation
 
 Use `agent-browser` for browser-based validation whenever a task changes
