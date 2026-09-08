@@ -115,10 +115,29 @@ const PRIOR_DEBT_SELECT = {
 /**
  * A competência pedida é o mês civil CORRENTE?
  *
- * Decide se pendências anteriores ainda abertas entram. O fuso é explícito
- * porque o servidor roda em UTC: em 31/08 às 22h de Fortaleza já é 01/09 em
- * UTC, e `getUTCMonth()` diria setembro — o carry sumiria da tela um dia antes
- * da hora.
+ * ══════════════════════════════════════════════════════════════════════════
+ * A autoridade temporal ÚNICA de `Pendências anteriores`
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Decide se pendências anteriores ainda abertas entram — dívidas E faturas,
+ * pela MESMA regra. A fila é o estado de AGORA, nunca uma projeção: afirmar
+ * em outubro que um atraso de agosto continuará aberto lá inventaria um fato
+ * que ninguém sabe, já que o usuário pode resolvê-lo amanhã.
+ *
+ * A fatura ficou de fora desta regra por omissão, não por decisão: a consulta
+ * dela raciocinou apenas sobre o limite INFERIOR ("competência anterior à
+ * exibida") e nunca sobre o superior. No mesmo cenário, a dívida não
+ * carregava para o futuro e a fatura carregava.
+ *
+ * Existe uma `isCurrentCompetence` em `salary.helper` com a mesma aritmética.
+ * Ela não é reusada aqui de propósito: recebe `SalaryCompetence` e existe para
+ * decidir o cache de `User.salary`. Compartilhar a função acoplaria a regra de
+ * carry ao domínio de renda, e a próxima mudança em um dos lados teria de
+ * justificar-se para o outro.
+ *
+ * O fuso é explícito porque o servidor roda em UTC: em 31/08 às 22h de
+ * Fortaleza já é 01/09 em UTC, e `getUTCMonth()` diria setembro — o carry
+ * sumiria da tela um dia antes da hora.
  */
 function isCurrentCompetence(
   year: number,
@@ -220,15 +239,52 @@ export class BudgetService {
 
         Competência ANTERIOR à exibida: a fatura do próprio mês já vem na
         consulta acima, e trazê-la aqui a contaria duas vezes.
+
+        ── E somente no mês CORRENTE ──
+
+        A fila é o estado de AGORA, não uma projeção. Uma fatura vencida em
+        agosto e ainda aberta é fato de setembro; afirmá-la em outubro seria
+        dizer que ela ainda estará aberta lá, o que ninguém sabe — o usuário
+        pode pagá-la amanhã.
+
+        É a MESMA regra que a dívida já seguia (`isCurrentMonth` guardando a
+        consulta de `currentOpenPrior`, e `classifyDebtForBudget` devolvendo
+        `excluded` fora do mês corrente). A primeira versão desta consulta
+        raciocinou só sobre o limite INFERIOR — "competência anterior à
+        exibida" — e nunca considerou o superior: a fatura projetava para
+        outubro e novembro um atraso que a dívida, no mesmo cenário, não
+        projetava.
+
+        Mês passado continua fora pelo mesmo motivo da dívida: aquele mês não
+        viu o dinheiro sair, e contá-lo inventaria um desembolso histórico. O
+        recorte de competência anterior já produzia isso; o guard só torna a
+        intenção explícita em vez de acidental.
       */
-      this.prisma.invoice.findMany({
-        where: {
-          userId,
-          status: 'OVERDUE',
-          OR: [{ year: { lt: year } }, { year, month: { lt: month } }],
-        },
-        include: { bank: true },
-      }),
+      isCurrentMonth
+        ? this.prisma.invoice.findMany({
+            where: {
+              userId,
+              status: 'OVERDUE',
+              OR: [{ year: { lt: year } }, { year, month: { lt: month } }],
+            },
+            include: { bank: true },
+          })
+        : /*
+            O tipo do ramo vazio é explícito: `Promise.resolve([])` sozinho
+            infere `never[]`, e a união com o ramo da consulta colapsa para
+            `never` — os acessos a `inv.totalAmount` e `inv.id` mais abaixo
+            deixariam de compilar.
+
+            A consulta da dívida não precisa disso porque `select` lhe dá uma
+            forma concreta que sobrevive à união; esta usa `include`.
+          */
+          Promise.resolve(
+            [] as Awaited<
+              ReturnType<typeof this.prisma.invoice.findMany<{
+                include: { bank: true };
+              }>>
+            >,
+          ),
       this.prisma.transaction.findMany({
         where: {
           userId,

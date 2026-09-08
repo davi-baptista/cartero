@@ -187,16 +187,43 @@ describe('I1-I3: fatura OVERDUE aberta carrega para os meses seguintes', () => {
     expect(budget.invoices).toHaveLength(0);
   });
 
-  it('I3: e continua na fila nos meses posteriores', async () => {
+  it('I3: NÃO é projetada para competências futuras', async () => {
     /*
-      Enquanto estiver aberta, ela é a mesma obrigação atravessando snapshots
-      — não uma despesa nova a cada mês. A repetição é o ponto da fila.
+      ── A fila é estado, não previsão ──
+
+      Este teste afirmava o oposto: que a fatura "continua na fila nos meses
+      posteriores", tratando a repetição como o ponto da fila. Isso vale
+      enquanto o mês corrente AVANÇA sobre ela — em outubro de verdade, com a
+      fatura ainda aberta, ela reaparece —, mas não vale para navegar até
+      outubro hoje.
+
+      Estando em setembro, dizer que o atraso ainda existirá em outubro
+      afirmaria um fato que ninguém sabe: o usuário pode pagá-lo amanhã.
+
+      A dívida já se comportava assim. A fatura projetava, e a divergência
+      vinha de a consulta dela ter raciocinado só sobre o limite inferior.
     */
     const outubro = await ver([AGOSTO_VENCIDA], 10);
     const novembro = await ver([AGOSTO_VENCIDA], 11);
 
+    expect(outubro.priorInvoices).toHaveLength(0);
+    expect(novembro.priorInvoices).toHaveLength(0);
+    /* E o total futuro não herda a obrigação. */
+    expect(outubro.totalToPay).toBe(0);
+  });
+
+  it('I3: mas reaparece quando aquele mês VIRAR o corrente', async () => {
+    /*
+      A contrapartida — sem ela, o teste acima poderia ser satisfeito por uma
+      fatura que simplesmente nunca carrega. O que muda não é a fatura: é
+      qual mês é "hoje".
+    */
+    vi.setSystemTime(new Date(Date.UTC(2026, 9, 15, 15))); // 15/10/2026
+
+    const outubro = await ver([AGOSTO_VENCIDA], 10);
+
     expect(outubro.priorInvoices.map((i) => i.id)).toEqual(['inv-ago']);
-    expect(novembro.priorInvoices.map((i) => i.id)).toEqual(['inv-ago']);
+    expect(outubro.priorInvoicesTotal).toBe(700);
   });
 
   it('preserva a identidade de FATURA, não vira dívida genérica', async () => {
@@ -426,6 +453,88 @@ describe('a fila viva reúne dívida E fatura', () => {
     expect(budget.debts.priorItems).toHaveLength(0);
     expect(budget.priorCount).toBe(0);
     expect(budget.totalToPay).toBe(0);
+  });
+});
+
+// ─── Dívida e fatura seguem a MESMA policy temporal ─────────────────────────
+
+describe('SIMETRIA: dívida e fatura carregam pela mesma regra', () => {
+  /*
+    ══════════════════════════════════════════════════════════════════════
+    Uma autoridade temporal, dois domínios
+    ══════════════════════════════════════════════════════════════════════
+
+    A dívida guardava o futuro em DOIS pontos — `isCurrentMonth`
+    condicionando a consulta, e `classifyDebtForBudget` devolvendo
+    `excluded` fora do mês corrente. A fatura não pegou nenhum dos dois: a
+    consulta dela nasceu com a cláusula de competência ANTERIOR e nunca
+    considerou o limite superior.
+
+    O resultado era observável e incoerente: no mesmo outubro futuro, a
+    dívida de agosto sumia e a fatura de agosto continuava lá.
+
+    Estes testes comparam os dois lado a lado, no MESMO cenário — é o
+    formato que impede a divergência de voltar por um dos lados só.
+  */
+  const FATURA: InvoiceRow = {
+    id: 'inv-ago',
+    month: 8,
+    year: 2026,
+    status: 'OVERDUE',
+    total: 700,
+  };
+  const DIVIDA: DebtRow = { amount: 300, dueDate: '2026-08-15', paidAt: null };
+
+  const fila = (b: Awaited<ReturnType<typeof ver>>) => ({
+    dividas: b.debts.priorItems.length,
+    faturas: b.priorInvoices.length,
+  });
+
+  it('mês CORRENTE: os dois aparecem', async () => {
+    expect(fila(await ver([FATURA], 9, [DIVIDA]))).toEqual({
+      dividas: 1,
+      faturas: 1,
+    });
+  });
+
+  it('mês FUTURO: nenhum dos dois aparece', async () => {
+    /* A asserção que falhava: `faturas` vinha 1 enquanto `dividas` vinha 0. */
+    expect(fila(await ver([FATURA], 10, [DIVIDA]))).toEqual({
+      dividas: 0,
+      faturas: 0,
+    });
+    expect(fila(await ver([FATURA], 11, [DIVIDA]))).toEqual({
+      dividas: 0,
+      faturas: 0,
+    });
+  });
+
+  it('mês PASSADO: nenhum dos dois aparece', async () => {
+    /*
+      Pelo mesmo motivo, e não por acaso: aquele mês não viu o dinheiro sair,
+      e contá-lo inventaria um desembolso histórico.
+    */
+    expect(fila(await ver([FATURA], 7, [DIVIDA]))).toEqual({
+      dividas: 0,
+      faturas: 0,
+    });
+  });
+
+  it('o total futuro não herda nem a dívida nem a fatura', async () => {
+    const outubro = await ver([FATURA], 10, [DIVIDA]);
+
+    expect(outubro.totalToPay).toBe(0);
+    expect(outubro.priorInvoicesTotal).toBe(0);
+    expect(outubro.priorCount).toBe(0);
+  });
+
+  it('quando o futuro VIRA presente, os dois reaparecem juntos', async () => {
+    vi.setSystemTime(new Date(Date.UTC(2026, 9, 15, 15))); // 15/10/2026
+
+    expect(fila(await ver([FATURA], 10, [DIVIDA]))).toEqual({
+      dividas: 1,
+      faturas: 1,
+    });
   });
 });
 
