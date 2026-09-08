@@ -310,8 +310,8 @@ describe('o círculo de status é um controle independente', () => {
 
   it('itens 6 e 9: alvo confortável e acessível por teclado', () => {
     /*
-      A área de toque é o container inteiro do ícone (40/44px), não o ponto
-      colorido. `button` real dá Enter/Espaço e foco de graça — uma `div`
+      A área de toque é o container inteiro do ícone (40/44px). `button`
+      real dá Enter/Espaço e foco de graça — uma `div`
       com `onClick` perderia os dois.
     */
     for (const [nome, row] of Object.entries(ROWS)) {
@@ -319,7 +319,31 @@ describe('o círculo de status é um controle independente', () => {
         'type="button"',
       )
       expect(row).toContain('ROW_ICON_CLASS')
-      expect(row, `${nome}: faltou foco visível`).toContain('focus-visible:ring')
+      /*
+        O foco visível pode vir da primitive compartilhada
+        (`SETTLEMENT_ACTION_CIRCLE_CLASS`) em vez de estar escrito na row.
+        O que importa é que o controle TENHA foco visível — não onde a
+        classe mora. Aceitar as duas origens mantém a garantia e permite
+        que Dívidas e A Receber compartilhem um acabamento só.
+      */
+      const focoNaRow = row.includes('focus-visible:ring')
+      /*
+        Recorta a DECLARAÇÃO da constante, não o arquivo inteiro: a row e o
+        alvo principal também trazem `focus-visible:ring`, e procurar no
+        arquivo todo daria positivo mesmo com o foco removido do círculo
+        — a checagem passaria a não vigiar nada.
+      */
+      const declaracao =
+        PRIMITIVE.match(
+          /export const SETTLEMENT_ACTION_CIRCLE_CLASS =\s*'[^']*'/,
+        )?.[0] ?? ''
+      const focoNaPrimitive =
+        row.includes('SETTLEMENT_ACTION_CIRCLE_CLASS') &&
+        declaracao.includes('focus-visible:ring')
+      expect(
+        focoNaRow || focoNaPrimitive,
+        `${nome}: faltou foco visível`,
+      ).toBe(true)
       expect(row, `${nome}: faltou rótulo`).toContain('aria-label={')
     }
   })

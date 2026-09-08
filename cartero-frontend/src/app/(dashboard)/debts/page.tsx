@@ -41,6 +41,7 @@ import {
   ROW_ICON_BG_CLASS,
   ROW_ICON_CLASS,
   ROW_TRAILING_META_CLASS,
+  SETTLEMENT_ACTION_CIRCLE_CLASS,
 } from '@/components/ui/financial-list-row'
 import { DeleteLinkedWarningDialog } from '../transactions/delete-linked-warning-dialog'
 import {
@@ -137,7 +138,7 @@ const DebtRow = memo(function DebtRow({
           className={cn(
             ROW_ICON_CLASS,
             ROW_ICON_BG_CLASS,
-            'ring-1 ring-border/50 outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50',
+            SETTLEMENT_ACTION_CIRCLE_CLASS,
           )}
         >
           {/*

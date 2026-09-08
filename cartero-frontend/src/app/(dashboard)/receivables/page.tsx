@@ -45,6 +45,7 @@ import {
   ROW_ICON_BG_CLASS,
   ROW_ICON_CLASS,
   ROW_TRAILING_META_CLASS,
+  SETTLEMENT_ACTION_CIRCLE_CLASS,
 } from '@/components/ui/financial-list-row'
 import {
   getReceivable,
@@ -57,8 +58,12 @@ import {
 import { useSearchParams } from 'next/navigation'
 import { getPersons } from '@/services/persons.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
-import { isOverdue, overdueCountLabel } from '@/lib/settlement-status'
-import { SettlementStatusDot } from '@/components/settlement-status-dot'
+import {
+  isOverdue,
+  overdueCountLabel,
+  RECEIVABLE_STATUS_LABEL,
+  settlementStatus,
+} from '@/lib/settlement-status'
 import { apiErrorMessage } from '@/lib/api-error'
 import { cn } from '@/lib/utils'
 import type { Receivable } from '@/types'
@@ -124,8 +129,7 @@ const ReceivableRow = memo(function ReceivableRow({
 
           É IRMÃO do botão da row, não filho — aninhar um botão dentro de
           outro é HTML inválido e foi exatamente o que quebrou este controle.
-          A área de toque é o container inteiro do ícone (40/44px), não o
-          ponto colorido.
+          A área de toque é o container inteiro do ícone (40/44px).
         */
         <button
           type="button"
@@ -139,10 +143,19 @@ const ReceivableRow = memo(function ReceivableRow({
           className={cn(
             ROW_ICON_CLASS,
             ROW_ICON_BG_CLASS,
-            'ring-1 ring-border/50 outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50',
+            SETTLEMENT_ACTION_CIRCLE_CLASS,
           )}
         >
-          <SettlementStatusDot item={receivable} domain="receivable" />
+          {/*
+            O círculo fica vazio: a bolinha colorida interna virou ruído
+            visual sem comunicar a ação do botão. O status continua legível
+            por leitor de tela — o `aria-label` acima descreve a AÇÃO
+            ("Marcar como recebido"), não o ESTADO, então sem este rótulo
+            o estado sairia da árvore de acessibilidade junto com a cor.
+          */}
+          <span className="sr-only">
+            {RECEIVABLE_STATUS_LABEL[settlementStatus(receivable)]}
+          </span>
         </button>
       }
       title={

@@ -140,6 +140,24 @@ export const ROW_ICON_CLASS =
   'flex size-10 shrink-0 items-center justify-center rounded-xl sm:size-11 sm:rounded-2xl'
 
 /**
+ * Acabamento do círculo de AÇÃO — o leading de Dívidas e A Receber.
+ *
+ * As duas telas tinham a mesma lista de classes copiada, e a paridade só
+ * se mantinha por disciplina: a rodada que limpou o ponto colorido de
+ * Dívidas deixou A Receber com a bolinha por exatamente esse motivo.
+ *
+ * Fica FORA de `ROW_ICON_CLASS` de propósito. Aquele container é usado por
+ * sete telas, e na maioria delas o círculo não é clicável — herdar cursor
+ * e profundidade de pressionável ali prometeria uma ação que não existe.
+ *
+ * `cursor-pointer` é explícito porque o preflight do Tailwind v4 aplica
+ * `cursor: default` em `button`: sem esta classe o alvo é clicável e não
+ * parece.
+ */
+export const SETTLEMENT_ACTION_CIRCLE_CLASS =
+  'cursor-pointer shadow-[var(--action-circle-depth)] ring-1 ring-border/50 outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50'
+
+/**
  * Geometria da row: gap, padding e hover.
  *
  * `px-0` no mobile e `sm:px-2` no desktop — o respiro lateral do celular vem

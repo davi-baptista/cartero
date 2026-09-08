@@ -82,6 +82,24 @@
   --color-income-bg: oklch(0.700 0.170 145 / 15%);
   --color-income-icon: oklch(0.700 0.170 145);
   --color-expense-bg: oklch(0 0 0 / 5%);
+  /*
+   * Profundidade interna do circulo de acao (Dividas e A Receber).
+   *
+   * Duas camadas `inset`: escurecimento no TOPO, de onde a luz nao vem, e
+   * um realce quase imperceptivel na borda de baixo. E o par que da a
+   * sensacao de rebaixado sem borda chamativa nem glow.
+   *
+   * Token porque a intensidade tem de mudar com o tema: no claro a sombra
+   * e preta e o realce branco; no escuro o preto precisa ser mais forte e
+   * o realce mais sutil, senao vira contorno.
+   *
+   * O nome NAO comeca com `--shadow-`: no Tailwind v4 esse prefixo e um
+   * namespace de tema, e a custom property era removida da saida — a
+   * classe `shadow-[var(...)]` resolvia para vazio e o box-shadow ficava
+   * `none`, sem erro nenhum de build.
+   */
+  --action-circle-depth:
+    inset 0 1px 2px oklch(0 0 0 / 8%), inset 0 -1px 0 oklch(1 0 0 / 50%);
   --color-expense-icon: oklch(0.400 0 0);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
@@ -123,6 +141,8 @@
   --color-income-bg: oklch(0.700 0.170 145 / 15%);
   --color-income-icon: oklch(0.700 0.170 145);
   --color-expense-bg: oklch(1 0 0 / 5%);
+  --action-circle-depth:
+    inset 0 1px 3px oklch(0 0 0 / 35%), inset 0 -1px 0 oklch(1 0 0 / 4%);
   --color-expense-icon: oklch(0.600 0 0);
   --sidebar: oklch(0.198 0.008 272);
   --sidebar-foreground: oklch(0.985 0 0);
