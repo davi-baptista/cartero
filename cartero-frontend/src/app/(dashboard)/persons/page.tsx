@@ -258,12 +258,23 @@ export default function PersonsPage() {
     fechado — enquanto abrir outra funcionava. O que distingue um fechamento é
     o momento.
   */
+  /*
+    O espelho guarda QUEM foi dispensado, não um contador global: um cleanup
+    de id inválido fecha sem abertura correspondente, e um contador engoliria
+    a próxima abertura legítima.
+  */
+  const [dispensa, setDispensa] = useState<{
+    id: string | null
+    geracao: number
+  } | null>(null)
   const [pedidos, setPedidos] = useState(0)
-  const [dispensas, setDispensas] = useState(0)
+  const personIdParam = searchParams.get('personId')
   const openPersonId =
-    dispensas > 0 && dispensas >= pedidos
+    dispensa !== null &&
+    dispensa.id === personIdParam &&
+    pedidos <= dispensa.geracao
       ? null
-      : searchParams.get('personId')
+      : personIdParam
 
   const openPerson = (id: string) => {
     setPedidos((n) => n + 1)
@@ -287,7 +298,10 @@ export default function PersonsPage() {
     if (!next.has('personId')) return
     next.delete('personId')
 
-    setDispensas((n) => n + 1)
+    setDispensa({
+      id: new URLSearchParams(atual.search).get('personId'),
+      geracao: pedidos,
+    })
 
     if (typeof window !== 'undefined') {
       window.history.replaceState(

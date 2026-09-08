@@ -489,7 +489,7 @@ describe('HOTFIX: rota estática descarta `router.replace` de query', () => {
       ['budget', BUDGET],
       ['persons', PERSONS],
     ] as const) {
-      expect(src, nome).toContain('dispensas')
+      expect(src, nome).toContain('dispensa')
       expect(src, nome).toContain('pedidos')
     }
   })
@@ -504,8 +504,8 @@ describe('HOTFIX: rota estática descarta `router.replace` de query', () => {
 
       O que distingue um fechamento é o MOMENTO, não o endereço.
     */
-    expect(NAV).toContain('dispensas > 0 && dispensas >= pedidos')
-    expect(NAV).toContain('setDispensas((n) => n + 1)')
+    expect(NAV).toContain('dispensa.id === paramId')
+    expect(NAV).toContain('setDispensa({')
     expect(NAV).toContain('setPedidos((n) => n + 1)')
 
     /* A comparação por query não pode voltar. */
@@ -531,7 +531,7 @@ describe('HOTFIX: rota estática descarta `router.replace` de query', () => {
       `dispensas > 0` na guarda: sem isso, `0 >= 0` marcaria o estado inicial
       como dispensado e nenhum detalhe abriria por URL colada.
     */
-    expect(NAV).toContain('dispensas > 0 &&')
+    expect(NAV).toContain('dispensa !== null && dispensa.id === paramId')
   })
 
   it('nenhum `useEffect` foi introduzido para limpar o espelho', () => {
@@ -583,16 +583,21 @@ describe('REOPEN: a mesma entidade reabre depois do X', () => {
   /** A derivação compartilhada, como as três superfícies a aplicam. */
   const criarCiclo = () => {
     let pedidos = 0
-    let dispensas = 0
+    let dispensa: { id: string | null; geracao: number } | null = null
     return {
       abrir: () => {
         pedidos += 1
       },
-      fechar: () => {
-        dispensas += 1
+      /** `idNaUrl` é o detalhe que estava aberto — o que o `close` real lê. */
+      fechar: (idNaUrl: string | null = 'A') => {
+        dispensa = { id: idNaUrl, geracao: pedidos }
       },
       aberto: (param: string | null) =>
-        dispensas > 0 && dispensas >= pedidos ? null : param,
+        dispensa !== null &&
+        dispensa.id === param &&
+        pedidos <= dispensa.geracao
+          ? null
+          : param,
     }
   }
 
@@ -646,40 +651,118 @@ describe('REOPEN: a mesma entidade reabre depois do X', () => {
     expect(c.aberto('A')).toBe('A')
   })
 
-  it('dois fechamentos seguidos não desequilibram o contador', () => {
+  it('dois fechamentos seguidos não bloqueiam a reabertura', () => {
     /*
       `close` é idempotente por contrato — o fluxo de exclusão o chama depois
-      de a URL já ter sido limpa. Se cada chamada incrementasse sem limite, o
-      próximo open precisaria de vários cliques para superar as dispensas.
+      de a URL já ter sido limpa.
+
+      Com um CONTADOR global, duas dispensas contra duas aberturas mantinham o
+      drawer fechado. O espelho por id não tem esse problema: a segunda
+      dispensa sobrescreve a primeira em vez de somar.
     */
     const c = criarCiclo()
 
     c.abrir()
-    c.fechar()
-    c.fechar()
+    c.fechar('A')
+    c.fechar('A')
     c.abrir()
 
-    /*
-      Com dois fechamentos e duas aberturas, `dispensas >= pedidos` seria
-      verdadeiro e o drawer ficaria fechado. É a razão de o `close` real
-      abortar cedo quando o param já saiu — o guard antes do incremento.
-    */
-    expect(c.aberto('A')).toBeNull()
+    expect(c.aberto('A')).toBe('A')
   })
 
-  it('e o `close` real ABORTA antes de incrementar quando não há o que fechar', () => {
+  it('R7: id inválido é limpo sem bloquear a próxima abertura válida', () => {
     /*
-      A proteção do caso acima vive no código: o `return` antecipado impede o
-      segundo incremento. Sem ele, o reopen exigiria dois cliques.
+      O caso que um contador global quebrava. `onNotFound` chama `close()`
+      para limpar um id inexistente, SEM abertura correspondente — e o
+      contador ficava desequilibrado, engolindo o clique seguinte.
+
+      O espelho por id não alcança outra entidade.
     */
+    const c = criarCiclo()
+
+    /* Link direto com id inválido: a URL manda, o drawer tenta abrir. */
+    expect(c.aberto('INVALIDO')).toBe('INVALIDO')
+
+    /* `onNotFound` limpa. */
+    c.fechar('INVALIDO')
+    expect(c.aberto(null)).toBeNull()
+
+    /* E clicar numa entidade válida abre. */
+    c.abrir()
+    expect(c.aberto('A')).toBe('A')
+  })
+
+  it('R8: fechar durante o carregamento não suprime o reopen', () => {
+    /*
+      O espelho é sincrono e não consulta dados: fechar com a entidade ainda
+      carregando é o mesmo fechamento de sempre, e o pedido seguinte vale.
+    */
+    const c = criarCiclo()
+
+    c.abrir()
+    c.fechar('A')
+    c.abrir()
+
+    expect(c.aberto('A')).toBe('A')
+  })
+
+  it('R5: alternar TIPOS e voltar', () => {
+    /* Pessoa → fatura → a mesma pessoa. */
+    const c = criarCiclo()
+
+    c.abrir()
+    expect(c.aberto('pessoa-A')).toBe('pessoa-A')
+    c.fechar('pessoa-A')
+
+    c.abrir()
+    expect(c.aberto('fatura-A')).toBe('fatura-A')
+    c.fechar('fatura-A')
+
+    c.abrir()
+    expect(c.aberto('pessoa-A')).toBe('pessoa-A')
+  })
+
+  it('R10: URL com id válido nunca fica estável com o drawer fechado', () => {
+    /*
+      O invariante do §8: o estado "param na URL + drawer fechado" só existe
+      no instante do fechamento, e o próprio fechamento remove o param. Sem um
+      pedido novo, a dispensa vale; com ele, a URL manda.
+    */
+    const c = criarCiclo()
+
+    c.abrir()
+    c.fechar('A')
+    /* A URL já não tem o param — este é o único estado fechado legítimo. */
+    expect(c.aberto(null)).toBeNull()
+
+    /* Qualquer pedido posterior devolve a autoridade à URL. */
+    c.abrir()
+    expect(c.aberto('A')).toBe('A')
+  })
+
+  it('o `close` real aborta quando não há o que fechar', () => {
+    /* Idempotência: sem param na URL, nenhuma dispensa é registrada. */
     const NAV_FONTE = ler('./detail-navigation.ts')
     const inicio = NAV_FONTE.indexOf('const close = ()')
     const corpoClose = NAV_FONTE.slice(
       inicio,
-      NAV_FONTE.indexOf('setDispensas', inicio),
+      NAV_FONTE.indexOf('setDispensa(', inicio),
     )
 
-    /* O `return` vem ANTES do incremento. */
     expect(corpoClose).toContain('.get(key) === null) return')
+  })
+
+  it('o espelho registra QUEM foi dispensado, não uma contagem', () => {
+    /*
+      A diferença que o R7 exige: um contador global é afetado por qualquer
+      fechamento, inclusive o cleanup de um id inválido. O espelho por id só
+      alcança a entidade que foi realmente dispensada.
+    */
+    const FONTE = semComentarios(ler('./detail-navigation.ts'))
+
+    expect(FONTE).toContain('dispensa.id === paramId')
+    expect(FONTE).toContain('pedidos <= dispensa.geracao')
+    /* O contador global não pode voltar. */
+    expect(FONTE).not.toContain('setDispensas')
   })
 })

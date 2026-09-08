@@ -231,10 +231,25 @@ export default function BudgetPage() {
     contadores monotônicos resolvem, e reabrir a mesma entidade é um pedido
     novo como qualquer outro.
   */
+  /*
+    O espelho guarda QUEM foi dispensado — não um contador global.
+
+    Contar dispensas era frágil: um cleanup de id inválido chama o fechamento
+    sem abertura correspondente, e o contador engolia a próxima abertura
+    legítima.
+  */
+  const [dispensa, setDispensa] = useState<{
+    chave: string
+    geracao: number
+  } | null>(null)
   const [pedidos, setPedidos] = useState(0)
-  const [dispensas, setDispensas] = useState(0)
-  /* `dispensas === 0` cobre a primeira montagem e o link direto. */
-  const drawersAbertos = !(dispensas > 0 && dispensas >= pedidos)
+
+  const chaveAtual = `${searchParams.get('personId') ?? ''}|${searchParams.get('invoiceId') ?? ''}`
+  const drawersAbertos = !(
+    dispensa !== null &&
+    dispensa.chave === chaveAtual &&
+    pedidos <= dispensa.geracao
+  )
   const openPersonId = drawersAbertos ? searchParams.get('personId') : null
   const openInvoiceId = drawersAbertos ? searchParams.get('invoiceId') : null
 
@@ -285,7 +300,10 @@ export default function BudgetPage() {
     limpo.delete('invoiceId')
     if (limpo.toString() === atual.search) return
 
-    setDispensas((n) => n + 1)
+    setDispensa({
+      chave: `${new URLSearchParams(atual.search).get('personId') ?? ''}|${new URLSearchParams(atual.search).get('invoiceId') ?? ''}`,
+      geracao: pedidos,
+    })
 
     if (typeof window !== 'undefined') {
       window.history.replaceState(

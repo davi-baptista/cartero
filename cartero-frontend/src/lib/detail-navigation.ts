@@ -164,25 +164,44 @@ export function useDetailNavigation(key: DetailParam) {
     idêntica à guardada, o espelho volta a casar, e o drawer não abre. Abrir
     OUTRA funcionava, o que fazia o bug parecer aleatório.
 
-    O que distingue um fechamento não é o endereço, é o MOMENTO. Dois
-    contadores monotônicos resolvem: `close` marca o instante em que o usuário
-    dispensou, `open` marca o instante em que pediu de novo. O detalhe está
-    aberto quando o último pedido é mais recente que a última dispensa — e
+    O que distingue um fechamento não é o endereço, é QUEM foi dispensado e
+    QUANDO. O espelho guarda o id fechado e a geração de aberturas daquele
+    momento; ele deixa de valer quando um `open` posterior o supera — e
     reabrir a mesma entidade é um pedido novo como qualquer outro.
+
+    Contar apenas dispensas era frágil: `onNotFound` chama `close()` para
+    limpar um id inválido, sem abertura correspondente, e o contador global
+    ficava desequilibrado — a próxima abertura legítima era engolida.
 
     Sem `useEffect` de propósito: um efeito que limpasse o espelho poderia
     reabrir o que foi dispensado, e o Orçamento tem a garantia explícita de
     não conter nenhum (para que nada dê snap-back no mês selecionado).
   */
+  /**
+   * O que foi dispensado, e em que geração.
+   *
+   * `id` é o detalhe que o usuário fechou; `geracao` é o número de aberturas
+   * pedidas até ali. O espelho vale enquanto ninguém pedir uma abertura nova
+   * — `pedidos > dispensa.geracao` já a invalida.
+   *
+   * Contar só dispensas era frágil: `onNotFound` chama `close()` para limpar
+   * um id inválido, sem `open` correspondente, e o contador ficava
+   * desequilibrado — a próxima abertura legítima era engolida. Guardar QUEM
+   * foi dispensado torna o espelho específico em vez de global.
+   */
+  const [dispensa, setDispensa] = useState<{
+    id: string | null
+    geracao: number
+  } | null>(null)
   const [pedidos, setPedidos] = useState(0)
-  const [dispensas, setDispensas] = useState(0)
 
   /*
-    `pedidos > dispensas` cobre o reopen; `dispensas === 0` cobre a primeira
-    montagem e o link direto, onde ninguém pediu nem dispensou nada e a URL
-    manda sozinha.
+    Fechado quando a dispensa é do MESMO id e nenhuma abertura veio depois.
+    Um id diferente na URL — inclusive depois de um cleanup de id inválido —
+    não é alcançado pela dispensa anterior.
   */
-  const dispensadoAgora = dispensas > 0 && dispensas >= pedidos
+  const dispensadoAgora =
+    dispensa !== null && dispensa.id === paramId && pedidos <= dispensa.geracao
   const openId = dispensadoAgora ? null : paramId
 
   const open = (id: string) => {
@@ -214,7 +233,10 @@ export function useDetailNavigation(key: DetailParam) {
       A UI fecha AGORA, sem esperar navegação — é o que torna o X
       determinístico mesmo quando o Next descarta a atualização de rota.
     */
-    setDispensas((n) => n + 1)
+    setDispensa({
+      id: new URLSearchParams(atual.search).get(key),
+      geracao: pedidos,
+    })
 
     const limpo = withoutDetailParams(atual.search)
 
