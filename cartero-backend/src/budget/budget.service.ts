@@ -1389,9 +1389,31 @@ export class BudgetService {
         };
       });
 
-    const paidInvoices = invoices
+    /*
+      ══════════════════════════════════════════════════════════════════════
+      A parcela paga das faturas é a SUA PARTE, na mesma base do total
+      ══════════════════════════════════════════════════════════════════════
+
+      Somava `totalAmount` — o BRUTO, incluindo o que é de outras pessoas —
+      enquanto `totalToPay` conta apenas a sua parte (`netAmount`). Duas
+      bases diferentes no mesmo quociente.
+
+      Com uma fatura paga de R$ 1.000 da qual R$ 600 são de terceiros, o
+      "pago" recebia 1.000 contra um total de 700. O excedente saturava o
+      `Math.min(..., totalToPay)` logo abaixo, e `totalPending` dava ZERO
+      mesmo havendo outra fatura vencida em aberto.
+
+      Era isso que fazia o resumo dizer "Tudo em dia" com uma fatura
+      OVERDUE na tela: o teto global escondia a pendência em vez de o
+      número denunciá-la.
+
+      `ownAmount` é a mesma decomposição que a row exibe e que `netAmount`
+      soma — uma base só, e a saturação deixa de ser alcançável por
+      construção.
+    */
+    const paidInvoices = invoicesWithBreakdown
       .filter((inv) => inv.status === 'PAID')
-      .reduce((sum, inv) => sum + Number(inv.totalAmount), 0);
+      .reduce((sum, inv) => sum + inv.ownAmount, 0);
     /*
       A parcela JÁ PAGA do mês vem de `paidInCompetence`.
 
