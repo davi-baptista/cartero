@@ -330,25 +330,34 @@ describe('T1-T6: a cobertura é LÍQUIDA de recebíveis', () => {
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
- * Duas probes que NÃO morrem — e por quê
+ * A probe que NÃO morre — e por quê
  * ══════════════════════════════════════════════════════════════════════════
  *
  * Vale registrar, porque a ausência de teste aqui é deliberada.
  *
- * ── `anyOpenDebt` como guard de `isSettled` ──
+ * ── `anyOpenDebt` como guard: CORRIGIDO, e agora coberto ──
  *
- * Com a cobertura líquida, os dois critérios COINCIDEM em `isSettled`:
+ * Esta nota afirmava que "não existe estado com dívida aberta e contribuição
+ * coberta, então nenhum teste consegue separar as regras". Estava ERRADO, e
+ * dentro do escopo deste helper a álgebra realmente sugere isso:
  *
  *   settled ⟺ (Σpagas − recv) ≥ (Σpagas + abertas − recv) ⟺ abertas ≤ 0
  *
- * Não existe estado com dívida aberta e contribuição coberta, então nenhum
- * teste sobre `isSettled` consegue separar as regras. A diferença real está
- * em `planned`/`payable`: com dívida 30 e recebível 50 o alvo é ZERO e a
- * pessoa fica fora do orçamento — é o que o caso net-zero (T4) e o teste de
- * zero-net do serviço protegem. Escrever um teste de `isSettled` para isso
- * seria teatro: ele passaria com as duas implementações.
+ * O erro foi tratar `abertas` como "toda dívida aberta da pessoa". No
+ * serviço, uma dívida aberta de competência ANTERIOR é classificada como
+ * `prior` e NÃO entra no agregado — ela vive na fila viva. A pessoa então
+ * tem, ao mesmo tempo, contribuição coberta e dívida aberta.
  *
- * ── `settledAt` sem o guard `isSettled &&` ──
+ * `budget-person-reopen.spec.ts` → `R9c` fixa esse caso, e a probe
+ * `isSettled = !hasOpenDebt` (lida dos campos de dívida aberta REAL, não dos
+ * baldes do agregado) morre nele.
+ *
+ * O caso 30/50 sozinho não bastava: ali as duas implementações devolvem
+ * `false`, uma pela matemática e outra pelo atalho. Ele está fixado em `R9b`
+ * pelo que realmente protege — alvo zero, `payable` zero, sem saída no
+ * orçamento.
+ *
+ * ── `settledAt` sem o guard `isSettled &&` — sem teste, por construção ──
  *
  * `cobertura` só é atribuída dentro do laço quando o acumulado alcança o
  * alvo — a mesma condição de `isSettled`. Um estado descoberto nunca chega a

@@ -581,6 +581,84 @@ describe('R7-R10: o reopen preserva os contratos vizinhos', () => {
     expect(b.totalToPay).toBe(0);
   });
 
+  it('R9b: dívida ABERTA 30 com recebível 50 — a pessoa não é pendência', async () => {
+    /*
+      ══════════════════════════════════════════════════════════════════
+      O caso canônico contra `anyOpenDebt`
+      ══════════════════════════════════════════════════════════════════
+
+      Devo R$ 30 a quem me deve R$ 50. Existe dívida ABERTA, e mesmo assim
+      esta relação não tira NADA do bolso nesta competência: o líquido é
+      `max(30 − 50, 0) = 0`.
+
+      A semântica vigente de contribuição zero é `isSettled: false` — e ela
+      significa "não há saída a cobrir", NÃO "quitado". Fixada aqui de
+      propósito: sem esta asserção, alguém poderia trocá-la por `true` no
+      caminho de tornar o zero um estado de conclusão, e a row passaria a
+      exibir PAGO sobre uma relação que nunca teve o que pagar.
+    */
+    const b = await verAgosto({
+      receivables: [{ amount: 50, dueDate: '2026-08-08' }],
+      debts: [{ amount: 30, dueDate: '2026-08-08' }],
+    });
+
+    const p = b.peopleSettlements[0];
+
+    expect(p.contribution.planned).toBe(0);
+    expect(p.contribution.paid).toBe(0);
+    expect(p.contribution.remaining).toBe(0);
+    expect(p.contribution.isSettled).toBe(false);
+    expect(p.contribution.settledAt).toBeNull();
+    expect(p.budget.payable).toBe(0);
+
+    /* E o orçamento não ganha saída nenhuma por causa dela. */
+    expect(b.totalToPay).toBe(0);
+    expect(b.totalPending).toBe(0);
+  });
+
+  it('R9c: contribuição COBERTA convive com dívida aberta — mata `anyOpenDebt`', async () => {
+    /*
+      ══════════════════════════════════════════════════════════════════
+      O caso que DISTINGUE as duas implementações
+      ══════════════════════════════════════════════════════════════════
+
+      O cenário 30/50 acima NÃO separa as regras: ali as duas devolvem
+      `isSettled: false`, uma pela matemática (alvo zero) e outra pelo
+      atalho (há dívida aberta). Um teste só sobre ele passaria com o bug
+      implementado — foi o que a probe `anyOpenDebt` revelou.
+
+      Este cenário separa. A pessoa tem:
+
+        dívida de setembro, R$ 100, PAGA   → contribuição coberta
+        dívida de agosto,   R$  40, ABERTA → vive na fila viva (prior), e
+                                              por isso NÃO entra no agregado
+
+      A contribuição da competência está integralmente coberta E existe
+      dívida aberta ao mesmo tempo. A matemática líquida diz `isSettled:
+      true`; `isSettled = !hasOpenDebt` diria `false` e apagaria o
+      `settledAt` de um acerto que realmente aconteceu.
+    */
+    const b = await verSetembro({
+      debts: [
+        { amount: 100, dueDate: '2026-09-10', isPaid: true, paidAt: '2026-09-12' },
+        { amount: 40, dueDate: '2026-08-05' },
+      ],
+    });
+
+    const p = b.peopleSettlements[0];
+
+    /* A dívida aberta EXISTE — é o que torna o caso discriminante. */
+    expect(p.open.debtTotal).toBe(40);
+    expect(b.debts.priorItems).toHaveLength(1);
+
+    /* E ainda assim a contribuição de setembro está coberta. */
+    expect(p.contribution.planned).toBe(100);
+    expect(p.contribution.paid).toBe(100);
+    expect(p.contribution.remaining).toBe(0);
+    expect(p.contribution.isSettled).toBe(true);
+    expect(p.contribution.settledAt).toBe('2026-09-12');
+  });
+
   it('R10: a dívida reaberta não é contada duas vezes em agosto', async () => {
     /*
       Ela pertence ao agregado da pessoa, e NÃO deve aparecer também como row
