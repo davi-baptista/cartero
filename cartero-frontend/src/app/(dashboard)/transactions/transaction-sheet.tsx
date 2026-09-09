@@ -37,6 +37,11 @@ import {
   type TransactionKind,
 } from '@/lib/transaction-kind'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
+import {
+  INSTALLMENTS_MESSAGE,
+  installmentsIssue,
+  toInstallmentsPayload,
+} from '@/lib/installment-count-field'
 import { TransactionPreviewPanel } from './transaction-preview-panel'
 import { cn } from '@/lib/utils'
 import { bankDisplayName, isSelectableBank } from '@/lib/bank-display'
@@ -72,6 +77,15 @@ const schema = z
       z.number().int().min(2).max(64).optional(),
     ),
     personId: z.string().optional(),
+    /*
+      O MODO de pagamento, como campo do formulário.
+
+      Ele precisa existir no schema porque a regra de parcelas é contextual:
+      campo vazio só é erro quando o usuário escolheu Parcelado. Guardá-lo em
+      `useState` obrigaria o resolver a ler um `ref` durante o render, que o
+      React desaconselha — aqui ele chega em `values`, como qualquer campo.
+    */
+    parcelado: z.boolean().optional(),
   })
   .refine(
     (d) => d.type !== TransactionType.CREDIT_CARD || !d.installments || d.installments >= 2,
@@ -221,7 +235,43 @@ export function TransactionSheet({
     setValue,
     formState: { errors, isSubmitting },
   } = useForm<TransactionFormData>({
-    resolver: zodResolver(schema) as unknown as Resolver<TransactionFormData>,
+    /*
+      Resolver com CONTEXTO do modo.
+
+      A regra de parcelas é contextual — vazio só é erro quando o usuário
+      escolheu Parcelado —, e o modo vive em estado do componente, fora do
+      schema. O `ref` é lido no momento da validação, então não precisa
+      entrar nas dependências nem recriar o resolver a cada render.
+
+      Sem isto, o schema fazia `'' -> undefined` num campo `.optional()`: um
+      submit em modo Parcelado com o campo limpo PASSAVA e criava uma compra
+      à vista, contradizendo o que a tela mostrava.
+    */
+    resolver: (async (
+      values: TransactionFormData,
+      context: unknown,
+      options: Parameters<Resolver<TransactionFormData>>[2],
+    ) => {
+      const base = await (
+        zodResolver(schema) as unknown as Resolver<TransactionFormData>
+      )(values, context, options)
+
+      const v = values as { installments?: unknown; parcelado?: boolean }
+      const issue = installmentsIssue(v.installments, v.parcelado === true)
+      if (!issue) return base
+
+      return {
+        ...base,
+        values: {},
+        errors: {
+          ...base.errors,
+          installments: {
+            type: issue,
+            message: INSTALLMENTS_MESSAGE[issue],
+          },
+        },
+      }
+    }) as unknown as Resolver<TransactionFormData>,
     defaultValues: {
       bankId: '',
       categoryId: '',
@@ -232,6 +282,7 @@ export function TransactionSheet({
       date: '',
       description: '',
       installments: undefined,
+      parcelado: false,
       personId: undefined,
     },
   })
@@ -244,11 +295,29 @@ export function TransactionSheet({
   const selectedAmount = useWatch({ control, name: 'amount' })
   const selectedInstallments = useWatch({ control, name: 'installments' })
 
-  // Quantas parcelas o backend vai gerar. Abaixo de 2 a compra é à vista.
+  /*
+    Quantas parcelas o backend vai gerar, para a PRÉVIA e o rótulo do valor.
+
+    Segue o MODO, não o texto do campo: enquanto o usuário apaga o número
+    para digitar outro, o rascunho fica vazio por um instante, e derivar daí
+    faria "Valor total (R$)" piscar para "Valor (R$)" no meio da digitação.
+
+    `toInstallmentsPayload` devolve `undefined` para rascunho inválido — a
+    prévia então não é pedida com um número que o usuário não escolheu.
+  */
+  const isParceladoMode = useWatch({ control, name: 'parcelado' }) === true
+
+  /*
+    O modo só existe no crédito sem estorno. Fora daí a compra é sempre um
+    lançamento único, e o toggle nem é renderizado.
+  */
+  const isParcelado =
+    isParceladoMode &&
+    selectedType === TransactionType.CREDIT_CARD &&
+    !selectedIsRefund
+
   const installmentCount =
-    selectedType === TransactionType.CREDIT_CARD && !selectedIsRefund
-      ? Number(selectedInstallments) || 1
-      : 1
+    toInstallmentsPayload(selectedInstallments, isParcelado) ?? 1
 
   const selectedKind = kindOf(selectedType ?? TransactionType.PIX)
   const selectedDate = useWatch({ control, name: 'date' })
@@ -355,15 +424,37 @@ export function TransactionSheet({
     }
   }
 
-  /** Parcelado quando há uma quantidade de parcelas definida. */
-  const isParcelado = installmentCount > 1
-
+  /**
+   * ══════════════════════════════════════════════════════════════════════
+   * O MODO é escolha explícita, não uma leitura do campo
+   * ══════════════════════════════════════════════════════════════════════
+   *
+   * Era derivado: `isParcelado = (Number(installments) || 1) > 1`. Como
+   * `Number('') === 0`, apagar o "2" para digitar outro número fazia o campo
+   * valer 1, o modo virar "À vista" e o próprio input DESMONTAR no meio da
+   * edição.
+   *
+   * O caminho natural para 10x — selecionar o 2, apagar, digitar 10 — era
+   * impossível: no primeiro Backspace o campo sumia. No desktop dava para
+   * contornar pelo spinner; no mobile, onde não há spinner, o usuário tinha
+   * de digitar antes de apagar.
+   *
+   * E o `1` é intermediário obrigatório: 10, 12, 15 e 18 começam por ele.
+   * Qualquer regra que leia "1" como "à vista" durante a digitação quebra
+   * todos esses casos.
+   *
+   * Agora o modo tem estado próprio. O campo pode ficar vazio, valer "0" ou
+   * "1" enquanto se digita, sem que nada mude de modo — quem troca é o
+   * usuário, clicando. O valor final continua validado no submit
+   * (`min(2)` no schema), então rascunho permissivo não afrouxa a regra.
+   */
   /**
    * Alternar à vista/parcelado mexe só na quantidade — o valor informado
    * continua sendo o total da compra. Voltar para parcelado recomeça em 2,
    * sem restaurar a quantidade anterior (mesma política de descartar estado).
    */
   function handlePaymentModeChange(parcelado: boolean) {
+    setValue('parcelado', parcelado)
     setValue('installments', parcelado ? 2 : undefined, { shouldValidate: true })
   }
 
@@ -408,6 +499,7 @@ export function TransactionSheet({
           date: createDefaults?.date ?? formatDateValue(),
           description: '',
           installments: undefined,
+          parcelado: false,
           personId: undefined,
         })
       }
@@ -429,7 +521,19 @@ export function TransactionSheet({
     try {
       // Rede de segurança: mesmo que algum campo incompatível tenha escapado
       // dos handlers, o payload sai coerente com o tipo escolhido.
-      await onSubmit({ ...data, ...clearIncompatibleFields(data, data.type) })
+      /*
+        `installments` sai pela autoridade do MODO, não pelo que sobrou no
+        campo: fora do parcelado é `undefined` (a representação canônica de
+        compra à vista), e dentro dele o valor já passou pela validação.
+      */
+      const normalized: TransactionFormData = {
+        ...data,
+        installments: toInstallmentsPayload(data.installments, isParcelado),
+      }
+      await onSubmit({
+        ...normalized,
+        ...clearIncompatibleFields(normalized, normalized.type),
+      })
       // On success: keep ref=true — sheet will close, ref resets on next open
     } catch (err) {
       submittingRef.current = false // On error: allow retry
