@@ -5,8 +5,13 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   Min,
 } from 'class-validator';
+import {
+  MAX_INSTALLMENTS,
+  MAX_INSTALLMENTS_MESSAGE,
+} from 'src/common/constants/installments';
 
 export class CreateReceivableDto {
   @IsString()
@@ -37,5 +42,6 @@ export class CreateReceivableDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(MAX_INSTALLMENTS, { message: MAX_INSTALLMENTS_MESSAGE })
   installments?: number;
 }

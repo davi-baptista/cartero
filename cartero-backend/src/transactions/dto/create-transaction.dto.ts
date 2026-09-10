@@ -1,15 +1,20 @@
 import { TransactionType } from '@prisma/client';
 import {
-  IsDateString,
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsInt,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   Min,
 } from 'class-validator';
+import {
+  MAX_INSTALLMENTS,
+  MAX_INSTALLMENTS_MESSAGE,
+} from 'src/common/constants/installments';
 
 export class CreateTransactionDto {
   @IsUUID()
@@ -52,6 +57,7 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(MAX_INSTALLMENTS, { message: MAX_INSTALLMENTS_MESSAGE })
   installments?: number;
 
   @IsOptional()

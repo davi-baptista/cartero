@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
+import { PreviewTransactionDto } from './dto/preview-transaction.dto';
+import { CreateDebtDto } from 'src/debts/dto/create-debt.dto';
+import { CreateReceivableDto } from 'src/receivables/dto/create-receivable.dto';
 import { resolveInstallmentCount } from './transaction-plan.helper';
+import { MAX_INSTALLMENTS } from 'src/common/constants/installments';
 import { TransactionType } from '@prisma/client';
 
 /**
@@ -14,8 +18,9 @@ import { TransactionType } from '@prisma/client';
  * torna a pergunta inevitável: alguém que contorne a tela e chame a API
  * direto consegue persistir um parcelamento degenerado?
  *
- * Estes testes fixam a resposta ATUAL. Nenhum deles mudou o backend — eles
- * documentam a fronteira que já existe, e passam a falhar se ela cair.
+ * A maior parte destes testes documenta a fronteira que já existia (zero,
+ * negativo, fracionário). O TETO é novo: o formulário limitava a 64 e a API
+ * não limitava nada, então uma chamada direta com 200 criava 200 lançamentos.
  *
  * ── A representação de compra à vista ──
  *
@@ -85,17 +90,30 @@ describe('B1-B6: o que o DTO aceita', () => {
     expect(await erros({ installments: 'dez' })).toContain('isInt');
   });
 
-  it('B6: NÃO existe teto no DTO — o limite de 64 é só do formulário', async () => {
-    /*
-      Assimetria REAL, registrada sem ser corrigida: o formulário limita a 64
-      (`max={64}` e `max(64)` no schema) e a API aceita mais. Uma chamada
-      direta com 200 cria 200 lançamentos.
+  it('B4: o MÁXIMO é aceito', async () => {
+    expect(await erros({ installments: MAX_INSTALLMENTS })).toEqual([]);
+  });
 
-      Fora do escopo desta fase (§21/§44 pedem preservar o máximo vigente).
-      Este teste documenta o estado atual; se um `@Max` for adicionado, ele
-      falha e obriga a decisão a ser consciente.
+  it('B5: MÁXIMO + 1 é REJEITADO', async () => {
+    /*
+      O teto que faltava. O formulário limitava a 64 e a API não limitava
+      nada — uma chamada direta com 200 criava 200 lançamentos, e 200
+      faturas no caso do cartão.
     */
-    expect(await erros({ installments: 200 })).toEqual([]);
+    expect(await erros({ installments: MAX_INSTALLMENTS + 1 })).toContain('max');
+  });
+
+  it('B6: 200 é REJEITADO', async () => {
+    expect(await erros({ installments: 200 })).toContain('max');
+  });
+
+  it('o teto vem da constante compartilhada, não de um literal solto', async () => {
+    /*
+      São QUATRO DTOs com a mesma regra (transação, prévia, dívida,
+      recebível). Repetir `64` em cada um deixaria a próxima mudança pela
+      metade — que é como o teto nasceu ausente aqui.
+    */
+    expect(MAX_INSTALLMENTS).toBe(64);
   });
 });
 
@@ -139,4 +157,63 @@ describe('resolveInstallmentCount: ausente e 1 são a mesma coisa', () => {
       resolveInstallmentCount({ ...base, isRefund: true, installments: 10 }),
     ).toBe(1);
   });
+});
+
+// ─── O mesmo teto nos outros DTOs que parcelam ──────────────────────────────
+
+describe('o teto vale em TODOS os caminhos de parcelamento', () => {
+  /*
+    Não é só a criação de transação: prévia, dívida e recebível têm o mesmo
+    campo e tinham a mesma ausência de teto. Corrigir um só deixaria três
+    portas abertas para o mesmo problema.
+  */
+  const casos: Array<[string, new () => object, Record<string, unknown>]> = [
+    [
+      'PreviewTransactionDto',
+      PreviewTransactionDto,
+      {
+        bankId: '3f2504e0-4f89-11d3-9a0c-0305e82c3301',
+        type: TransactionType.CREDIT_CARD,
+        title: 'Compra',
+        amount: 100,
+        date: '2026-09-05',
+      },
+    ],
+    [
+      'CreateDebtDto',
+      CreateDebtDto,
+      {
+        creditorName: 'Alguém',
+        title: 'Dívida',
+        amount: 100,
+        dueDate: '2026-09-10',
+        occurredAt: '2026-09-01',
+      },
+    ],
+    [
+      'CreateReceivableDto',
+      CreateReceivableDto,
+      {
+        debtorName: 'Alguém',
+        title: 'Cobrança',
+        amount: 100,
+        dueDate: '2026-09-10',
+        occurredAt: '2026-09-01',
+      },
+    ],
+  ];
+
+  for (const [nome, Dto, base] of casos) {
+    it(`${nome}: aceita o máximo e recusa acima dele`, async () => {
+      const chaves = async (installments: number) => {
+        const dto = plainToInstance(Dto, { ...base, installments });
+        const r = await validate(dto as object);
+        return r.flatMap((e) => Object.keys(e.constraints ?? {}));
+      };
+
+      expect(await chaves(MAX_INSTALLMENTS)).toEqual([]);
+      expect(await chaves(MAX_INSTALLMENTS + 1)).toContain('max');
+      expect(await chaves(200)).toContain('max');
+    });
+  }
 });
