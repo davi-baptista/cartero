@@ -4,6 +4,7 @@ import * as webpush from 'web-push';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SubscribeDto } from './dto/subscribe.dto';
 import { UnsubscribeDto } from './dto/unsubscribe.dto';
+import { SubscriptionStatusDto } from './dto/subscription-status.dto';
 
 interface DueItem {
   label: string;
@@ -48,6 +49,32 @@ export class NotificationsService {
     });
 
     return { subscribed: true };
+  }
+
+  /**
+   * "Este device está registrado para receber notificações?"
+   *
+   * A pergunta é sobre UM endpoint, não sobre o usuário. O toggle do Perfil
+   * fala do browser em que está sendo exibido, e um usuário com desktop,
+   * celular e PWA tem várias inscrições simultâneas — `count > 0` responderia
+   * "sim" num Brave que nunca se registrou, só porque o Chrome do desktop
+   * está.
+   *
+   * Escopo `userId` + `endpoint`: um endpoint de outro usuário responde
+   * `false`, nunca `true` nem erro — a resposta não distingue "não existe" de
+   * "existe para outra pessoa", então não vaza a existência de inscrição
+   * alheia.
+   *
+   * A resposta é só o booleano. Devolver a linha exporia `p256dh` e `auth`,
+   * que são material criptográfico de entrega.
+   */
+  async getSubscriptionStatus(userId: string, dto: SubscriptionStatusDto) {
+    const found = await this.prisma.pushSubscription.findFirst({
+      where: { userId, endpoint: dto.endpoint },
+      select: { id: true },
+    });
+
+    return { registered: found !== null };
   }
 
   async unsubscribe(userId: string, dto: UnsubscribeDto) {

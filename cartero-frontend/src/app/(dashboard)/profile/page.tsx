@@ -12,8 +12,30 @@ import { useAuth } from '@/providers/auth-provider'
 import { updateMe } from '@/services/users.service'
 import { getSalary, upsertSalary } from '@/services/salary.service'
 import { SalaryHistorySheet } from '../budget/salary-history-sheet'
-import { getPublicKey, subscribePush, unsubscribePush } from '@/services/notifications.service'
-import { enablePushNotifications, disablePushNotifications, getExistingPushSubscription } from '@/lib/push'
+import {
+  getPublicKey,
+  subscribePush,
+  unsubscribePush,
+  getSubscriptionStatus,
+} from '@/services/notifications.service'
+import {
+  enablePushNotifications,
+  disablePushNotifications,
+  getExistingPushSubscription,
+  rollbackPushSubscription,
+  isBraveBrowser,
+  isPushSupported,
+} from '@/lib/push'
+import {
+  pushToggleState,
+  isToggleChecked,
+  isToggleDisabled,
+  pushToggleHint,
+  shouldDiscardLocalBeforeEnabling,
+  enableOutcome,
+  type PushToggleState,
+} from '@/lib/push-toggle-state'
+import { pushErrorMessage } from '@/lib/push-error-copy'
 import { formatCurrency } from '@/lib/formatters'
 import { MaintenanceMode } from './maintenance-mode'
 
@@ -100,18 +122,91 @@ export default function ProfilePage() {
   const [notifyDaysBefore, setNotifyDaysBefore] = useState(
     user?.notifyDaysBefore ?? 3,
   )
-  const [pushEnabled, setPushEnabled] = useState(false)
+  /**
+   * Verdade do device atual: inscrição local + registro no backend para ESTE
+   * endpoint. `checking` é o estado inicial — antes de reconciliar não há o que
+   * afirmar, e exibir ON prematuramente é justamente a mentira que esta
+   * rodada remove.
+   */
+  const [localEndpoint, setLocalEndpoint] = useState<string | null>(null)
+  const [backendRegistered, setBackendRegistered] = useState<boolean | null>(null)
+  const [pushChecking, setPushChecking] = useState(true)
+  const [pushSupported, setPushSupported] = useState(true)
+  const [pushPermission, setPushPermission] =
+    useState<NotificationPermission>('default')
   const [pushBusy, setPushBusy] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
 
+  /**
+   * Reconciliação no mount.
+   *
+   * Antes bastava `getExistingPushSubscription() !== null`. Isso responde "o
+   * PushManager deste browser tem uma inscrição?", que não prova que o backend
+   * ainda a tem — ele a remove sem log quando o push service responde
+   * `404/410`. Agora a inscrição local só vira ON depois que o servidor
+   * confirma o MESMO endpoint.
+   *
+   * A consulta ao backend só acontece quando existe inscrição local: sem ela o
+   * device já está OFF e não há endpoint a perguntar.
+   */
   useEffect(() => {
-    getExistingPushSubscription()
-      .then((subscription) => setPushEnabled(subscription !== null))
-      .catch(() => setPushEnabled(false))
+    let cancelled = false
+
+    async function reconcile() {
+      if (!isPushSupported()) {
+        if (!cancelled) {
+          setPushSupported(false)
+          setPushChecking(false)
+        }
+        return
+      }
+
+      if (typeof Notification !== 'undefined' && !cancelled) {
+        setPushPermission(Notification.permission)
+      }
+
+      try {
+        const subscription = await getExistingPushSubscription()
+        if (cancelled) return
+
+        if (subscription === null) {
+          setLocalEndpoint(null)
+          setBackendRegistered(null)
+          return
+        }
+
+        setLocalEndpoint(subscription.endpoint)
+        const registered = await getSubscriptionStatus(subscription.endpoint)
+        if (!cancelled) setBackendRegistered(registered)
+      } catch {
+        /**
+         * Falha ao reconciliar não pode virar ON. Sem confirmação do servidor
+         * o device é tratado como não registrado — o erro aparece se o usuário
+         * tentar ativar.
+         */
+        if (!cancelled) setBackendRegistered(false)
+      } finally {
+        if (!cancelled) setPushChecking(false)
+      }
+    }
+
+    void reconcile()
+    return () => {
+      cancelled = true
+    }
   }, [])
+
+  const pushState: PushToggleState = pushToggleState({
+    supported: pushSupported,
+    permission: pushPermission,
+    localEndpoint,
+    backendRegistered,
+    checking: pushChecking,
+  })
+  const pushHint = pushToggleHint(pushState)
 
   // Sync form when user changes (e.g. on mount if context hydrates after render)
   useEffect(() => {
@@ -207,21 +302,115 @@ export default function ProfilePage() {
     setPushBusy(true)
     try {
       if (nextEnabled) {
-        const publicKey = await getPublicKey()
-        const subscription = await enablePushNotifications(publicKey)
-        await subscribePush(subscription.toJSON())
-        setPushEnabled(true)
-        toast.success('Notificações push ativadas')
+        await enablePushForThisDevice()
       } else {
-        const endpoint = await disablePushNotifications()
-        if (endpoint) await unsubscribePush(endpoint)
-        setPushEnabled(false)
-        toast.success('Notificações push desativadas')
+        await disablePushForThisDevice()
       }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Não foi possível atualizar as notificações')
     } finally {
       setPushBusy(false)
+    }
+  }
+
+  /**
+   * Ativação como transação lógica: ON só é publicado depois de
+   * `pushManager.subscribe` E do registro no backend. A ordem importa — o
+   * inverso deixaria o browser inscrito com o servidor sem linha, que é o
+   * half-enabled que a visita seguinte leria como ON.
+   */
+  async function enablePushForThisDevice() {
+    let created: PushSubscription | null = null
+
+    try {
+      const publicKey = await getPublicKey()
+
+      /**
+       * Inscrição local que o backend não reconhece é descartada antes de
+       * pedir outra. Reenviá-la ressuscitaria o endpoint possivelmente
+       * invalidado por `404/410`.
+       */
+      const forceFresh = shouldDiscardLocalBeforeEnabling(pushState)
+      const subscription = await enablePushNotifications(publicKey, {
+        forceFresh,
+      })
+      created = subscription
+
+      if (typeof Notification !== 'undefined') {
+        setPushPermission(Notification.permission)
+      }
+
+      await subscribePush(subscription.toJSON())
+
+      setLocalEndpoint(subscription.endpoint)
+      setBackendRegistered(true)
+      toast.success('Notificações ativadas neste dispositivo')
+    } catch (error) {
+      /**
+       * O registro no backend falhou depois da inscrição local existir:
+       * desfaz, para não deixar o browser inscrito sem destino no servidor.
+       * A decisão vem de `enableOutcome`, que é o que os testes vigiam.
+       */
+      const outcome = enableOutcome({
+        localCreated: created !== null,
+        backendRegistered: false,
+      })
+      if (outcome.rollbackLocal && created) {
+        await rollbackPushSubscription(created)
+      }
+
+      const localAfter = await getExistingPushSubscription().catch(() => null)
+      setLocalEndpoint(localAfter?.endpoint ?? null)
+      setBackendRegistered(localAfter ? false : null)
+
+      if (typeof Notification !== 'undefined') {
+        setPushPermission(Notification.permission)
+      }
+
+      toast.error(
+        pushErrorMessage(error, {
+          isBrave: await isBraveBrowser(),
+          permission:
+            typeof Notification !== 'undefined'
+              ? Notification.permission
+              : 'default',
+        }),
+      )
+    }
+  }
+
+  /**
+   * Desativa APENAS este device. O backend recebe o endpoint deste browser, e
+   * `deleteMany({ userId, endpoint })` não alcança as inscrições dos outros.
+   */
+  async function disablePushForThisDevice() {
+    const endpoint = localEndpoint
+
+    try {
+      const removed = await disablePushNotifications()
+      const target = removed ?? endpoint
+      if (target) await unsubscribePush(target)
+
+      setLocalEndpoint(null)
+      setBackendRegistered(null)
+      toast.success('Notificações desativadas neste dispositivo')
+    } catch {
+      /**
+       * Desativação parcial (uma ponta caiu, a outra não): reconcilia contra o
+       * estado real em vez de afirmar ON ou OFF por suposição.
+       */
+      const localAfter = await getExistingPushSubscription().catch(() => null)
+
+      if (localAfter === null) {
+        setLocalEndpoint(null)
+        setBackendRegistered(null)
+      } else {
+        setLocalEndpoint(localAfter.endpoint)
+        const registered = await getSubscriptionStatus(localAfter.endpoint).catch(
+          () => false,
+        )
+        setBackendRegistered(registered)
+      }
+
+      toast.error('Não foi possível desativar as notificações. Tente de novo.')
     }
   }
 
@@ -417,16 +606,31 @@ export default function ProfilePage() {
           <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border/70 p-3 transition-colors hover:bg-muted/40">
             <input
               type="checkbox"
-              checked={pushEnabled}
-              disabled={pushBusy}
+              checked={isToggleChecked(pushState)}
+              disabled={isToggleDisabled(pushState, pushBusy)}
+              aria-describedby={pushHint ? 'push-toggle-hint' : undefined}
               onChange={(event) => handleTogglePush(event.target.checked)}
               className="mt-0.5 size-4 accent-primary"
             />
             <span className="flex flex-col gap-0.5">
               <span className="text-sm font-medium">Ativar notificações push</span>
               <span className="text-xs text-muted-foreground">
-                Avisa mesmo com o app fechado. Pede permissão do navegador na primeira vez.
+                {pushState === 'checking'
+                  ? 'Verificando o registro deste dispositivo…'
+                  : 'Avisa mesmo com o app fechado. Pede permissão do navegador na primeira vez.'}
               </span>
+              {pushHint ? (
+                <span
+                  id="push-toggle-hint"
+                  className={
+                    pushState === 'mismatch'
+                      ? 'text-xs text-pending'
+                      : 'text-xs text-muted-foreground'
+                  }
+                >
+                  {pushHint}
+                </span>
+              ) : null}
             </span>
           </label>
           <Field label="Avisar com quantos dias de antecedência">

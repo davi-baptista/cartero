@@ -13,6 +13,7 @@ import type { User } from '@prisma/client';
 import { NotificationsService } from './notifications.service';
 import { SubscribeDto } from './dto/subscribe.dto';
 import { UnsubscribeDto } from './dto/unsubscribe.dto';
+import { SubscriptionStatusDto } from './dto/subscription-status.dto';
 import { CronSecretGuard } from 'src/auth/cron-secret.guard';
 
 @Controller('notifications')
@@ -31,6 +32,20 @@ export class NotificationsController {
   @UseGuards(JwtAuthGuard)
   subscribe(@CurrentUser() user: User, @Body() dto: SubscribeDto) {
     return this.notificationsService.subscribe(user.id, dto);
+  }
+
+  /**
+   * POST, não GET, porque o endpoint consultado vai no BODY — ver
+   * `SubscriptionStatusDto`. É uma leitura sem efeito colateral que usa POST
+   * apenas para manter o identificador fora da URL.
+   */
+  @Post('subscription-status')
+  @UseGuards(JwtAuthGuard)
+  subscriptionStatus(
+    @CurrentUser() user: User,
+    @Body() dto: SubscriptionStatusDto,
+  ) {
+    return this.notificationsService.getSubscriptionStatus(user.id, dto);
   }
 
   @Delete('subscribe')
