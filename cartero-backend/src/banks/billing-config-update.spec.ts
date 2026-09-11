@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BanksService } from './banks.service';
 import type { EntityValidationService } from 'src/common/entity-validation.service';
 import type { PrismaService } from 'src/prisma/prisma.service';
 import { USER_ID, makeBank, makeInvoice } from 'src/common/testing/fixtures';
+import { planBillingConfigUpdate } from './billing-config-plan.helper';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -12,7 +13,45 @@ import { USER_ID, makeBank, makeInvoice } from 'src/common/testing/fixtures';
  * O plano puro é testado em `billing-config-plan.spec.ts`. Aqui interessa o
  * que o serviço FAZ com ele: o que grava, o que não toca, e se a prévia
  * projeta exatamente o mesmo conjunto que o save aplica.
+ *
+ * ─── Por que o relógio é congelado ────────────────────────────────────────
+ *
+ * `planBillingConfigUpdate` aceita `today` injetável, e o spec puro passa uma
+ * data em toda chamada. Aqui o caminho é o SERVIÇO, que não expõe esse
+ * parâmetro: ele usa `new Date()` internamente, de propósito — é produção.
+ *
+ * A elegibilidade depende do presente. Uma fatura só acompanha a nova
+ * configuração se ainda estiver aberta HOJE: `isEffectivelyOpen` exige status
+ * `OPEN` E datas que confirmem a abertura, porque o cron roda uma vez por dia
+ * e a coluna pode estar atrasada.
+ *
+ * As fixtures são de setembro/2026 e os testes foram escritos em 22/08/2026,
+ * quando aquela fatura estava legitimamente aberta. Com o relógio real, os
+ * casos passaram a falhar sozinhos em 01/09/2026 — o fechamento chegou e a
+ * fatura virou `EFFECTIVELY_CLOSED`. Nenhum commit quebrou nada: os testes
+ * expiraram.
+ *
+ * Duas chamadas soltas de `vi.useRealTimers()` no meio do arquivo descongelavam
+ * o relógio para tudo que vinha depois, e era por isso que apenas dois casos
+ * sobreviviam. O congelamento agora é do arquivo inteiro, restaurado a cada
+ * teste — teste de data não pode depender do dia em que roda.
  */
+
+/**
+ * Presente canônico do arquivo: a fatura de setembro/2026 (fecha 01/09) está
+ * aberta, e a de agosto já é histórico. É a data em que estes casos foram
+ * escritos, então descrevem o mesmo cenário de sempre.
+ */
+const NOW = new Date('2026-08-20T12:00:00Z');
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 interface Setup {
   bank?: ReturnType<typeof makeBank>;
@@ -39,7 +78,23 @@ function buildHarness(setup: Setup = {}) {
       }),
     },
     invoice: {
-      findMany: vi.fn(async () => setup.invoices ?? []),
+      /**
+       * O duplo HONRA o `where`, como o Prisma.
+       *
+       * Devolver a lista fixa fazia o teste ser cego a um filtro na ORIGEM: o
+       * serviço podia passar a consultar só `status: 'OPEN'` e nenhum caso
+       * falharia, embora a prévia perdesse os motivos `HISTORICAL_STATUS` que
+       * ela reporta — a decisão de elegibilidade pertence ao plano, não à
+       * query. É o mesmo recurso de `budget-temporality.spec.ts`.
+       */
+      findMany: vi.fn(async ({ where }: any = {}) => {
+        const all = setup.invoices ?? [];
+        return all.filter((invoice: any) =>
+          Object.entries(where ?? {}).every(
+            ([field, expected]) => invoice[field] === expected,
+          ),
+        );
+      }),
       update: vi.fn(async (args: any) => {
         writes.invoiceUpdates.push({ id: args.where.id, ...args.data });
         return args.data;
@@ -81,6 +136,52 @@ function septemberOpen(id = 'inv-set') {
 }
 
 const isoDay = (value: Date) => value.toISOString().slice(0, 10);
+
+/**
+ * O relógio congelado é premissa do arquivo, não detalhe de implementação.
+ *
+ * Sem esta vigilância, remover o `beforeEach` devolveria a suíte ao estado em
+ * que ela apodrecia sozinha na virada do mês — e nenhum outro teste apontaria
+ * a causa, porque todos falhariam com o mesmo sintoma genérico de "nada foi
+ * gravado".
+ */
+describe('premissa temporal do arquivo', () => {
+  it('a fatura de setembro está aberta no presente canônico', () => {
+    expect(new Date().toISOString()).toBe(NOW.toISOString());
+
+    const september = septemberOpen();
+    expect(september.closeDate.getTime()).toBeGreaterThan(NOW.getTime());
+  });
+
+  it('a elegibilidade depende do presente — não do dia em que o teste roda', () => {
+    /**
+     * Prova a mecânica que quebrou os 11 casos: a MESMA fatura, o MESMO plano,
+     * dois presentes diferentes. Depois do fechamento ela vira
+     * `EFFECTIVELY_CLOSED` e para de acompanhar a configuração nova — que é o
+     * comportamento correto, e por isso os testes precisam fixar a data.
+     */
+    const invoice = septemberOpen() as any;
+    const schedules = {
+      current: { invoiceDueDate: 8, invoiceDueDaysAfterClose: 7 },
+      next: { invoiceDueDate: 15, invoiceDueDaysAfterClose: 7 },
+    };
+
+    const antes = planBillingConfigUpdate({
+      ...schedules,
+      invoices: [invoice],
+      today: NOW,
+    });
+    expect(antes.changes).toHaveLength(1);
+
+    const depois = planBillingConfigUpdate({
+      ...schedules,
+      invoices: [invoice],
+      today: new Date('2026-09-11T12:00:00Z'),
+    });
+    expect(depois.changes).toHaveLength(0);
+    expect(depois.skipped[0].reason).toBe('EFFECTIVELY_CLOSED');
+  });
+});
 
 describe('update do ciclo — o que é gravado', () => {
   it('persiste as novas datas da fatura em aberto', async () => {
@@ -138,13 +239,11 @@ describe('update do ciclo — o que é gravado', () => {
       ],
     });
 
-    // Vencimento 28/08 → 05/08, que já passou em 20/08.
-    vi.setSystemTime(new Date('2026-08-20T12:00:00Z'));
+    // Vencimento 28/08 → 05/08, que já passou no presente do arquivo (20/08).
     await harness.service.update('bank-1', USER_ID, {
       invoiceDueDate: 5,
       invoiceDueDaysAfterClose: 3,
     } as any);
-    vi.useRealTimers();
 
     expect(harness.writes.invoiceUpdates[0].status).toBe('OVERDUE');
   });
@@ -172,6 +271,35 @@ describe('update do ciclo — o que é gravado', () => {
     } as any);
 
     expect(harness.writes.invoiceUpdates.map((u) => u.id)).toEqual(['aberta']);
+  });
+
+  it('a consulta carrega TODOS os status — quem filtra é o plano', async () => {
+    /**
+     * Teste discriminante: sem ele, mover a elegibilidade para o `where` da
+     * query (`status: 'OPEN'`) passaria despercebido, porque o resultado
+     * gravado seria o mesmo.
+     *
+     * A separação importa. O plano distingue `HISTORICAL_STATUS` de
+     * `EFFECTIVELY_CLOSED` — uma fatura gravada como `OPEN` cujo fechamento já
+     * passou é recusada por motivo diferente de uma `CLOSED`. Filtrar na
+     * origem destruiria essa distinção e, pior, uma futura contagem de
+     * recusadas passaria a ignorar justamente o histórico que ela deveria
+     * explicar.
+     */
+    const harness = buildHarness({
+      invoices: [
+        makeInvoice({ id: 'paga', month: 7, year: 2026, status: 'PAID' }),
+        septemberOpen('aberta'),
+      ],
+    });
+
+    await harness.service.update('bank-1', USER_ID, {
+      invoiceDueDate: 15,
+    } as any);
+
+    const where = harness.prisma.invoice.findMany.mock.calls[0][0].where;
+    expect(where).toEqual({ bankId: 'bank-1', userId: USER_ID });
+    expect(where.status).toBeUndefined();
   });
 
   it('tudo passa pela mesma transação de banco', async () => {
@@ -291,13 +419,11 @@ describe('previewBillingConfig', () => {
       ],
     });
 
-    vi.setSystemTime(new Date('2026-08-20T12:00:00Z'));
     const preview = await harness.service.previewBillingConfig(
       'bank-1',
       USER_ID,
       { invoiceDueDate: 5, invoiceDueDaysAfterClose: 3 } as any,
     );
-    vi.useRealTimers();
 
     expect(preview.affectedCount).toBe(2);
     expect(preview.statusChangeCount).toBe(1);
