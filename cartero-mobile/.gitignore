@@ -1,0 +1,16 @@
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Projetos nativos gerados por `expo prebuild` (Continuous Native Generation).
+# São derivados de app.json + config plugins e voltam a existir com um
+# comando — versioná-los criaria uma segunda fonte de verdade que diverge
+# silenciosamente da configuração.
+/ios
+/android
+
+.env
+.env.local
+*.log

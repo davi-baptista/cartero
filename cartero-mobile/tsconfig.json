@@ -1,0 +1,23 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    /*
+      `node` acompanha `expo/types` porque os testes rodam em Node (Vitest) e
+      leem o próprio código-fonte para verificar onde a credencial pode
+      aparecer. O app em si não usa APIs de Node — `credential-surface.spec.ts`
+      é quem precisa de `node:fs`.
+    */
+    "types": ["node", "expo/types"],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ],
+  "exclude": ["node_modules"]
+}
