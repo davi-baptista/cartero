@@ -1,11 +1,15 @@
 package app.cartero.widgetsnapshot
 
 import android.util.AtomicFile
+import androidx.glance.appwidget.updateAll
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Armazenamento do Widget Snapshot no Android.
@@ -55,6 +59,19 @@ class CarteroWidgetSnapshotModule : Module() {
         if (stream != null) atomic.failWrite(stream)
         throw error
       }
+
+      /*
+        O refresh vem DEPOIS do commit atômico, nunca antes.
+
+        Invertida, a ordem faria o widget ler o arquivo no meio da escrita —
+        exatamente a corrida que o `AtomicFile` existe para eliminar.
+
+        A falha é engolida de propósito: o arquivo já está gravado e o
+        armazenamento é a autoridade. Se o launcher não aceitar o pedido
+        agora, o widget se atualiza no próximo ciclo; propagar o erro faria o
+        app tratar um snapshot íntegro como escrita fracassada.
+      */
+      requestWidgetRefresh()
     }
 
     /** Devolve o conteúdo, ou `null` se ainda não existe. */
@@ -72,6 +89,24 @@ class CarteroWidgetSnapshotModule : Module() {
 
     /** Caminho real, para inspeção em desenvolvimento. Não expõe conteúdo. */
     AsyncFunction("location") { snapshotFile().absolutePath }
+  }
+
+  /**
+   * Pede ao launcher que redesenhe o widget.
+   *
+   * Sem isto, a tela inicial só mudaria no ciclo periódico — o usuário sairia
+   * da conta e continuaria vendo os valores por horas.
+   */
+  private fun requestWidgetRefresh() {
+    val context = appContext.reactContext ?: return
+
+    CoroutineScope(Dispatchers.Main).launch {
+      try {
+        BudgetWidget().updateAll(context)
+      } catch (_: Exception) {
+        // Best-effort: ver o comentário em `write`.
+      }
+    }
   }
 
   private fun snapshotFile(): File {

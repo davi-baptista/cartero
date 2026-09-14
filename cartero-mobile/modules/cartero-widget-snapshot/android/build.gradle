@@ -1,7 +1,30 @@
-plugins {
-  id 'com.android.library'
-  id 'expo-module-gradle-plugin'
+/*
+  O plugin do Compose vem da MESMA versão de Kotlin que o projeto resolve.
+
+  `expo-modules-core` aplica o plugin exatamente assim, e copiar o mecanismo
+  dele é o que mantém o módulo alinhado à toolchain real. A alternativa antiga
+  — fixar `kotlinCompilerExtensionVersion` — pertence a uma geração anterior do
+  Compose e passaria a divergir da versão de Kotlin na primeira atualização do
+  Expo.
+*/
+buildscript {
+  ext.kotlinVersionForCompose = rootProject.ext.has('kotlinVersion')
+    ? rootProject.ext.get('kotlinVersion')
+    : '2.1.20'
+
+  repositories {
+    mavenCentral()
+    google()
+  }
+
+  dependencies {
+    classpath("org.jetbrains.kotlin.plugin.compose:org.jetbrains.kotlin.plugin.compose.gradle.plugin:${kotlinVersionForCompose}")
+  }
 }
+
+apply plugin: 'com.android.library'
+apply plugin: 'expo-module-gradle-plugin'
+apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
 group = 'app.cartero.widgetsnapshot'
 version = '0.1.0'
@@ -12,4 +35,32 @@ android {
     versionCode 1
     versionName '0.1.0'
   }
+
+  buildFeatures {
+    compose true
+  }
+}
+
+dependencies {
+  /*
+    Glance 1.2.0 — a linha ESTÁVEL.
+
+    A 1.3.0 existe apenas em alpha e puxa requisitos de SDK acima do
+    compileSdk 36 que o Cartero já validou. Um widget que lê um arquivo e
+    desenha seis elementos não justifica trocar uma toolchain provada por uma
+    experimental.
+
+    Só `glance-appwidget`: `glance-material`/`material3` trariam um tema
+    inteiro para um layout que usa texto, coluna e uma barra.
+  */
+  implementation 'androidx.glance:glance-appwidget:1.2.0'
+
+  /*
+    Robolectric porque `org.json` é um stub sem implementação no JVM puro do
+    Android Gradle Plugin: sem ele, todo parse devolveria null e os testes
+    passariam sem exercitar nada. É a mesma combinação que `expo-secure-store`
+    usa.
+  */
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'org.robolectric:robolectric:4.16'
 }

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Metadata do AppWidget de Orçamento.
+
+  ── De onde vêm as dimensões ──
+
+  A fórmula do Android para converter células em dp é `70 × n − 30`:
+
+      4 colunas → 70 × 4 − 30 = 250dp
+      2 linhas  → 70 × 2 − 30 = 110dp
+
+  `targetCellWidth`/`targetCellHeight` são o mecanismo moderno (API 31+) e
+  falam em células, que é como o launcher realmente raciocina. `minWidth` e
+  `minHeight` permanecem para as versões anteriores — o Cartero suporta desde
+  a API 24, e sem eles o widget não seria oferecido nesses aparelhos.
+
+  `minResizeWidth/Height` aceitam uma célula a menos em cada eixo: launchers
+  variam o tamanho da grade, e recusar qualquer desvio faria o widget ser
+  rejeitado em telas legítimas. O layout tolera essa folga.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="40dp"
+    android:resizeMode="horizontal|vertical"
+    android:description="@string/cartero_budget_widget_description"
+    android:updatePeriodMillis="21600000"
+    android:widgetCategory="home_screen"
+    android:initialLayout="@layout/glance_default_loading_layout" />

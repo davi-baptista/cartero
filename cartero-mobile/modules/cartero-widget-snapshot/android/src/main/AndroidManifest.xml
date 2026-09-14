@@ -1,0 +1,35 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!--
+    O receiver vive no manifest do MÓDULO, não em `cartero-mobile/android/`.
+
+    Aquele diretório é gerado por `expo prebuild` e some numa regeneração limpa; uma
+    entrada feita lá desapareceria sem aviso, e o widget sumiria da tela
+    inicial do usuário na próxima regeneração. O manifest merger do Gradle
+    traz esta declaração para o app final.
+  -->
+  <application>
+    <receiver
+      android:name=".BudgetWidgetReceiver"
+      android:label="@string/cartero_budget_widget_label"
+      android:exported="false">
+
+      <!--
+        `exported="false"` é o valor correto e suficiente.
+
+        O AppWidgetManager é do próprio sistema e alcança o receiver mesmo
+        assim — `android.intent.action.APPWIDGET_UPDATE` é entregue pelo
+        framework, não por um app de terceiros. Exportar abriria o receiver
+        para qualquer aplicativo do aparelho em troca de nada.
+      -->
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/cartero_budget_widget_info" />
+    </receiver>
+  </application>
+
+</manifest>

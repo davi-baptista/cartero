@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!--
+    Como o widget aparece no seletor do launcher. O nome precisa dizer de qual
+    app ele é e o que mostra, porque a lista mistura widgets de todos os
+    aplicativos instalados.
+  -->
+  <string name="cartero_budget_widget_label">Cartero — Orçamento</string>
+  <string name="cartero_budget_widget_description">Pago e a pagar do mês</string>
+</resources>
