@@ -40,10 +40,17 @@ export interface SessionState {
  * bootstrap: se uma queda de rede fosse tratada como credencial inválida, o
  * app apagaria o refresh token do armazenamento seguro e exigiria login de
  * novo — perdendo a sessão por estar sem sinal no metrô.
+ *
+ * `serverUnavailable` é a mesma ideia um passo adiante. Uma resposta CHEGOU,
+ * mas ela fala do servidor (502, 503, 504, 500, 429), não da credencial. O
+ * app tratava esse caso como sessão expirada, então um deploy ou um restart
+ * do backend deslogava quem abrisse o app naquele instante — e a credencial
+ * apagada não volta sozinha.
  */
 export type AuthErrorKind =
   | 'invalidCredentials'
   | 'network'
+  | 'serverUnavailable'
   | 'sessionExpired'
   | 'unknown'
 

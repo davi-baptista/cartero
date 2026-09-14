@@ -1,5 +1,5 @@
 import type { ApiClient } from '../api/client'
-import { HttpError, NetworkError, normalizeAuthError } from './errors'
+import { isDefinitiveRefreshRejection, normalizeAuthError } from './errors'
 import type {
   AuthUser,
   SecureCredentialStore,
@@ -63,22 +63,36 @@ export class SessionMachine {
       const user = await this.deps.api.authorized<AuthUser>('/users/me')
       this.set({ status: 'signedIn', user, error: null })
     } catch (error) {
-      if (error instanceof NetworkError) {
-        /*
-          A credencial PERMANECE guardada. O app fica deslogado nesta abertura
-          — não há como provar a sessão sem rede — mas a próxima tentativa com
-          conexão restaura tudo sem novo login.
-        */
-        this.set({ status: 'signedOut', user: null, error: 'network' })
+      /*
+        ── Apagar a credencial exige uma afirmação, não uma ausência ──
+
+        A versão anterior perguntava "isto NÃO é erro de rede?" e apagava o
+        refresh token em todo o resto. Um 502 — gateway sem upstream — caía
+        aí: o app declarava "sua sessão expirou" e destruía a credencial por
+        causa de um backend reiniciando.
+
+        Agora só uma rejeição DEFINITIVA (401, verificado contra o backend)
+        apaga. Tudo o mais preserva: a sessão continua no dispositivo e a
+        próxima tentativa a recupera sem novo login.
+      */
+      if (isDefinitiveRefreshRejection(error)) {
+        await this.deps.store.clear()
+        this.deps.api.setAccessToken(null)
+        this.set({ status: 'signedOut', user: null, error: 'sessionExpired' })
         return
       }
 
-      await this.deps.store.clear()
+      /*
+        Falha transitória. O access token em memória é descartado — ele não
+        foi obtido —, mas a credencial de longa duração PERMANECE guardada.
+        O app fica deslogado nesta abertura porque não há como provar a
+        sessão; nada além disso se perde.
+      */
       this.deps.api.setAccessToken(null)
       this.set({
         status: 'signedOut',
         user: null,
-        error: error instanceof HttpError ? 'sessionExpired' : 'unknown',
+        error: normalizeAuthError(error),
       })
     }
   }

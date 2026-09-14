@@ -1,4 +1,8 @@
-import { HttpError, NetworkError } from '../auth/errors'
+import {
+  HttpError,
+  NetworkError,
+  isDefinitiveRefreshRejection,
+} from '../auth/errors'
 import type {
   MobileLoginResponse,
   SecureCredentialStore,
@@ -191,11 +195,17 @@ export class ApiClient {
         return await attempt(fresh)
       } catch (refreshError) {
         /*
-          Recuperação falhou. Se foi rede, a sessão continua válida — só está
-          inalcançável, e derrubá-la faria o usuário perder a sessão por falta
-          de sinal. Só a recusa do servidor encerra.
+          A recuperação falhou — e a razão decide o destino da credencial.
+
+          Só uma rejeição DEFINITIVA (401) encerra a sessão. Rede indisponível,
+          5xx e 429 falam do transporte ou do servidor, nunca da validade do
+          token: derrubar a sessão por causa deles faria o usuário perder o
+          login porque o backend estava reiniciando.
+
+          Antes a condição era invertida — qualquer coisa que não fosse
+          `NetworkError` apagava a credencial —, e um 502 bastava.
         */
-        if (refreshError instanceof NetworkError) throw refreshError
+        if (!isDefinitiveRefreshRejection(refreshError)) throw refreshError
 
         this.accessToken = null
         await this.store.clear()
