@@ -9,6 +9,11 @@ import { RegisterDto } from './dto/register.dto';
 import { hash, compare } from 'bcrypt';
 import { LoginDto } from './dto/login.dto';
 import { EnvService } from 'src/env/env.service';
+import {
+  TOKEN_USE,
+  canMintSession,
+  type CarteroJwtPayload,
+} from './token-purpose';
 
 @Injectable()
 export class AuthService {
@@ -57,21 +62,48 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string) {
+    let payload: CarteroJwtPayload;
+
     try {
-      const payload = this.jwt.verify(refreshToken, {
+      payload = this.jwt.verify<CarteroJwtPayload>(refreshToken, {
         secret: this.env.get('REFRESH_TOKEN_SECRET'),
       });
-      return this.generateToken(payload.sub);
     } catch {
       throw new UnauthorizedException('Credenciais ínvalidas');
     }
+
+    /*
+      A assinatura confere — mas assinatura prova ORIGEM, não FINALIDADE.
+
+      `JWT_SECRET` e `REFRESH_TOKEN_SECRET` são variáveis distintas que o
+      `.env.example` do projeto instrui a preencher com o mesmo valor. Com a
+      chave coincidindo, um access token de 15 minutos passava nesta
+      verificação e saía daqui convertido num refresh de 30 dias.
+
+      O 401 é deliberado, não 400: o token é criptograficamente válido, só
+      não serve para esta finalidade. É o mesmo status de um refresh
+      expirado, que é o que o cliente móvel já trata como rejeição
+      definitiva.
+    */
+    if (!canMintSession(payload)) {
+      throw new UnauthorizedException('Credenciais ínvalidas');
+    }
+
+    return this.generateToken(payload.sub);
   }
 
+  /*
+    Todo token emitido declara para que serve, e a declaração viaja dentro da
+    assinatura — não pode ser alterada sem a chave.
+  */
   private generateToken(userId: string) {
     return {
-      access_token: this.jwt.sign({ sub: userId }),
+      access_token: this.jwt.sign({
+        sub: userId,
+        tokenUse: TOKEN_USE.access,
+      }),
       refresh_token: this.jwt.sign(
-        { sub: userId },
+        { sub: userId, tokenUse: TOKEN_USE.refresh },
         {
           secret: this.env.get('REFRESH_TOKEN_SECRET'),
           expiresIn: '30d',
