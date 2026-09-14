@@ -22,19 +22,27 @@ import type { SnapshotStore } from '../../modules/cartero-widget-snapshot/src'
 */
 
 /** Dublê do armazenamento nativo, com escrita de fato observável. */
-function createStore(initial: string | null = null) {
+function createStore(initial: string | null = null, privacy: string | null = null) {
   let contents = initial
+  let privacyContents = privacy
 
   const store: SnapshotStore & {
     peek(): string | null
+    peekPrivacy(): string | null
     corrupt(): void
   } = {
     write: vi.fn(async (value: string) => {
       contents = value
     }),
     read: vi.fn(async () => contents),
+    writePrivacy: vi.fn(async (value: string) => {
+      privacyContents = value
+    }),
+    readPrivacy: vi.fn(async () => privacyContents),
+    refreshWidget: vi.fn(async () => {}),
     location: vi.fn(async () => '/no_backup/cartero-widget/snapshot-v1.json'),
     peek: () => contents,
+    peekPrivacy: () => privacyContents,
     corrupt: () => {
       contents = '{"version":1,"state":"rea'
     },

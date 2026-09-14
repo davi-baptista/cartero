@@ -14,6 +14,17 @@ import { requireOptionalNativeModule } from 'expo'
 export interface SnapshotStore {
   write(contents: string): Promise<void>
   read(): Promise<string | null>
+  /**
+   * A preferência de privacidade, em arquivo SEPARADO do snapshot.
+   *
+   * Separado porque os ciclos de vida diferem: o logout neutraliza o
+   * snapshot, e a escolha de mostrar valores pertence à pessoa, não à
+   * sessão. Juntos, cada logout apagaria a decisão.
+   */
+  writePrivacy(contents: string): Promise<void>
+  readPrivacy(): Promise<string | null>
+  /** Pede o redesenho do widget sem reescrever nada. */
+  refreshWidget(): Promise<void>
   /** Caminho real do arquivo — para inspeção, nunca para exibição. */
   location(): Promise<string>
 }

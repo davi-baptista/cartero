@@ -1,5 +1,6 @@
 import type { SnapshotStore } from '../../modules/cartero-widget-snapshot/src'
 import { currentCarteroCompetence, type Competence } from './competence'
+import type { SnapshotMutationCoordinator } from './snapshot-mutations'
 import {
   DEFAULT_HIDE_AMOUNTS,
   SNAPSHOT_CURRENCY,
@@ -38,7 +39,16 @@ export interface SnapshotSyncDeps {
   fetchBudget: (competence: Competence) => Promise<unknown>
   /** Id do usuário da sessão corrente, ou `null` se não há sessão. */
   currentOwnerId: () => string | null
-  hideAmounts?: () => boolean
+  /**
+   * A preferência da conta, lida no momento da ESCRITA.
+   *
+   * Assíncrona de propósito: ela vem do disco, e consultá-la tarde é o que
+   * impede o sync de gravar uma privacidade que o usuário já mudou enquanto
+   * a requisição estava em voo.
+   */
+  hideAmounts?: (ownerId: string) => Promise<boolean>
+  /** Serializa esta escrita com as do toggle de privacidade. */
+  coordinator?: SnapshotMutationCoordinator
   now?: () => Date
 }
 
@@ -139,24 +149,55 @@ export class SnapshotSync {
     const budget = readBudget(payload)
     if (!budget) return { status: 'preserved', reason: 'malformedResponse' }
 
-    const snapshot: ReadySnapshot = {
-      version: SNAPSHOT_VERSION,
-      state: 'ready',
-      generatedAt: this.now.toISOString(),
-      ownerId,
-      privacy: { hideAmounts: this.deps.hideAmounts?.() ?? DEFAULT_HIDE_AMOUNTS },
-      budget: {
-        month: competence.month,
-        year: competence.year,
-        currency: SNAPSHOT_CURRENCY,
-        totalToPayCents: toCents(budget.totalToPay),
-        totalPaidCents: toCents(budget.totalPaid),
-        totalPendingCents: toCents(budget.totalPending),
-      },
+    /*
+      ── A privacidade e a escrita entram no LOCK juntas ──
+
+      A requisição acima ficou fora dele de propósito: segurar a fila durante
+      uma chamada de rede bloquearia o toggle por segundos. Mas a preferência
+      é lida AQUI DENTRO, imediatamente antes de gravar — se fosse capturada
+      antes do fetch, um toggle ocorrido no meio seria sobrescrito pelo valor
+      velho, e o usuário veria o ajuste ligado com o widget mascarado.
+    */
+    const write = async (): Promise<SyncOutcome> => {
+      const hideAmounts = await this.resolveHideAmounts(ownerId)
+
+      const snapshot: ReadySnapshot = {
+        version: SNAPSHOT_VERSION,
+        state: 'ready',
+        generatedAt: this.now.toISOString(),
+        ownerId,
+        privacy: { hideAmounts },
+        budget: {
+          month: competence.month,
+          year: competence.year,
+          currency: SNAPSHOT_CURRENCY,
+          totalToPayCents: toCents(budget.totalToPay),
+          totalPaidCents: toCents(budget.totalPaid),
+          totalPendingCents: toCents(budget.totalPending),
+        },
+      }
+
+      await store.write(JSON.stringify(snapshot))
+      return { status: 'written' }
     }
 
-    await store.write(JSON.stringify(snapshot))
-    return { status: 'written' }
+    return this.deps.coordinator ? this.deps.coordinator.run(write) : write()
+  }
+
+  /**
+   * A preferência da conta, com o padrão seguro em qualquer falha.
+   *
+   * Um problema para ler o ajuste não pode revelar valores: a dúvida sempre
+   * resolve para oculto.
+   */
+  private async resolveHideAmounts(ownerId: string): Promise<boolean> {
+    if (!this.deps.hideAmounts) return DEFAULT_HIDE_AMOUNTS
+
+    try {
+      return await this.deps.hideAmounts(ownerId)
+    } catch {
+      return DEFAULT_HIDE_AMOUNTS
+    }
   }
 
   /** Neutraliza o arquivo quando ele pertence a outra conta. */

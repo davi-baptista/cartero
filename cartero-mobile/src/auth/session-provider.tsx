@@ -12,6 +12,8 @@ import { ApiClient } from '../api/client'
 import { API_URL } from '../config'
 import { snapshotStore } from '../../modules/cartero-widget-snapshot/src'
 import { SnapshotSync } from '../widget/snapshot-sync'
+import { SnapshotMutationCoordinator } from '../widget/snapshot-mutations'
+import { WidgetPrivacyService } from '../widget/privacy-service'
 import { secureCredentialStore } from './secure-store'
 import { INITIAL_SESSION, SessionMachine } from './session-machine'
 import type { SessionState } from './types'
@@ -27,6 +29,8 @@ import type { SessionState } from './types'
 interface SessionContextValue {
   state: SessionState
   api: ApiClient
+  /** Autoridade única sobre a privacidade dos widgets. */
+  privacy: WidgetPrivacyService
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
 }
@@ -45,6 +49,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     api: ApiClient
     machine: SessionMachine
     snapshot: SnapshotSync
+    privacy: WidgetPrivacyService
   } | null>(null)
 
   if (!refs.current) {
@@ -58,8 +63,31 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       store: secureCredentialStore,
       emit: setState,
     })
+    /*
+      Um coordenador para os DOIS escritores do snapshot.
+
+      O sync do Budget e o toggle de privacidade gravam o mesmo arquivo. Sem
+      a fila compartilhada, um sync lento terminaria depois de um toggle e
+      sobrescreveria a escolha recém-feita — o usuário veria o ajuste ligado
+      com o widget mascarado.
+    */
+    const coordinator = new SnapshotMutationCoordinator()
+
+    const currentOwnerId = () => {
+      const session = machine.getState()
+      return session.status === 'signedIn' ? (session.user?.id ?? null) : null
+    }
+
+    const privacy = new WidgetPrivacyService({
+      store: snapshotStore,
+      coordinator,
+      currentOwnerId,
+    })
+
     const snapshot = new SnapshotSync({
       store: snapshotStore,
+      coordinator,
+      hideAmounts: (ownerId) => privacy.getHideAmounts(ownerId),
       fetchBudget: ({ month, year }) =>
         api.authorized(`/budget?month=${month}&year=${year}`),
       /*
@@ -67,16 +95,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         dono do snapshot precisa ser quem está logado no instante da escrita —
         um valor congelado gravaria a conta anterior depois de uma troca.
       */
-      currentOwnerId: () => {
-        const session = machine.getState()
-        return session.status === 'signedIn' ? (session.user?.id ?? null) : null
-      },
+      currentOwnerId,
     })
 
-    refs.current = { api, machine, snapshot }
+    refs.current = { api, machine, snapshot, privacy }
   }
 
-  const { api, machine, snapshot } = refs.current
+  const { api, machine, snapshot, privacy } = refs.current
 
   useEffect(() => {
     void machine.bootstrap()
@@ -114,6 +139,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     () => ({
       state,
       api,
+      privacy,
       signIn: (email, password) => machine.signIn(email, password),
       /*
         O snapshot é neutralizado ANTES de a sessão terminar. Na ordem
@@ -126,7 +152,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         await machine.signOut()
       },
     }),
-    [state, api, machine, snapshot],
+    [state, api, machine, snapshot, privacy],
   )
 
   return (

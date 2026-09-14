@@ -46,19 +46,7 @@ class CarteroWidgetSnapshotModule : Module() {
       janela entre truncar e terminar é exatamente onde o dado se perde.
     */
     AsyncFunction("write") { contents: String ->
-      val atomic = AtomicFile(snapshotFile())
-      var stream: FileOutputStream? = null
-
-      try {
-        stream = atomic.startWrite()
-        stream.write(contents.toByteArray(Charsets.UTF_8))
-        atomic.finishWrite(stream)
-      } catch (error: IOException) {
-        // Aborta explicitamente: sem isto o arquivo de trabalho ficaria para
-        // trás e a próxima leitura poderia encontrá-lo.
-        if (stream != null) atomic.failWrite(stream)
-        throw error
-      }
+      writeAtomically(snapshotFile(), contents)
 
       /*
         O refresh vem DEPOIS do commit atômico, nunca antes.
@@ -75,17 +63,35 @@ class CarteroWidgetSnapshotModule : Module() {
     }
 
     /** Devolve o conteúdo, ou `null` se ainda não existe. */
-    AsyncFunction("read") {
-      val atomic = AtomicFile(snapshotFile())
-      if (!snapshotFile().exists()) return@AsyncFunction null
+    AsyncFunction("read") { readAtomically(snapshotFile()) }
 
-      try {
-        String(atomic.readFully(), Charsets.UTF_8)
-      } catch (error: IOException) {
-        // Ilegível é equivalente a ausente: quem chama decide o estado neutro.
-        null
-      }
+    /*
+      ── A preferência de privacidade, em arquivo SEPARADO ──
+
+      Ela não entra no snapshot por uma razão de ciclo de vida: o logout
+      neutraliza o snapshot, e a escolha de "mostrar valores" pertence à
+      pessoa, não à sessão. Guardá-la junto faria cada logout apagar a
+      decisão, e o usuário teria de optar de novo toda vez.
+
+      Mesmo diretório sem backup: um opt-in para revelar saldo na tela
+      inicial não pode reaparecer sozinho num aparelho novo restaurado da
+      nuvem.
+    */
+    AsyncFunction("writePrivacy") { contents: String ->
+      writeAtomically(privacyFile(), contents)
     }
+
+    AsyncFunction("readPrivacy") { readAtomically(privacyFile()) }
+
+    /*
+      Pedido de redesenho isolado.
+
+      A reescrita de privacidade muda o snapshot pelo mesmo caminho de
+      `write`, mas há casos — como falha parcial — em que só o refresh é
+      necessário. Expor a operação evita que a camada TypeScript tenha de
+      gravar de novo só para provocar a atualização.
+    */
+    AsyncFunction("refreshWidget") { requestWidgetRefresh() }
 
     /** Caminho real, para inspeção em desenvolvimento. Não expõe conteúdo. */
     AsyncFunction("location") { snapshotFile().absolutePath }
@@ -109,7 +115,50 @@ class CarteroWidgetSnapshotModule : Module() {
     }
   }
 
-  private fun snapshotFile(): File {
+  /**
+   * Escrita atômica, compartilhada pelos dois arquivos.
+   *
+   * `AtomicFile` grava num arquivo de trabalho e só o promove quando o
+   * conteúdo está inteiro. Interrompida — o sistema mata o app, a bateria
+   * acaba — a versão ANTERIOR permanece, em vez de um JSON truncado.
+   *
+   * Isso importa em dobro para a privacidade: uma escrita partida que
+   * resultasse em arquivo ilegível faria a próxima leitura cair no padrão.
+   * O padrão é OCULTAR, então o pior caso esconde valores — nunca revela.
+   */
+  private fun writeAtomically(target: File, contents: String) {
+    val atomic = AtomicFile(target)
+    var stream: FileOutputStream? = null
+
+    try {
+      stream = atomic.startWrite()
+      stream.write(contents.toByteArray(Charsets.UTF_8))
+      atomic.finishWrite(stream)
+    } catch (error: IOException) {
+      // Aborta explicitamente: sem isto o arquivo de trabalho ficaria para
+      // trás e a próxima leitura poderia encontrá-lo.
+      if (stream != null) atomic.failWrite(stream)
+      throw error
+    }
+  }
+
+  /** Conteúdo do arquivo, ou `null` se ausente ou ilegível. */
+  private fun readAtomically(target: File): String? {
+    if (!target.exists()) return null
+
+    return try {
+      String(AtomicFile(target).readFully(), Charsets.UTF_8)
+    } catch (_: IOException) {
+      // Ilegível é equivalente a ausente: quem chama decide o estado neutro.
+      null
+    }
+  }
+
+  private fun privacyFile(): File = File(widgetDirectory(), PRIVACY_FILE)
+
+  private fun snapshotFile(): File = File(widgetDirectory(), SNAPSHOT_FILE)
+
+  private fun widgetDirectory(): File {
     val context = appContext.reactContext ?: throw IllegalStateException(
       "contexto Android indisponível",
     )
@@ -117,11 +166,12 @@ class CarteroWidgetSnapshotModule : Module() {
     val directory = File(context.noBackupFilesDir, SNAPSHOT_DIRECTORY)
     if (!directory.exists()) directory.mkdirs()
 
-    return File(directory, SNAPSHOT_FILE)
+    return directory
   }
 
   private companion object {
     const val SNAPSHOT_DIRECTORY = "cartero-widget"
     const val SNAPSHOT_FILE = "snapshot-v1.json"
+    const val PRIVACY_FILE = "privacy-v1.json"
   }
 }

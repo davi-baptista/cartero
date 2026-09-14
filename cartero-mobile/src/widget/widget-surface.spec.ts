@@ -167,15 +167,65 @@ describe('o que o código nativo do widget pode alcançar', () => {
     /*
       Ordem invertida faria o launcher ler o arquivo no meio da escrita —
       exatamente a corrida que o `AtomicFile` existe para eliminar.
+
+      A verificação olha o corpo de `write`: a gravação delega a
+      `writeAtomically`, que só retorna com o conteúdo promovido, e o refresh
+      vem depois DESSA chamada. Comparar posições de `finishWrite` no arquivo
+      inteiro deixou de funcionar quando a escrita virou helper — e a
+      propriedade que importa nunca foi a ordem textual, e sim qual chamada
+      precede qual.
     */
     const module = sources.find((f) =>
       f.path.endsWith('CarteroWidgetSnapshotModule.kt'),
     )!
 
-    const finishAt = module.text.indexOf('finishWrite')
-    const refreshAt = module.text.indexOf('requestWidgetRefresh()')
+    const writeStart = module.text.indexOf('AsyncFunction("write")')
+    expect(writeStart, 'corpo de write não encontrado').toBeGreaterThan(-1)
 
-    expect(finishAt).toBeGreaterThan(-1)
-    expect(refreshAt).toBeGreaterThan(finishAt)
+    // Até o início da próxima declaração — o corpo de `write` e nada além.
+    const nextFn = module.text.indexOf('AsyncFunction("read")', writeStart)
+    const body = module.text.slice(writeStart, nextFn)
+    const commitAt = body.indexOf('writeAtomically(')
+    const refreshAt = body.indexOf('requestWidgetRefresh()')
+
+    expect(commitAt).toBeGreaterThan(-1)
+    expect(refreshAt).toBeGreaterThan(commitAt)
+
+    /*
+      E o helper de fato promove antes de retornar: `finishWrite` dentro dele,
+      com `failWrite` no caminho de erro.
+    */
+    expect(module.text).toContain('atomic.finishWrite(stream)')
+    expect(module.text).toContain('atomic.failWrite(stream)')
+  })
+
+  it('a preferência de privacidade usa a MESMA escrita atômica', () => {
+    /*
+      Uma escrita partida que deixasse o arquivo ilegível faria a leitura cair
+      no padrão — e o padrão é OCULTAR. Mesmo assim, a gravação precisa ser
+      atômica: um arquivo meio escrito perderia a escolha das OUTRAS contas
+      que convivem no mesmo JSON.
+    */
+    const module = sources.find((f) =>
+      f.path.endsWith('CarteroWidgetSnapshotModule.kt'),
+    )!
+
+    expect(module.text).toContain('AsyncFunction("writePrivacy")')
+    expect(module.text).toMatch(/writePrivacy[\s\S]{0,120}writeAtomically\(privacyFile\(\)/)
+  })
+
+  it('a preferência fica no mesmo diretório sem backup', () => {
+    /*
+      Um opt-in para revelar saldo na tela inicial não pode reaparecer sozinho
+      num aparelho novo restaurado da nuvem: instalação nova começa oculta.
+    */
+    const module = sources.find((f) =>
+      f.path.endsWith('CarteroWidgetSnapshotModule.kt'),
+    )!
+
+    expect(module.text).toContain('PRIVACY_FILE = "privacy-v1.json"')
+    // A preferência resolve pelo mesmo diretório do snapshot.
+    expect(module.text).toContain('File(widgetDirectory(), PRIVACY_FILE)')
+    expect(module.text).toContain('noBackupFilesDir')
   })
 })

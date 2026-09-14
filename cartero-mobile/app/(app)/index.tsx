@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { router } from 'expo-router'
 import { useSession } from '../../src/auth/session-provider'
 import { theme } from '../../src/ui/theme'
 import type { AuthUser } from '../../src/auth/types'
@@ -74,6 +75,15 @@ export default function HomeScreen() {
         <View style={styles.spacer} />
 
         <Pressable
+          style={({ pressed }) => [styles.settings, pressed && styles.pressed]}
+          onPress={() => router.push('/settings')}
+          accessibilityRole="button"
+          accessibilityLabel="Abrir configurações"
+        >
+          <Text style={styles.settingsText}>Configurações</Text>
+        </Pressable>
+
+        <Pressable
           style={({ pressed }) => [styles.signOut, pressed && styles.pressed]}
           onPress={() => void signOut()}
           accessibilityRole="button"
@@ -132,6 +142,16 @@ const styles = StyleSheet.create({
     marginVertical: theme.space.md,
   },
   spacer: { flex: 1 },
+  settings: {
+    minHeight: theme.touchTarget,
+    borderColor: theme.color.border,
+    borderWidth: 1,
+    borderRadius: theme.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: theme.space.sm,
+  },
+  settingsText: { color: theme.color.text, fontSize: theme.font.body },
   signOut: {
     minHeight: theme.touchTarget,
     borderColor: theme.color.border,
