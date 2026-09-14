@@ -7,8 +7,11 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { AppState, type AppStateStatus } from 'react-native'
 import { ApiClient } from '../api/client'
 import { API_URL } from '../config'
+import { snapshotStore } from '../../modules/cartero-widget-snapshot/src'
+import { SnapshotSync } from '../widget/snapshot-sync'
 import { secureCredentialStore } from './secure-store'
 import { INITIAL_SESSION, SessionMachine } from './session-machine'
 import type { SessionState } from './types'
@@ -38,7 +41,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     access token em memória e o refresh em voo — o app renovaria a sessão sem
     parar, e a coordenação de concorrência deixaria de existir na prática.
   */
-  const refs = useRef<{ api: ApiClient; machine: SessionMachine } | null>(null)
+  const refs = useRef<{
+    api: ApiClient
+    machine: SessionMachine
+    snapshot: SnapshotSync
+  } | null>(null)
 
   if (!refs.current) {
     const api = new ApiClient({
@@ -51,23 +58,75 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       store: secureCredentialStore,
       emit: setState,
     })
-    refs.current = { api, machine }
+    const snapshot = new SnapshotSync({
+      store: snapshotStore,
+      fetchBudget: ({ month, year }) =>
+        api.authorized(`/budget?month=${month}&year=${year}`),
+      /*
+        Lê o estado ATUAL da máquina, não uma cópia capturada no closure. O
+        dono do snapshot precisa ser quem está logado no instante da escrita —
+        um valor congelado gravaria a conta anterior depois de uma troca.
+      */
+      currentOwnerId: () => {
+        const session = machine.getState()
+        return session.status === 'signedIn' ? (session.user?.id ?? null) : null
+      },
+    })
+
+    refs.current = { api, machine, snapshot }
   }
 
-  const { api, machine } = refs.current
+  const { api, machine, snapshot } = refs.current
 
   useEffect(() => {
     void machine.bootstrap()
   }, [machine])
+
+  /*
+    O snapshot acompanha a sessão, sem interferir nela.
+
+    `void` é deliberado: uma falha de sync não pode derrubar o login. O
+    Budget pode estar fora do ar enquanto a autenticação está perfeitamente
+    boa, e nesse caso o usuário continua dentro do app — só o widget fica com
+    dado mais velho.
+  */
+  useEffect(() => {
+    if (state.status === 'signedIn') void snapshot.sync()
+  }, [state.status, snapshot])
+
+  /*
+    Voltar para o primeiro plano é a única chance de perceber o que mudou na
+    web enquanto o app estava fechado. Só dispara com sessão ativa: sem ela
+    não há o que buscar, e o sync sairia pelo caminho de "sem sessão".
+  */
+  useEffect(() => {
+    const onChange = (next: AppStateStatus) => {
+      if (next === 'active' && machine.getState().status === 'signedIn') {
+        void snapshot.sync()
+      }
+    }
+
+    const subscription = AppState.addEventListener('change', onChange)
+    return () => subscription.remove()
+  }, [machine, snapshot])
 
   const value = useMemo<SessionContextValue>(
     () => ({
       state,
       api,
       signIn: (email, password) => machine.signIn(email, password),
-      signOut: () => machine.signOut(),
+      /*
+        O snapshot é neutralizado ANTES de a sessão terminar. Na ordem
+        inversa, uma falha entre as duas etapas deixaria a credencial removida
+        e os valores da conta anterior intactos no disco — visíveis para quem
+        instalasse um widget depois.
+      */
+      signOut: async () => {
+        await snapshot.scrub()
+        await machine.signOut()
+      },
     }),
-    [state, api, machine],
+    [state, api, machine, snapshot],
   )
 
   return (

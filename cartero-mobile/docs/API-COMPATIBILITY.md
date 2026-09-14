@@ -37,13 +37,37 @@ Isto é **regra de processo, não código em runtime**: não há verificação
 automática, e não existe `/v1`. Versionamento de rota é uma resposta possível
 se e quando uma quebra for inevitável — não algo a construir por antecipação.
 
-## Superfície consumida hoje (M1)
+## Superfície consumida hoje (M1 · M2)
 
 | Endpoint | Campos |
 |---|---|
 | `POST /auth/mobile/login` | `accessToken`, `refreshToken`, `user{id,email,name}` |
 | `POST /auth/mobile/refresh` | `accessToken`, `refreshToken` |
 | `GET /users/me` | `id`, `email`, `name` |
+| `GET /budget?month=&year=` | `totalToPay`, `totalPaid`, `totalPending` |
+
+## `GET /budget` e o Widget Snapshot
+
+Estes três campos alimentam o Widget Snapshot V1, que é gravado no
+armazenamento do aparelho e lido por um widget de tela inicial — código
+INSTALADO, que pode ficar semanas sem atualizar.
+
+Além dos campos, duas propriedades entram no contrato:
+
+- **`month` e `year` são obrigatórios** na query. O app envia a competência
+  civil de `America/Fortaleza`; sem eles a rota responde 400.
+- **A resposta ecoa a competência pedida.** O snapshot grava a competência
+  que ele SOLICITOU, não a que voltou, mas uma rota que passasse a decidir o
+  mês por conta própria tornaria o snapshot incoerente com o que o widget
+  anuncia.
+
+`totalPending` é derivado (`totalToPay - totalPaid`) e chega pronto: o app
+não recalcula nada. Toda a matemática financeira — fatura, parte própria,
+dívida, carry, acerto por pessoa — continua no backend.
+
+Um campo ausente num 2xx **não vira zero** no cliente: o snapshot anterior é
+preservado. Zero é uma afirmação financeira, e inventá-la na tela inicial
+seria pior que exibir um dado velho.
 
 Esta tabela cresce a cada milestone. Mantê-la atualizada é o que torna a
 revisão do release gate possível — sem ela, "o que o mobile consome?" vira uma

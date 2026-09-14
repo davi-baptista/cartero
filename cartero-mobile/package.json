@@ -32,5 +32,10 @@
     "@types/react": "~19.2.0",
     "typescript": "~6.0.3",
     "vitest": "^4.1.0"
+  },
+  "expo": {
+    "autolinking": {
+      "nativeModulesDir": "./modules"
+    }
   }
 }
