@@ -57,6 +57,40 @@ import { civilDay } from './date-only.helper';
  * `bankId` agrupa — nunca `bankName`: dois bancos distintos podem ter o mesmo
  * nome, e agrupar por texto os fundiria incorretamente. `bankId` fica
  * INTERNO: não entra em `ActionableInvoiceItem`.
+ *
+ * ── Empate determinístico (M5A.2) ──
+ *
+ * Duas invoices do MESMO banco podem legitimamente ter o mesmo `status` e a
+ * mesma `actionDate` — nada no schema impede isso (`Invoice` não tem
+ * `@@unique` sobre competência), e o cenário é alcançável por edição manual,
+ * reconfiguração de ciclo ou correção de dado. Quando isso acontece, o
+ * terceiro critério do comparador (`bankName`) empata TAMBÉM — é o mesmo
+ * banco —, e a escolha da representante passava a depender da ordem em que
+ * o array chegava. Essa ordem vinha de `prisma.invoice.findMany` SEM
+ * `orderBy`: o Postgres não garante ordem sem isso, então o mesmo estado do
+ * banco podia produzir respostas diferentes entre execuções.
+ *
+ * O desempate INTRA-banco é `year` → `month` → `invoiceId`:
+ *
+ *   - competência (`year`/`month`) é domínio financeiro real — a obrigação
+ *     mais antiga é a que representa o banco quando a urgência empata. Isso é
+ *     preferível a `createdAt`: `createdAt` é o momento em que a LINHA foi
+ *     persistida, e diverge da competência depois de um import, seed,
+ *     correção manual ou backfill. Usar `createdAt` faria o desempate
+ *     depender de quando o dado foi gravado no Postgres, não de quando a
+ *     obrigação financeira realmente é.
+ *   - `invoiceId` entra só como ÚLTIMO fallback, para o caso (hoje possível,
+ *     por falta de `@@unique`) de duas invoices da MESMA competência e MESMO
+ *     status. Não tem significado financeiro — existe só para garantir que a
+ *     mesma entrada lógica produza a mesma saída. Comparação lexical simples
+ *     (`<`/`>`), sem depender de locale.
+ *
+ * O desempate INTER-bancos continua `bankName.localeCompare()` — a régua
+ * histórica do M5A — com `bankId` como fallback técnico final para o caso de
+ * dois bancos homônimos empatando em tudo mais.
+ *
+ * Nenhum desses campos (`bankId`, `invoiceId`, `year`, `month`) é exposto em
+ * `ActionableInvoiceItem`.
  */
 
 /** O que a authority precisa de cada fatura candidata. */
@@ -64,6 +98,11 @@ export interface ActionableInvoiceCandidate {
   /** Identidade do banco — usada SOMENTE para agrupar, nunca exposta. */
   bankId: string;
   bankName: string;
+  /** Fallback técnico final de desempate — nunca exposto, sem significado financeiro. */
+  invoiceId: string;
+  /** Competência — desempate intra-banco. Nunca exposta. */
+  year: number;
+  month: number;
   status: InvoiceStatus;
   /** Bruto — usado SOMENTE para o filtro de zero, nunca exposto. */
   totalAmount: Prisma.Decimal | number;
@@ -122,24 +161,68 @@ function decimalToCents(value: Prisma.Decimal | number): number {
   return cents;
 }
 
-/**
- * A mesma régua usada para escolher a representante DENTRO de um banco e
- * para ordenar as representantes ENTRE bancos — `selectBankInvoice` e
- * `orderBanksByUrgency` usam exatamente o mesmo comparador no Web (prioridade
- * de status, depois `actionDate`, depois nome), e nada nesta fase encontrou
- * evidência de que as duas réguas devessem divergir.
- */
-function compareActionable(
+/** Urgência pura: status, depois `actionDate`. Não decide nada sozinha — os
+ * dois comparators abaixo a usam como primeiro critério e completam o
+ * desempate de formas DIFERENTES (competência dentro do banco, nome entre
+ * bancos), porque são perguntas diferentes. */
+function compareActionableUrgency(
   a: ActionableInvoiceCandidate,
   b: ActionableInvoiceCandidate,
 ): number {
   const priorityDiff = STATUS_PRIORITY[a.status]! - STATUS_PRIORITY[b.status]!;
   if (priorityDiff !== 0) return priorityDiff;
 
-  const dateDiff = actionDateOf(a).getTime() - actionDateOf(b).getTime();
-  if (dateDiff !== 0) return dateDiff;
+  return actionDateOf(a).getTime() - actionDateOf(b).getTime();
+}
 
-  return a.bankName.localeCompare(b.bankName);
+/**
+ * Escolhe a representante DENTRO de um mesmo banco.
+ *
+ * Depois da urgência, o desempate é a COMPETÊNCIA — a obrigação mais antiga
+ * representa o banco — e só then `invoiceId` como fallback técnico sem
+ * significado financeiro, para o caso de mesma competência e mesmo status
+ * (hoje possível: `Invoice` não tem `@@unique` sobre competência).
+ */
+function compareWithinBank(
+  a: ActionableInvoiceCandidate,
+  b: ActionableInvoiceCandidate,
+): number {
+  const urgencyDiff = compareActionableUrgency(a, b);
+  if (urgencyDiff !== 0) return urgencyDiff;
+
+  if (a.year !== b.year) return a.year - b.year;
+  if (a.month !== b.month) return a.month - b.month;
+
+  // Comparação lexical simples — não depende de locale, e não tem
+  // significado financeiro: só garante que a mesma entrada produza a mesma
+  // saída.
+  if (a.invoiceId < b.invoiceId) return -1;
+  if (a.invoiceId > b.invoiceId) return 1;
+  return 0;
+}
+
+/**
+ * Ordena as representantes ENTRE bancos diferentes.
+ *
+ * Regra histórica do M5A, preservada: urgência, depois nome do banco
+ * (`localeCompare`). `bankId` entra só como fallback técnico final, para o
+ * caso (hoje possível) de dois bancos homônimos empatando em tudo mais —
+ * sem ele, a ordem entre eles dependeria da entrada, o mesmo problema que
+ * motivou este arquivo inteiro.
+ */
+function compareBankRepresentatives(
+  a: ActionableInvoiceCandidate,
+  b: ActionableInvoiceCandidate,
+): number {
+  const urgencyDiff = compareActionableUrgency(a, b);
+  if (urgencyDiff !== 0) return urgencyDiff;
+
+  const nameDiff = a.bankName.localeCompare(b.bankName);
+  if (nameDiff !== 0) return nameDiff;
+
+  if (a.bankId < b.bankId) return -1;
+  if (a.bankId > b.bankId) return 1;
+  return 0;
 }
 
 /**
@@ -185,13 +268,13 @@ export function selectActionableInvoices(
     else byBank.set(candidate.bankId, [candidate]);
   }
 
-  // Uma representante por banco: a mais urgente do grupo, pela MESMA régua
-  // usada para ordenar entre bancos — é o que `selectBankInvoice` faz no Web.
+  // Uma representante por banco: a mais urgente do grupo — e, em empate de
+  // urgência, a de competência mais antiga (ver comentário do módulo).
   const representatives = [...byBank.values()].map((group) =>
-    group.reduce((best, current) => (compareActionable(current, best) < 0 ? current : best)),
+    group.reduce((best, current) => (compareWithinBank(current, best) < 0 ? current : best)),
   );
 
-  const sorted = representatives.sort(compareActionable);
+  const sorted = representatives.sort(compareBankRepresentatives);
 
   return sorted.slice(0, limit).map((candidate) => {
     const totalAmount =

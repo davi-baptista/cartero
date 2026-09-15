@@ -43,6 +43,8 @@ function invoice(over: {
   totalAmount: string;
   closeDate: Date;
   dueDate: Date;
+  year?: number;
+  month?: number;
 }) {
   return {
     id: over.id,
@@ -53,6 +55,10 @@ function invoice(over: {
     bank: { name: over.bankName },
     status: over.status,
     totalAmount: money(over.totalAmount),
+    // M5A.2: desempate por competência exige year/month reais — default
+    // coerente com o mês de `closeDate` para os testes que não os informam.
+    year: over.year ?? over.closeDate.getUTCFullYear(),
+    month: over.month ?? over.closeDate.getUTCMonth() + 1,
     closeDate: over.closeDate,
     dueDate: over.dueDate,
   };

@@ -138,6 +138,10 @@ export class InvoicesService {
       // Identidade real do banco, para agrupar (M5A.1) — nunca exposta.
       bankId: invoice.bankId,
       bankName: invoice.bank.name,
+      // Desempate determinístico (M5A.2) — já vêm na row, sem query extra.
+      invoiceId: invoice.id,
+      year: invoice.year,
+      month: invoice.month,
       status: invoice.status,
       totalAmount: invoice.totalAmount,
       closeDate: invoice.closeDate,

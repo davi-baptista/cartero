@@ -34,17 +34,38 @@ interface InvoiceOverrides {
   /**
    * Identidade do banco. Default = o próprio `bankName`: nos cenários que já
    * existiam, cada nome já representava um banco distinto, então o default
-   * preserva o comportamento sem reescrevê-los. Os testes de M5A.1 passam
-   * `bankId` explícito para simular múltiplas invoices do MESMO banco, ou
-   * bancos distintos com o MESMO nome.
+   * preserva o comportamento sem reescrevê-los. Os testes de M5A.1/M5A.2
+   * passam `bankId` explícito para simular múltiplas invoices do MESMO banco,
+   * ou bancos distintos com o MESMO nome.
    */
   bankId?: string;
+  /**
+   * Fallback técnico de desempate (M5A.2) — sem significado financeiro.
+   * Default único por chamada: sem isso, testes que criam várias invoices
+   * sem especificar `invoiceId` colidiriam silenciosamente no fallback e
+   * mascarariam o que estão testando de verdade (competência, por exemplo).
+   */
+  invoiceId?: string;
+  /**
+   * Competência (M5A.2). Default = extraída de `closeDate`: no domínio real
+   * a competência normalmente casa com o mês de fechamento, e a maioria dos
+   * cenários já existentes não testa competência — só precisa de UM valor
+   * estável e coerente com as datas informadas.
+   */
+  year?: number;
+  month?: number;
 }
 
+let nextInvoiceId = 0;
+
 function invoice(over: InvoiceOverrides): ActionableInvoiceCandidate {
+  const [closeYear, closeMonth] = over.closeDate;
   return {
     bankId: over.bankId ?? over.bankName,
     bankName: over.bankName,
+    invoiceId: over.invoiceId ?? `auto-invoice-${nextInvoiceId++}`,
+    year: over.year ?? closeYear,
+    month: over.month ?? closeMonth,
     status: over.status,
     totalAmount: over.totalAmount ?? money('100'),
     closeDate: utcDate(...over.closeDate, 3),
@@ -772,5 +793,280 @@ describe('M5A.1 — uma invoice representa cada banco (§12-§17)', () => {
       3,
     );
     expect(items).toHaveLength(1);
+  });
+});
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * M5A.2 — empate determinístico, independente da ordem de entrada
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Duas invoices do MESMO banco podem legitimamente empatar em `status` e
+ * `actionDate` — nada no schema impede isso. Quando acontece, `bankName`
+ * (terceiro critério histórico) TAMBÉM empata, porque é o mesmo banco. Sem
+ * um desempate intra-banco, a representante escolhida dependia da ordem do
+ * array recebido — que no service vem de uma query SEM `orderBy`.
+ */
+describe('M5A.2 — desempate determinístico (§11-§18)', () => {
+  it('§11: input revertido produz a MESMA representante (mesmo status, mesma actionDate, competências diferentes)', () => {
+    const invoiceX = invoice({
+      bankId: 'bank-1',
+      bankName: 'Nubank',
+      status: InvoiceStatus.OVERDUE,
+      closeDate: [2026, 8, 3],
+      dueDate: [2026, 8, 10], // mesma actionDate (OVERDUE usa dueDate)
+      year: 2026,
+      month: 8,
+    });
+    const invoiceY = invoice({
+      bankId: 'bank-1',
+      bankName: 'Nubank',
+      status: InvoiceStatus.OVERDUE,
+      closeDate: [2026, 6, 3],
+      dueDate: [2026, 8, 10], // MESMA actionDate que X
+      year: 2026,
+      month: 6, // competência mais antiga — deve vencer
+    });
+
+    const ordem1 = selectActionableInvoices([invoiceX, invoiceY], 3);
+    const ordem2 = selectActionableInvoices([invoiceY, invoiceX], 3);
+
+    expect(ordem1).toHaveLength(1);
+    expect(ordem2).toHaveLength(1);
+    // A representante é a mesma nas duas ordens de entrada.
+    expect(ordem1[0].closeDate).toBe(ordem2[0].closeDate);
+    expect(ordem1[0].dueDate).toBe(ordem2[0].dueDate);
+  });
+
+  it('§12: mesmo banco, mesmo status/actionDate, competências diferentes — a mais antiga vence', () => {
+    const invoiceAntiga = invoice({
+      bankId: 'bank-1',
+      bankName: 'Nubank',
+      status: InvoiceStatus.CLOSED,
+      closeDate: [2026, 8, 3],
+      dueDate: [2026, 9, 1],
+      year: 2026,
+      month: 8,
+      // invoiceId PROPOSITALMENTE maior que o da invoice nova: se o
+      // comparador ignorasse competência e caísse direto no fallback por id,
+      // a NOVA venceria (id menor) — o oposto do esperado. Só um comparador
+      // que realmente olha year/month antes do id escolhe a antiga aqui.
+      invoiceId: 'zzzz-antiga',
+    });
+    const invoiceNova = invoice({
+      bankId: 'bank-1',
+      bankName: 'Nubank',
+      status: InvoiceStatus.CLOSED,
+      closeDate: [2026, 9, 3],
+      dueDate: [2026, 9, 1], // MESMA actionDate
+      year: 2026,
+      month: 9,
+      invoiceId: 'aaaa-nova',
+    });
+
+    const items = selectActionableInvoices([invoiceNova, invoiceAntiga], 3);
+
+    expect(items).toHaveLength(1);
+    // A representante é a de competência mais antiga (agosto) — reconhecível
+    // pelo seu closeDate distinto (03/08, não 03/09).
+    expect(items[0].closeDate).toBe('2026-08-03');
+  });
+
+  it('§13: virada de ano — 2025/12 vence sobre 2026/1, mesmo status/actionDate', () => {
+    const invoiceDezembro = invoice({
+      bankId: 'bank-1',
+      bankName: 'Nubank',
+      status: InvoiceStatus.CLOSED,
+      closeDate: [2025, 12, 3],
+      dueDate: [2026, 1, 15],
+      year: 2025,
+      month: 12,
+      // id lexicalmente MAIOR que o de janeiro — mesma proteção do §12: só
+      // year decidindo antes do fallback por id escolhe dezembro aqui.
+      invoiceId: 'zzzz-dezembro',
+    });
+    const invoiceJaneiro = invoice({
+      bankId: 'bank-1',
+      bankName: 'Nubank',
+      status: InvoiceStatus.CLOSED,
+      closeDate: [2026, 1, 3],
+      dueDate: [2026, 1, 15], // MESMA actionDate
+      year: 2026,
+      month: 1,
+      invoiceId: 'aaaa-janeiro',
+    });
+
+    const itemsOrdemA = selectActionableInvoices([invoiceJaneiro, invoiceDezembro], 3);
+    const itemsOrdemB = selectActionableInvoices([invoiceDezembro, invoiceJaneiro], 3);
+
+    // 2025/12 vence — reconhecível pelo closeDate de dezembro.
+    expect(itemsOrdemA[0].closeDate).toBe('2025-12-03');
+    expect(itemsOrdemB[0].closeDate).toBe('2025-12-03');
+  });
+
+  it('§14: mesma competência, mesmo status/actionDate — o invoiceId lexicalmente menor vence, em qualquer ordem de entrada', () => {
+    /*
+      `totalAmount` DIFERENTE entre A e B é o que torna o teste discriminante:
+      sem isso, as duas invoices produziriam o MESMO `ownAmountCents` e a
+      troca de qual delas "vence" internamente (por causa da ordem de entrada,
+      na ausência do fallback por invoiceId) não apareceria no resultado —
+      `invoiceId` nunca é exposto, então dois resultados idênticos por fora
+      não provam que a MESMA invoice interna venceu nas duas ordens.
+    */
+    const invoiceA = invoice({
+      bankId: 'bank-1',
+      bankName: 'Nubank',
+      status: InvoiceStatus.OPEN,
+      closeDate: [2026, 9, 20],
+      dueDate: [2026, 9, 27],
+      year: 2026,
+      month: 9,
+      invoiceId: 'aaaa-0001', // menor lexicalmente — deve vencer
+      totalAmount: money('100'),
+    });
+    const invoiceB = invoice({
+      bankId: 'bank-1',
+      bankName: 'Nubank',
+      status: InvoiceStatus.OPEN,
+      closeDate: [2026, 9, 20], // MESMA actionDate (closeDate, status OPEN)
+      dueDate: [2026, 9, 27],
+      year: 2026, // MESMA competência
+      month: 9,
+      invoiceId: 'bbbb-0002',
+      totalAmount: money('999'), // valor DIFERENTE — torna a escolha observável
+    });
+
+    const ordem1 = selectActionableInvoices([invoiceA, invoiceB], 3);
+    const ordem2 = selectActionableInvoices([invoiceB, invoiceA], 3);
+
+    expect(ordem1).toHaveLength(1);
+    expect(ordem2).toHaveLength(1);
+    // 'aaaa-0001' < 'bbbb-0002' lexicalmente — A vence nas duas ordens,
+    // reconhecível pelo ownAmountCents de A (10000), nunca o de B (99900).
+    expect(ordem1[0].ownAmountCents).toBe(10000);
+    expect(ordem2[0].ownAmountCents).toBe(10000);
+    expect(ordem1).toEqual(ordem2);
+    // invoiceId nunca aparece no output público.
+    expect(ordem1[0]).not.toHaveProperty('invoiceId');
+  });
+
+  it('§15: createdAt não influencia o desempate (ausente do candidate)', () => {
+    /*
+      Estrutural: `ActionableInvoiceCandidate` não declara `createdAt` como
+      propriedade — não há como o comparador usá-lo, mesmo por engano. O
+      helper CITA `createdAt` em prosa (explicando por que competência é
+      preferível a ele), então o teste procura por um campo/acesso real
+      (`.createdAt`, `createdAt:`), não pela palavra solta.
+    */
+    const source: string = require('node:fs').readFileSync(
+      require('node:path').join(__dirname, 'actionable-invoices.helper.ts'),
+      'utf-8',
+    );
+    expect(source).not.toMatch(/\.createdAt\b/);
+    expect(source).not.toMatch(/\bcreatedAt\s*:/);
+  });
+
+  it('§16: dois bancos homônimos com mesma urgência — determinístico por bankId, em qualquer ordem', () => {
+    const bancoX = invoice({
+      bankId: 'id-real-x',
+      bankName: 'Nubank',
+      status: InvoiceStatus.OVERDUE,
+      closeDate: [2026, 8, 3],
+      dueDate: [2026, 8, 10],
+    });
+    const bancoY = invoice({
+      bankId: 'id-real-y',
+      bankName: 'Nubank', // MESMO nome
+      status: InvoiceStatus.OVERDUE, // MESMO status
+      closeDate: [2026, 9, 3],
+      dueDate: [2026, 8, 10], // MESMA actionDate
+    });
+
+    const ordem1 = selectActionableInvoices([bancoX, bancoY], 3).map((i) => i.closeDate);
+    const ordem2 = selectActionableInvoices([bancoY, bancoX], 3).map((i) => i.closeDate);
+
+    expect(ordem1).toHaveLength(2);
+    expect(ordem2).toHaveLength(2);
+    // Ambos presentes (nomes iguais não se fundem) e mesma ordem nas duas entradas.
+    expect(ordem1).toEqual(ordem2);
+  });
+
+  it('§17: limit com empate visível — mesmos bancos, mesma ordem, com entrada invertida', () => {
+    const bancoA = invoice({
+      bankId: 'a',
+      bankName: 'Alfa',
+      status: InvoiceStatus.OVERDUE,
+      closeDate: [2026, 8, 3],
+      dueDate: [2026, 8, 10],
+    });
+    const bancoB = invoice({
+      bankId: 'b',
+      bankName: 'Beta',
+      status: InvoiceStatus.OVERDUE,
+      closeDate: [2026, 8, 3],
+      dueDate: [2026, 8, 10], // empatado com A em status+actionDate
+    });
+    const bancoC = invoice({
+      bankId: 'c',
+      bankName: 'Gama',
+      status: InvoiceStatus.OPEN,
+      closeDate: [2026, 9, 20],
+      dueDate: [2026, 9, 27],
+    });
+
+    const ordem1 = selectActionableInvoices([bancoA, bancoB, bancoC], 2).map((i) => i.bankName);
+    const ordem2 = selectActionableInvoices([bancoC, bancoB, bancoA], 2).map((i) => i.bankName);
+
+    expect(ordem1).toEqual(['Alfa', 'Beta']); // desempate por bankName
+    expect(ordem2).toEqual(ordem1);
+  });
+
+  it('§18: permutações — múltiplos bancos, múltiplas invoices, ties completos, mesma seleção e ordem em toda permutação', () => {
+    const candidates = [
+      invoice({
+        bankId: 'bank-1',
+        bankName: 'Nubank',
+        status: InvoiceStatus.OVERDUE,
+        closeDate: [2026, 8, 3],
+        dueDate: [2026, 9, 1],
+        year: 2026,
+        month: 8,
+      }),
+      invoice({
+        // MESMO banco, mesmo status/actionDate, competência mais nova.
+        bankId: 'bank-1',
+        bankName: 'Nubank',
+        status: InvoiceStatus.OVERDUE,
+        closeDate: [2026, 9, 3],
+        dueDate: [2026, 9, 1],
+        year: 2026,
+        month: 9,
+      }),
+      invoice({
+        bankId: 'bank-2',
+        bankName: 'Itaú',
+        status: InvoiceStatus.OPEN,
+        closeDate: [2026, 9, 20],
+        dueDate: [2026, 9, 27],
+      }),
+    ];
+
+    // Enumera as 3! = 6 permutações de um array pequeno.
+    function permutations<T>(arr: T[]): T[][] {
+      if (arr.length <= 1) return [arr];
+      const result: T[][] = [];
+      for (let i = 0; i < arr.length; i++) {
+        const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
+        for (const perm of permutations(rest)) {
+          result.push([arr[i], ...perm]);
+        }
+      }
+      return result;
+    }
+
+    const referencia = selectActionableInvoices(candidates, 3);
+    for (const perm of permutations(candidates)) {
+      expect(selectActionableInvoices(perm, 3)).toEqual(referencia);
+    }
   });
 });
