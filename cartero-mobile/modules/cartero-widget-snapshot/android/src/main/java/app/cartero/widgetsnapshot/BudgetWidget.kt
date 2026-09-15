@@ -10,6 +10,7 @@ import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.LinearProgressIndicator
+import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
@@ -71,9 +72,21 @@ private fun WidgetSurface(model: BudgetWidgetUiModel) {
   val launchIntent = context.packageManager
     .getLaunchIntentForPackage(context.packageName)
 
+  /*
+    14.dp = `--radius-xl` do design system web (0.625rem base × 1.4). É o
+    mesmo raio que os containers de lista da página de Orçamento usam
+    (`rounded-xl`) — o widget acompanha a mesma linguagem visual do Cartero
+    em vez de inventar um raio próprio.
+
+    O fundo usa `CarteroWidgetColors.cardBackground` (M6.2), não
+    `GlanceTheme.colors.widgetBackground` — ver `CarteroWidgetColors.kt`
+    para o porquê: o token dinâmico do sistema varia por wallpaper/aparelho e
+    não representa a identidade do Cartero.
+  */
   var surface = GlanceModifier
     .fillMaxSize()
-    .background(GlanceTheme.colors.widgetBackground)
+    .background(CarteroWidgetColors.cardBackground)
+    .cornerRadius(14.dp)
     .padding(16.dp)
 
   if (launchIntent != null) {
@@ -96,7 +109,7 @@ private fun ReadyContent(model: BudgetWidgetUiModel.Ready) {
     style = TextStyle(
       fontSize = 11.sp,
       fontWeight = FontWeight.Medium,
-      color = GlanceTheme.colors.onSurfaceVariant,
+      color = CarteroWidgetColors.secondaryTextProvider,
     ),
   )
 
@@ -130,8 +143,8 @@ private fun ReadyContent(model: BudgetWidgetUiModel.Ready) {
     LinearProgressIndicator(
       progress = progress,
       modifier = GlanceModifier.fillMaxWidth(),
-      color = GlanceTheme.colors.primary,
-      backgroundColor = GlanceTheme.colors.surfaceVariant,
+      color = CarteroWidgetColors.accentProvider,
+      backgroundColor = CarteroWidgetColors.progressTrackProvider,
     )
   }
 
@@ -141,7 +154,7 @@ private fun ReadyContent(model: BudgetWidgetUiModel.Ready) {
       text = stale,
       style = TextStyle(
         fontSize = 10.sp,
-        color = GlanceTheme.colors.onSurfaceVariant,
+        color = CarteroWidgetColors.secondaryTextProvider,
       ),
     )
   }
@@ -167,14 +180,14 @@ private fun AmountBlock(
       style = TextStyle(
         fontSize = 20.sp,
         fontWeight = FontWeight.Bold,
-        color = GlanceTheme.colors.onSurface,
+        color = CarteroWidgetColors.primaryTextProvider,
       ),
     )
     Text(
       text = label,
       style = TextStyle(
         fontSize = 11.sp,
-        color = GlanceTheme.colors.onSurfaceVariant,
+        color = CarteroWidgetColors.secondaryTextProvider,
       ),
     )
   }
@@ -191,7 +204,7 @@ private fun MessageContent(title: String, message: String) {
       style = TextStyle(
         fontSize = 11.sp,
         fontWeight = FontWeight.Medium,
-        color = GlanceTheme.colors.onSurfaceVariant,
+        color = CarteroWidgetColors.secondaryTextProvider,
       ),
     )
     Spacer(modifier = GlanceModifier.height(6.dp))
@@ -199,7 +212,7 @@ private fun MessageContent(title: String, message: String) {
       text = message,
       style = TextStyle(
         fontSize = 14.sp,
-        color = GlanceTheme.colors.onSurface,
+        color = CarteroWidgetColors.primaryTextProvider,
       ),
     )
   }

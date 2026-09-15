@@ -30,11 +30,16 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class InvoicesReaderTest {
 
-  private fun invoiceJson(bankName: String, status: String, actionDate: String, cents: String) =
-    """{"bankName":"$bankName","status":"$status","actionDate":"$actionDate","ownAmountCents":$cents}"""
+  private fun invoiceJson(
+    bankName: String,
+    status: String,
+    actionDate: String,
+    totalCents: String,
+  ) =
+    """{"bankName":"$bankName","status":"$status","actionDate":"$actionDate","totalAmountCents":$totalCents}"""
 
   private fun readyJson(
-    version: Int = 1,
+    version: Int = 2,
     hideAmounts: Boolean = true,
     invoices: String = listOf(
       invoiceJson("Banco C", "OVERDUE", "2026-08-10", "45000"),
@@ -75,7 +80,7 @@ class InvoicesReaderTest {
   @Test
   fun `K3 - signedOut valido e lido`() {
     val state = InvoicesReader.parse(
-      """{"version":1,"state":"signedOut","generatedAt":"2026-09-15T12:00:00.000Z"}""",
+      """{"version":2,"state":"signedOut","generatedAt":"2026-09-15T12:00:00.000Z"}""",
     )
 
     assertEquals(InvoicesState.SignedOut, state)
@@ -100,8 +105,12 @@ class InvoicesReaderTest {
   }
 
   @Test
-  fun `K6 - versao desconhecida nunca e lida como V1`() {
-    assertEquals(InvoicesState.Unavailable, InvoicesReader.parse(readyJson(version = 2)))
+  fun `K6 - versao desconhecida nunca e lida como V2`() {
+    // version=1 (M6, pre-M6.2, sem totalAmountCents obrigatorio) tambem
+    // conta como desconhecida agora — o SHAPE mudou, entao um leitor V2
+    // nao pode aceitar um payload V1 como se fosse igual.
+    assertEquals(InvoicesState.Unavailable, InvoicesReader.parse(readyJson(version = 1)))
+    assertEquals(InvoicesState.Unavailable, InvoicesReader.parse(readyJson(version = 3)))
     assertEquals(InvoicesState.Unavailable, InvoicesReader.parse(readyJson(version = 0)))
   }
 
@@ -110,7 +119,7 @@ class InvoicesReaderTest {
     val semPrivacy = readyJson().replace(""""privacy": { "hideAmounts": true },""", "")
     assertEquals(InvoicesState.Unavailable, InvoicesReader.parse(semPrivacy))
 
-    val semInvoices = """{"version":1,"state":"ready","generatedAt":"2026-09-15T12:00:00.000Z","privacy":{"hideAmounts":true}}"""
+    val semInvoices = """{"version":2,"state":"ready","generatedAt":"2026-09-15T12:00:00.000Z","privacy":{"hideAmounts":true}}"""
     assertEquals(InvoicesState.Unavailable, InvoicesReader.parse(semInvoices))
 
     val semGeneratedAt = readyJson().replace(
@@ -168,7 +177,7 @@ class InvoicesReaderTest {
   fun `K10 - campos extras da resposta crua nao viram dependencia do presenter`() {
     val comExtras = """
       {
-        "version": 1,
+        "version": 2,
         "state": "ready",
         "generatedAt": "2026-09-15T12:00:00.000Z",
         "ownerId": "user-a",
@@ -178,6 +187,7 @@ class InvoicesReaderTest {
             "bankName": "Banco X",
             "status": "OPEN",
             "actionDate": "2026-09-20",
+            "totalAmountCents": 1500,
             "ownAmountCents": 1000,
             "closeDate": "2026-09-03",
             "dueDate": "2026-09-20",
@@ -192,11 +202,51 @@ class InvoicesReaderTest {
     val state = InvoicesReader.parse(comExtras) as InvoicesState.Ready
     val item = state.invoices[0]
 
-    // `InvoiceItem` só tem estes 4 campos — não há onde os extras iriam.
+    // `InvoiceItem` só tem estes 4 campos — `ownAmountCents` (M6.2) é
+    // deliberadamente um dos extras que não sobrevive: o backend o envia,
+    // mas nenhum código instalado do widget o lê ou persiste.
     assertEquals("Banco X", item.bankName)
     assertEquals("OPEN", item.status)
     assertEquals("2026-09-20", item.actionDate)
-    assertEquals(1000L, item.ownAmountCents)
+    assertEquals(1500L, item.totalAmountCents)
+  }
+
+  /* ────────────── K42-K44 (M6.2): totalAmountCents obrigatório, ownAmountCents nunca persistido ────────────── */
+
+  @Test
+  fun `K42 - totalAmountCents ausente invalida o snapshot inteiro`() {
+    val semTotal = readyJson(
+      invoices = "[" +
+        """{"bankName":"X","status":"OPEN","actionDate":"2026-09-20"}""" +
+        "]",
+    )
+    assertEquals(InvoicesState.Unavailable, InvoicesReader.parse(semTotal))
+  }
+
+  @Test
+  fun `K43 - totalAmountCents nao-inteiro invalida`() {
+    val comFracionario = readyJson(
+      invoices = "[" +
+        """{"bankName":"X","status":"OPEN","actionDate":"2026-09-20","totalAmountCents":12.5}""" +
+        "]",
+    )
+    assertEquals(InvoicesState.Unavailable, InvoicesReader.parse(comFracionario))
+  }
+
+  @Test
+  fun `K44 - ownAmountCents presente no raw JSON nunca e lido nem persistido`() {
+    // Mutation guard (F1): se `InvoiceItem` algum dia ganhar de volta um
+    // campo `ownAmountCents`, este teste precisa ser atualizado explicitamente
+    // — hoje a classe não tem esse campo, então nem compilaria referenciá-lo.
+    val raw = readyJson(
+      invoices = "[" +
+        """{"bankName":"Banco X","status":"OPEN","actionDate":"2026-09-20","totalAmountCents":100000,"ownAmountCents":70000}""" +
+        "]",
+    )
+    val state = InvoicesReader.parse(raw) as InvoicesState.Ready
+    val item = state.invoices[0]
+
+    assertEquals(100000L, item.totalAmountCents)
   }
 }
 
@@ -209,8 +259,8 @@ class InvoicesWidgetPresenterTest {
     bankName: String = "Banco X",
     status: String = "OPEN",
     actionDate: String = "2026-09-20",
-    cents: Long = 1000,
-  ) = InvoiceItem(bankName, status, actionDate, cents)
+    totalCents: Long = 1000,
+  ) = InvoiceItem(bankName, status, actionDate, totalCents)
 
   private fun ready(
     invoices: List<InvoiceItem> = listOf(invoice()),
@@ -377,7 +427,7 @@ class InvoicesWidgetPresenterTest {
       produzem o MESMO texto para inteiros normais — a imprecisão de Double
       só aparece em valores de ponto flutuante convertidos de volta, não em
       Long puro dividido por 100 dentro do range de um Double. Reportamos
-      isso honestamente: para `ownAmountCents: Long`, os dois caminhos são
+      isso honestamente: para os campos `*Cents: Long`, os dois caminhos são
       observacionalmente equivalentes sob NumberFormat, IGUAL ao M3 (BUD-P4).
       A authority ainda é BigDecimal por princípio de design compartilhado
       com o Budget, não porque um teste consiga discriminar aqui.
@@ -385,12 +435,35 @@ class InvoicesWidgetPresenterTest {
     assertEquals("R$ 446,24", InvoicesWidgetPresenter.formatCents(44624L).replace(' ', ' '))
   }
 
+  @Test
+  fun `M6_2 - amountText formata totalAmountCents, o unico campo monetario do modelo`() {
+    val model = InvoicesWidgetPresenter.present(
+      ready(listOf(invoice(totalCents = 100000)), hideAmounts = false),
+      generatedAt,
+    ) as InvoicesWidgetUiModel.Ready
+
+    assertEquals("R$ 1.000,00", model.rows[0].amountText.replace(' ', ' '))
+  }
+
+  @Test
+  fun `M6_2 - accessibility visivel tambem usa totalAmountCents`() {
+    val model = InvoicesWidgetPresenter.present(
+      ready(
+        listOf(invoice(bankName = "Nubank", totalCents = 100000)),
+        hideAmounts = false,
+      ),
+      generatedAt,
+    ) as InvoicesWidgetUiModel.Ready
+
+    assertTrue(model.rows[0].description.contains("1.000,00"))
+  }
+
   /* ────────────── K16–K19: privacidade ────────────── */
 
   @Test
   fun `K16 - hide=true mascara visualmente`() {
     val model = InvoicesWidgetPresenter.present(
-      ready(listOf(invoice(cents = 44624)), hideAmounts = true),
+      ready(listOf(invoice(totalCents = 44624)), hideAmounts = true),
       generatedAt,
     ) as InvoicesWidgetUiModel.Ready
 
@@ -400,7 +473,7 @@ class InvoicesWidgetPresenterTest {
   @Test
   fun `K17 - hide=true NAO expoe o valor via accessibility - W5 W12`() {
     val model = InvoicesWidgetPresenter.present(
-      ready(listOf(invoice(bankName = "Nubank", cents = 44624)), hideAmounts = true),
+      ready(listOf(invoice(bankName = "Nubank", totalCents = 44624)), hideAmounts = true),
       generatedAt,
     ) as InvoicesWidgetUiModel.Ready
 
@@ -416,7 +489,7 @@ class InvoicesWidgetPresenterTest {
   @Test
   fun `K18 - hide=false formata BRL`() {
     val model = InvoicesWidgetPresenter.present(
-      ready(listOf(invoice(cents = 44624)), hideAmounts = false),
+      ready(listOf(invoice(totalCents = 44624)), hideAmounts = false),
       generatedAt,
     ) as InvoicesWidgetUiModel.Ready
 
@@ -426,7 +499,7 @@ class InvoicesWidgetPresenterTest {
   @Test
   fun `K19 - hide=false a accessibility contem o valor correto`() {
     val model = InvoicesWidgetPresenter.present(
-      ready(listOf(invoice(bankName = "Nubank", cents = 44624)), hideAmounts = false),
+      ready(listOf(invoice(bankName = "Nubank", totalCents = 44624)), hideAmounts = false),
       generatedAt,
     ) as InvoicesWidgetUiModel.Ready
 

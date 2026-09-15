@@ -33,11 +33,21 @@ import {
 
 const VALID_STATUS = new Set<string>(['OVERDUE', 'CLOSED', 'OPEN'])
 
-/** Um item da resposta de `GET /invoices/actionable`, ainda não validado. */
+/**
+ * Um item da resposta de `GET /invoices/actionable`, ainda não validado.
+ *
+ * O backend devolve `ownAmountCents` E `totalAmountCents` — o read model
+ * serve mais de um consumidor em potencial. Este sync valida os DOIS (uma
+ * resposta que não trouxer `ownAmountCents` estruturalmente correto é tão
+ * malformada quanto uma sem `totalAmountCents`), mas só `totalAmountCents`
+ * sobrevive ao `SnapshotInvoiceItem`: é o único valor que o Invoices Widget
+ * lê (M6.2), e persistir o que nenhum código instalado consome seria
+ * superfície financeira gratuita no arquivo.
+ */
 function readInvoiceItem(value: unknown): SnapshotInvoiceItem | null {
   if (typeof value !== 'object' || value === null) return null
 
-  const { bankName, status, actionDate, ownAmountCents } =
+  const { bankName, status, actionDate, ownAmountCents, totalAmountCents } =
     value as Record<string, unknown>
 
   if (typeof bankName !== 'string' || bankName === '') return null
@@ -48,7 +58,11 @@ function readInvoiceItem(value: unknown): SnapshotInvoiceItem | null {
   if (typeof actionDate !== 'string' || !isCivilDateShape(actionDate)) {
     return null
   }
+  // Validado por completude estrutural da resposta do backend — não persistido.
   if (typeof ownAmountCents !== 'number' || !Number.isInteger(ownAmountCents)) {
+    return null
+  }
+  if (typeof totalAmountCents !== 'number' || !Number.isInteger(totalAmountCents)) {
     return null
   }
 
@@ -56,7 +70,7 @@ function readInvoiceItem(value: unknown): SnapshotInvoiceItem | null {
     bankName,
     status: status as ActionableInvoiceStatus,
     actionDate,
-    ownAmountCents,
+    totalAmountCents,
   }
 }
 

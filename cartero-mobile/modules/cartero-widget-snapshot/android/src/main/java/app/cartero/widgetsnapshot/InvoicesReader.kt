@@ -6,7 +6,12 @@ import org.json.JSONObject
 import java.util.Locale
 
 /**
- * Leitura do Invoices Snapshot V1 pelo lado nativo.
+ * Leitura do Invoices Snapshot V2 pelo lado nativo.
+ *
+ * O arquivo continua se chamando `invoices-v1.json` (o path/slot histórico
+ * publicado) — o campo `version` DENTRO do JSON é a authority de
+ * compatibilidade de schema, não o nome do arquivo. Ver `INVOICES_FILE` mais
+ * abaixo.
  *
  * Mesmo desenho do `SnapshotReader` (Budget, M3): o widget roda no processo
  * do launcher, sem sessão e sem rede, então qualquer conteúdo inesperado —
@@ -16,17 +21,25 @@ import java.util.Locale
  *
  * `GET /invoices/actionable` já decidiu tudo que é domínio financeiro: quais
  * bancos, qual invoice representa cada um, a ordem, o status, `actionDate`,
- * o valor pessoal. Este reader PRESERVA a resposta gravada pelo TypeScript —
- * não ordena, não filtra por status, não deduplica, não recalcula dinheiro.
+ * o valor bruto da fatura. Este reader PRESERVA a resposta gravada pelo
+ * TypeScript — não ordena, não filtra por status, não deduplica, não
+ * recalcula dinheiro.
  */
 
-/** Um item de fatura, já validado — nunca contém mais do que estes 4 campos. */
+/**
+ * Um item de fatura, já validado — nunca contém mais do que estes 4 campos.
+ *
+ * `ownAmountCents` NÃO entra aqui (M6.2): o backend expõe os dois valores,
+ * mas o snapshot persistido já descarta a parte própria — este reader nunca
+ * viu esse campo e não tem como lê-lo por engano.
+ */
 data class InvoiceItem(
   val bankName: String,
   val status: String,
   /** Dia civil `YYYY-MM-DD`, como o backend entrega — nunca reinterpretado aqui. */
   val actionDate: String,
-  val ownAmountCents: Long,
+  /** O bruto da fatura — o que o banco cobra no vencimento. Único valor exibido. */
+  val totalAmountCents: Long,
 )
 
 /** O que o arquivo diz, já reduzido ao que o widget sabe desenhar. */
@@ -52,10 +65,24 @@ sealed interface InvoicesState {
 
 object InvoicesReader {
   const val SNAPSHOT_DIRECTORY = "cartero-widget"
+
+  /**
+   * O nome do arquivo NÃO muda com `SUPPORTED_VERSION` (M6.2): é o slot/path
+   * histórico publicado, e trocá-lo criaria duas fontes físicas de snapshot
+   * e exigiria uma migração/scrub que o `version` interno já resolve de
+   * forma fail-safe (um payload incompatível vira `Unavailable`, nunca é mal
+   * interpretado). Decisão explícita — não um acidente de naming.
+   */
   const val INVOICES_FILE = "invoices-v1.json"
 
-  /** A única versão que este código entende. */
-  const val SUPPORTED_VERSION = 1
+  /**
+   * A única versão que este código entende.
+   *
+   * V2 (M6.2): `totalAmountCents` passou a ser obrigatório. Um app mais
+   * antigo que ainda escrevesse V1 (sem o campo) é lido como versão
+   * desconhecida — `Unavailable`, nunca um total inventado como zero.
+   */
+  const val SUPPORTED_VERSION = 2
 
   /** Cap de apresentação da V1 — nunca reordena antes de aplicar. Ver §41. */
   const val MAX_ROWS = 3
@@ -142,13 +169,13 @@ object InvoicesReader {
     val actionDate = item.optString("actionDate")
     if (!isValidCivilDate(actionDate)) return null
 
-    val cents = item.readCents("ownAmountCents") ?: return null
+    val totalCents = item.readCents("totalAmountCents") ?: return null
 
     return InvoiceItem(
       bankName = bankName,
       status = status,
       actionDate = actionDate,
-      ownAmountCents = cents,
+      totalAmountCents = totalCents,
     )
   }
 

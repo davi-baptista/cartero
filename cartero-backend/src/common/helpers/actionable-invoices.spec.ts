@@ -90,14 +90,19 @@ describe('surface fechada (A1, A2)', () => {
 
     expect(items).toHaveLength(1);
     expect(Object.keys(items[0]).sort()).toEqual(
-      ['actionDate', 'bankName', 'closeDate', 'dueDate', 'ownAmountCents', 'status'].sort(),
+      [
+        'actionDate',
+        'bankName',
+        'closeDate',
+        'dueDate',
+        'ownAmountCents',
+        'status',
+        'totalAmountCents',
+      ].sort(),
     );
   });
 
-  it('não expõe id, userId, bankId, bank inteiro ou totalAmount bruto', () => {
-    // reimbursable > 0 garante que o bruto (999.99 → "99999" em cents) e o
-    // ownAmountCents divergem textualmente — sem isso a ausência do campo
-    // `totalAmount` não seria distinguível de coincidência numérica.
+  it('não expõe id, userId, bankId ou bank inteiro', () => {
     const items = selectActionableInvoices(
       [
         invoice({
@@ -112,12 +117,51 @@ describe('surface fechada (A1, A2)', () => {
       3,
     );
 
-    expect(items[0]).not.toHaveProperty('totalAmount');
     expect(items[0]).not.toHaveProperty('id');
     expect(items[0]).not.toHaveProperty('userId');
     expect(items[0]).not.toHaveProperty('bankId');
     expect(items[0]).not.toHaveProperty('bank');
-    expect(items[0].ownAmountCents).toBe(89999); // 999.99 − 100, nunca o bruto
+  });
+
+  it('M6.2: totalAmountCents é o bruto — ownAmountCents continua a parte própria, os dois convivem', () => {
+    // reimbursable > 0 garante que bruto e ownAmount divergem numericamente —
+    // sem isso, os dois campos poderiam coincidir por acaso e o teste não
+    // provaria que totalAmountCents é de fato o bruto, não uma cópia de ownAmount.
+    const [item] = selectActionableInvoices(
+      [
+        invoice({
+          bankName: 'Banco X',
+          status: InvoiceStatus.OPEN,
+          closeDate: [2026, 9, 3],
+          dueDate: [2026, 9, 10],
+          totalAmount: money('999.99'),
+          reimbursable: money('100'),
+        }),
+      ],
+      3,
+    );
+
+    expect(item.totalAmountCents).toBe(99999); // bruto, nunca descontado
+    expect(item.ownAmountCents).toBe(89999); // 999.99 − 100
+    expect(item.totalAmountCents).not.toBe(item.ownAmountCents);
+  });
+
+  it('M6.2: sem reimbursable, totalAmountCents e ownAmountCents coincidem (não há terceiro a descontar)', () => {
+    const [item] = selectActionableInvoices(
+      [
+        invoice({
+          bankName: 'Banco X',
+          status: InvoiceStatus.OPEN,
+          closeDate: [2026, 9, 3],
+          dueDate: [2026, 9, 10],
+          totalAmount: money('450'),
+        }),
+      ],
+      3,
+    );
+
+    expect(item.totalAmountCents).toBe(45000);
+    expect(item.ownAmountCents).toBe(45000);
   });
 });
 

@@ -44,7 +44,7 @@ function readyInvoices(
   invoices: unknown[] = [],
 ) {
   return JSON.stringify({
-    version: 1,
+    version: 2,
     state: 'ready',
     generatedAt,
     ownerId,
@@ -69,9 +69,44 @@ function build(options: {
   })
 }
 
-const ITEM_A = { bankName: 'Banco A', status: 'OVERDUE', actionDate: '2026-08-10', ownAmountCents: 5000 }
-const ITEM_B = { bankName: 'Banco B', status: 'CLOSED', actionDate: '2026-09-10', ownAmountCents: 3000 }
-const ITEM_C = { bankName: 'Banco C', status: 'OPEN', actionDate: '2026-09-27', ownAmountCents: 1000 }
+/*
+  ITEM_A/B/C simulam a resposta CRUA de `GET /invoices/actionable` — o
+  backend expõe `ownAmountCents` E `totalAmountCents` (M6.2 §2). O snapshot
+  PERSISTIDO, no entanto, só guarda `totalAmountCents` (M6.2 §3) — por isso
+  `SNAPSHOT_A/B/C` abaixo são a forma esperada depois do parse, sem
+  `ownAmountCents`. Usar a mesma constante nos dois papéis reintroduziria
+  silenciosamente o campo no snapshot em qualquer `toEqual` que comparasse
+  contra a entrada crua.
+*/
+const ITEM_A = {
+  bankName: 'Banco A',
+  status: 'OVERDUE',
+  actionDate: '2026-08-10',
+  ownAmountCents: 5000,
+  totalAmountCents: 5000,
+}
+const ITEM_B = {
+  bankName: 'Banco B',
+  status: 'CLOSED',
+  actionDate: '2026-09-10',
+  ownAmountCents: 3000,
+  totalAmountCents: 3000,
+}
+const ITEM_C = {
+  bankName: 'Banco C',
+  status: 'OPEN',
+  actionDate: '2026-09-27',
+  ownAmountCents: 1000,
+  totalAmountCents: 1000,
+}
+
+/** A forma persistida esperada de cada ITEM_* acima, sem `ownAmountCents`. */
+const SNAPSHOT_A = {
+  bankName: 'Banco A',
+  status: 'OVERDUE',
+  actionDate: '2026-08-10',
+  totalAmountCents: 5000,
+}
 
 describe('§12: ordem preservada exatamente como o backend devolveu', () => {
   it('B, A, C na entrada → B, A, C no snapshot', async () => {
@@ -121,7 +156,7 @@ describe('§13: sem reseleção/dedupe — mesmo bankName duplicado é preservad
   })
 })
 
-describe('minimal surface — closeDate/dueDate nunca entram', () => {
+describe('minimal surface — closeDate/dueDate/ownAmountCents nunca entram', () => {
   it('resposta com closeDate/dueDate extras não os propaga ao snapshot', async () => {
     const store = createStore()
     const itemComExtras = {
@@ -140,28 +175,32 @@ describe('minimal surface — closeDate/dueDate nunca entram', () => {
     /*
       Verificação do JSON BRUTO gravado, não via parseInvoicesSnapshot: o
       parser filtra campos por construção, então uma mutação em `readInvoices`
-      que gravasse o item cru (com closeDate/dueDate/bankId/invoiceId) passaria
-      despercebida se a checagem só olhasse o resultado já filtrado do parse.
+      que gravasse o item cru (com closeDate/dueDate/bankId/invoiceId/
+      ownAmountCents) passaria despercebida se a checagem só olhasse o
+      resultado já filtrado do parse.
     */
     const rawWritten = JSON.parse(store.peekInvoices()!)
     expect(Object.keys(rawWritten.invoices[0]).sort()).toEqual(
-      ['actionDate', 'bankName', 'ownAmountCents', 'status'].sort(),
+      ['actionDate', 'bankName', 'totalAmountCents', 'status'].sort(),
     )
     expect(rawWritten.invoices[0]).not.toHaveProperty('closeDate')
     expect(rawWritten.invoices[0]).not.toHaveProperty('dueDate')
     expect(rawWritten.invoices[0]).not.toHaveProperty('bankId')
     expect(rawWritten.invoices[0]).not.toHaveProperty('invoiceId')
+    // M6.2 (F1): a entrada crua tinha ownAmountCents (via ITEM_A) — provar
+    // que ele não sobrevive é o que discrimina esta mutação.
+    expect(rawWritten.invoices[0]).not.toHaveProperty('ownAmountCents')
 
     const parsed = parseInvoicesSnapshot(store.peekInvoices())
     if (parsed?.state !== 'ready') throw new Error('esperado ready')
     expect(Object.keys(parsed.invoices[0]).sort()).toEqual(
-      ['actionDate', 'bankName', 'ownAmountCents', 'status'].sort(),
+      ['actionDate', 'bankName', 'totalAmountCents', 'status'].sort(),
     )
   })
 })
 
 describe('money — sem reconversão', () => {
-  it('ownAmountCents chega e sai idêntico', async () => {
+  it('ownAmountCents nunca chega ao snapshot persistido, mesmo vindo correto na resposta', async () => {
     const store = createStore()
     await build({
       store,
@@ -170,7 +209,19 @@ describe('money — sem reconversão', () => {
 
     const parsed = parseInvoicesSnapshot(store.peekInvoices())
     if (parsed?.state !== 'ready') throw new Error('esperado ready')
-    expect(parsed.invoices[0].ownAmountCents).toBe(12345)
+    expect(parsed.invoices[0]).not.toHaveProperty('ownAmountCents')
+  })
+
+  it('totalAmountCents chega e sai idêntico', async () => {
+    const store = createStore()
+    await build({
+      store,
+      fetchActionableInvoices: async () => ({ items: [{ ...ITEM_A, totalAmountCents: 67890 }] }),
+    }).sync()
+
+    const parsed = parseInvoicesSnapshot(store.peekInvoices())
+    if (parsed?.state !== 'ready') throw new Error('esperado ready')
+    expect(parsed.invoices[0].totalAmountCents).toBe(67890)
   })
 
   it('ownAmountCents não-inteiro (12.34) é resposta malformada — last-good preservado', async () => {
@@ -184,7 +235,7 @@ describe('money — sem reconversão', () => {
     expect(outcome).toEqual({ status: 'preserved', reason: 'malformedResponse' })
     const parsed = parseInvoicesSnapshot(store.peekInvoices())
     if (parsed?.state !== 'ready') throw new Error('esperado ready')
-    expect(parsed.invoices).toEqual([ITEM_A])
+    expect(parsed.invoices).toEqual([SNAPSHOT_A])
   })
 
   it('NaN em ownAmountCents é malformado', async () => {
@@ -204,6 +255,27 @@ describe('money — sem reconversão', () => {
       store,
       fetchActionableInvoices: async () => ({
         items: [{ ...ITEM_A, ownAmountCents: '5000' }],
+      }),
+    }).sync()
+    expect(outcome.status).toBe('preserved')
+  })
+
+  it('totalAmountCents ausente é malformado (M6.2: campo obrigatório)', async () => {
+    const store = createStore()
+    const { totalAmountCents: _drop, ...semTotal } = ITEM_A
+    const outcome = await build({
+      store,
+      fetchActionableInvoices: async () => ({ items: [semTotal] }),
+    }).sync()
+    expect(outcome.status).toBe('preserved')
+  })
+
+  it('totalAmountCents não-inteiro é malformado', async () => {
+    const store = createStore()
+    const outcome = await build({
+      store,
+      fetchActionableInvoices: async () => ({
+        items: [{ ...ITEM_A, totalAmountCents: 12.34 }],
       }),
     }).sync()
     expect(outcome.status).toBe('preserved')

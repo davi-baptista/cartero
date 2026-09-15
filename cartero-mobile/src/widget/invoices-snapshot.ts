@@ -26,7 +26,26 @@
  * `actionDate`.
  */
 
-export const INVOICES_SNAPSHOT_VERSION = 1
+/**
+ * V2 (M6.2): troca `ownAmountCents` por `totalAmountCents` — mudança de
+ * FORMA, não só de conteúdo. A mesma régua do Budget Snapshot (`snapshot.ts`)
+ * se aplica aqui: "V1, uma vez publicado, não muda de forma — uma alteração
+ * incompatível vira V2". Um widget instalado de uma build anterior a esta não
+ * entende o campo novo; declarar V2 faz esse widget recuar com segurança
+ * (`Unavailable`) em vez de tentar ler um total que não sabe que existe.
+ *
+ * ── Por que só `totalAmountCents`, não os dois ──
+ *
+ * `GET /invoices/actionable` devolve `ownAmountCents` E `totalAmountCents` —
+ * o backend read model serve mais de um consumidor em potencial, e
+ * `ownAmountCents` continua sendo informação canônica útil ali. Mas o único
+ * consumidor real deste snapshot é o Invoices Widget (M6.2), que exibe o
+ * TOTAL da fatura — nunca a parte própria. Persistir `ownAmountCents` aqui
+ * seria guardar um dado financeiro que nenhum código instalado lê: superfície
+ * permanente em troca de nada, exatamente o motivo que já excluía
+ * `closeDate`/`dueDate` deste arquivo.
+ */
+export const INVOICES_SNAPSHOT_VERSION = 2
 
 /** Os únicos status que `GET /invoices/actionable` pode devolver. */
 export type ActionableInvoiceStatus = 'OVERDUE' | 'CLOSED' | 'OPEN'
@@ -36,8 +55,12 @@ export interface SnapshotInvoiceItem {
   status: ActionableInvoiceStatus
   /** Dia civil `YYYY-MM-DD`, como o backend já entrega. */
   actionDate: string
-  /** Inteiro em centavos, como o backend já entrega — nunca recalculado aqui. */
-  ownAmountCents: number
+  /**
+   * O bruto da fatura, em centavos inteiros — o que o banco cobra no
+   * vencimento. É o único valor que o widget exibe (M6.2); `ownAmountCents`
+   * não entra aqui — ver nota de versão acima.
+   */
+  totalAmountCents: number
 }
 
 export interface InvoicesReadySnapshot {
@@ -94,13 +117,13 @@ function parseInvoiceItem(value: unknown): SnapshotInvoiceItem | null {
     return null
   }
   if (!isCivilDate(value.actionDate)) return null
-  if (!isCents(value.ownAmountCents)) return null
+  if (!isCents(value.totalAmountCents)) return null
 
   return {
     bankName: value.bankName,
     status: value.status as ActionableInvoiceStatus,
     actionDate: value.actionDate,
-    ownAmountCents: value.ownAmountCents,
+    totalAmountCents: value.totalAmountCents,
   }
 }
 

@@ -121,6 +121,13 @@ export interface ActionableInvoiceItem {
   actionDate: string;
   /** `totalAmount − reimbursable`, em centavos inteiros. Nunca o bruto. */
   ownAmountCents: number;
+  /**
+   * O bruto — o que o banco cobra no vencimento (M6.2). Campo ADITIVO: convive
+   * com `ownAmountCents`, nunca o substitui. Consumidores que precisam de "sua
+   * parte" continuam lendo `ownAmountCents`; quem precisa do valor que o banco
+   * realmente cobra (ex.: Invoices Widget) lê este.
+   */
+  totalAmountCents: number;
 }
 
 /** Menor prioridade primeiro. `PAID` nunca aparece aqui — não tem entrada. */
@@ -230,7 +237,9 @@ function compareBankRepresentatives(
  *
  * Recebe todas as candidatas já carregadas (a authority não conhece Prisma
  * nem HTTP) e devolve a MENOR superfície pública: sem id, sem userId, sem
- * bankId, sem o objeto Bank inteiro, sem `totalAmount` bruto.
+ * bankId, sem o objeto Bank inteiro. `totalAmountCents` (M6.2) é a exceção
+ * deliberada — o bruto passou a ser exposto ao lado de `ownAmountCents`,
+ * nunca no lugar dele.
  *
  * A unidade é o BANCO (ver o comentário do módulo, M5A.1): no máximo uma
  * invoice representa cada banco, e é ela — não invoices soltas — que disputa
@@ -295,6 +304,7 @@ export function selectActionableInvoices(
       dueDate: civilDay(candidate.dueDate),
       actionDate: civilDay(actionDate),
       ownAmountCents: decimalToCents(ownAmount),
+      totalAmountCents: decimalToCents(totalAmount),
     };
   });
 }

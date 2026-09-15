@@ -694,13 +694,18 @@ const readyInvoicesFor = (
   generatedAt = '2026-09-15T09:00:00.000Z',
 ) =>
   JSON.stringify({
-    version: 1,
+    version: 2,
     state: 'ready',
     generatedAt,
     ownerId,
     privacy: { hideAmounts },
     invoices: [
-      { bankName: 'Banco X', status: 'OPEN', actionDate: '2026-09-20', ownAmountCents: 5000 },
+      {
+        bankName: 'Banco X',
+        status: 'OPEN',
+        actionDate: '2026-09-20',
+        totalAmountCents: 5000,
+      },
     ],
   })
 
@@ -800,7 +805,7 @@ describe('M5B — privacy multi-snapshot', () => {
     const store = createStore(
       null,
       null,
-      JSON.stringify({ version: 1, state: 'signedOut', generatedAt: 'x' }),
+      JSON.stringify({ version: 2, state: 'signedOut', generatedAt: 'x' }),
     )
 
     await buildService(store).setHideAmounts(OWNER_A, false)

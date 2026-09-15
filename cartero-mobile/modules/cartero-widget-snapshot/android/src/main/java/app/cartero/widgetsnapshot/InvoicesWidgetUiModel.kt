@@ -88,16 +88,23 @@ object InvoicesWidgetPresenter {
       protege o layout 4×2 caso um arquivo manual/futuro contenha mais — sem
       reordenar antes do corte. Ver M6 §41.
     */
+    /*
+      M6.2: o widget exibe o TOTAL da fatura (o que o banco cobra no
+      vencimento). `InvoiceItem.totalAmountCents` é o ÚNICO campo monetário
+      neste contrato — a parte própria (`ownAmountCents`) existe no read
+      model do backend, mas nunca chega ao snapshot persistido nem a este
+      reader: nada aqui tem como lê-la por engano.
+    */
     val rows = state.invoices.take(InvoicesReader.MAX_ROWS).map { invoice ->
       InvoiceRow(
         bankName = invoice.bankName,
         statusText = statusTextFor(invoice.status, invoice.actionDate),
-        amountText = if (masked) MASK else formatCents(invoice.ownAmountCents),
+        amountText = if (masked) MASK else formatCents(invoice.totalAmountCents),
         description = if (masked) {
           "${invoice.bankName}, ${statusTextFor(invoice.status, invoice.actionDate)}, valor oculto"
         } else {
           "${invoice.bankName}, ${statusTextFor(invoice.status, invoice.actionDate)}, " +
-            "valor ${formatCents(invoice.ownAmountCents)}"
+            "valor ${formatCents(invoice.totalAmountCents)}"
         },
       )
     }

@@ -11,12 +11,17 @@ import {
 
   O arquivo é lido por um processo sem sessão. Cada campo além do mínimo é
   superfície permanente para uma vulnerabilidade futura, em troca de nada —
-  o consumidor (M6) precisa só de bankName/status/actionDate/ownAmountCents.
+  o consumidor (M6.2) precisa só de bankName/status/actionDate/totalAmountCents.
+
+  `ownAmountCents` (M6.2): o backend expõe os dois valores no read model,
+  mas o widget só exibe o total — `ownAmountCents` é tratado como qualquer
+  outro campo interno (bankId, closeDate, dueDate) que nunca teve razão de
+  entrar aqui.
 */
 
 describe('§61: campos proibidos nunca sobrevivem ao parser', () => {
   const rawWithEverything = JSON.stringify({
-    version: 1,
+    version: 2,
     state: 'ready',
     generatedAt: '2026-09-15T09:00:00.000Z',
     ownerId: 'user-a',
@@ -26,8 +31,9 @@ describe('§61: campos proibidos nunca sobrevivem ao parser', () => {
         bankName: 'Banco Exemplo',
         status: 'CLOSED',
         actionDate: '2026-09-20',
-        ownAmountCents: 12345,
+        totalAmountCents: 22345,
         // Tudo que NÃO deveria sobreviver:
+        ownAmountCents: 12345,
         invoiceId: 'invoice-1',
         bankId: 'bank-1',
         userId: 'user-a',
@@ -55,7 +61,7 @@ describe('§61: campos proibidos nunca sobrevivem ao parser', () => {
     if (parsed?.state !== 'ready') throw new Error('esperado ready')
 
     const keys = Object.keys(parsed.invoices[0]).sort()
-    expect(keys).toEqual(['actionDate', 'bankName', 'ownAmountCents', 'status'].sort())
+    expect(keys).toEqual(['actionDate', 'bankName', 'totalAmountCents', 'status'].sort())
   })
 
   it('nenhum valor sensível sobrevive na serialização do snapshot resultante', () => {
@@ -78,13 +84,24 @@ describe('§61: campos proibidos nunca sobrevivem ao parser', () => {
       'userId',
       'closeDate',
       'dueDate',
-      'totalAmount',
       'reimbursable',
       'user@example.com',
       'tok_abc',
     ]) {
       expect(serialized, `serializado contém "${proibido}"`).not.toContain(proibido)
     }
+
+    // `totalAmount` (o bruto decimal cru) continua proibido — mas como chave
+    // EXATA, com aspas de fechamento: `totalAmountCents` (M6.2, legítimo)
+    // contém "totalAmount" como substring, então um `.not.toContain` simples
+    // acusaria falso positivo no campo aprovado.
+    expect(serialized, 'serializado contém a chave crua "totalAmount"').not.toContain(
+      '"totalAmount":',
+    )
+    // `ownAmountCents` (M6.2): mutation guard (F1) — se o parser voltar a
+    // persistir a parte própria, esta asserção falha.
+    expect(serialized, 'serializado contém "ownAmountCents"').not.toContain('ownAmountCents')
+    expect(serialized).toContain('"totalAmountCents":22345')
   })
 
   it('ownerId top-level PERMANECE — necessário para account binding', () => {

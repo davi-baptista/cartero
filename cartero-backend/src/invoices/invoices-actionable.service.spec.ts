@@ -136,6 +136,7 @@ describe('InvoicesService.findActionable — isolamento (A21-A23)', () => {
         dueDate: '2026-09-10',
         actionDate: '2026-09-10',
         ownAmountCents: 70000,
+        totalAmountCents: 100000,
       },
     ]);
   });

@@ -12,6 +12,7 @@ import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.action.actionStartActivity
+import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
@@ -66,9 +67,19 @@ private fun WidgetSurface(model: InvoicesWidgetUiModel) {
   val launchIntent = context.packageManager
     .getLaunchIntentForPackage(context.packageName)
 
+  /*
+    Mesmo raio do Budget Widget (14.dp = `--radius-xl` do design system web)
+    — os dois widgets compartilham a mesma linguagem visual do Cartero.
+
+    Mesma cor de fundo do Budget também (M6.2) — `CarteroWidgetColors`, não
+    `GlanceTheme.colors.widgetBackground`. Ver `CarteroWidgetColors.kt`: o
+    token dinâmico do sistema varia por wallpaper/aparelho, não é a
+    identidade do Cartero.
+  */
   var surface = GlanceModifier
     .fillMaxSize()
-    .background(GlanceTheme.colors.widgetBackground)
+    .background(CarteroWidgetColors.cardBackground)
+    .cornerRadius(14.dp)
     .padding(16.dp)
 
   if (launchIntent != null) {
@@ -91,7 +102,7 @@ private fun ReadyContent(model: InvoicesWidgetUiModel.Ready) {
     style = TextStyle(
       fontSize = 11.sp,
       fontWeight = FontWeight.Medium,
-      color = GlanceTheme.colors.onSurfaceVariant,
+      color = CarteroWidgetColors.secondaryTextProvider,
     ),
   )
 
@@ -102,7 +113,7 @@ private fun ReadyContent(model: InvoicesWidgetUiModel.Ready) {
       text = model.emptyMessage,
       style = TextStyle(
         fontSize = 13.sp,
-        color = GlanceTheme.colors.onSurfaceVariant,
+        color = CarteroWidgetColors.secondaryTextProvider,
       ),
     )
   } else {
@@ -124,7 +135,7 @@ private fun ReadyContent(model: InvoicesWidgetUiModel.Ready) {
         text = stale,
         style = TextStyle(
           fontSize = 9.sp,
-          color = GlanceTheme.colors.onSurfaceVariant,
+          color = CarteroWidgetColors.secondaryTextProvider,
         ),
       )
     }
@@ -147,7 +158,7 @@ private fun InvoiceRowContent(row: InvoiceRow) {
         style = TextStyle(
           fontSize = 13.sp,
           fontWeight = FontWeight.Medium,
-          color = GlanceTheme.colors.onSurface,
+          color = CarteroWidgetColors.primaryTextProvider,
         ),
       )
       Text(
@@ -155,7 +166,7 @@ private fun InvoiceRowContent(row: InvoiceRow) {
         maxLines = 1,
         style = TextStyle(
           fontSize = 11.sp,
-          color = GlanceTheme.colors.onSurfaceVariant,
+          color = CarteroWidgetColors.secondaryTextProvider,
         ),
       )
     }
@@ -168,7 +179,7 @@ private fun InvoiceRowContent(row: InvoiceRow) {
       style = TextStyle(
         fontSize = 13.sp,
         fontWeight = FontWeight.Medium,
-        color = GlanceTheme.colors.onSurface,
+        color = CarteroWidgetColors.primaryTextProvider,
       ),
     )
   }
@@ -185,7 +196,7 @@ private fun MessageContent(title: String, message: String) {
       style = TextStyle(
         fontSize = 11.sp,
         fontWeight = FontWeight.Medium,
-        color = GlanceTheme.colors.onSurfaceVariant,
+        color = CarteroWidgetColors.secondaryTextProvider,
       ),
     )
     Spacer(modifier = GlanceModifier.height(6.dp))
@@ -193,7 +204,7 @@ private fun MessageContent(title: String, message: String) {
       text = message,
       style = TextStyle(
         fontSize = 14.sp,
-        color = GlanceTheme.colors.onSurface,
+        color = CarteroWidgetColors.primaryTextProvider,
       ),
     )
   }
