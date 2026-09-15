@@ -135,6 +135,8 @@ export class InvoicesService {
     }
 
     const candidates: ActionableInvoiceCandidate[] = invoices.map((invoice) => ({
+      // Identidade real do banco, para agrupar (M5A.1) — nunca exposta.
+      bankId: invoice.bankId,
       bankName: invoice.bank.name,
       status: invoice.status,
       totalAmount: invoice.totalAmount,

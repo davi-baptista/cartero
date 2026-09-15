@@ -37,6 +37,7 @@ function buildPrismaDouble(invoices: unknown[], reimbursableRows: unknown[] = []
 
 function invoice(over: {
   id: string;
+  bankId?: string;
   bankName: string;
   status: InvoiceStatus;
   totalAmount: string;
@@ -46,6 +47,9 @@ function invoice(over: {
   return {
     id: over.id,
     userId: USER_ID,
+    // Default = o próprio nome, como no fixture do helper puro — cada teste
+    // pré-existente já tratava nomes distintos como bancos distintos.
+    bankId: over.bankId ?? over.bankName,
     bank: { name: over.bankName },
     status: over.status,
     totalAmount: money(over.totalAmount),
@@ -128,5 +132,33 @@ describe('InvoicesService.findActionable — isolamento (A21-A23)', () => {
         ownAmountCents: 70000,
       },
     ]);
+  });
+
+  it('M5A.1: agrupa por bankId fim-a-fim — banco com 2 invoices actionable produz 1 item', async () => {
+    const overdue = invoice({
+      id: 'inv-overdue',
+      bankId: 'bank-a',
+      bankName: 'Banco A',
+      status: InvoiceStatus.OVERDUE,
+      totalAmount: '500',
+      closeDate: utcDate(2026, 8, 3, 3),
+      dueDate: utcDate(2026, 8, 10, 3),
+    });
+    const openSameBank = invoice({
+      id: 'inv-open',
+      bankId: 'bank-a', // MESMO banco
+      bankName: 'Banco A',
+      status: InvoiceStatus.OPEN,
+      totalAmount: '300',
+      closeDate: utcDate(2026, 9, 20, 3),
+      dueDate: utcDate(2026, 9, 27, 3),
+    });
+    const { prisma } = buildPrismaDouble([overdue, openSameBank]);
+    const service = new InvoicesService(prisma as never, {} as never);
+
+    const result = await service.findActionable(USER_ID, 3);
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].status).toBe(InvoiceStatus.OVERDUE);
   });
 });

@@ -31,10 +31,19 @@ interface InvoiceOverrides {
   dueDate: [number, number, number];
   totalAmount?: ActionableInvoiceCandidate['totalAmount'];
   reimbursable?: ActionableInvoiceCandidate['reimbursable'];
+  /**
+   * Identidade do banco. Default = o próprio `bankName`: nos cenários que já
+   * existiam, cada nome já representava um banco distinto, então o default
+   * preserva o comportamento sem reescrevê-los. Os testes de M5A.1 passam
+   * `bankId` explícito para simular múltiplas invoices do MESMO banco, ou
+   * bancos distintos com o MESMO nome.
+   */
+  bankId?: string;
 }
 
 function invoice(over: InvoiceOverrides): ActionableInvoiceCandidate {
   return {
+    bankId: over.bankId ?? over.bankName,
     bankName: over.bankName,
     status: over.status,
     totalAmount: over.totalAmount ?? money('100'),
@@ -536,5 +545,232 @@ describe('limit (A16-A19)', () => {
     expect(ACTIONABLE_INVOICES_MAX_LIMIT).toBeGreaterThanOrEqual(
       ACTIONABLE_INVOICES_DEFAULT_LIMIT,
     );
+  });
+});
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * M5A.1 — a unidade é o BANCO, não a invoice solta
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `selectBankInvoice` no Web recebe todas as invoices e escolhe NO MÁXIMO
+ * uma por banco antes de qualquer ordenação entre bancos. O M5A original
+ * tratava cada invoice como candidata independente — nenhum teste dele tinha
+ * mais de uma invoice actionable no mesmo banco, então o gap passou.
+ */
+describe('M5A.1 — uma invoice representa cada banco (§12-§17)', () => {
+  it('§12: banco com 3 invoices actionable produz 1 item, não 3', () => {
+    const items = selectActionableInvoices(
+      [
+        invoice({
+          bankId: 'banco-a',
+          bankName: 'Banco A',
+          status: InvoiceStatus.OVERDUE,
+          closeDate: [2026, 8, 3],
+          dueDate: [2026, 8, 10],
+        }),
+        invoice({
+          bankId: 'banco-a',
+          bankName: 'Banco A',
+          status: InvoiceStatus.CLOSED,
+          closeDate: [2026, 9, 3],
+          dueDate: [2026, 9, 15],
+        }),
+        invoice({
+          bankId: 'banco-a',
+          bankName: 'Banco A',
+          status: InvoiceStatus.OPEN,
+          closeDate: [2026, 9, 20],
+          dueDate: [2026, 9, 27],
+        }),
+        invoice({
+          bankId: 'banco-b',
+          bankName: 'Banco B',
+          status: InvoiceStatus.OPEN,
+          closeDate: [2026, 9, 25],
+          dueDate: [2026, 10, 2],
+        }),
+      ],
+      3,
+    );
+
+    // 2 bancos, nunca 3 (o que aconteceria se cada invoice de A contasse).
+    expect(items).toHaveLength(2);
+
+    // A representante do Banco A é a OVERDUE — a mesma que `selectBankInvoice`
+    // escolheria (maior prioridade do grupo).
+    const bancoA = items.find((i) => i.bankName === 'Banco A');
+    expect(bancoA?.status).toBe(InvoiceStatus.OVERDUE);
+    expect(items.map((i) => i.bankName)).toEqual(['Banco A', 'Banco B']);
+  });
+
+  it('§13: limit conta BANCOS, não invoice rows — 2 invoices do mesmo banco não consomem 2 posições', () => {
+    const items = selectActionableInvoices(
+      [
+        // Banco A: 3 invoices actionable (só a mais urgente deveria contar).
+        invoice({
+          bankId: 'a',
+          bankName: 'Banco A',
+          status: InvoiceStatus.OVERDUE,
+          closeDate: [2026, 8, 1],
+          dueDate: [2026, 8, 5],
+        }),
+        invoice({
+          bankId: 'a',
+          bankName: 'Banco A',
+          status: InvoiceStatus.CLOSED,
+          closeDate: [2026, 9, 1],
+          dueDate: [2026, 9, 10],
+        }),
+        invoice({
+          bankId: 'a',
+          bankName: 'Banco A',
+          status: InvoiceStatus.OPEN,
+          closeDate: [2026, 9, 20],
+          dueDate: [2026, 9, 27],
+        }),
+        invoice({
+          bankId: 'b',
+          bankName: 'Banco B',
+          status: InvoiceStatus.OVERDUE,
+          closeDate: [2026, 8, 2],
+          dueDate: [2026, 8, 9],
+        }),
+        invoice({
+          bankId: 'c',
+          bankName: 'Banco C',
+          status: InvoiceStatus.OPEN,
+          closeDate: [2026, 9, 22],
+          dueDate: [2026, 9, 29],
+        }),
+      ],
+      2,
+    );
+
+    expect(items).toHaveLength(2);
+    // Bancos DISTINTOS — nunca o Banco A ocupando as duas posições sozinho.
+    expect(new Set(items.map((i) => i.bankName)).size).toBe(2);
+    expect(items.map((i) => i.bankName)).toEqual(['Banco A', 'Banco B']);
+  });
+
+  it('§14: mesmo banco, mesmo status — a representante é a de actionDate menor', () => {
+    const items = selectActionableInvoices(
+      [
+        invoice({
+          bankId: 'a',
+          bankName: 'Banco A',
+          status: InvoiceStatus.CLOSED,
+          closeDate: [2026, 9, 3],
+          dueDate: [2026, 9, 27], // dueDate MAIOR
+        }),
+        invoice({
+          bankId: 'a',
+          bankName: 'Banco A',
+          status: InvoiceStatus.CLOSED,
+          closeDate: [2026, 9, 3],
+          dueDate: [2026, 9, 12], // dueDate MENOR — deve vencer
+        }),
+      ],
+      3,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0].dueDate).toBe('2026-09-12');
+    expect(items[0].actionDate).toBe('2026-09-12');
+  });
+
+  it('§15: bancos DIFERENTES com o MESMO nome não se fundem — grouping usa bankId, não bankName', () => {
+    const items = selectActionableInvoices(
+      [
+        invoice({
+          bankId: 'id-real-1',
+          bankName: 'Nubank',
+          status: InvoiceStatus.OVERDUE,
+          closeDate: [2026, 8, 3],
+          dueDate: [2026, 8, 10],
+        }),
+        invoice({
+          bankId: 'id-real-2', // banco DIFERENTE, mesmo nome de exibição
+          bankName: 'Nubank',
+          status: InvoiceStatus.CLOSED,
+          closeDate: [2026, 9, 3],
+          dueDate: [2026, 9, 15],
+        }),
+      ],
+      3,
+    );
+
+    // Os dois participam — nomes iguais não são o mesmo banco.
+    expect(items).toHaveLength(2);
+    expect(items.map((i) => i.status).sort()).toEqual(
+      [InvoiceStatus.OVERDUE, InvoiceStatus.CLOSED].sort(),
+    );
+  });
+
+  it('§16: PAID no mesmo banco de uma actionable não pode ganhar a representação', () => {
+    const items = selectActionableInvoices(
+      [
+        invoice({
+          bankId: 'a',
+          bankName: 'Banco A',
+          status: InvoiceStatus.PAID,
+          closeDate: [2026, 9, 3],
+          dueDate: [2026, 9, 10],
+        }),
+        invoice({
+          bankId: 'a',
+          bankName: 'Banco A',
+          status: InvoiceStatus.OPEN,
+          closeDate: [2026, 9, 20],
+          dueDate: [2026, 9, 27],
+        }),
+      ],
+      3,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0].status).toBe(InvoiceStatus.OPEN);
+  });
+
+  it('§17: invoice zerada no mesmo banco de uma actionable não pode ganhar a representação', () => {
+    const items = selectActionableInvoices(
+      [
+        invoice({
+          bankId: 'a',
+          bankName: 'Banco A',
+          status: InvoiceStatus.OVERDUE,
+          closeDate: [2026, 8, 1],
+          dueDate: [2026, 8, 5],
+          totalAmount: money('0'),
+        }),
+        invoice({
+          bankId: 'a',
+          bankName: 'Banco A',
+          status: InvoiceStatus.CLOSED,
+          closeDate: [2026, 9, 3],
+          dueDate: [2026, 9, 15],
+          totalAmount: money('200'),
+        }),
+      ],
+      3,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0].status).toBe(InvoiceStatus.CLOSED);
+  });
+
+  it('parity fixture: mesmo banco tie completo (status e actionDate iguais) ainda produz 1 representante', () => {
+    const mesmasDatas: InvoiceOverrides = {
+      bankId: 'a',
+      bankName: 'Banco A',
+      status: InvoiceStatus.OPEN,
+      closeDate: [2026, 9, 10],
+      dueDate: [2026, 9, 17],
+    };
+    const items = selectActionableInvoices(
+      [invoice(mesmasDatas), invoice(mesmasDatas)],
+      3,
+    );
+    expect(items).toHaveLength(1);
   });
 });
