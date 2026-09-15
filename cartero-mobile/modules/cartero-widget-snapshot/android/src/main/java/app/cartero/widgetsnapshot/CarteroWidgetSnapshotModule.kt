@@ -84,6 +84,24 @@ class CarteroWidgetSnapshotModule : Module() {
     AsyncFunction("readPrivacy") { readAtomically(privacyFile()) }
 
     /*
+      ── Invoices Snapshot, em arquivo INDEPENDENTE (M5B) ──
+
+      Mesma razão da privacidade: falha ou evolução de um contrato não pode
+      corromper o outro. O widget de Budget (M3) e o futuro widget de
+      Invoices (M6) leem arquivos separados, então um bug na sincronização
+      de um nunca deixa o outro ilegível.
+
+      Sem `updateAll` aqui: não existe Invoices widget ainda para atualizar,
+      e chamar `BudgetWidget().updateAll` a cada escrita de Invoices seria
+      redesenhar um widget que essa escrita não tocou.
+    */
+    AsyncFunction("writeInvoices") { contents: String ->
+      writeAtomically(invoicesFile(), contents)
+    }
+
+    AsyncFunction("readInvoices") { readAtomically(invoicesFile()) }
+
+    /*
       Pedido de redesenho isolado.
 
       A reescrita de privacidade muda o snapshot pelo mesmo caminho de
@@ -158,6 +176,8 @@ class CarteroWidgetSnapshotModule : Module() {
 
   private fun snapshotFile(): File = File(widgetDirectory(), SNAPSHOT_FILE)
 
+  private fun invoicesFile(): File = File(widgetDirectory(), INVOICES_FILE)
+
   private fun widgetDirectory(): File {
     val context = appContext.reactContext ?: throw IllegalStateException(
       "contexto Android indisponível",
@@ -173,5 +193,6 @@ class CarteroWidgetSnapshotModule : Module() {
     const val SNAPSHOT_DIRECTORY = "cartero-widget"
     const val SNAPSHOT_FILE = "snapshot-v1.json"
     const val PRIVACY_FILE = "privacy-v1.json"
+    const val INVOICES_FILE = "invoices-v1.json"
   }
 }

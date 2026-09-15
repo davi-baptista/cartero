@@ -12,6 +12,8 @@ import { ApiClient } from '../api/client'
 import { API_URL } from '../config'
 import { snapshotStore } from '../../modules/cartero-widget-snapshot/src'
 import { SnapshotSync } from '../widget/snapshot-sync'
+import { InvoicesSync } from '../widget/invoices-sync'
+import { syncWidgetSnapshots } from '../widget/sync-orchestrator'
 import { SnapshotMutationCoordinator } from '../widget/snapshot-mutations'
 import { WidgetPrivacyService } from '../widget/privacy-service'
 import { secureCredentialStore } from './secure-store'
@@ -49,6 +51,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     api: ApiClient
     machine: SessionMachine
     snapshot: SnapshotSync
+    invoices: InvoicesSync
     privacy: WidgetPrivacyService
   } | null>(null)
 
@@ -64,12 +67,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       emit: setState,
     })
     /*
-      Um coordenador para os DOIS escritores do snapshot.
+      Um único coordenador para todos os escritores de snapshot.
 
-      O sync do Budget e o toggle de privacidade gravam o mesmo arquivo. Sem
-      a fila compartilhada, um sync lento terminaria depois de um toggle e
-      sobrescreveria a escolha recém-feita — o usuário veria o ajuste ligado
-      com o widget mascarado.
+      O sync do Budget, o sync de Invoices e o toggle de privacidade gravam
+      arquivos que compartilham a mesma preferência. Sem a fila compartilhada,
+      um sync lento terminaria depois de um toggle e sobrescreveria a escolha
+      recém-feita — o usuário veria o ajuste ligado com o widget mascarado.
+      Continua sendo UMA fila simples, não um coordinator por arquivo: o que
+      importa é a ordem relativa entre TODOS os escritores, não isolar cada
+      um dos outros.
     */
     const coordinator = new SnapshotMutationCoordinator()
 
@@ -98,26 +104,42 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       currentOwnerId,
     })
 
-    refs.current = { api, machine, snapshot, privacy }
+    /*
+      GET /invoices/actionable já é a authority completa de seleção, ordem e
+      cardinalidade (M5A + M5A.1 + M5A.2) — o default de limit do backend é
+      usado sem parâmetro, para não duplicar a mesma constante em dois
+      lugares.
+    */
+    const invoices = new InvoicesSync({
+      store: snapshotStore,
+      coordinator,
+      hideAmounts: (ownerId) => privacy.getHideAmounts(ownerId),
+      fetchActionableInvoices: () => api.authorized('/invoices/actionable'),
+      currentOwnerId,
+    })
+
+    refs.current = { api, machine, snapshot, invoices, privacy }
   }
 
-  const { api, machine, snapshot, privacy } = refs.current
+  const { api, machine, snapshot, invoices, privacy } = refs.current
 
   useEffect(() => {
     void machine.bootstrap()
   }, [machine])
 
   /*
-    O snapshot acompanha a sessão, sem interferir nela.
+    Os snapshots acompanham a sessão, sem interferir nela.
 
-    `void` é deliberado: uma falha de sync não pode derrubar o login. O
-    Budget pode estar fora do ar enquanto a autenticação está perfeitamente
-    boa, e nesse caso o usuário continua dentro do app — só o widget fica com
-    dado mais velho.
+    `void` é deliberado: uma falha de sync não pode derrubar o login. Budget
+    ou Invoices podem estar fora do ar enquanto a autenticação está
+    perfeitamente boa, e nesse caso o usuário continua dentro do app — só o
+    widget correspondente fica com dado mais velho. `syncWidgetSnapshots`
+    isola as duas falhas entre si (`Promise.allSettled`), então nenhuma das
+    duas pode derrubar a outra por aqui.
   */
   useEffect(() => {
-    if (state.status === 'signedIn') void snapshot.sync()
-  }, [state.status, snapshot])
+    if (state.status === 'signedIn') void syncWidgetSnapshots({ budget: snapshot, invoices })
+  }, [state.status, snapshot, invoices])
 
   /*
     Voltar para o primeiro plano é a única chance de perceber o que mudou na
@@ -127,13 +149,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onChange = (next: AppStateStatus) => {
       if (next === 'active' && machine.getState().status === 'signedIn') {
-        void snapshot.sync()
+        void syncWidgetSnapshots({ budget: snapshot, invoices })
       }
     }
 
     const subscription = AppState.addEventListener('change', onChange)
     return () => subscription.remove()
-  }, [machine, snapshot])
+  }, [machine, snapshot, invoices])
 
   const value = useMemo<SessionContextValue>(
     () => ({
@@ -142,17 +164,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       privacy,
       signIn: (email, password) => machine.signIn(email, password),
       /*
-        O snapshot é neutralizado ANTES de a sessão terminar. Na ordem
-        inversa, uma falha entre as duas etapas deixaria a credencial removida
-        e os valores da conta anterior intactos no disco — visíveis para quem
-        instalasse um widget depois.
+        Os DOIS snapshots são neutralizados ANTES de a sessão terminar. Na
+        ordem inversa, uma falha entre as etapas deixaria a credencial
+        removida e os valores da conta anterior intactos no disco — visíveis
+        para quem instalasse um widget depois. `allSettled`: a falha de um
+        scrub não pode impedir a tentativa no outro.
       */
       signOut: async () => {
-        await snapshot.scrub()
+        await Promise.allSettled([snapshot.scrub(), invoices.scrub()])
         await machine.signOut()
       },
     }),
-    [state, api, machine, snapshot, privacy],
+    [state, api, machine, snapshot, invoices, privacy],
   )
 
   return (

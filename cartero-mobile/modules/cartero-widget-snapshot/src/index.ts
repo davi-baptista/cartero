@@ -23,6 +23,16 @@ export interface SnapshotStore {
    */
   writePrivacy(contents: string): Promise<void>
   readPrivacy(): Promise<string | null>
+  /**
+   * O snapshot de Invoices (M5B), em arquivo INDEPENDENTE do de Budget.
+   *
+   * Falha ou evolução de um contrato não pode corromper o outro — o mesmo
+   * raciocínio que já separa `snapshot-v1.json` de `privacy-v1.json`. Slot
+   * explícito, não um `writeFile(path, content)` genérico: a superfície
+   * nativa continua uma allowlist, nunca um filesystem arbitrário.
+   */
+  writeInvoices(contents: string): Promise<void>
+  readInvoices(): Promise<string | null>
   /** Pede o redesenho do widget sem reescrever nada. */
   refreshWidget(): Promise<void>
   /** Caminho real do arquivo — para inspeção, nunca para exibição. */

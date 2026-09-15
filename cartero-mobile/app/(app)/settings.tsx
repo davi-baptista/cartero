@@ -24,6 +24,13 @@ type ToggleState =
   | { status: 'ready'; showAmounts: boolean }
   | { status: 'saving'; showAmounts: boolean }
   | { status: 'error'; showAmounts: boolean }
+  /**
+   * A preferência foi persistida e ao menos um widget financeiro foi
+   * atualizado, mas não todos (M5B: Budget e Invoices são reescritos
+   * independentemente — não há transação de filesystem entre os dois).
+   * O switch reflete o valor pedido, mas a tela não afirma sucesso integral.
+   */
+  | { status: 'partial'; showAmounts: boolean }
 
 export default function SettingsScreen() {
   const { state, privacy } = useSession()
@@ -75,6 +82,11 @@ export default function SettingsScreen() {
       */
       if (result.status === 'failed') {
         setToggle({ status: 'error', showAmounts: !nextShow })
+        return
+      }
+
+      if (result.status === 'partial') {
+        setToggle({ status: 'partial', showAmounts: !result.hideAmounts })
         return
       }
 
@@ -139,6 +151,13 @@ export default function SettingsScreen() {
           {toggle.status === 'error' ? (
             <Text style={styles.error} accessibilityRole="alert">
               Não foi possível atualizar a privacidade do widget. Tente
+              novamente.
+            </Text>
+          ) : null}
+
+          {toggle.status === 'partial' ? (
+            <Text style={styles.error} accessibilityRole="alert">
+              Nem todos os widgets puderam ser atualizados agora. Tente
               novamente.
             </Text>
           ) : null}

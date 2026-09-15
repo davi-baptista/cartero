@@ -9,6 +9,7 @@ import { WidgetPrivacyService } from './privacy-service'
 import { SnapshotMutationCoordinator } from './snapshot-mutations'
 import { SnapshotSync } from './snapshot-sync'
 import { parseSnapshot } from './snapshot'
+import { parseInvoicesSnapshot } from './invoices-snapshot'
 import type { SnapshotStore } from '../../modules/cartero-widget-snapshot/src'
 
 /*
@@ -54,13 +55,19 @@ const readyFor = (
     },
   })
 
-function createStore(snapshot: string | null = null, privacy: string | null = null) {
+function createStore(
+  snapshot: string | null = null,
+  privacy: string | null = null,
+  invoices: string | null = null,
+) {
   let snap = snapshot
   let pref = privacy
+  let inv = invoices
 
   const store: SnapshotStore & {
     peek(): string | null
     peekPrivacy(): string | null
+    peekInvoices(): string | null
   } = {
     write: vi.fn(async (value: string) => {
       snap = value
@@ -70,10 +77,15 @@ function createStore(snapshot: string | null = null, privacy: string | null = nu
       pref = value
     }),
     readPrivacy: vi.fn(async () => pref),
+    writeInvoices: vi.fn(async (value: string) => {
+      inv = value
+    }),
+    readInvoices: vi.fn(async () => inv),
     refreshWidget: vi.fn(async () => {}),
     location: vi.fn(async () => '/no_backup/cartero-widget/snapshot-v1.json'),
     peek: () => snap,
     peekPrivacy: () => pref,
+    peekInvoices: () => inv,
   }
 
   return store
@@ -671,5 +683,203 @@ describe('o widget é avisado', () => {
 
     expect(result.status).toBe('preferenceOnly')
     expect(store.peek()).not.toContain('budget')
+  })
+})
+
+/* ═══════════════ M5B: S10-S22 — privacidade compartilhada Budget + Invoices ═══════════════ */
+
+const readyInvoicesFor = (
+  ownerId: string,
+  hideAmounts: boolean,
+  generatedAt = '2026-09-15T09:00:00.000Z',
+) =>
+  JSON.stringify({
+    version: 1,
+    state: 'ready',
+    generatedAt,
+    ownerId,
+    privacy: { hideAmounts },
+    invoices: [
+      { bankName: 'Banco X', status: 'OPEN', actionDate: '2026-09-20', ownAmountCents: 5000 },
+    ],
+  })
+
+describe('M5B — privacy multi-snapshot', () => {
+  it('S10: owner sem preferência resolve invoices hide=true (mesmo default do Budget)', async () => {
+    const store = createStore()
+    expect(await buildService(store).getHideAmounts(OWNER_A)).toBe(true)
+  })
+
+  it('S11: owner opt-in resolve hide=false para os dois widgets', async () => {
+    const store = createStore()
+    await buildService(store).setHideAmounts(OWNER_A, false)
+    expect(await buildService(store).getHideAmounts(OWNER_A)).toBe(false)
+  })
+
+  it('S12: toggle OFF (esconder) reescreve Budget E Invoices para hideAmounts=true', async () => {
+    const store = createStore(
+      readyFor(OWNER_A, false),
+      null,
+      readyInvoicesFor(OWNER_A, false),
+    )
+
+    const result = await buildService(store).setHideAmounts(OWNER_A, true)
+
+    expect(result).toEqual({ status: 'applied', hideAmounts: true })
+    expect(parseSnapshot(store.peek())).toMatchObject({ privacy: { hideAmounts: true } })
+    expect(parseInvoicesSnapshot(store.peekInvoices())).toMatchObject({
+      privacy: { hideAmounts: true },
+    })
+  })
+
+  it('S13: toggle ON (mostrar) reescreve Budget E Invoices para hideAmounts=false', async () => {
+    const store = createStore(
+      readyFor(OWNER_A, true),
+      null,
+      readyInvoicesFor(OWNER_A, true),
+    )
+
+    const result = await buildService(store).setHideAmounts(OWNER_A, false)
+
+    expect(result).toEqual({ status: 'applied', hideAmounts: false })
+    expect(parseSnapshot(store.peek())).toMatchObject({ privacy: { hideAmounts: false } })
+    expect(parseInvoicesSnapshot(store.peekInvoices())).toMatchObject({
+      privacy: { hideAmounts: false },
+    })
+  })
+
+  it('S14: toggle não faz nenhuma chamada de rede', async () => {
+    const store = createStore(readyFor(OWNER_A, false), null, readyInvoicesFor(OWNER_A, false))
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    await buildService(store).setHideAmounts(OWNER_A, true)
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+    fetchSpy.mockRestore()
+  })
+
+  it('S15: toggle preserva o generatedAt do Budget', async () => {
+    const store = createStore(
+      readyFor(OWNER_A, false, '2026-09-01T00:00:00.000Z'),
+      null,
+      readyInvoicesFor(OWNER_A, false),
+    )
+
+    await buildService(store).setHideAmounts(OWNER_A, true)
+
+    expect(parseSnapshot(store.peek())).toMatchObject({
+      generatedAt: '2026-09-01T00:00:00.000Z',
+    })
+  })
+
+  it('S16: toggle preserva o generatedAt do Invoices', async () => {
+    const store = createStore(
+      readyFor(OWNER_A, false),
+      null,
+      readyInvoicesFor(OWNER_A, false, '2026-09-02T00:00:00.000Z'),
+    )
+
+    await buildService(store).setHideAmounts(OWNER_A, true)
+
+    expect(parseInvoicesSnapshot(store.peekInvoices())).toMatchObject({
+      generatedAt: '2026-09-02T00:00:00.000Z',
+    })
+  })
+
+  it('S17: B não consegue unmask Invoices de A', async () => {
+    const store = createStore(null, null, readyInvoicesFor(OWNER_A, true))
+
+    const result = await buildService(store, OWNER_B).setHideAmounts(OWNER_B, false)
+
+    expect(result.status).not.toBe('applied')
+    // O snapshot de A é neutralizado, nunca revelado para B.
+    expect(parseInvoicesSnapshot(store.peekInvoices())?.state).toBe('signedOut')
+  })
+
+  it('S18: signedOut invoices não vira READY por causa do toggle', async () => {
+    const store = createStore(
+      null,
+      null,
+      JSON.stringify({ version: 1, state: 'signedOut', generatedAt: 'x' }),
+    )
+
+    await buildService(store).setHideAmounts(OWNER_A, false)
+
+    expect(parseInvoicesSnapshot(store.peekInvoices())?.state).toBe('signedOut')
+  })
+
+  it('S19: rewrite de Invoices falha → tenta neutralizar (scrub)', async () => {
+    const store = createStore(readyFor(OWNER_A, false), null, readyInvoicesFor(OWNER_A, false))
+    let primeiraInvoices = true
+
+    store.writeInvoices = vi.fn(async (value: string) => {
+      if (primeiraInvoices) {
+        primeiraInvoices = false
+        throw new Error('disco indisponível')
+      }
+      expect(value).toContain('signedOut')
+    })
+
+    const result = await buildService(store).setHideAmounts(OWNER_A, true)
+
+    // Budget aplicou normalmente; Invoices precisou de scrub — resultado é
+    // parcial, não um "applied" silencioso.
+    expect(result.status).toBe('partial')
+    expect(store.writeInvoices).toHaveBeenCalledTimes(2)
+  })
+
+  it('S20: Budget aplica com sucesso + Invoices falha → privacy continua hidden (persistida)', async () => {
+    const store = createStore(readyFor(OWNER_A, false), null, readyInvoicesFor(OWNER_A, false))
+
+    store.writeInvoices = vi.fn(async () => {
+      throw new Error('falha total')
+    })
+
+    await buildService(store).setHideAmounts(OWNER_A, true)
+
+    // A preferência persistida continua "true" — futuros syncs respeitarão.
+    expect(await buildService(store).getHideAmounts(OWNER_A)).toBe(true)
+  })
+
+  it('S21: falha ao MOSTRAR em Invoices não faz scrub por causa do show', async () => {
+    const store = createStore(readyFor(OWNER_A, true), null, readyInvoicesFor(OWNER_A, true))
+    const originalInvoices = store.peekInvoices()
+
+    store.writeInvoices = vi.fn(async () => {
+      throw new Error('falha ao mostrar')
+    })
+
+    const result = await buildService(store).setHideAmounts(OWNER_A, false)
+
+    expect(result.status).toBe('partial')
+    // Invoices não foi neutralizado — mostrar que falhou não pode revelar
+    // nem apagar; ele só continua com o dado antigo (que já estava oculto).
+    expect(store.peekInvoices()).toBe(originalInvoices)
+  })
+
+  it('S22: UI (o resultado) não afirma sucesso integral quando um snapshot não pôde ser atualizado nem neutralizado', async () => {
+    const store = createStore(readyFor(OWNER_A, false), null, readyInvoicesFor(OWNER_A, false))
+
+    store.writeInvoices = vi.fn(async () => {
+      throw new Error('sempre falha')
+    })
+
+    const result = await buildService(store).setHideAmounts(OWNER_A, true)
+
+    expect(result.status).not.toBe('applied')
+  })
+
+  it('owner estrangeiro em Invoices é neutralizado sem afetar o Budget do owner correto', async () => {
+    const store = createStore(readyFor(OWNER_A, false), null, readyInvoicesFor(OWNER_B, false))
+
+    const result = await buildService(store, OWNER_A).setHideAmounts(OWNER_A, true)
+
+    // Budget (de A) aplica normalmente; Invoices (de B) é neutralizado por
+    // pertencer a outra conta — o mesmo tratamento que um Budget estrangeiro
+    // já recebia no M4. Do ponto de vista de A, isso não é degradação: o
+    // widget de Invoices simplesmente não tinha nada seu para atualizar.
+    expect(parseSnapshot(store.peek())).toMatchObject({ privacy: { hideAmounts: true } })
+    expect(parseInvoicesSnapshot(store.peekInvoices())?.state).toBe('signedOut')
+    expect(result.status).toBe('applied')
   })
 })

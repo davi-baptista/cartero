@@ -25,6 +25,7 @@ import type { SnapshotStore } from '../../modules/cartero-widget-snapshot/src'
 function createStore(initial: string | null = null, privacy: string | null = null) {
   let contents = initial
   let privacyContents = privacy
+  let invoicesContents: string | null = null
 
   const store: SnapshotStore & {
     peek(): string | null
@@ -39,6 +40,10 @@ function createStore(initial: string | null = null, privacy: string | null = nul
       privacyContents = value
     }),
     readPrivacy: vi.fn(async () => privacyContents),
+    writeInvoices: vi.fn(async (value: string) => {
+      invoicesContents = value
+    }),
+    readInvoices: vi.fn(async () => invoicesContents),
     refreshWidget: vi.fn(async () => {}),
     location: vi.fn(async () => '/no_backup/cartero-widget/snapshot-v1.json'),
     peek: () => contents,
