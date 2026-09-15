@@ -8,6 +8,11 @@ import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { FindInvoicesDto } from './dto/find-invoices.dto';
 import { deriveStatusFromInvoiceDates } from 'src/common/helpers/invoice.helper';
+import {
+  selectActionableInvoices,
+  type ActionableInvoiceCandidate,
+} from 'src/common/helpers/actionable-invoices.helper';
+import { InvoiceStatus } from '@prisma/client';
 
 @Injectable()
 export class InvoicesService {
@@ -79,6 +84,66 @@ export class InvoicesService {
         ownAmount: Number(invoice.totalAmount) - reimbursable,
       };
     });
+  }
+
+  /**
+   * `GET /invoices/actionable` — "o que exige atenção agora?".
+   *
+   * A seleção/ordenação/limite vivem inteiramente em
+   * `selectActionableInvoices` (authority pura); este método só busca o
+   * conjunto mínimo relevante e traduz para o formato que a authority espera.
+   *
+   * ── Estratégia de query ──
+   *
+   * `status: { not: PAID }` e `totalAmount: { gt: 0 }` já eliminam no banco a
+   * maior parte do histórico que nunca seria actionable — não há motivo para
+   * carregar faturas pagas de anos atrás só para descartá-las em memória. O
+   * restante (prioridade por status, `actionDate` que muda de campo conforme
+   * o status, desempate por nome) fica na authority: não cabe num único
+   * `orderBy` do Prisma sem sacrificar clareza, e o volume já filtrado é
+   * pequeno o bastante para ordenar em memória sem custo real.
+   */
+  async findActionable(userId: string, limit: number) {
+    const invoices = await this.prisma.invoice.findMany({
+      where: {
+        userId,
+        status: { not: InvoiceStatus.PAID },
+        totalAmount: { gt: 0 },
+      },
+      include: { bank: { select: { name: true } } },
+    });
+
+    if (invoices.length === 0) return { items: [] };
+
+    // Mesma agregação de `findAll`: quanto de cada fatura pertence a outra
+    // pessoa, numa única consulta agrupada em vez de uma por fatura.
+    const reimbursableByInvoice = await this.prisma.transaction.groupBy({
+      by: ['invoiceId'],
+      where: {
+        userId,
+        invoiceId: { in: invoices.map((invoice) => invoice.id) },
+        personId: { not: null },
+        type: 'CREDIT_CARD',
+      },
+      _sum: { amount: true },
+    });
+
+    const perInvoice = new Map<string, number>();
+    for (const row of reimbursableByInvoice) {
+      if (!row.invoiceId) continue;
+      perInvoice.set(row.invoiceId, Number(row._sum.amount ?? 0));
+    }
+
+    const candidates: ActionableInvoiceCandidate[] = invoices.map((invoice) => ({
+      bankName: invoice.bank.name,
+      status: invoice.status,
+      totalAmount: invoice.totalAmount,
+      closeDate: invoice.closeDate,
+      dueDate: invoice.dueDate,
+      reimbursable: perInvoice.get(invoice.id) ?? 0,
+    }));
+
+    return { items: selectActionableInvoices(candidates, limit) };
   }
 
   async update(id: string, userId: string, dto: UpdateInvoiceDto) {

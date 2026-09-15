@@ -15,6 +15,7 @@ import { InvoicesService } from './invoices.service';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { FindInvoicesDto } from './dto/find-invoices.dto';
 import { MarkManyPaidDto } from './dto/mark-many-paid.dto';
+import { FindActionableInvoicesDto } from './dto/find-actionable-invoices.dto';
 
 @Controller('invoices')
 @UseGuards(JwtAuthGuard)
@@ -44,6 +45,16 @@ export class InvoicesController {
   @Post(':id/reopen')
   reopen(@Param('id') id: string, @CurrentUser() user: User) {
     return this.invoicesService.reopen(id, user.id);
+  }
+
+  // Estática, e ANTES de `:id` — senão `/invoices/actionable` seria
+  // capturada como um `id` literal.
+  @Get('actionable')
+  findActionable(
+    @CurrentUser() user: User,
+    @Query() filters: FindActionableInvoicesDto,
+  ) {
+    return this.invoicesService.findActionable(user.id, filters.limit);
   }
 
   @Get(':id')
