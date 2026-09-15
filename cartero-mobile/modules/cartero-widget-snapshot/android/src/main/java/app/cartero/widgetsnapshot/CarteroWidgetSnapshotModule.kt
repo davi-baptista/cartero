@@ -59,7 +59,7 @@ class CarteroWidgetSnapshotModule : Module() {
         agora, o widget se atualiza no próximo ciclo; propagar o erro faria o
         app tratar um snapshot íntegro como escrita fracassada.
       */
-      requestWidgetRefresh()
+      requestBudgetWidgetRefresh()
     }
 
     /** Devolve o conteúdo, ou `null` se ainda não existe. */
@@ -68,17 +68,22 @@ class CarteroWidgetSnapshotModule : Module() {
     /*
       ── A preferência de privacidade, em arquivo SEPARADO ──
 
-      Ela não entra no snapshot por uma razão de ciclo de vida: o logout
-      neutraliza o snapshot, e a escolha de "mostrar valores" pertence à
-      pessoa, não à sessão. Guardá-la junto faria cada logout apagar a
-      decisão, e o usuário teria de optar de novo toda vez.
+      Ela não entra em nenhum snapshot por uma razão de ciclo de vida: o
+      logout neutraliza os snapshots, e a escolha de "mostrar valores"
+      pertence à pessoa, não à sessão. Guardá-la junto faria cada logout
+      apagar a decisão, e o usuário teria de optar de novo toda vez.
 
       Mesmo diretório sem backup: um opt-in para revelar saldo na tela
       inicial não pode reaparecer sozinho num aparelho novo restaurado da
       nuvem.
+
+      Uma reescrita de privacidade pode ter atualizado Budget E Invoices
+      (M5B), então os DOIS widgets são atualizados aqui — nunca só um.
     */
     AsyncFunction("writePrivacy") { contents: String ->
       writeAtomically(privacyFile(), contents)
+      requestBudgetWidgetRefresh()
+      requestInvoicesWidgetRefresh()
     }
 
     AsyncFunction("readPrivacy") { readAtomically(privacyFile()) }
@@ -87,16 +92,16 @@ class CarteroWidgetSnapshotModule : Module() {
       ── Invoices Snapshot, em arquivo INDEPENDENTE (M5B) ──
 
       Mesma razão da privacidade: falha ou evolução de um contrato não pode
-      corromper o outro. O widget de Budget (M3) e o futuro widget de
-      Invoices (M6) leem arquivos separados, então um bug na sincronização
-      de um nunca deixa o outro ilegível.
+      corromper o outro. O widget de Budget (M3) e o de Invoices (M6) leem
+      arquivos separados, então um bug na sincronização de um nunca deixa o
+      outro ilegível.
 
-      Sem `updateAll` aqui: não existe Invoices widget ainda para atualizar,
-      e chamar `BudgetWidget().updateAll` a cada escrita de Invoices seria
-      redesenhar um widget que essa escrita não tocou.
+      O refresh vem DEPOIS do commit atômico — mesma garantia do Budget:
+      invertida, a ordem faria o widget ler o arquivo no meio da escrita.
     */
     AsyncFunction("writeInvoices") { contents: String ->
       writeAtomically(invoicesFile(), contents)
+      requestInvoicesWidgetRefresh()
     }
 
     AsyncFunction("readInvoices") { readAtomically(invoicesFile()) }
@@ -104,29 +109,47 @@ class CarteroWidgetSnapshotModule : Module() {
     /*
       Pedido de redesenho isolado.
 
-      A reescrita de privacidade muda o snapshot pelo mesmo caminho de
-      `write`, mas há casos — como falha parcial — em que só o refresh é
-      necessário. Expor a operação evita que a camada TypeScript tenha de
-      gravar de novo só para provocar a atualização.
+      A reescrita de privacidade muda os snapshots pelo mesmo caminho de
+      `write`/`writeInvoices`, mas há casos — como falha parcial — em que só
+      o refresh é necessário. Expor a operação evita que a camada
+      TypeScript tenha de gravar de novo só para provocar a atualização.
+      Atualiza os dois widgets: quem chama não precisa saber qual deles
+      tinha algo para redesenhar.
     */
-    AsyncFunction("refreshWidget") { requestWidgetRefresh() }
+    AsyncFunction("refreshWidget") {
+      requestBudgetWidgetRefresh()
+      requestInvoicesWidgetRefresh()
+    }
 
     /** Caminho real, para inspeção em desenvolvimento. Não expõe conteúdo. */
     AsyncFunction("location") { snapshotFile().absolutePath }
   }
 
   /**
-   * Pede ao launcher que redesenhe o widget.
+   * Pede ao launcher que redesenhe o widget de Budget.
    *
    * Sem isto, a tela inicial só mudaria no ciclo periódico — o usuário sairia
    * da conta e continuaria vendo os valores por horas.
    */
-  private fun requestWidgetRefresh() {
+  private fun requestBudgetWidgetRefresh() {
     val context = appContext.reactContext ?: return
 
     CoroutineScope(Dispatchers.Main).launch {
       try {
         BudgetWidget().updateAll(context)
+      } catch (_: Exception) {
+        // Best-effort: ver o comentário em `write`.
+      }
+    }
+  }
+
+  /** Mesmo raciocínio de `requestBudgetWidgetRefresh`, para o widget de Faturas. */
+  private fun requestInvoicesWidgetRefresh() {
+    val context = appContext.reactContext ?: return
+
+    CoroutineScope(Dispatchers.Main).launch {
+      try {
+        InvoicesWidget().updateAll(context)
       } catch (_: Exception) {
         // Best-effort: ver o comentário em `write`.
       }

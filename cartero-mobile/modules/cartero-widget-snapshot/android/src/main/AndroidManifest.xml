@@ -30,6 +30,27 @@
         android:name="android.appwidget.provider"
         android:resource="@xml/cartero_budget_widget_info" />
     </receiver>
+
+    <!--
+      Segundo widget, mesmo modelo de segurança do Budget: exported="false",
+      só o AppWidgetManager do sistema entrega APPWIDGET_UPDATE. Receiver
+      dedicado — não reaproveita BudgetWidgetReceiver — para que os dois
+      providers continuem semanticamente separados no picker e no ciclo de
+      vida (um pode ser adicionado/removido sem afetar o outro).
+    -->
+    <receiver
+      android:name=".InvoicesWidgetReceiver"
+      android:label="@string/cartero_invoices_widget_label"
+      android:exported="false">
+
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/cartero_invoices_widget_info" />
+    </receiver>
   </application>
 
 </manifest>

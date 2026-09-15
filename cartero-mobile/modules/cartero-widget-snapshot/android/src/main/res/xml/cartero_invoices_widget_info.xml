@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Metadata do AppWidget de Faturas.
+
+  Mesmas dimensões do Budget Widget (M3) — 4×2 células, pela mesma fórmula
+  `70 × n − 30`:
+
+      4 colunas → 70 × 4 − 30 = 250dp
+      2 linhas  → 70 × 2 − 30 = 110dp
+
+  `targetCellWidth`/`targetCellHeight` são o mecanismo moderno (API 31+);
+  `minWidth`/`minHeight` cobrem as versões anteriores, já que o Cartero
+  suporta desde a API 24.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="40dp"
+    android:resizeMode="horizontal|vertical"
+    android:description="@string/cartero_invoices_widget_description"
+    android:updatePeriodMillis="21600000"
+    android:widgetCategory="home_screen"
+    android:initialLayout="@layout/glance_default_loading_layout" />

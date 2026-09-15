@@ -186,7 +186,7 @@ describe('o que o código nativo do widget pode alcançar', () => {
     const nextFn = module.text.indexOf('AsyncFunction("read")', writeStart)
     const body = module.text.slice(writeStart, nextFn)
     const commitAt = body.indexOf('writeAtomically(')
-    const refreshAt = body.indexOf('requestWidgetRefresh()')
+    const refreshAt = body.indexOf('requestBudgetWidgetRefresh()')
 
     expect(commitAt).toBeGreaterThan(-1)
     expect(refreshAt).toBeGreaterThan(commitAt)

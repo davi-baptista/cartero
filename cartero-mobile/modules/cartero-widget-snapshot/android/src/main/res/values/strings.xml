@@ -7,4 +7,6 @@
   -->
   <string name="cartero_budget_widget_label">Cartero — Orçamento</string>
   <string name="cartero_budget_widget_description">Pago e a pagar do mês</string>
+  <string name="cartero_invoices_widget_label">Cartero — Faturas</string>
+  <string name="cartero_invoices_widget_description">Faturas que exigem atenção</string>
 </resources>

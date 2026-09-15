@@ -167,11 +167,37 @@ describe('N1-N8: módulo nativo — slot de Invoices', () => {
     expect(moduleSource).toContain('atomic.failWrite(stream)')
   })
 
-  it('N8: nenhuma chamada de updateAll para um widget de Invoices que ainda não existe', () => {
+  it('N8 (M6): writeInvoices agora atualiza o widget de Invoices, DEPOIS do commit atômico', () => {
+    /*
+      Até o M6 este teste afirmava o oposto — não havia widget de Invoices
+      para atualizar. Com o widget criado, a garantia vira a MESMA do Budget:
+      o refresh só pode ser solicitado depois que `writeAtomically` promoveu
+      o arquivo, nunca antes.
+    */
     const start = moduleSource.indexOf('AsyncFunction("writeInvoices")')
     const nextFn = moduleSource.indexOf('AsyncFunction("readInvoices")', start)
     const body = moduleSource.slice(start, nextFn)
 
-    expect(body).not.toMatch(/updateAll|requestWidgetRefresh/)
+    const commitAt = body.indexOf('writeAtomically(')
+    const refreshAt = body.indexOf('requestInvoicesWidgetRefresh()')
+
+    expect(commitAt).toBeGreaterThan(-1)
+    expect(refreshAt).toBeGreaterThan(-1)
+    expect(refreshAt).toBeGreaterThan(commitAt)
+  })
+
+  it('N9 (M6): writePrivacy atualiza os DOIS widgets — Budget E Invoices', () => {
+    /*
+      Uma reescrita de privacidade pode ter atualizado Budget e Invoices
+      (M5B decide os dois na mesma operação): o módulo nativo não pode
+      atualizar só um. W10 (remover o refresh de Invoices daqui) precisa
+      matar este teste.
+    */
+    const start = moduleSource.indexOf('AsyncFunction("writePrivacy")')
+    const nextFn = moduleSource.indexOf('AsyncFunction("readPrivacy")', start)
+    const body = moduleSource.slice(start, nextFn)
+
+    expect(body).toContain('requestBudgetWidgetRefresh()')
+    expect(body).toContain('requestInvoicesWidgetRefresh()')
   })
 })
