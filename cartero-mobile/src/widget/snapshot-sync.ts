@@ -40,6 +40,13 @@ export interface SnapshotSyncDeps {
   /** Id do usuário da sessão corrente, ou `null` se não há sessão. */
   currentOwnerId: () => string | null
   /**
+   * Timezone financeira da conta corrente (TZ4), ou `null` — conta legada ou
+   * sem sessão. Lida no mesmo instante e com a mesma disciplina de
+   * `currentOwnerId`: nunca capturada antes do fetch, senão uma troca de
+   * conta em voo poderia gravar a timezone da conta anterior.
+   */
+  currentTimeZone?: () => string | null
+  /**
    * A preferência da conta, lida no momento da ESCRITA.
    *
    * Assíncrona de propósito: ela vem do disco, e consultá-la tarde é o que
@@ -131,7 +138,13 @@ export class SnapshotSync {
     */
     await this.scrubIfForeignOwner(ownerId)
 
-    const competence = currentCarteroCompetence(this.now)
+    /*
+      Resolvida UMA vez, aqui — a mesma leitura alimenta o fetch e a escrita
+      abaixo (§9/§16 TZ4): nunca duas resoluções que poderiam divergir se a
+      timezone da conta mudasse entre elas.
+    */
+    const timeZone = this.deps.currentTimeZone?.() ?? null
+    const competence = currentCarteroCompetence(this.now, timeZone)
 
     let payload: unknown
     try {

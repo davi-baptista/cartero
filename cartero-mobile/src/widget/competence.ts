@@ -29,23 +29,50 @@ export interface Competence {
   year: number
 }
 
-const formatter = new Intl.DateTimeFormat('en-CA', {
+const legacyFormatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: CARTERO_TIME_ZONE,
   year: 'numeric',
   month: '2-digit',
   day: '2-digit',
 })
 
-/**
- * A competência que o Cartero considera corrente no instante dado.
- *
- * `now` é injetável porque um teste que dependa do relógio real não consegue
- * exercitar a virada de mês — e é exatamente aí que o cálculo ingênuo falha.
- */
-export function currentCarteroCompetence(now: Date = new Date()): Competence {
-  const parts = formatter.formatToParts(now)
+function competenceFromParts(parts: Intl.DateTimeFormatPart[]): Competence {
   const get = (type: Intl.DateTimeFormatPartTypes) =>
     Number(parts.find((part) => part.type === type)?.value)
 
   return { month: get('month'), year: get('year') }
+}
+
+/**
+ * A competência que o Cartero considera corrente no instante dado.
+ *
+ * ── TZ4: dois caminhos explícitos, nunca um fallback escondido ──
+ *
+ * `timeZone` vem de `AuthUser.timeZone` (TZ1). `null` é conta legada — usa o
+ * caminho HISTÓRICO do Cartero, fixo em `CARTERO_TIME_ZONE`, byte a byte
+ * igual ao que sempre foi. Só contas com timezone configurada passam a
+ * resolver a competência pela SUA própria timezone (IANA, via `Intl`).
+ *
+ * Nunca `timeZone ?? CARTERO_TIME_ZONE`: essa forma apagaria a distinção
+ * entre "conta com timezone" e "legado", que precisa ficar visível em quem
+ * chama — a mesma exigência arquitetural do backend (TZ2) e do Web (TZ3).
+ *
+ * `now` é injetável porque um teste que dependa do relógio real não consegue
+ * exercitar a virada de mês — e é exatamente aí que o cálculo ingênuo falha.
+ */
+export function currentCarteroCompetence(
+  now: Date = new Date(),
+  timeZone: string | null = null,
+): Competence {
+  if (timeZone === null) {
+    return competenceFromParts(legacyFormatter.formatToParts(now))
+  }
+
+  const accountFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  return competenceFromParts(accountFormatter.formatToParts(now))
 }

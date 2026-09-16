@@ -21,6 +21,14 @@ export interface AuthUser {
   id: string
   email: string
   name: string
+  /**
+   * Timezone financeira da conta (IANA, ex. "America/Sao_Paulo") — TZ1.
+   *
+   * `null` é conta legada ou sem configuração explícita. TZ4 é a primeira
+   * leitura deste campo no mobile — usada por `currentCarteroCompetence`
+   * para resolver a competência do Budget snapshot.
+   */
+  timeZone: string | null
 }
 
 export interface SessionState {

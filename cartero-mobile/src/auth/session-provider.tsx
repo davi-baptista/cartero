@@ -84,6 +84,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       return session.status === 'signedIn' ? (session.user?.id ?? null) : null
     }
 
+    /*
+      Mesma disciplina de `currentOwnerId`: lida no instante da escrita, nunca
+      capturada — uma troca de conta entre o fetch e a gravação não pode
+      deixar a timezone da conta anterior vazar para o snapshot da nova (TZ4).
+    */
+    const currentTimeZone = () => {
+      const session = machine.getState()
+      return session.status === 'signedIn'
+        ? (session.user?.timeZone ?? null)
+        : null
+    }
+
     const privacy = new WidgetPrivacyService({
       store: snapshotStore,
       coordinator,
@@ -102,6 +114,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         um valor congelado gravaria a conta anterior depois de uma troca.
       */
       currentOwnerId,
+      currentTimeZone,
     })
 
     /*

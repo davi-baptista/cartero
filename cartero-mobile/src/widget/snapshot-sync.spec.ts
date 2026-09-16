@@ -80,6 +80,8 @@ function build(options: {
   fetchBudget?: SnapshotSync['deps']['fetchBudget']
   ownerId?: string | null
   now?: Date
+  /** TZ4: `undefined` omite a dependência inteira (legado, sem sessão de timezone). */
+  timeZone?: string | null
 }) {
   const now = options.now ?? new Date('2026-09-14T12:00:00.000Z')
 
@@ -88,6 +90,8 @@ function build(options: {
     fetchBudget: options.fetchBudget ?? (async () => BUDGET_OK),
     currentOwnerId: () =>
       options.ownerId === undefined ? 'user-a' : options.ownerId,
+    currentTimeZone:
+      options.timeZone === undefined ? undefined : () => options.timeZone!,
     now: () => now,
   })
 }
@@ -181,6 +185,119 @@ describe('sincronização', () => {
     expect(fetchBudget).toHaveBeenCalledTimes(1)
     expect(fetchBudget).toHaveBeenCalledWith({ month: 9, year: 2026 })
     expect(parseSnapshot(store.peek())).toMatchObject({ state: 'ready' })
+  })
+
+  it('B1/B2: timezone da conta controla a MESMA competência de request e snapshot', async () => {
+    /*
+      16/09/2026 21:30 UTC: em Tóquio (UTC+9) já é dia 17 de setembro — mesmo
+      mês, mas o boundary de DIA prova que a timezone da conta, não a de
+      Fortaleza nem a do device, decide a competência aqui.
+
+      O ponto central de B2 é a AUSÊNCIA de divergência: a mesma leitura
+      resolve tanto o `fetchBudget` quanto o `snapshot.budget.month/year`.
+    */
+    const store = createStore()
+    const fetchBudget = vi.fn(async () => BUDGET_OK)
+    const now = new Date('2026-09-30T23:30:00.000Z') // boundary de MÊS
+
+    await build({
+      store,
+      fetchBudget,
+      timeZone: 'Asia/Tokyo',
+      now,
+    }).sync()
+
+    // Fortaleza (legado) ainda estaria em setembro; Tóquio já em outubro.
+    expect(fetchBudget).toHaveBeenCalledWith({ month: 10, year: 2026 })
+    expect(parseSnapshot(store.peek())).toMatchObject({
+      state: 'ready',
+      budget: { month: 10, year: 2026 },
+    })
+  })
+
+  it('B3: conta legada (timeZone ausente) preserva a competência histórica Fortaleza', async () => {
+    const store = createStore()
+    const fetchBudget = vi.fn(async () => BUDGET_OK)
+    // 30/09 23h30 UTC = 20h30 em Fortaleza — ainda setembro lá.
+    const now = new Date('2026-09-30T23:30:00.000Z')
+
+    await build({ store, fetchBudget, now }).sync()
+
+    expect(fetchBudget).toHaveBeenCalledWith({ month: 9, year: 2026 })
+    expect(parseSnapshot(store.peek())).toMatchObject({
+      budget: { month: 9, year: 2026 },
+    })
+  })
+
+  it('B4: Tóquio no boundary produz competência diferente da legada, quando devido', async () => {
+    const semTZ = createStore()
+    const comTZ = createStore()
+    const now = new Date('2026-09-30T23:30:00.000Z')
+
+    await build({ store: semTZ, now }).sync()
+    await build({ store: comTZ, timeZone: 'Asia/Tokyo', now }).sync()
+
+    const legado = parseSnapshot(semTZ.peek())
+    const tokyo = parseSnapshot(comTZ.peek())
+    expect(legado?.state === 'ready' && legado.budget.month).toBe(9)
+    expect(tokyo?.state === 'ready' && tokyo.budget.month).toBe(10)
+  })
+
+  it('B5: troca de dono não reaproveita a timezone da sessão anterior', async () => {
+    /*
+      `currentTimeZone` é lida a cada `sync()`, nunca capturada — o mesmo
+      dublê já prova isso ao trocar o valor devolvido entre duas chamadas
+      sobre o MESMO SnapshotSync.
+    */
+    const store = createStore()
+    let timeZone: string | null = 'Asia/Tokyo'
+    let ownerId: string | null = 'user-a'
+    const now = new Date('2026-09-30T23:30:00.000Z')
+
+    const sync = new SnapshotSync({
+      store,
+      fetchBudget: async () => BUDGET_OK,
+      currentOwnerId: () => ownerId,
+      currentTimeZone: () => timeZone,
+      now: () => now,
+    })
+
+    await sync.sync()
+    expect(parseSnapshot(store.peek())).toMatchObject({
+      ownerId: 'user-a',
+      budget: { month: 10 },
+    })
+
+    // Troca de conta: novo dono, sem timezone configurada.
+    ownerId = 'user-b'
+    timeZone = null
+    await sync.sync()
+
+    expect(parseSnapshot(store.peek())).toMatchObject({
+      ownerId: 'user-b',
+      budget: { month: 9 },
+    })
+  })
+
+  it('B6: currentTimeZone ausente não inventa fallback além do legado', async () => {
+    /*
+      `currentTimeZone` opcional na dependência é o caminho de compatibilidade
+      dos dublês existentes (pré-TZ4) — ausência deve produzir EXATAMENTE o
+      resultado de `timeZone: null`, nunca UTC/device.
+    */
+    const comDep = createStore()
+    const semDep = createStore()
+    const now = new Date('2026-09-30T23:30:00.000Z')
+
+    await build({ store: comDep, timeZone: null, now }).sync()
+    await new SnapshotSync({
+      store: semDep,
+      fetchBudget: async () => BUDGET_OK,
+      currentOwnerId: () => 'user-a',
+      now: () => now,
+    }).sync()
+
+    expect(parseSnapshot(comDep.peek())).toEqual(parseSnapshot(semDep.peek()))
   })
 
   it('S26: sem sessão, nenhuma requisição é feita', async () => {
