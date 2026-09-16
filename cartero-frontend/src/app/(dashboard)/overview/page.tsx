@@ -7,6 +7,7 @@ import { motion } from 'motion/react'
 import type { LucideIcon } from 'lucide-react'
 import { ShoppingBag, CreditCard, HandCoins, Wallet, ArrowRight, CheckCircle2, ExternalLink, TriangleAlert, RotateCcw, Loader2 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useMonthPeriod } from '@/components/month-nav'
 import { getTransactions } from '@/services/transactions.service'
 import { getInvoices } from '@/services/invoices.service'
@@ -20,7 +21,7 @@ import {
   isOwnExpense,
   isRefundTransaction,
 } from '@/lib/money-semantics'
-import { formatDateValue, parseDateOnly } from '@/lib/date'
+import { formatDateValue } from '@/lib/date'
 import { parseInvoiceDate } from '@/lib/invoice-dates'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { invoiceStatusConfig } from '@/lib/invoice-status'
@@ -30,14 +31,20 @@ import {
   formatDueTiming,
   formatDueTimingFromISO,
 } from '@/lib/invoice-timing'
-import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
 import { cn } from '@/lib/utils'
 import {
   buildCalendarEvents,
+  eventsForDay,
   CAL_KIND_LABEL,
   type CalEvent,
   type CalEventDirection,
 } from '@/lib/calendar-events'
+import {
+  ATTENTION_DAYS_WINDOW,
+  attentionDueUrgency,
+  buildAttentionSelection,
+} from '@/lib/overview-attention'
+import { FinancialListRow, ROW_AMOUNT_CLASS } from '@/components/ui/financial-list-row'
 import { Button } from '@/components/ui/button'
 import type { Invoice, Debt, Receivable, Bank, Transaction } from '@/types'
 import { InvoiceStatus } from '@/types'
@@ -45,8 +52,6 @@ import { InvoiceStatus } from '@/types'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const EASE_OUT_EXPO = [0.16, 1, 0.3, 1] as const
-const ATTENTION_LIMIT = 3
-const ATTENTION_DAYS_WINDOW = 7
 
 // Rótulo e cor de status vêm de `@/lib/invoice-status` — este mapa era uma
 // cópia byte a byte do que existia em `budget` e em `banks/[id]/invoices`.
@@ -63,24 +68,12 @@ function monthRange(year: number, month: number) {
   return { startDate: start, endDate: end }
 }
 
-function diffDaysFromToday(dateString: string): number {
-  const today = parseDateOnly(formatDateValue())
-  const d = parseDateOnly(dateString)
-  return Math.round((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-}
-
 /** Dívidas e recebíveis guardam a data como string ISO. */
 function formatDueDate(dateString: string): string {
   return formatDueTimingFromISO(dateString)
 }
 
 type DueUrgency = 'overdue' | 'urgent' | 'soon' | 'normal'
-
-function getDueUrgency(dateString: string): DueUrgency {
-  const diff = diffDaysFromToday(dateString)
-  if (diff <= 0) return 'overdue'
-  return 'urgent'
-}
 
 const DUE_URGENCY_CLASS: Record<DueUrgency, string> = {
   overdue: 'text-destructive',
@@ -359,108 +352,106 @@ function InvoiceBadge({ status }: { status: InvoiceStatus }) {
 }
 
 
+/** Círculo tonal compartilhado das rows deste painel — vermelho quando overdue. */
+function AttentionRowIcon({ icon: Icon, isOverdue }: { icon: LucideIcon; isOverdue: boolean }) {
+  return (
+    <div
+      className={cn(
+        'flex size-7 shrink-0 items-center justify-center rounded-lg',
+        isOverdue ? 'bg-destructive/10' : 'bg-muted/40',
+      )}
+    >
+      <Icon className={cn('size-3.5', isOverdue ? 'text-destructive' : 'text-muted-foreground')} aria-hidden="true" />
+    </div>
+  )
+}
+
 function InvoiceAttentionRow({ invoice, banks }: { invoice: Invoice; banks: Bank[] }) {
   const bank = banks.find((b) => b.id === invoice.bankId)
   const monthYear = capitalize(formatMonthYear(invoice.month, invoice.year))
   const total = Number(invoice.totalAmount)
   const { text: dueText, urgency } = computeInvoiceDue(invoice, bank)
   const isOverdue = urgency === 'overdue'
+  const name = bankDisplayName(bank, 'Banco')
 
   return (
-    <Link
+    <FinancialListRow
       href={`/banks/${invoice.bankId}/invoices?invoiceId=${invoice.id}`}
-      className="group flex items-center gap-3 py-3"
-    >
-      <div
-        className={cn(
-          'flex size-7 shrink-0 items-center justify-center rounded-lg',
-          isOverdue ? 'bg-destructive/10' : 'bg-muted/40',
-        )}
-      >
-        <CreditCard
-          className={cn('size-3.5', isOverdue ? 'text-destructive' : 'text-muted-foreground')}
-          aria-hidden="true"
-        />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
-            {bankDisplayName(bank, 'Banco')}
-          </span>
-          <InvoiceBadge status={invoice.status} />
-        </div>
-        <div className="flex flex-col text-[11px] sm:flex-row sm:items-center sm:gap-1.5">
-          <span className="text-muted-foreground">Fatura de {monthYear}</span>
+      ariaLabel={`Fatura de ${name}, ${monthYear}, ${formatCurrency(total)}${dueText ? `, ${dueText}` : ''}`}
+      leading={<AttentionRowIcon icon={CreditCard} isOverdue={isOverdue} />}
+      title={name}
+      titleAdornment={<InvoiceBadge status={invoice.status} />}
+      meta={
+        <>
+          <span className="truncate">Fatura de {monthYear}</span>
           {dueText && (
             <>
-              <span className="hidden text-muted-foreground/40 sm:inline" aria-hidden="true">·</span>
+              <span aria-hidden="true">·</span>
               <span className={DUE_URGENCY_CLASS[urgency]}>{dueText}</span>
             </>
           )}
-        </div>
-      </div>
-      <span
-        className={cn(
-          'shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]',
-          isOverdue ? 'text-destructive' : '',
-        )}
-      >
-        {formatCurrency(total)}
-      </span>
-      <DisclosureChevron />
-    </Link>
+        </>
+      }
+      trailing={
+        <span className={cn(ROW_AMOUNT_CLASS, isOverdue && 'text-destructive')}>
+          {formatCurrency(total)}
+        </span>
+      }
+    />
   )
 }
 
 function DebtAttentionRow({ debt }: { debt: Debt }) {
-  const urgency = getDueUrgency(debt.dueDate)
+  const urgency = attentionDueUrgency(debt.dueDate)
   const dueText = formatDueDate(debt.dueDate)
   const counterpart = debt.person?.name ?? debt.creditorName
+  const isOverdue = urgency === 'overdue'
 
   return (
-    <Link href={`/debts?highlight=${debt.id}`} className="group flex items-center gap-3 py-3">
-      <div className={cn('flex size-7 shrink-0 items-center justify-center rounded-lg', urgency === 'overdue' ? 'bg-destructive/10' : 'bg-muted/40')}>
-        <HandCoins className={cn('size-3.5', urgency === 'overdue' ? 'text-destructive' : 'text-muted-foreground')} aria-hidden="true" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
-          {debt.title}
-        </p>
-        <p className="text-[11px] text-muted-foreground">
+    <FinancialListRow
+      href={`/debts?highlight=${debt.id}`}
+      ariaLabel={`${debt.title}, ${formatCurrency(Number(debt.amount))}, ${dueText}`}
+      leading={<AttentionRowIcon icon={HandCoins} isOverdue={isOverdue} />}
+      title={debt.title}
+      meta={
+        <span className="truncate">
           {counterpart ? `${counterpart} · ` : ''}
           <span className={DUE_URGENCY_CLASS[urgency]}>{dueText}</span>
-        </p>
-      </div>
-      <span className={cn('shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]', urgency === 'overdue' ? 'text-destructive' : '')}>
-        {formatCurrency(Number(debt.amount))}
-      </span>
-    </Link>
+        </span>
+      }
+      trailing={
+        <span className={cn(ROW_AMOUNT_CLASS, isOverdue && 'text-destructive')}>
+          {formatCurrency(Number(debt.amount))}
+        </span>
+      }
+    />
   )
 }
 
 function ReceivableAttentionRow({ receivable }: { receivable: Receivable }) {
-  const urgency = getDueUrgency(receivable.dueDate)
+  const urgency = attentionDueUrgency(receivable.dueDate)
   const dueText = formatDueDate(receivable.dueDate)
   const counterpart = receivable.person?.name ?? receivable.debtorName
+  const isOverdue = urgency === 'overdue'
 
   return (
-    <Link href={`/receivables?highlight=${receivable.id}`} className="group flex items-center gap-3 py-3">
-      <div className={cn('flex size-7 shrink-0 items-center justify-center rounded-lg', urgency === 'overdue' ? 'bg-destructive/10' : 'bg-muted/40')}>
-        <Wallet className={cn('size-3.5', urgency === 'overdue' ? 'text-destructive' : 'text-muted-foreground')} aria-hidden="true" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium transition-colors group-hover:text-primary">
-          {receivable.title}
-        </p>
-        <p className="text-[11px] text-muted-foreground">
+    <FinancialListRow
+      href={`/receivables?highlight=${receivable.id}`}
+      ariaLabel={`${receivable.title}, ${formatCurrency(Number(receivable.amount))}, ${dueText}`}
+      leading={<AttentionRowIcon icon={Wallet} isOverdue={isOverdue} />}
+      title={receivable.title}
+      meta={
+        <span className="truncate">
           {counterpart ? `${counterpart} · ` : ''}
           <span className={DUE_URGENCY_CLASS[urgency]}>{dueText}</span>
-        </p>
-      </div>
-      <span className={cn('shrink-0 text-[13px] font-semibold tabular-nums tracking-[-0.01em]', urgency === 'overdue' ? 'text-destructive' : '')}>
-        {formatCurrency(Number(receivable.amount))}
-      </span>
-    </Link>
+        </span>
+      }
+      trailing={
+        <span className={cn(ROW_AMOUNT_CLASS, isOverdue && 'text-destructive')}>
+          {formatCurrency(Number(receivable.amount))}
+        </span>
+      }
+    />
   )
 }
 
@@ -497,6 +488,11 @@ function AttentionSection({
   )
 }
 
+/**
+ * Só o conteúdo já resolvido (loading/error/empty ficam a cargo do
+ * `CalendarSection`, chamador único desta rodada — evita duplicar os três
+ * estados em dois lugares).
+ */
 function AttentionPanel({
   invoices,
   banks,
@@ -504,10 +500,6 @@ function AttentionPanel({
   debtsTotal,
   receivables,
   receivablesTotal,
-  isLoading,
-  isError,
-  isFetching,
-  onRetry,
   windowStr,
 }: {
   invoices: Invoice[]
@@ -516,98 +508,44 @@ function AttentionPanel({
   debtsTotal: number
   receivables: Receivable[]
   receivablesTotal: number
-  isLoading: boolean
-  isError: boolean
-  isFetching: boolean
-  onRetry: () => void
   windowStr: string
 }) {
-  const allEmpty = invoices.length === 0 && debts.length === 0 && receivables.length === 0
-
   return (
-    <section aria-label="Itens que requerem atenção" className="lg:border-l lg:border-border/60 lg:pl-8">
-      <h2 className="text-[15px] font-semibold tracking-tight">Atenção agora</h2>
-      {/*
-        Este painel responde ao PRESENTE, não ao mês selecionado acima —
-        navegar para julho não muda o que exige atenção hoje. A microcopy
-        existe porque o seletor de mês fica logo acima e sugeriria o contrário.
-      */}
-      <p className="mb-4 mt-0.5 text-[11px] text-muted-foreground">
-        Independente do mês selecionado
-      </p>
-
-      {isLoading ? (
-        <div className="space-y-5">
-          {[3, 2].map((count, s) => (
-            <div key={s} className="space-y-0">
-              <Skeleton className="mb-2 h-3 w-16" />
-              {Array.from({ length: count }).map((_, i) => (
-                <div key={i} className="flex items-center gap-3 py-3">
-                  <Skeleton className="size-7 shrink-0 rounded-lg" />
-                  <div className="flex flex-1 flex-col gap-1.5">
-                    <Skeleton className="h-3.5 w-32" />
-                    <Skeleton className="h-3 w-24" />
-                  </div>
-                  <Skeleton className="h-4 w-20" />
-                </div>
-              ))}
-            </div>
+    <div aria-label="Itens que requerem atenção" className="space-y-5">
+      {invoices.length > 0 && (
+        <AttentionSection title="Faturas" icon={CreditCard} href="/banks" remaining={0}>
+          {invoices.map((inv) => (
+            <InvoiceAttentionRow key={inv.id} invoice={inv} banks={banks} />
           ))}
-        </div>
-      ) : isError ? (
-        <WidgetError
-          message="Não foi possível carregar as pendências"
-          isFetching={isFetching}
-          onRetry={onRetry}
-        />
-      ) : allEmpty ? (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-receivable/10">
-            <CheckCircle2 className="size-5 text-receivable" />
-          </div>
-          <p className="text-sm font-medium">Tudo em dia</p>
-          <p className="mt-1 max-w-[22ch] text-xs text-muted-foreground">
-            Nenhum item vence nos próximos {ATTENTION_DAYS_WINDOW} dias.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-5">
-          {invoices.length > 0 && (
-            <AttentionSection title="Faturas" icon={CreditCard} href="/banks" remaining={0}>
-              {invoices.map((inv) => (
-                <InvoiceAttentionRow key={inv.id} invoice={inv} banks={banks} />
-              ))}
-            </AttentionSection>
-          )}
-
-          {debts.length > 0 && (
-            <AttentionSection
-              title="Dívidas"
-              icon={HandCoins}
-              href={`/debts?endDate=${windowStr}`}
-              remaining={debtsTotal - debts.length}
-            >
-              {debts.map((d) => (
-                <DebtAttentionRow key={d.id} debt={d} />
-              ))}
-            </AttentionSection>
-          )}
-
-          {receivables.length > 0 && (
-            <AttentionSection
-              title="A receber"
-              icon={Wallet}
-              href={`/receivables?endDate=${windowStr}`}
-              remaining={receivablesTotal - receivables.length}
-            >
-              {receivables.map((r) => (
-                <ReceivableAttentionRow key={r.id} receivable={r} />
-              ))}
-            </AttentionSection>
-          )}
-        </div>
+        </AttentionSection>
       )}
-    </section>
+
+      {debts.length > 0 && (
+        <AttentionSection
+          title="Dívidas"
+          icon={HandCoins}
+          href={`/debts?endDate=${windowStr}`}
+          remaining={debtsTotal - debts.length}
+        >
+          {debts.map((d) => (
+            <DebtAttentionRow key={d.id} debt={d} />
+          ))}
+        </AttentionSection>
+      )}
+
+      {receivables.length > 0 && (
+        <AttentionSection
+          title="A receber"
+          icon={Wallet}
+          href={`/receivables?endDate=${windowStr}`}
+          remaining={receivablesTotal - receivables.length}
+        >
+          {receivables.map((r) => (
+            <ReceivableAttentionRow key={r.id} receivable={r} />
+          ))}
+        </AttentionSection>
+      )}
+    </div>
   )
 }
 
@@ -642,8 +580,27 @@ function signedLabel(event: CalEvent): string {
   return value
 }
 
+/** Ícone tonal de um evento do calendário — um ponto colorido por DIREÇÃO. */
+function CalendarEventLeading({ direction }: { direction: CalEventDirection }) {
+  return (
+    <div className={cn('flex size-7 shrink-0 items-center justify-center rounded-lg', 'bg-muted/40')}>
+      <span className={cn('size-2 rounded-full', CAL_DIRECTION_DOT[direction])} aria-hidden />
+    </div>
+  )
+}
+
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 
+/**
+ * Painel contextual: "Hoje"/dia selecionado vs. "Atenção agora" — Overview
+ * Agenda V1.
+ *
+ * Duas perguntas de produto diferentes (§1 da especificação): o calendário
+ * responde "o que acontece NESTE DIA?", Atenção agora responde "o que ainda
+ * exige minha atenção AGORA?". Compartilham o mesmo container visual (Tabs,
+ * primitive já existente do design system — nada novo criado), mas cada
+ * painel mantém sua própria fonte e sua própria régua temporal.
+ */
 function CalendarSection({
   year,
   month,
@@ -656,6 +613,16 @@ function CalendarSection({
   isError,
   isFetching,
   onRetry,
+  attentionInvoices,
+  attentionDebts,
+  attentionDebtsTotal,
+  attentionReceivables,
+  attentionReceivablesTotal,
+  attentionLoading,
+  attentionError,
+  attentionFetching,
+  onRetryAttention,
+  attentionWindowEnd,
 }: {
   year: number
   month: number
@@ -670,24 +637,38 @@ function CalendarSection({
   isError: boolean
   isFetching: boolean
   onRetry: () => void
+  attentionInvoices: Invoice[]
+  attentionDebts: Debt[]
+  attentionDebtsTotal: number
+  attentionReceivables: Receivable[]
+  attentionReceivablesTotal: number
+  attentionLoading: boolean
+  attentionError: boolean
+  attentionFetching: boolean
+  onRetryAttention: () => void
+  attentionWindowEnd: string
 }) {
-  const [selectedDay, setSelectedDay] = useState<number | null>(null)
-
   /*
     "Hoje" vem de `formatDateValue()`, o mesmo helper de dia civil que as
-    outras telas usam.
-
-    `new Date().getDate()` funciona no browser (fuso local do usuário), mas
-    fazia esta lógica depender de onde o código roda — e a comparação por
-    string ISO é a convenção já adotada em `settlement-status.ts` para o
-    mesmo problema.
+    outras telas usam — fuso local do navegador, sem trocar para
+    America/Fortaleza explícito (decisão desta rodada: zero mudança de
+    comportamento observável em relação ao que a tela já fazia).
   */
   const todayStr = formatDateValue()
-  const [todayYear, todayMonth, todayDate] = todayStr
-    .split('-')
-    .map(Number)
+  const [todayYear, todayMonth, todayDate] = todayStr.split('-').map(Number)
   const isCurrentMonth = todayYear === year && todayMonth === month
   const todayDay = isCurrentMonth ? todayDate : -1
+
+  /*
+    §3/§5: mês atual inicia com hoje selecionado; outro mês inicia neutro
+    (null — nenhum "hoje" artificial). `key={year-month}` no ponto de uso
+    remonta este componente a cada troca de mês, então este useState só
+    precisa resolver o valor inicial corretamente uma vez por montagem.
+  */
+  const [selectedDay, setSelectedDay] = useState<number | null>(
+    isCurrentMonth ? todayDate : null,
+  )
+  const [mode, setMode] = useState<'day' | 'attention'>('day')
 
   /** Nome por id: evita `banks.find()` dentro do laço de faturas. */
   const bankNames = useMemo(
@@ -717,15 +698,22 @@ function CalendarSection({
   ]
   while (cells.length % 7 !== 0) cells.push(null)
 
-  const selectedEvents = selectedDay !== null ? (eventsByDay.get(selectedDay) ?? []) : []
+  const selectedEvents = eventsForDay(eventsByDay, selectedDay)
+  const isTodaySelected = selectedDay !== null && selectedDay === todayDay
+  const dayLabel = selectedDay === null
+    ? 'Selecione um dia'
+    : isTodaySelected
+      ? 'Hoje'
+      : `Dia ${selectedDay}`
+
+  const attentionAllEmpty =
+    attentionInvoices.length === 0 &&
+    attentionDebts.length === 0 &&
+    attentionReceivables.length === 0
 
   return (
-    <section aria-label="Calendário financeiro do mês">
+    <section aria-label="Calendário e itens que requerem atenção">
       <h2 className="text-[15px] font-semibold tracking-tight">Calendário</h2>
-      {/*
-        Diz o que o calendário É, porque agora ele reúne dois tipos de fato:
-        vencimentos (fatura, dívida, cobrança) e movimentações já ocorridas.
-      */}
       <p className="mb-3 mt-0.5 text-[11px] text-muted-foreground">
         Vencimentos e movimentações com data neste mês
       </p>
@@ -745,193 +733,220 @@ function CalendarSection({
         </div>
       ) : (
         <>
-      {/*
-        Erro parcial: o que carregou continua visível, com aviso de que falta
-        coisa. Esconder tudo perderia informação boa; não avisar afirmaria que
-        os eventos ausentes não existem.
-      */}
-      {isError && (
-        <div
-          role="alert"
-          className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-pending/25 bg-pending/5 px-3 py-2"
-        >
-          <TriangleAlert className="size-3.5 shrink-0 text-pending" aria-hidden />
-          <p className="flex-1 text-xs text-muted-foreground">
-            Alguns eventos não puderam ser carregados.
-          </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 text-xs"
-            disabled={isFetching}
-            onClick={onRetry}
-          >
-            {isFetching ? (
-              <Loader2 className="size-3 animate-spin" aria-hidden />
-            ) : (
-              <RotateCcw className="size-3" aria-hidden />
-            )}
-            Tentar novamente
-          </Button>
-        </div>
-      )}
-
-      {/* Weekday headers */}
-      <div className="grid grid-cols-7 border-b border-border pb-1">
-        {WEEKDAYS.map((d) => (
-          <div key={d} className="py-1 text-center text-[11px] font-medium text-muted-foreground">
-            {d}
-          </div>
-        ))}
-      </div>
-
-      {/* Day grid */}
-      <div className="grid grid-cols-7 gap-y-0.5 pt-0.5">
-        {cells.map((day, idx) => {
-          if (day === null) return <div key={`e-${idx}`} />
-
-          const events = eventsByDay.get(day) ?? []
-          const isToday = day === todayDay
-          const isSelected = day === selectedDay
-          const isPast = isCurrentMonth && day < todayDay
-          const directions = [
-            ...new Set(events.map((e: CalEvent) => e.direction)),
-          ]
-          const hasEvents = events.length > 0
-
-          return (
-            <button
-              key={day}
-              type="button"
-              onClick={() => hasEvents && setSelectedDay(isSelected ? null : day)}
-              aria-pressed={isSelected || undefined}
-              aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}` : ''}`}
-              className={cn(
-                'flex flex-col items-center gap-1 rounded-lg py-2 transition-colors',
-                hasEvents ? (isSelected ? 'cursor-pointer bg-muted/60' : 'cursor-pointer hover:bg-muted/30') : 'cursor-default',
-                isPast && 'opacity-40',
-              )}
+          {/*
+            Erro parcial: o que carregou continua visível, com aviso de que
+            falta coisa. Esconder tudo perderia informação boa; não avisar
+            afirmaria que os eventos ausentes não existem.
+          */}
+          {isError && (
+            <div
+              role="alert"
+              className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-pending/25 bg-pending/5 px-3 py-2"
             >
-              <span
-                className={cn(
-                  'flex size-7 items-center justify-center rounded-full text-[13px] font-medium leading-none',
-                  isToday ? 'bg-primary text-primary-foreground' : 'text-foreground',
-                )}
+              <TriangleAlert className="size-3.5 shrink-0 text-pending" aria-hidden />
+              <p className="flex-1 text-xs text-muted-foreground">
+                Alguns eventos não puderam ser carregados.
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs"
+                disabled={isFetching}
+                onClick={onRetry}
               >
-                {day}
-              </span>
-              <div className="flex min-h-[6px] items-center gap-0.5">
-                {directions.slice(0, 3).map((direction) => (
+                {isFetching ? (
+                  <Loader2 className="size-3 animate-spin" aria-hidden />
+                ) : (
+                  <RotateCcw className="size-3" aria-hidden />
+                )}
+                Tentar novamente
+              </Button>
+            </div>
+          )}
+
+          {/* Weekday headers */}
+          <div className="grid grid-cols-7 border-b border-border pb-1">
+            {WEEKDAYS.map((d) => (
+              <div key={d} className="py-1 text-center text-[11px] font-medium text-muted-foreground">
+                {d}
+              </div>
+            ))}
+          </div>
+
+          {/* Day grid */}
+          <div className="grid grid-cols-7 gap-y-0.5 pt-0.5">
+            {cells.map((day, idx) => {
+              if (day === null) return <div key={`e-${idx}`} />
+
+              const events = eventsForDay(eventsByDay, day)
+              const isToday = day === todayDay
+              const isSelected = day === selectedDay
+              const isPast = isCurrentMonth && day < todayDay
+              const directions = [
+                ...new Set(events.map((e: CalEvent) => e.direction)),
+              ]
+              const hasEvents = events.length > 0
+
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => {
+                    setSelectedDay(isSelected ? null : day)
+                    setMode('day')
+                  }}
+                  aria-pressed={isSelected || undefined}
+                  aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}` : ''}`}
+                  className={cn(
+                    'flex flex-col items-center gap-1 rounded-lg py-2 transition-colors cursor-pointer',
+                    isSelected ? 'bg-muted/60' : 'hover:bg-muted/30',
+                    isPast && 'opacity-40',
+                  )}
+                >
                   <span
-                    key={direction}
                     className={cn(
-                      'size-1.5 rounded-full',
-                      CAL_DIRECTION_DOT[direction],
+                      'flex size-7 items-center justify-center rounded-full text-[13px] font-medium leading-none',
+                      isToday ? 'bg-primary text-primary-foreground' : 'text-foreground',
                     )}
-                    aria-hidden
-                  />
-                ))}
-              </div>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Selected day events */}
-      {selectedDay !== null && selectedEvents.length > 0 && (
-        <div className="mt-4 overflow-hidden rounded-xl border border-border">
-          <p className="border-b border-border px-4 py-2 text-[11px] font-medium text-muted-foreground">
-            Dia {selectedDay}
-          </p>
-          {selectedEvents.map((ev: CalEvent) => (
-            /*
-              Link, não `div onClick`: navegação por teclado e menu de contexto
-              vêm de graça. A key é a identidade do evento — o índice do array
-              mudava de significado a cada reordenação.
-            */
-            <Link
-              key={ev.id}
-              href={ev.href}
-              /*
-                O leitor de tela recebe tipo, título, valor e status numa frase
-                só. Sem isso, a distinção entre "Pendente" e "Recebido"
-                dependia exclusivamente da cor do ponto.
-              */
-              aria-label={`${CAL_KIND_LABEL[ev.kind]}: ${ev.title}, ${signedLabel(ev)}, ${ev.status}${
-                ev.detail ? `. ${ev.detail}` : ''
-              }`}
-              className="group flex items-center gap-3 border-b border-border px-4 py-3 transition-colors last:border-b-0 hover:bg-muted/30"
-            >
-              <span
-                className={cn(
-                  'size-2 shrink-0 rounded-full',
-                  CAL_DIRECTION_DOT[ev.direction],
-                )}
-                aria-hidden
-              />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-medium leading-snug transition-colors group-hover:text-primary">
-                  {ev.title}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  {/* Tipo e status em TEXTO: a cor é reforço, não a informação. */}
-                  {CAL_KIND_LABEL[ev.kind]} · {ev.status}
-                </p>
-                {/*
-                  Decomposição da fatura fora do hover: em mobile e por teclado
-                  o tooltip não existe, e este número explica por que o card de
-                  categorias mostra outro valor.
-                */}
-                {ev.detail && (
-                  <p className="mt-0.5 text-[11px] text-muted-foreground/70">
-                    {ev.detail}
-                  </p>
-                )}
-              </div>
-              <span
-                className={cn(
-                  'shrink-0 text-[13px] font-semibold tabular-nums',
-                  CAL_DIRECTION_AMOUNT[ev.direction],
-                )}
-              >
-                {signedLabel(ev)}
-              </span>
-            </Link>
-          ))}
-        </div>
-      )}
-
-      {/*
-        Vazio só quando TODAS as fontes tiveram sucesso: sem isso, uma falha
-        seria indistinguível de um mês sem eventos.
-      */}
-      {!isError && eventsByDay.size === 0 && (
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          Nenhum evento financeiro neste mês.
-        </p>
-      )}
-
-      {/* Legenda: direção do dinheiro, que é o que as cores codificam. */}
-      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5">
-        {(
-          [
-            ['out', 'Saída / vencimento'],
-            ['in', 'Entrada'],
-            ['neutral', 'Pendente'],
-          ] as [CalEventDirection, string][]
-        ).map(([direction, label]) => (
-          <div key={direction} className="flex items-center gap-1.5">
-            <span
-              className={cn(
-                'size-2 shrink-0 rounded-full',
-                CAL_DIRECTION_DOT[direction],
-              )}
-              aria-hidden
-            />
-            <span className="text-[11px] text-muted-foreground">{label}</span>
+                  >
+                    {day}
+                  </span>
+                  <div className="flex min-h-[6px] items-center gap-0.5">
+                    {directions.slice(0, 3).map((direction) => (
+                      <span
+                        key={direction}
+                        className={cn('size-1.5 rounded-full', CAL_DIRECTION_DOT[direction])}
+                        aria-hidden
+                      />
+                    ))}
+                  </div>
+                </button>
+              )
+            })}
           </div>
-        ))}
-      </div>
+
+          {/* Legenda: direção do dinheiro, que é o que as cores codificam. */}
+          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5">
+            {(
+              [
+                ['out', 'Saída / vencimento'],
+                ['in', 'Entrada'],
+                ['neutral', 'Pendente'],
+              ] as [CalEventDirection, string][]
+            ).map(([direction, label]) => (
+              <div key={direction} className="flex items-center gap-1.5">
+                <span className={cn('size-2 shrink-0 rounded-full', CAL_DIRECTION_DOT[direction])} aria-hidden />
+                <span className="text-[11px] text-muted-foreground">{label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* ─── Painel contextual: Hoje/dia selecionado × Atenção agora ─── */}
+          <div className="mt-5 border-t border-border pt-4">
+            <Tabs value={mode} onValueChange={(v) => setMode(v as 'day' | 'attention')}>
+              <TabsList>
+                <TabsTrigger value="day">{dayLabel}</TabsTrigger>
+                <TabsTrigger value="attention">Atenção agora</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="day">
+                {selectedDay === null ? (
+                  <p className="py-6 text-center text-xs text-muted-foreground">
+                    Selecione um dia no calendário para ver os fatos daquele dia.
+                  </p>
+                ) : selectedEvents.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-muted-foreground">
+                    Nenhum evento financeiro {isTodaySelected ? 'hoje' : `no dia ${selectedDay}`}.
+                  </p>
+                ) : (
+                  <div className="divide-y divide-border/50">
+                    {selectedEvents.map((ev: CalEvent) => (
+                      <FinancialListRow
+                        key={ev.id}
+                        href={ev.href}
+                        ariaLabel={`${CAL_KIND_LABEL[ev.kind]}: ${ev.title}, ${signedLabel(ev)}, ${ev.status}${
+                          ev.detail ? `. ${ev.detail}` : ''
+                        }`}
+                        leading={<CalendarEventLeading direction={ev.direction} />}
+                        title={ev.title}
+                        meta={
+                          <span className="truncate">
+                            {CAL_KIND_LABEL[ev.kind]} · {ev.status}
+                          </span>
+                        }
+                        belowMeta={
+                          ev.detail && (
+                            <p className="mt-0.5 text-[11px] text-muted-foreground/70">{ev.detail}</p>
+                          )
+                        }
+                        trailing={
+                          <span className={cn(ROW_AMOUNT_CLASS, CAL_DIRECTION_AMOUNT[ev.direction])}>
+                            {signedLabel(ev)}
+                          </span>
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="attention">
+                {/*
+                  Este painel responde ao PRESENTE, não ao mês exibido no
+                  calendário acima — navegar para julho não muda o que exige
+                  atenção hoje. Ver `overview-attention.ts`.
+                */}
+                <p className="mb-3 text-[11px] text-muted-foreground">
+                  Independente do mês exibido no calendário
+                </p>
+                {attentionLoading ? (
+                  <div className="space-y-5 py-1">
+                    {[3, 2].map((count, s) => (
+                      <div key={s} className="space-y-0">
+                        <Skeleton className="mb-2 h-3 w-16" />
+                        {Array.from({ length: count }).map((_, i) => (
+                          <div key={i} className="flex items-center gap-3 py-3">
+                            <Skeleton className="size-7 shrink-0 rounded-lg" />
+                            <div className="flex flex-1 flex-col gap-1.5">
+                              <Skeleton className="h-3.5 w-32" />
+                              <Skeleton className="h-3 w-24" />
+                            </div>
+                            <Skeleton className="h-4 w-20" />
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ) : attentionError ? (
+                  <WidgetError
+                    message="Não foi possível carregar as pendências"
+                    isFetching={attentionFetching}
+                    onRetry={onRetryAttention}
+                  />
+                ) : attentionAllEmpty ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-center">
+                    <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-receivable/10">
+                      <CheckCircle2 className="size-5 text-receivable" />
+                    </div>
+                    <p className="text-sm font-medium">Tudo em dia</p>
+                    <p className="mt-1 max-w-[22ch] text-xs text-muted-foreground">
+                      Nenhum item vence nos próximos {ATTENTION_DAYS_WINDOW} dias.
+                    </p>
+                  </div>
+                ) : (
+                  <AttentionPanel
+                    invoices={attentionInvoices}
+                    banks={banks}
+                    debts={attentionDebts}
+                    debtsTotal={attentionDebtsTotal}
+                    receivables={attentionReceivables}
+                    receivablesTotal={attentionReceivablesTotal}
+                    windowStr={attentionWindowEnd}
+                  />
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
         </>
       )}
     </section>
@@ -1109,61 +1124,15 @@ export default function OverviewPage() {
     [categoryRows],
   )
 
-  // Invoices: OVERDUE always; OPEN if close date ≤7 days; CLOSED if due date ≤7 days
-  const attentionInvoices = useMemo(() => {
-    const now = new Date()
-    now.setHours(0, 0, 0, 0)
-
-    return invoices
-      .filter((inv) => {
-        if (Number(inv.totalAmount) === 0) return false
-        if (inv.status === InvoiceStatus.OVERDUE) return true
-        if (inv.status !== InvoiceStatus.OPEN && inv.status !== InvoiceStatus.CLOSED) return false
-        const bank = banks.find((b) => b.id === inv.bankId)
-        if (!bank) return false
-        if (inv.status === InvoiceStatus.OPEN) {
-          const close = parseInvoiceDate(inv.closeDate)
-          close.setHours(0, 0, 0, 0)
-          const closeDiff = Math.round((close.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-          if (closeDiff >= 0) return closeDiff <= ATTENTION_DAYS_WINDOW
-          // Close date passed but still OPEN (cron lag) — check due date
-        }
-        const due = parseInvoiceDate(inv.dueDate)
-        due.setHours(0, 0, 0, 0)
-        const diffDays = Math.round((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-        return diffDays <= ATTENTION_DAYS_WINDOW
-      })
-      .sort((a, b) => {
-        if (a.status === InvoiceStatus.OVERDUE && b.status !== InvoiceStatus.OVERDUE) return -1
-        if (b.status === InvoiceStatus.OVERDUE && a.status !== InvoiceStatus.OVERDUE) return 1
-        return a.year !== b.year ? a.year - b.year : a.month - b.month
-      })
-  }, [invoices, banks])
-
-  // Debts/Receivables: unpaid, due within 7 days (includes overdue), top 3
-  const windowStr = useMemo(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + ATTENTION_DAYS_WINDOW)
-    return formatDateValue(d)
-  }, [])
-
-  const pendingDebtsAll = useMemo(
-    () =>
-      debts
-        .filter((d) => !d.isPaid && d.dueDate <= windowStr)
-        .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
-    [debts, windowStr],
+  /*
+    Seleção de "Atenção agora" — extraída para `overview-attention.ts`
+    (Overview Agenda V1). Mesmas regras de antes: current-state, sempre
+    relativo a hoje, nunca ao mês navegado no calendário abaixo.
+  */
+  const attention = useMemo(
+    () => buildAttentionSelection({ invoices, banks, debts, receivables }),
+    [invoices, banks, debts, receivables],
   )
-  const pendingDebts = pendingDebtsAll.slice(0, ATTENTION_LIMIT)
-
-  const pendingReceivablesAll = useMemo(
-    () =>
-      receivables
-        .filter((r) => !r.isPaid && r.dueDate <= windowStr)
-        .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
-    [receivables, windowStr],
-  )
-  const pendingReceivables = pendingReceivablesAll.slice(0, ATTENTION_LIMIT)
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
@@ -1180,8 +1149,44 @@ export default function OverviewPage() {
         </p>
       </div>
 
-      {/* Main grid */}
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[3fr_2fr]">
+      {/*
+        Calendário + Atenção agora (Overview Agenda V1) — primeira e
+        principal superfície. `key` por competência: trocar de mês remonta a
+        seção, reavaliando o estado inicial de `selectedDay` (hoje no mês
+        atual, neutro em outro mês) sem um efeito chamando `setState`.
+      */}
+      <CalendarSection
+        key={`${year}-${month}`}
+        year={year}
+        month={month}
+        debts={debts}
+        receivables={receivables}
+        invoices={invoices}
+        /*
+          Reusa a MESMA resposta que alimenta as categorias — nenhuma request
+          nova. A query já traz crédito pela competência da fatura e os
+          diretos pela data, que é exatamente o que o calendário precisa.
+        */
+        transactions={transactions ?? []}
+        banks={banks}
+        isLoading={calendarLoading}
+        isError={calendarError}
+        isFetching={calendarFetching}
+        onRetry={retryCalendar}
+        attentionInvoices={attention.invoices}
+        attentionDebts={attention.debts}
+        attentionDebtsTotal={attention.debtsAll.length}
+        attentionReceivables={attention.receivables}
+        attentionReceivablesTotal={attention.receivablesAll.length}
+        attentionLoading={attentionLoading}
+        attentionError={attentionError}
+        attentionFetching={attentionFetching}
+        onRetryAttention={retryAttention}
+        attentionWindowEnd={attention.windowEnd}
+      />
+
+      {/* Gastos por categoria — segunda superfície nesta rodada (§0/§23/§24). */}
+      <div className="border-t border-border pt-6">
         <CategoryBreakdown
           rows={categoryRows}
           total={ownExpenseTotal}
@@ -1191,51 +1196,6 @@ export default function OverviewPage() {
           onRetry={() => void refetchTx()}
           startDate={startDate}
           endDate={endDate}
-        />
-
-        {/* Mobile separator */}
-        <div className="border-t border-border lg:hidden" aria-hidden />
-
-        <AttentionPanel
-          invoices={attentionInvoices}
-          banks={banks}
-          debts={pendingDebts}
-          debtsTotal={pendingDebtsAll.length}
-          receivables={pendingReceivables}
-          receivablesTotal={pendingReceivablesAll.length}
-          isLoading={attentionLoading}
-          isError={attentionError}
-          isFetching={attentionFetching}
-          onRetry={retryAttention}
-          windowStr={windowStr}
-        />
-      </div>
-
-      {/* Calendar */}
-      <div className="border-t border-border pt-6">
-        {/*
-          `key` por competência: trocar de mês remonta a seção e zera o dia
-          selecionado, sem um efeito chamando `setState` (que dispara render em
-          cascata e mantinha o painel do dia anterior aberto por um frame).
-        */}
-        <CalendarSection
-          key={`${year}-${month}`}
-          year={year}
-          month={month}
-          debts={debts}
-          receivables={receivables}
-          invoices={invoices}
-          /*
-            Reusa a MESMA resposta que alimenta as categorias — nenhuma request
-            nova. A query já traz crédito pela competência da fatura e os
-            diretos pela data, que é exatamente o que o calendário precisa.
-          */
-          transactions={transactions ?? []}
-          banks={banks}
-          isLoading={calendarLoading}
-          isError={calendarError}
-          isFetching={calendarFetching}
-          onRetry={retryCalendar}
         />
       </div>
     </div>

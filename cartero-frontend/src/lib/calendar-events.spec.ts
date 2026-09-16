@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { InvoiceStatus, TransactionType } from '@/types'
-import type { Debt, Invoice, Receivable, Transaction } from '@/types'
-import { buildCalendarEvents, buildInvoiceBreakdown } from './calendar-events'
+import type { Bank, Debt, Invoice, Receivable, Transaction } from '@/types'
+import { buildCalendarEvents, buildInvoiceBreakdown, eventsForDay } from './calendar-events'
+import { selectAttentionInvoices } from './overview-attention'
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -582,5 +583,64 @@ describe('buildInvoiceBreakdown', () => {
     ])
 
     expect(result.size).toBe(0)
+  })
+})
+
+describe('eventsForDay', () => {
+  it('devolve a lista do dia quando existe', () => {
+    const map = build({
+      month: 8,
+      debts: [debt({ id: 'd1', dueDate: '2026-08-15' })],
+    })
+    expect(eventsForDay(map, 15).map((e) => e.id)).toEqual(['debt:d1'])
+  })
+
+  it('devolve lista vazia para dia sem eventos', () => {
+    const map = build({ month: 8 })
+    expect(eventsForDay(map, 15)).toEqual([])
+  })
+
+  it('devolve lista vazia quando day é null (nenhum dia selecionado)', () => {
+    const map = build({ month: 8 })
+    expect(eventsForDay(map, null)).toEqual([])
+  })
+})
+
+describe('O1/O2 (Overview Agenda V1): overdue de mês anterior — calendário vs. atenção agora', () => {
+  const BANKS_MAP = new Map([['b1', 'Nubank']])
+
+  it('O1: fatura vencida em junho não aparece no calendário do mês corrente (setembro)', () => {
+    const juneOverdue = invoice({
+      id: 'i-june',
+      status: InvoiceStatus.OVERDUE,
+      dueDate: '2026-06-15',
+    })
+
+    const septemberMap = buildCalendarEvents({
+      year: 2026,
+      month: 9,
+      debts: [],
+      receivables: [],
+      invoices: [juneOverdue],
+      transactions: [],
+      bankNames: BANKS_MAP,
+    })
+
+    expect([...septemberMap.values()].flat()).toEqual([])
+  })
+
+  it('O2: a mesma fatura continua aparecendo em Atenção agora (current-state, independente do mês)', () => {
+    const juneOverdue = invoice({
+      id: 'i-june',
+      status: InvoiceStatus.OVERDUE,
+      dueDate: '2026-06-15',
+    })
+    const banks: Bank[] = [
+      { id: 'b1', userId: 'u1', name: 'Nubank', invoiceCloseDate: 3, invoiceDueDate: 10 } as Bank,
+    ]
+
+    const result = selectAttentionInvoices([juneOverdue], banks, new Date(2026, 8, 16))
+
+    expect(result.map((i) => i.id)).toEqual(['i-june'])
   })
 })

@@ -291,6 +291,24 @@ export function buildCalendarEvents(
   return map
 }
 
+/**
+ * Eventos de um dia civil específico dentro do mapa já construído.
+ *
+ * Existe para a leitura "eventos deste dia" ter um nome — hoje só
+ * `eventsByDay.get(day) ?? []` inline no componente. É a authority mínima
+ * que o futuro widget "Cartero · Hoje" vai precisar (calendário com o dia
+ * civil atual selecionado): ele não precisa de nada além de "dado um mapa de
+ * eventos do mês e um dia, devolva a lista daquele dia". Não overengineer —
+ * nenhuma noção de "hoje" mora aqui, só indexação por dia.
+ */
+export function eventsForDay(
+  eventsByDay: ReadonlyMap<number, CalEvent[]>,
+  day: number | null,
+): CalEvent[] {
+  if (day === null) return []
+  return eventsByDay.get(day) ?? []
+}
+
 const DEBT_STATUS: Record<'paid' | 'overdue' | 'pending', string> = {
   paid: 'Pago',
   overdue: 'Em atraso',

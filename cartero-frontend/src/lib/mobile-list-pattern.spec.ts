@@ -387,7 +387,9 @@ describe('Chevron unificado', () => {
       e Extrato passaram para o segundo caminho ao adotar `FinancialListRow`.
     */
     // Pessoas entrou no primitive ao ganhar saldo mensal na row.
-    const VIA_PRIMITIVE = ['bancos', 'extrato', 'pessoas']
+    // Overview entrou na Fase Overview Agenda V1: Atenção agora e a lista do
+    // dia no calendário passaram a compartilhar o mesmo primitive de row.
+    const VIA_PRIMITIVE = ['bancos', 'extrato', 'pessoas', 'overview']
 
     for (const [nome, fonte] of Object.entries(TELAS)) {
       const alvo = VIA_PRIMITIVE.includes(nome)
