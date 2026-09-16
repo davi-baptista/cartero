@@ -9,7 +9,7 @@ import {
   deleteInvoiceIfEmpty,
   findOrCreateInvoice,
 } from './invoice.helper';
-import { parseDateOnly } from './date-only.helper';
+import { civilDay, parseDateOnly } from './date-only.helper';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -274,13 +274,6 @@ export function resolveSettlementDate(
   }
 
   return parseDateOnly(informada);
-}
-
-/** `2026-08-24` no dia civil de Fortaleza (UTC-3). */
-function civilDay(date: Date): string {
-  return new Date(date.getTime() - 3 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
 }
 
 /**

@@ -10,6 +10,8 @@ import {
   selectAttentionInvoices,
   selectPendingByDueDate,
 } from './overview-attention'
+import { settlementStatus } from './settlement-status'
+import { formatDateValue } from './date'
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -211,17 +213,38 @@ describe('buildAttentionSelection', () => {
   })
 })
 
-describe('attentionDueUrgency', () => {
-  it('vence ontem: overdue', () => {
+describe('attentionDueUrgency (Temporal Stabilization V1: due-today consistency)', () => {
+  it('F1: vence ontem: overdue', () => {
     expect(attentionDueUrgency('2026-09-15', TODAY)).toBe('overdue')
   })
 
-  it('vence hoje: overdue (diverge de settlementStatus, preservado de propósito)', () => {
-    expect(attentionDueUrgency('2026-09-16', TODAY)).toBe('overdue')
+  it('F2: vence hoje: NÃO overdue (urgent) — alinhado com settlementStatus/Invoice/Debt backend', () => {
+    // Mutation guard: se a implementação reintroduzir `diff <= 0`, este
+    // teste falha — é o teste que deve MATAR a semântica anterior.
+    expect(attentionDueUrgency('2026-09-16', TODAY)).toBe('urgent')
+    expect(attentionDueUrgency('2026-09-16', TODAY)).not.toBe('overdue')
   })
 
-  it('vence amanhã: urgent', () => {
+  it('F3: vence amanhã: urgent (pending/future)', () => {
     expect(attentionDueUrgency('2026-09-17', TODAY)).toBe('urgent')
+  })
+
+  it('F5: mesmo dueDate=hoje não recebe status conflitante entre Attention e Calendar/settlementStatus', () => {
+    // A mesma dívida, mesmo dueDate, hoje: nenhuma das duas authorities pode
+    // classificá-la como "vencida" — settlementStatus (Calendário) e
+    // attentionDueUrgency (Atenção agora) precisam concordar em "não overdue".
+    //
+    // `settlementStatus` não aceita `today` injetável (usa o relógio real da
+    // máquina) — por isso este teste usa o "hoje" de verdade em vez de uma
+    // string fixa, para não depender de coincidência de data.
+    const dueToday = formatDateValue()
+    const calendarStatus = settlementStatus({ isPaid: false, dueDate: dueToday })
+    const attentionUrgency = attentionDueUrgency(dueToday, new Date())
+
+    expect(calendarStatus).toBe('pending')
+    expect(attentionUrgency).toBe('urgent')
+    expect(calendarStatus).not.toBe('overdue')
+    expect(attentionUrgency).not.toBe('overdue')
   })
 })
 

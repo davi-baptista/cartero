@@ -18,12 +18,13 @@ import { formatDateValue, parseDateOnly } from '@/lib/date'
  * da mesma tela. Isso é proposital e continua sendo: uma dívida vencida em
  * junho, vista em setembro, continua aqui.
  *
- * Nota sobre "hoje": a urgência de invoices e a de debts/receivables usam
- * cálculos distintos (herdados do código original) — `attentionDueUrgency`
- * trata "vence hoje" como `overdue`, enquanto `settlementStatus` (usado pelo
- * Calendário) trata o mesmo dia como `pending`. Essa divergência já existia
- * antes desta extração e NÃO foi unificada aqui — é uma decisão de produto
- * em aberto, não um bug desta rodada.
+ * Nota sobre "hoje" (Temporal Stabilization V1): `attentionDueUrgency`
+ * tratava "vence hoje" como `overdue`, divergindo de `settlementStatus`
+ * (Calendário) e das authorities de backend (Invoice, Debt/Receivable),
+ * que sempre trataram o dia do vencimento como AINDA não vencido — há o
+ * dia inteiro para resolver. Essa divergência foi corrigida: agora
+ * `dueDate < today` é a única condição de `overdue`; `dueDate === today`
+ * é `urgent` (mesmo rótulo/cor de "vence em breve", sem taxonomia nova).
  *
  * `today` é injetável em toda função exportada (mesmo padrão de
  * `invoice-timing.ts`) para permitir testes determinísticos; o padrão
@@ -38,10 +39,10 @@ export type AttentionDueUrgency = 'overdue' | 'urgent'
 /**
  * Urgência de prazo para dívidas/recebíveis dentro do painel de atenção.
  *
- * Comparação por `Date` local (fuso do navegador) — mesma implementação que
- * já existia inline em `page.tsx`. Diverge de `settlementStatus` (que usa
- * comparação de string ISO) especificamente no caso "vence hoje": aqui é
- * `overdue`, lá seria `pending`. Preservado de propósito (ver nota do módulo).
+ * Comparação por `Date` local (fuso do navegador). `dueDate < today` é
+ * `overdue`; `dueDate === today` é `urgent` — o dia do vencimento em si
+ * NUNCA é "em atraso" (mesma regra canônica de `settlementStatus`, das
+ * authorities de Invoice e de Debt/Receivable no backend).
  */
 export function attentionDueUrgency(
   dateString: string,
@@ -52,7 +53,7 @@ export function attentionDueUrgency(
   const diff = Math.round(
     (target.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24),
   )
-  return diff <= 0 ? 'overdue' : 'urgent'
+  return diff < 0 ? 'overdue' : 'urgent'
 }
 
 /**
