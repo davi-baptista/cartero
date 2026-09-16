@@ -38,30 +38,37 @@ export class SalaryService {
   async upsert(userId: string, dto: UpsertSalaryDto) {
     const competence = { year: dto.year, month: dto.month };
 
-    const entry = await this.prisma.salaryHistory.upsert({
-      where: {
-        userId_year_month: {
+    const [entry, { timeZone }] = await Promise.all([
+      this.prisma.salaryHistory.upsert({
+        where: {
+          userId_year_month: {
+            userId,
+            year: dto.year,
+            month: dto.month,
+          },
+        },
+        create: {
           userId,
           year: dto.year,
           month: dto.month,
+          amount: dto.amount,
         },
-      },
-      create: {
-        userId,
-        year: dto.year,
-        month: dto.month,
-        amount: dto.amount,
-      },
-      update: { amount: dto.amount },
-    });
+        update: { amount: dto.amount },
+      }),
+      // TZ2: única leitura pontual, paralela ao upsert.
+      this.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { timeZone: true },
+      }),
+    ]);
 
-    await this.syncCurrentSalaryCache(userId);
+    await this.syncCurrentSalaryCache(userId, timeZone);
 
     return {
       amount: Number(entry.amount),
       effectiveFrom: competence,
       /** A renda que passa a valer HOJE depois desta alteração. */
-      currentSalary: await this.resolve(userId, currentCompetence()),
+      currentSalary: await this.resolve(userId, currentCompetence(new Date(), timeZone)),
     };
   }
 
@@ -112,14 +119,21 @@ export class SalaryService {
       Um `findFirst` seguido de `update` por id abriria janela entre a checagem
       e a escrita, além de uma segunda consulta.
     */
-    const { count } = await this.prisma.salaryHistory.updateMany({
-      where: {
-        userId,
-        year: competence.year,
-        month: competence.month,
-      },
-      data: { amount },
-    });
+    const [{ count }, { timeZone }] = await Promise.all([
+      this.prisma.salaryHistory.updateMany({
+        where: {
+          userId,
+          year: competence.year,
+          month: competence.month,
+        },
+        data: { amount },
+      }),
+      // TZ2: única leitura pontual, paralela ao updateMany.
+      this.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { timeZone: true },
+      }),
+    ]);
 
     if (count === 0) {
       throw new NotFoundException({
@@ -128,14 +142,14 @@ export class SalaryService {
       });
     }
 
-    await this.syncCurrentSalaryCache(userId);
+    await this.syncCurrentSalaryCache(userId, timeZone);
 
     return {
       year: competence.year,
       month: competence.month,
       amount,
       /** A renda que passa a valer HOJE depois da correção. */
-      currentSalary: await this.resolve(userId, currentCompetence()),
+      currentSalary: await this.resolve(userId, currentCompetence(new Date(), timeZone)),
     };
   }
 
@@ -150,8 +164,11 @@ export class SalaryService {
    * Exemplo: histórico tem ago=5000; o usuário cadastra out=5500. O cache
    * continua 5000, porque em outubro o resolver já devolverá 5500 sozinho.
    */
-  private async syncCurrentSalaryCache(userId: string): Promise<void> {
-    const current = await this.resolve(userId, currentCompetence());
+  private async syncCurrentSalaryCache(
+    userId: string,
+    timeZone: string | null,
+  ): Promise<void> {
+    const current = await this.resolve(userId, currentCompetence(new Date(), timeZone));
 
     await this.prisma.user.update({
       where: { id: userId },

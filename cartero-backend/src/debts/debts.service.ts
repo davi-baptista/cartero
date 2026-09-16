@@ -137,9 +137,14 @@ export class DebtsService {
     }
 
     const markingAsPaid = dto.isPaid === true;
+    /*
+      TZ2: `timeZone` vem de graça desta mesma consulta — sem query
+      adicional. `select` já buscava `createExpenseOnDebtPaid`; adicionar um
+      campo não muda o número de idas ao banco.
+    */
     const userPreferences = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { createExpenseOnDebtPaid: true },
+      select: { createExpenseOnDebtPaid: true, timeZone: true },
     });
     const shouldCreatePaymentTransaction =
       markingAsPaid && userPreferences.createExpenseOnDebtPaid;
@@ -222,7 +227,11 @@ export class DebtsService {
           */
           const paidAt =
             dto.isPaid === true && !debt.isPaid
-              ? resolveSettlementDate(dto.paymentDate)
+              ? resolveSettlementDate(
+                  dto.paymentDate,
+                  new Date(),
+                  userPreferences.timeZone,
+                )
               : dto.isPaid === false && debt.isPaid
                 ? null
                 : undefined;
@@ -406,7 +415,15 @@ export class DebtsService {
    * e não podem divergir nem por um instante.
    */
   async updateSettlementDate(id: string, userId: string, paidAt: string) {
-    const data = resolveSettlementDate(paidAt);
+    /*
+      TZ2: única leitura pontual — este método não tinha nenhuma consulta de
+      `User` para reaproveitar (ao contrário de `update`, acima).
+    */
+    const { timeZone } = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { timeZone: true },
+    });
+    const data = resolveSettlementDate(paidAt, new Date(), timeZone);
 
     await this.prisma.$transaction(async (tx) => {
       await correctSettlementDate(tx, {

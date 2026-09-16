@@ -65,7 +65,10 @@ function buildPrisma(universe: {
   const seen = { debtWhere: [] as any[], receivableWhere: [] as any[] };
 
   const prisma: any = {
-    user: { update: vi.fn() },
+    user: {
+      update: vi.fn(),
+      findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })),
+    },
     invoice: { findMany: vi.fn(async () => []) },
     transaction: {
       findMany: vi.fn(async () => []),

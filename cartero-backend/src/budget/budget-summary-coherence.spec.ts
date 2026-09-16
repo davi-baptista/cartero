@@ -102,7 +102,7 @@ function buildService(setup: {
 
   const prisma: any = {
     salaryHistory: { findFirst: vi.fn(async () => null) },
-    user: { findUnique: vi.fn(async () => ({})), update: vi.fn() },
+    user: { findUnique: vi.fn(async () => ({})), findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })), update: vi.fn() },
     invoice: {
       findMany: vi.fn(async ({ where }: any) =>
         routeInvoiceQuery(

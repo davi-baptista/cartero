@@ -1,3 +1,8 @@
+import {
+  financialCivilDay,
+  financialCompetence,
+} from './financial-timezone.helper';
+
 /**
  * ══════════════════════════════════════════════════════════════════════════
  * Competência de acerto com uma pessoa
@@ -101,17 +106,25 @@ export type DueState = 'overdue' | 'dueToday' | 'pending';
  * Depende só do vencimento contra hoje — `selected` não participa mais, e
  * permanece na assinatura para não quebrar os chamadores.
  *
- * O dia é CIVIL (America/Fortaleza): no próprio dia do vencimento o item
- * ainda não está atrasado, há o dia inteiro para resolvê-lo. O ano faz parte
- * da comparação, então out/2025 e out/2026 nunca colidem.
+ * O dia é CIVIL: no próprio dia do vencimento o item ainda não está
+ * atrasado, há o dia inteiro para resolvê-lo. O ano faz parte da
+ * comparação, então out/2025 e out/2026 nunca colidem.
+ *
+ * `timeZone` (TZ2): `null` preserva a authority LEGADA (Fortaleza fixa) para
+ * decidir "hoje" — o comportamento exato de toda conta anterior ao TZ1/TZ2.
+ * `item.dueDate` é SEMPRE lido pela authority legada (`competenceKeyWithDay`),
+ * nunca pela timezone da conta: é uma data armazenada (ancorada na escrita),
+ * não um instante para reinterpretar — ler o mesmo `dueDate` sob outro fuso
+ * mudaria o dia do vencimento sem o vencimento ter mudado.
  */
 export function dueStateOf(
   item: SettleableItem,
   selected: SettlementCompetence,
   today: Date = new Date(),
+  timeZone: string | null = null,
 ): DueState {
   const dueDay = competenceKeyWithDay(item.dueDate);
-  const todayDay = competenceKeyWithDay(today);
+  const todayDay = accountToday(today, timeZone);
 
   void selected;
 
@@ -120,10 +133,22 @@ export function dueStateOf(
   return 'pending';
 }
 
-/** `2026-08-21` em horário civil — comparação lexicográfica = cronológica. */
+/** `2026-08-21` em horário civil de Fortaleza — comparação lexicográfica = cronológica. */
 function competenceKeyWithDay(date: Date): string {
   const local = new Date(date.getTime() - 3 * 60 * 60 * 1000);
   return local.toISOString().slice(0, 10);
+}
+
+/**
+ * "Hoje" (dia civil) para o drawer de Pessoa — TZ2.
+ *
+ * `timeZone === null` é a authority legada (`competenceKeyWithDay`,
+ * Fortaleza fixa). `timeZone !== null` usa `financialCivilDay` (TZ2).
+ */
+function accountToday(now: Date, timeZone: string | null): string {
+  return timeZone === null
+    ? competenceKeyWithDay(now)
+    : financialCivilDay(now, timeZone);
 }
 
 /**
@@ -150,6 +175,7 @@ export function belongsToCompetence(
   item: SettleableItem,
   selected: SettlementCompetence,
   today: Date = new Date(),
+  timeZone: string | null = null,
 ): boolean {
   if (item.isPaid) return false;
 
@@ -161,7 +187,7 @@ export function belongsToCompetence(
 
   // B. Carry: de competência anterior e JÁ vencido hoje.
   if (posicao < 0) {
-    return competenceKeyWithDay(item.dueDate) < competenceKeyWithDay(today);
+    return competenceKeyWithDay(item.dueDate) < accountToday(today, timeZone);
   }
 
   return false;
@@ -178,11 +204,18 @@ export function belongsToCompetence(
  *
  * A rota tem prioridade sobre isto: quando a URL informa uma competência
  * válida, ela vence, e navegação manual nunca sofre snap-back.
+ *
+ * `timeZone` (TZ2): `null` preserva `competenceOf` (Fortaleza fixa) —
+ * comportamento legado exato.
  */
 export function resolveDefaultCompetence(
   today: Date = new Date(),
+  timeZone: string | null = null,
 ): SettlementCompetence {
-  return competenceOf(today);
+  if (timeZone === null) return competenceOf(today);
+
+  const { year, month } = financialCompetence(today, timeZone);
+  return { year, month };
 }
 
 /**

@@ -3,6 +3,10 @@ import { TransactionType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SalaryService } from 'src/salary/salary.service';
 import { civilDay } from 'src/common/helpers/date-only.helper';
+import {
+  financialCivilDay,
+  financialCompetence,
+} from 'src/common/helpers/financial-timezone.helper';
 import { resolveContribution } from 'src/common/helpers/budget-contribution.helper';
 import {
   classifyDebtForBudget,
@@ -19,7 +23,21 @@ const DIRECT_PAYMENT_TYPES: TransactionType[] = [
   TransactionType.BOLETO,
 ];
 
-/** O item em aberto já está VENCIDO hoje? Dia civil de Fortaleza. */
+/**
+ * "Hoje" (dia civil) para fins de Orçamento — TZ2.
+ *
+ * `timeZone === null` é a authority LEGADA (`civilDay`, Fortaleza fixo) —
+ * o comportamento observável de toda conta criada antes do TZ1, e de
+ * qualquer conta que ainda não configurou uma timezone financeira. Isso não
+ * é um fallback de conveniência: é a regra exata que já existia,
+ * preservada byte a byte, porque nenhuma conta legada pode notar diferença.
+ *
+ * `timeZone !== null` usa `financialCivilDay` (TZ2), a nova authority IANA.
+ */
+function budgetToday(now: Date, timeZone: string | null): string {
+  return timeZone === null ? civilDay(now) : financialCivilDay(now, timeZone);
+}
+
 /**
  * O mais próximo entre dois vencimentos.
  *
@@ -72,9 +90,19 @@ function nextOpenItem(
     : { direction, dueDate: civilDay(escolhido) };
 }
 
+/**
+ * `dueDate` é lido pela authority de CIVIL DATE (`civilDay`), sempre — nunca
+ * pela timezone da conta. Ele já é uma data armazenada (ancorada a 3h UTC na
+ * escrita, ver `date-only.helper.ts`), não um instante para reinterpretar: ler
+ * o MESMO `dueDate` sob `America/Fortaleza` ou sob `Asia/Tokyo` mudaria o dia
+ * que a conta vê, mesmo sem o vencimento ter mudado. Só `now` — o "hoje" de
+ * verdade — usa a authority de conta (TZ2, via `budgetToday`) quando
+ * `timeZone !== null`.
+ */
 function isOverdueToday(
   dueDate: Date | null | undefined,
   now: Date = new Date(),
+  timeZone: string | null = null,
 ): boolean {
   /*
     Sem vencimento não há atraso a afirmar. A coluna é obrigatória no schema,
@@ -83,7 +111,7 @@ function isOverdueToday(
   */
   if (!dueDate) return false;
 
-  return civilDay(dueDate) < civilDay(now);
+  return civilDay(dueDate) < budgetToday(now, timeZone);
 }
 
 /**
@@ -97,8 +125,11 @@ function isOverdueToday(
  * outra decide se o ícone fica vermelho. Definições temporais diferentes para
  * a mesma pergunta é como o carry futuro nasceu.
  */
-function overdueBound(now: Date = new Date()): Date {
-  return new Date(`${civilDay(now)}T00:00:00.000Z`);
+function overdueBound(
+  now: Date = new Date(),
+  timeZone: string | null = null,
+): Date {
+  return new Date(`${budgetToday(now, timeZone)}T00:00:00.000Z`);
 }
 
 /** Campos que as consultas de pendência anterior precisam. */
@@ -138,16 +169,28 @@ const PRIOR_DEBT_SELECT = {
  * O fuso é explícito porque o servidor roda em UTC: em 31/08 às 22h de
  * Fortaleza já é 01/09 em UTC, e `getUTCMonth()` diria setembro — o carry
  * sumiria da tela um dia antes da hora.
+ *
+ * `timeZone === null` preserva essa aritmética Fortaleza-fixa exatamente como
+ * estava (nenhuma conta legada pode notar diferença). `timeZone !== null` usa
+ * `financialCompetence` (TZ2), resolvendo a competência pela timezone real da
+ * conta em vez de assumir Fortaleza para todo mundo.
  */
 function isCurrentCompetence(
   year: number,
   month: number,
   now: Date = new Date(),
+  timeZone: string | null = null,
 ): boolean {
-  const fortaleza = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-  return (
-    fortaleza.getUTCFullYear() === year && fortaleza.getUTCMonth() + 1 === month
-  );
+  if (timeZone === null) {
+    const fortaleza = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+    return (
+      fortaleza.getUTCFullYear() === year &&
+      fortaleza.getUTCMonth() + 1 === month
+    );
+  }
+
+  const current = financialCompetence(now, timeZone);
+  return current.year === year && current.month === month;
 }
 
 /** Dívida não tem status próprio: sai de `isPaid` + `dueDate`. */
@@ -161,6 +204,19 @@ export class BudgetService {
   ) {}
 
   async getBudget(userId: string, month: number, year: number) {
+    /*
+      TZ2: uma única leitura pontual de `User.timeZone`, paralela às demais
+      consultas já feitas por esta chamada — não uma query nova por outro
+      domínio, e não uma busca do `User` inteiro. `null` (conta legada ou
+      sem timezone configurada) é o valor que preserva toda a aritmética
+      anterior a este ponto, através dos parâmetros `timeZone: string | null`
+      que `isCurrentCompetence`/`overdueBound`/`isOverdueToday` já aceitam.
+    */
+    const { timeZone } = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { timeZone: true },
+    });
+
     // O mês/ano da fatura já representa o mês de vencimento, então o recorte
     // por competência de pagamento é o próprio período da invoice. Para os
     // demais lançamentos, o recorte é a data em que o dinheiro saiu.
@@ -171,7 +227,7 @@ export class BudgetService {
       Pendência anterior aberta acompanha o PRESENTE, não cada snapshot.
       Fora do mês corrente a consulta nem é feita.
     */
-    const isCurrentMonth = isCurrentCompetence(year, month);
+    const isCurrentMonth = isCurrentCompetence(year, month, new Date(), timeZone);
 
     /*
       Limite das pendências ANTERIORES em aberto de "Acertos com pessoas".
@@ -181,7 +237,7 @@ export class BudgetService {
       está no prazo, e projetar esse atraso afirmaria um fato que não
       aconteceu. Para meses passados o limite continua sendo `monthStart`.
     */
-    const overdueLimit = overdueBound();
+    const overdueLimit = overdueBound(new Date(), timeZone);
     const priorOpenLimit =
       overdueLimit < monthStart ? overdueLimit : monthStart;
 
@@ -1051,7 +1107,7 @@ export class BudgetService {
       entry.openReceivableInMonth += amount;
       entry.budgetReceivableAmount += amount;
       entry.openItemCount += 1;
-      if (isOverdueToday(receivable.dueDate)) entry.openHasOverdue = true;
+      if (isOverdueToday(receivable.dueDate, new Date(), timeZone)) entry.openHasOverdue = true;
       entry.openNextReceivableDue = menorData(
         entry.openNextReceivableDue,
         receivable.dueDate,
@@ -1067,7 +1123,7 @@ export class BudgetService {
       );
       entry.openDebtInMonth += Number(debt.amount);
       entry.openItemCount += 1;
-      if (isOverdueToday(debt.dueDate)) entry.openHasOverdue = true;
+      if (isOverdueToday(debt.dueDate, new Date(), timeZone)) entry.openHasOverdue = true;
       entry.openNextDebtDue = menorData(entry.openNextDebtDue, debt.dueDate);
     }
 
@@ -1081,7 +1137,7 @@ export class BudgetService {
       entry.openPriorReceivable += amount;
       entry.budgetReceivableAmount += amount;
       entry.openItemCount += 1;
-      if (isOverdueToday(receivable.dueDate)) entry.openHasOverdue = true;
+      if (isOverdueToday(receivable.dueDate, new Date(), timeZone)) entry.openHasOverdue = true;
       /*
         Pendência anterior entra no MESMO mínimo: a regra do Budget já carrega
         o atraso de meses passados, e um item vencido em agosto é o evento mais
@@ -1102,7 +1158,7 @@ export class BudgetService {
       );
       entry.openPriorDebt += Number(debt.amount);
       entry.openItemCount += 1;
-      if (isOverdueToday(debt.dueDate)) entry.openHasOverdue = true;
+      if (isOverdueToday(debt.dueDate, new Date(), timeZone)) entry.openHasOverdue = true;
       entry.openNextDebtDue = menorData(entry.openNextDebtDue, debt.dueDate);
     }
 

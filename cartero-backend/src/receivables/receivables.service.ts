@@ -175,9 +175,13 @@ export class ReceivablesService {
     }
 
     const markingAsReceived = dto.isPaid === true;
+    /*
+      TZ2: `timeZone` vem de graça desta mesma consulta — sem query
+      adicional (mesmo padrão de `DebtsService.update`).
+    */
     const userPreferences = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { createIncomeOnReceivablePaid: true },
+      select: { createIncomeOnReceivablePaid: true, timeZone: true },
     });
     const shouldCreatePaymentTransaction =
       markingAsReceived && userPreferences.createIncomeOnReceivablePaid;
@@ -230,7 +234,11 @@ export class ReceivablesService {
         for (const receivable of receivablesToUpdate) {
           const paidAt =
             dto.isPaid === true && !receivable.isPaid
-              ? resolveSettlementDate(paymentDate)
+              ? resolveSettlementDate(
+                  paymentDate,
+                  new Date(),
+                  userPreferences.timeZone,
+                )
               : dto.isPaid === false && receivable.isPaid
                 ? null
                 : undefined;
@@ -460,7 +468,15 @@ export class ReceivablesService {
    * e não podem divergir nem por um instante.
    */
   async updateSettlementDate(id: string, userId: string, paidAt: string) {
-    const data = resolveSettlementDate(paidAt);
+    /*
+      TZ2: única leitura pontual — este método não tinha nenhuma consulta de
+      `User` para reaproveitar (ao contrário de `update`, acima).
+    */
+    const { timeZone } = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { timeZone: true },
+    });
+    const data = resolveSettlementDate(paidAt, new Date(), timeZone);
 
     await this.prisma.$transaction(async (tx) => {
       await correctSettlementDate(tx, {

@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { financialCompetence } from './financial-timezone.helper';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -90,7 +91,7 @@ export async function resolveSalaryForMonth(
 }
 
 /**
- * `true` quando a competência é o mês corrente em Fortaleza.
+ * `true` quando a competência é o mês corrente.
  *
  * Decide se `User.salary` — o cache de "renda de hoje" — deve acompanhar a
  * alteração. Corrigir um mês passado ou agendar um aumento futuro não pode
@@ -98,17 +99,33 @@ export async function resolveSalaryForMonth(
  *
  * O fuso é explícito porque o servidor roda em UTC: em 31/08 às 22h de
  * Fortaleza já é 01/09 em UTC, e `new Date().getMonth()` diria setembro.
+ *
+ * `timeZone` (TZ2): `null` preserva `currentCompetence` (Fortaleza fixa) —
+ * comportamento legado exato, para toda conta anterior ao TZ1/TZ2.
  */
 export function isCurrentCompetence(
   competence: SalaryCompetence,
   now: Date = new Date(),
+  timeZone: string | null = null,
 ): boolean {
-  const current = currentCompetence(now);
+  const current = currentCompetence(now, timeZone);
   return competence.year === current.year && competence.month === current.month;
 }
 
-/** Competência do mês corrente em America/Fortaleza (UTC-3). */
-export function currentCompetence(now: Date = new Date()): SalaryCompetence {
+/**
+ * Competência do mês corrente.
+ *
+ * `timeZone === null` é a authority LEGADA (Fortaleza fixa) — o
+ * comportamento exato de toda conta anterior ao TZ1/TZ2.
+ * `timeZone !== null` usa `financialCompetence` (TZ2), resolvendo pela
+ * timezone real da conta.
+ */
+export function currentCompetence(
+  now: Date = new Date(),
+  timeZone: string | null = null,
+): SalaryCompetence {
+  if (timeZone !== null) return financialCompetence(now, timeZone);
+
   const fortaleza = new Date(now.getTime() - 3 * 60 * 60 * 1000);
   return {
     year: fortaleza.getUTCFullYear(),

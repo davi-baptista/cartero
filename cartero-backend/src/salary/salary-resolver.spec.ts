@@ -89,6 +89,7 @@ function buildHarness(entries: Entry[] = []) {
         writes.push({ kind: 'cache', salary: data.salary });
         return {};
       }),
+      findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })),
     },
   };
 

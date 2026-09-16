@@ -108,7 +108,7 @@ export class PersonsService {
    * justamente quem está em dia.
    */
   async monthlySummary(userId: string, competence: SettlementCompetence) {
-    const [persons, debts, receivables] = await Promise.all([
+    const [persons, debts, receivables, { timeZone }] = await Promise.all([
       this.prisma.person.findMany({ where: { userId } }),
       /*
         SEM `isPaid: false`.
@@ -128,6 +128,11 @@ export class PersonsService {
       this.prisma.receivable.findMany({
         where: { userId, personId: { not: null } },
         include: { transaction: { select: { date: true } } },
+      }),
+      // TZ2: única leitura pontual de timeZone, paralela às demais.
+      this.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { timeZone: true },
       }),
     ]);
 
@@ -175,7 +180,7 @@ export class PersonsService {
       const bucket = porPessoa.get(debt.personId!);
       if (!bucket) continue;
 
-      if (belongsToCompetence(debt, competence)) bucket.debts.push(debt);
+      if (belongsToCompetence(debt, competence, new Date(), timeZone)) bucket.debts.push(debt);
       else if (belongsToHistoryCompetence(debt, competence)) {
         bucket.settledDebts.push(debt);
       }
@@ -185,7 +190,7 @@ export class PersonsService {
       const bucket = porPessoa.get(receivable.personId!);
       if (!bucket) continue;
 
-      if (belongsToCompetence(receivable, competence)) {
+      if (belongsToCompetence(receivable, competence, new Date(), timeZone)) {
         bucket.receivables.push(receivable);
       } else if (belongsToHistoryCompetence(receivable, competence)) {
         bucket.settledReceivables.push(receivable);
@@ -331,6 +336,8 @@ export class PersonsService {
           select: {
             createIncomeOnReceivablePaid: true,
             createExpenseOnDebtPaid: true,
+            // TZ2: já é a mesma consulta — sem query adicional.
+            timeZone: true,
           },
         }),
       ]);
@@ -349,10 +356,14 @@ export class PersonsService {
         dto.year && dto.month ? { year: dto.year, month: dto.month } : null;
 
       const debts = competence
-        ? allDebts.filter((item) => belongsToCompetence(item, competence))
+        ? allDebts.filter((item) =>
+            belongsToCompetence(item, competence, new Date(), user.timeZone),
+          )
         : allDebts;
       const receivables = competence
-        ? allReceivables.filter((item) => belongsToCompetence(item, competence))
+        ? allReceivables.filter((item) =>
+            belongsToCompetence(item, competence, new Date(), user.timeZone),
+          )
         : allReceivables;
 
       const summary = buildPersonSummary(receivables, debts);
@@ -360,7 +371,11 @@ export class PersonsService {
         Uma data para o LOTE inteiro: "acertamos tudo nesta data". Itens
         pagos em datas diferentes se corrigem individualmente depois.
       */
-      const paidAt = resolveSettlementDate(dto.paymentDate);
+      const paidAt = resolveSettlementDate(
+        dto.paymentDate,
+        new Date(),
+        user.timeZone,
+      );
 
       const createsExpense = debts.length > 0 && user.createExpenseOnDebtPaid;
       const createsIncome =
@@ -526,9 +541,14 @@ export class PersonsService {
       isPaid: true,
     };
 
-    // Quatro queries em paralelo, sem N+1: nada é buscado por item.
-    const [pendingDebts, pendingReceivables, historyDebts, historyReceivables] =
-      await Promise.all([
+    // Cinco queries em paralelo, sem N+1: nada é buscado por item.
+    const [
+      pendingDebts,
+      pendingReceivables,
+      historyDebts,
+      historyReceivables,
+      { timeZone },
+    ] = await Promise.all([
         this.prisma.debt.findMany({
           where: pendingWhere,
           orderBy: PENDING_ORDER,
@@ -565,6 +585,11 @@ export class PersonsService {
             recebível automático no mês errado, em silêncio.
           */
           include: { transaction: { select: { date: true } } },
+        }),
+        // TZ2: única leitura pontual de timeZone, paralela às demais.
+        this.prisma.user.findUniqueOrThrow({
+          where: { id: userId },
+          select: { timeZone: true },
         }),
       ]);
 
@@ -642,7 +667,7 @@ export class PersonsService {
        * prioridade sobre ele quando informa uma competência válida.
        */
       settlement: {
-        defaultCompetence: resolveDefaultCompetence(new Date()),
+        defaultCompetence: resolveDefaultCompetence(new Date(), timeZone),
         receivables: pendingReceivables.map((item) => ({
           ...item,
           referenceMonth: referenceMonthOf(item),

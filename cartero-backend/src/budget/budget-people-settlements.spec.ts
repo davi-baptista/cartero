@@ -128,7 +128,7 @@ function isPriorWindow(where: any): boolean {
 function buildService(setup: Setup) {
   const prisma: any = {
     salaryHistory: { findFirst: vi.fn(async () => null) },
-    user: { findUnique: vi.fn(async () => ({})), update: vi.fn() },
+    user: { findUnique: vi.fn(async () => ({})), findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })), update: vi.fn() },
     invoice: {
       /* Honra o `where`: competência exibida vs. fila viva de atrasadas. */
       findMany: vi.fn(async ({ where }: any) =>
@@ -887,7 +887,7 @@ describe('Em aberto: os dois universos não se contaminam', () => {
     */
     const prisma: any = {
       salaryHistory: { findFirst: vi.fn(async () => null) },
-      user: { findUnique: vi.fn(async () => ({})), update: vi.fn() },
+      user: { findUnique: vi.fn(async () => ({})), findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })), update: vi.fn() },
       invoice: { findMany: vi.fn(async () => []) },
       transaction: {
         findMany: vi.fn(async () => []),

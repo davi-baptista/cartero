@@ -84,7 +84,7 @@ function buildService(setup: {
 
   const prisma: any = {
     salaryHistory: { findFirst: vi.fn(async () => null) },
-    user: { findUnique: vi.fn(async () => ({})), update: vi.fn() },
+    user: { findUnique: vi.fn(async () => ({})), findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })), update: vi.fn() },
     invoice: {
       /* Honra o `where`: competência exibida vs. fila viva de atrasadas. */
       findMany: vi.fn(async ({ where }: any) =>

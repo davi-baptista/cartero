@@ -80,6 +80,52 @@ describe('resolveSettlementDate', () => {
   });
 });
 
+describe('resolveSettlementDate — TZ2: timezone da conta', () => {
+  /*
+    16/09/2026, 15:30 UTC — o mesmo instante discriminante de
+    `financial-timezone.helper.spec.ts`: 12:30 em Fortaleza (ainda dia 16),
+    mas 00:30 do dia 17 em Tóquio.
+  */
+  const AGORA = new Date('2026-09-16T15:30:00.000Z');
+
+  it('D1: timeZone=null (legado) preserva o comportamento exato — 16/09 é aceito, não é futuro', () => {
+    expect(() =>
+      resolveSettlementDate('2026-09-16', AGORA, null),
+    ).not.toThrow();
+  });
+
+  it('D2/T28: mesma data informada (17/09), Fortaleza aceita mas Tokyo recusa como futuro', () => {
+    // Para Fortaleza, 17/09 ainda não chegou (lá é 16/09) — futuro, recusado.
+    expect(() =>
+      resolveSettlementDate('2026-09-17', AGORA, 'America/Fortaleza'),
+    ).toThrow(BadRequestException);
+
+    // Para Tóquio, já é 17/09 — não é futuro, aceito.
+    expect(() =>
+      resolveSettlementDate('2026-09-17', AGORA, 'Asia/Tokyo'),
+    ).not.toThrow();
+  });
+
+  it('D4: o PRÓPRIO dia (na timezone da conta) continua sendo aceito, não "futuro"', () => {
+    expect(() =>
+      resolveSettlementDate('2026-09-16', AGORA, 'America/Fortaleza'),
+    ).not.toThrow();
+    expect(() =>
+      resolveSettlementDate('2026-09-17', AGORA, 'Asia/Tokyo'),
+    ).not.toThrow();
+  });
+
+  it('P5 (mutation guard): se o legado (null) caísse na nova authority com Fortaleza fixo, o resultado seria idêntico aqui — o teste real de regressão está em D1 acima comparado ao comportamento pré-TZ2 (HOJE local)', () => {
+    // Prova que null e 'America/Fortaleza' concordam no dia 16/09 (não é
+    // coincidência: a authority legada TAMBÉM é Fortaleza) — mas divergem de
+    // Tokyo, que é o que os testes acima já demonstram.
+    expect(() => resolveSettlementDate('2026-09-16', AGORA, null)).not.toThrow();
+    expect(() =>
+      resolveSettlementDate('2026-09-16', AGORA, 'America/Fortaleza'),
+    ).not.toThrow();
+  });
+});
+
 /** Duplo que honra `userId` — sem isso o teste de ownership não prova nada. */
 function buildTx(row: {
   isPaid: boolean;

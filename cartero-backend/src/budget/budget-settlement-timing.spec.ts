@@ -82,7 +82,7 @@ function buildService(setup: { receivables?: Item[]; debts?: Item[] }) {
 
   const prisma: any = {
     salaryHistory: { findFirst: vi.fn(async () => null) },
-    user: { findUnique: vi.fn(async () => ({})), update: vi.fn() },
+    user: { findUnique: vi.fn(async () => ({})), findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })), update: vi.fn() },
     invoice: { findMany: vi.fn(async () => []) },
     transaction: {
       findMany: vi.fn(async () => []),
@@ -455,7 +455,7 @@ describe('civil time de Fortaleza', () => {
     const dia = (v: string) => new Date(`${v}T12:00:00.000Z`);
     const prisma: any = {
       salaryHistory: { findFirst: vi.fn(async () => null) },
-      user: { findUnique: vi.fn(async () => ({})), update: vi.fn() },
+      user: { findUnique: vi.fn(async () => ({})), findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })), update: vi.fn() },
       invoice: { findMany: vi.fn(async () => []) },
       transaction: {
         findMany: vi.fn(async () => []),

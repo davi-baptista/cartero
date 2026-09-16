@@ -10,6 +10,7 @@ import {
   findOrCreateInvoice,
 } from './invoice.helper';
 import { civilDay, parseDateOnly } from './date-only.helper';
+import { financialCivilDay } from './financial-timezone.helper';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -249,13 +250,20 @@ export async function removeSettlementTransaction(
  * não aconteceu, e o Budget passaria a reconstruir meses futuros com uma
  * quitação inexistente.
  *
- * A comparação é por dia CIVIL de Fortaleza (UTC-3) — o servidor roda em UTC,
- * e às 22h de 24/08 em Fortaleza já é 25/08 em UTC. Comparar instantes
- * recusaria uma data legítima na virada do dia.
+ * A comparação é por dia CIVIL — o servidor roda em UTC, e às 22h de 24/08
+ * em Fortaleza já é 25/08 em UTC. Comparar instantes recusaria uma data
+ * legítima na virada do dia.
+ *
+ * `timeZone` (TZ2): `null` preserva a authority LEGADA (`civilDay`,
+ * Fortaleza fixo) — o comportamento exato de toda conta criada antes do
+ * TZ1/TZ2. Uma conta com `User.timeZone` configurada usa `financialCivilDay`
+ * para decidir "hoje" pela timezone real dela, então "pagamento no futuro"
+ * passa a significar futuro NA CONTA, não futuro em Fortaleza.
  */
 export function resolveSettlementDate(
   value: string | undefined,
   now: Date = new Date(),
+  timeZone: string | null = null,
 ): Date {
   /*
     Sem data explícita, HOJE — mantém funcionando o consumidor que ainda não
@@ -264,7 +272,7 @@ export function resolveSettlementDate(
   if (!value) return now;
 
   const informada = value.slice(0, 10);
-  const hoje = civilDay(now);
+  const hoje = timeZone === null ? civilDay(now) : financialCivilDay(now, timeZone);
 
   if (informada > hoje) {
     throw new BadRequestException({

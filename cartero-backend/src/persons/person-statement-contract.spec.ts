@@ -107,6 +107,9 @@ function buildHarness(setup: Setup = {}) {
           : (setup.settledReceivables ?? []);
       }),
     },
+    user: {
+      findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })),
+    },
   };
 
   const validation = new EntityValidationService(prisma as PrismaService);

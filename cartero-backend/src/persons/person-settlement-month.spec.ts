@@ -436,3 +436,96 @@ describe('belongsToHistoryCompetence — arquivo por dueMonth', () => {
     );
   });
 });
+
+describe('TZ2: belongsToCompetence/resolveDefaultCompetence respeitam a timezone da conta', () => {
+  /*
+    16/09/2026, 15:30 UTC — o mesmo instante discriminante usado em
+    `financial-timezone.helper.spec.ts` e `budget-account-timezone.spec.ts`:
+    12:30 em Fortaleza (ainda dia 16), 00:30 do dia 17 em Tóquio.
+  */
+  const AGORA = new Date('2026-09-16T15:30:00.000Z');
+  const SETEMBRO = { year: 2026, month: 9 };
+
+  it('D1: legacy null preserva o baseline (dívida de agosto, vencida, entra no carry de setembro)', () => {
+    const item: SettleableItem = {
+      id: 'd1',
+      dueDate: civil(2026, 8, 20),
+      isPaid: false,
+    };
+
+    expect(belongsToCompetence(item, SETEMBRO, AGORA, null)).toBe(true);
+  });
+
+  it('D2/T28: mesmo item, mesmo instante — Fortaleza e Tokyo concordam quando ambas já passaram do vencimento', () => {
+    const item: SettleableItem = {
+      id: 'd1',
+      dueDate: civil(2026, 8, 20),
+      isPaid: false,
+    };
+
+    expect(
+      belongsToCompetence(item, SETEMBRO, AGORA, 'America/Fortaleza'),
+    ).toBe(true);
+    expect(belongsToCompetence(item, SETEMBRO, AGORA, 'Asia/Tokyo')).toBe(
+      true,
+    );
+  });
+
+  it('T28 (boundary genuíno): item de 31/08 — Fortaleza ainda NÃO o considera carry, Tokyo já considera', () => {
+    /*
+      dueDate ancorado a 31/08 (3h UTC = meia-noite Fortaleza). `today` =
+      2026-09-01T02:00:00Z: em Fortaleza ainda são 31/08 23h (dia civil
+      ainda 31/08 — o item NÃO é "anterior a hoje"); em Tóquio já é 01/09
+      11h (dia civil já 01/09 — o item É "anterior a hoje", vira carry).
+      Isso é o teste que de fato falha se `accountToday` ignorar
+      `timeZone` e sempre usar Fortaleza (diferente do teste acima, cujo
+      item já estava vencido há muito tempo em qualquer fuso razoável).
+    */
+    const item: SettleableItem = {
+      id: 'd1',
+      dueDate: new Date(Date.UTC(2026, 7, 31, 3)),
+      isPaid: false,
+    };
+    const boundary = new Date('2026-09-01T02:00:00.000Z');
+
+    expect(
+      belongsToCompetence(item, SETEMBRO, boundary, 'America/Fortaleza'),
+    ).toBe(false);
+    expect(
+      belongsToCompetence(item, SETEMBRO, boundary, 'Asia/Tokyo'),
+    ).toBe(true);
+  });
+
+  it('D4: vencimento de HOJE (16/09) não é tratado como carry — pertence ao próprio mês por vencer nele, não por atraso', () => {
+    // dueMonth = setembro = selected, então cai no ramo A ("vence nesta
+    // competência"), independente de today. O ramo B (carry) só entra
+    // quando dueMonth < selected.
+    const item: SettleableItem = {
+      id: 'd1',
+      dueDate: civil(2026, 9, 16),
+      isPaid: false,
+    };
+
+    expect(
+      belongsToCompetence(item, SETEMBRO, AGORA, 'America/Fortaleza'),
+    ).toBe(true);
+  });
+
+  it('resolveDefaultCompetence: Fortaleza e Tokyo podem discordar sobre o mês corrente no boundary', () => {
+    const boundary = new Date('2026-09-30T23:30:00.000Z'); // 20:30 Fortaleza (ainda set), 08:30 Tokyo (já out)
+
+    expect(resolveDefaultCompetence(boundary, 'America/Fortaleza')).toEqual({
+      year: 2026,
+      month: 9,
+    });
+    expect(resolveDefaultCompetence(boundary, 'Asia/Tokyo')).toEqual({
+      year: 2026,
+      month: 10,
+    });
+    // legado (null) concorda com Fortaleza, a authority que sempre foi.
+    expect(resolveDefaultCompetence(boundary, null)).toEqual({
+      year: 2026,
+      month: 9,
+    });
+  });
+});
