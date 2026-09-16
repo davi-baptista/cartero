@@ -342,6 +342,6 @@ describe('nada de domínio financeiro mudou', () => {
   it('a ordenação não foi tocada', () => {
     /* Pessoas escolhe a policy pelo ciclo do mês; isto não mudou. */
     expect(PERSONS).toContain('sortPersonRowsForMonth(')
-    expect(PERSONS).toContain('personRowsCycle(period)')
+    expect(PERSONS).toContain('personRowsCycle(period, today)')
   })
 })

@@ -21,7 +21,8 @@ import {
   isOwnExpense,
   isRefundTransaction,
 } from '@/lib/money-semantics'
-import { formatDateValue } from '@/lib/date'
+import { accountToday, accountTodayDate, formatDateValue } from '@/lib/date'
+import { useAuth } from '@/providers/auth-provider'
 import { parseInvoiceDate } from '@/lib/invoice-dates'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { invoiceStatusConfig } from '@/lib/invoice-status'
@@ -85,10 +86,11 @@ const DUE_URGENCY_CLASS: Record<DueUrgency, string> = {
 function computeInvoiceDue(
   invoice: Invoice,
   bank: Bank | undefined,
+  today: Date = new Date(),
 ): { text: string; urgency: DueUrgency; diffDays: number } {
   if (!bank) return { text: '', urgency: 'normal', diffDays: 999 }
 
-  const today = new Date()
+  today = new Date(today)
   today.setHours(0, 0, 0, 0)
 
   const isOpen = invoice.status === InvoiceStatus.OPEN
@@ -366,11 +368,19 @@ function AttentionRowIcon({ icon: Icon, isOverdue }: { icon: LucideIcon; isOverd
   )
 }
 
-function InvoiceAttentionRow({ invoice, banks }: { invoice: Invoice; banks: Bank[] }) {
+function InvoiceAttentionRow({
+  invoice,
+  banks,
+  today,
+}: {
+  invoice: Invoice
+  banks: Bank[]
+  today: Date
+}) {
   const bank = banks.find((b) => b.id === invoice.bankId)
   const monthYear = capitalize(formatMonthYear(invoice.month, invoice.year))
   const total = Number(invoice.totalAmount)
-  const { text: dueText, urgency } = computeInvoiceDue(invoice, bank)
+  const { text: dueText, urgency } = computeInvoiceDue(invoice, bank, today)
   const isOverdue = urgency === 'overdue'
   const name = bankDisplayName(bank, 'Banco')
 
@@ -401,8 +411,8 @@ function InvoiceAttentionRow({ invoice, banks }: { invoice: Invoice; banks: Bank
   )
 }
 
-function DebtAttentionRow({ debt }: { debt: Debt }) {
-  const urgency = attentionDueUrgency(debt.dueDate)
+function DebtAttentionRow({ debt, today }: { debt: Debt; today: Date }) {
+  const urgency = attentionDueUrgency(debt.dueDate, today)
   const dueText = formatDueDate(debt.dueDate)
   const counterpart = debt.person?.name ?? debt.creditorName
   const isOverdue = urgency === 'overdue'
@@ -428,8 +438,8 @@ function DebtAttentionRow({ debt }: { debt: Debt }) {
   )
 }
 
-function ReceivableAttentionRow({ receivable }: { receivable: Receivable }) {
-  const urgency = attentionDueUrgency(receivable.dueDate)
+function ReceivableAttentionRow({ receivable, today }: { receivable: Receivable; today: Date }) {
+  const urgency = attentionDueUrgency(receivable.dueDate, today)
   const dueText = formatDueDate(receivable.dueDate)
   const counterpart = receivable.person?.name ?? receivable.debtorName
   const isOverdue = urgency === 'overdue'
@@ -501,6 +511,7 @@ function AttentionPanel({
   receivables,
   receivablesTotal,
   windowStr,
+  today,
 }: {
   invoices: Invoice[]
   banks: Bank[]
@@ -509,13 +520,14 @@ function AttentionPanel({
   receivables: Receivable[]
   receivablesTotal: number
   windowStr: string
+  today: Date
 }) {
   return (
     <div aria-label="Itens que requerem atenção" className="space-y-5">
       {invoices.length > 0 && (
         <AttentionSection title="Faturas" icon={CreditCard} href="/banks" remaining={0}>
           {invoices.map((inv) => (
-            <InvoiceAttentionRow key={inv.id} invoice={inv} banks={banks} />
+            <InvoiceAttentionRow key={inv.id} invoice={inv} banks={banks} today={today} />
           ))}
         </AttentionSection>
       )}
@@ -528,7 +540,7 @@ function AttentionPanel({
           remaining={debtsTotal - debts.length}
         >
           {debts.map((d) => (
-            <DebtAttentionRow key={d.id} debt={d} />
+            <DebtAttentionRow key={d.id} debt={d} today={today} />
           ))}
         </AttentionSection>
       )}
@@ -541,7 +553,7 @@ function AttentionPanel({
           remaining={receivablesTotal - receivables.length}
         >
           {receivables.map((r) => (
-            <ReceivableAttentionRow key={r.id} receivable={r} />
+            <ReceivableAttentionRow key={r.id} receivable={r} today={today} />
           ))}
         </AttentionSection>
       )}
@@ -649,12 +661,13 @@ function CalendarSection({
   attentionWindowEnd: string
 }) {
   /*
-    "Hoje" vem de `formatDateValue()`, o mesmo helper de dia civil que as
-    outras telas usam — fuso local do navegador, sem trocar para
-    America/Fortaleza explícito (decisão desta rodada: zero mudança de
-    comportamento observável em relação ao que a tela já fazia).
+    "Hoje" (TZ3): conta com `User.timeZone` configurado usa a timezone
+    financeira da conta; conta legada (`timeZone === null`) preserva EXATO
+    o fuso local do navegador, como sempre foi.
   */
-  const todayStr = formatDateValue()
+  const { user } = useAuth()
+  const today = useMemo(() => accountTodayDate(user?.timeZone ?? null), [user?.timeZone])
+  const todayStr = useMemo(() => accountToday(user?.timeZone ?? null), [user?.timeZone])
   const [todayYear, todayMonth, todayDate] = todayStr.split('-').map(Number)
   const isCurrentMonth = todayYear === year && todayMonth === month
   const todayDay = isCurrentMonth ? todayDate : -1
@@ -686,8 +699,9 @@ function CalendarSection({
         invoices,
         transactions,
         bankNames,
+        today: todayStr,
       }),
-    [year, month, debts, receivables, invoices, transactions, bankNames],
+    [year, month, debts, receivables, invoices, transactions, bankNames, todayStr],
   )
 
   const firstDOW = new Date(year, month - 1, 1).getDay()
@@ -942,6 +956,7 @@ function CalendarSection({
                     receivables={attentionReceivables}
                     receivablesTotal={attentionReceivablesTotal}
                     windowStr={attentionWindowEnd}
+                    today={today}
                   />
                 )}
               </TabsContent>
@@ -959,6 +974,11 @@ export default function OverviewPage() {
   // O mês é contexto do app, controlado pela barra superior.
   const { period } = useMonthPeriod()
   const { month, year } = period
+  const { user } = useAuth()
+  const attentionToday = useMemo(
+    () => accountTodayDate(user?.timeZone ?? null),
+    [user?.timeZone],
+  )
 
   const { startDate, endDate } = useMemo(() => monthRange(year, month), [year, month])
 
@@ -1130,8 +1150,8 @@ export default function OverviewPage() {
     relativo a hoje, nunca ao mês navegado no calendário abaixo.
   */
   const attention = useMemo(
-    () => buildAttentionSelection({ invoices, banks, debts, receivables }),
-    [invoices, banks, debts, receivables],
+    () => buildAttentionSelection({ invoices, banks, debts, receivables }, attentionToday),
+    [invoices, banks, debts, receivables, attentionToday],
   )
 
   // ─── Render ────────────────────────────────────────────────────────────────

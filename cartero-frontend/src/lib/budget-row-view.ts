@@ -52,7 +52,11 @@ import { timingUrgency } from '@/lib/invoice-timing'
  * data vermelha faria a mesma row afirmar duas coisas opostas. O atraso é
  * contexto de qual obrigação era, não um alerta pendente.
  */
-export function budgetDueTone(dueDate: string, resolved = false): string {
+export function budgetDueTone(
+  dueDate: string,
+  resolved = false,
+  today: Date = new Date(),
+): string {
   if (resolved) return ROW_RESOLVED_TONE
 
   /*
@@ -61,7 +65,7 @@ export function budgetDueTone(dueDate: string, resolved = false): string {
   */
   const [year, month, day] = dueDate.slice(0, 10).split('-').map(Number)
 
-  switch (timingUrgency(new Date(year, month - 1, day))) {
+  switch (timingUrgency(new Date(year, month - 1, day), today)) {
     case 'overdue':
       return 'text-destructive'
     case 'today':

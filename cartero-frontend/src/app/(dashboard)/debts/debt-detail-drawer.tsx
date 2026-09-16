@@ -17,13 +17,14 @@ import {
   ROW_AMOUNT_TONE,
 } from '@/components/ui/financial-list-row'
 import { formatCurrency, formatDate } from '@/lib/formatters'
-import { civilDayOf } from '@/lib/date'
+import { accountCivilDayOf, accountToday } from '@/lib/date'
 import {
   canEditSettlementDate,
   settlementDateActionLabel,
 } from '@/lib/settlement-date-action'
 import { settlementStatus } from '@/lib/settlement-status'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/providers/auth-provider'
 import type { Debt } from '@/types'
 
 /**
@@ -58,9 +59,12 @@ export function DebtDetailDrawer({
   onTogglePaid: (debt: Debt) => void
   onEditSettlementDate?: (debt: Debt) => void
 }) {
+  const { user } = useAuth()
+
   if (!debt) return null
 
-  const status = settlementStatus(debt)
+  const today = accountToday(user?.timeZone ?? null)
+  const status = settlementStatus(debt, today)
   const overdue = status === 'overdue'
   const counterparty = debt.person?.name ?? debt.creditorName
 
@@ -158,7 +162,7 @@ export function DebtDetailDrawer({
           */
           <DetailRow label="Paga em">
             {debt.paidAt ? (
-              formatDate(civilDayOf(debt.paidAt))
+              formatDate(accountCivilDayOf(debt.paidAt, user?.timeZone ?? null))
             ) : (
               <span className="text-muted-foreground">não registrada</span>
             )}

@@ -47,7 +47,8 @@ import {
   peopleRowStatusLabel,
   peopleRowAriaLabel,
 } from '@/lib/people-settlement-view'
-import { formatDateValue } from '@/lib/date'
+import { accountToday, accountTodayDate, formatDateValue } from '@/lib/date'
+import { useAuth } from '@/providers/auth-provider'
 import { cn } from '@/lib/utils'
 import {
   budgetBreakdownAriaLabel,
@@ -181,6 +182,9 @@ export default function BudgetPage() {
   */
   const { period } = useMonthPeriod()
   const { month, year } = period
+  const { user } = useAuth()
+  const today = useMemo(() => accountToday(user?.timeZone ?? null), [user?.timeZone])
+  const todayDate = useMemo(() => accountTodayDate(user?.timeZone ?? null), [user?.timeZone])
 
   const {
     data: budget,
@@ -823,7 +827,7 @@ export default function BudgetPage() {
                 rótulo aqui seria o terceiro caminho de apresentação da
                 mesma entidade — o que a Fase UI-ALIGN fechou.
               */
-              const apresentacao = invoiceRowPresentation(inv)
+              const apresentacao = invoiceRowPresentation(inv, todayDate)
               return (
                 <StatusListRow
                   key={inv.id}
@@ -882,7 +886,7 @@ export default function BudgetPage() {
                   título, o lugar que Bancos e Pessoas usam.
                 */
                 meta={
-                  <span className={budgetDueTone(item.dueDate, false)}>
+                  <span className={budgetDueTone(item.dueDate, false, todayDate)}>
                     Venceu em {formatDate(item.dueDate)}
                     {item.personName ? ` · ${item.personName}` : ''}
                   </span>
@@ -1003,7 +1007,7 @@ export default function BudgetPage() {
                 verde. O subtexto saía cinza aqui e verde lá, para a mesma
                 fatura.
               */
-              const apresentacao = invoiceRowPresentation(inv)
+              const apresentacao = invoiceRowPresentation(inv, todayDate)
               /*
                 O fundo tonal do ícone também sai do `state` do presenter: ler
                 `inv.status` aqui de novo seria uma segunda derivação do mesmo
@@ -1139,7 +1143,7 @@ export default function BudgetPage() {
               const metaAcerto = settlementRowMeta(view.status, {
                 nextItem: person.open.nextItem,
                 settledAt: person.settled.settledAt,
-              })
+              }, today)
 
               return (
                 <StatusListRow
@@ -1243,7 +1247,7 @@ export default function BudgetPage() {
           <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
             {standaloneDebtRows.map((item) => {
               const cfg = DEBT_STATUS_CONFIG[item.status]
-              const metaDivida = debtRowMeta(item)
+              const metaDivida = debtRowMeta(item, today)
               return (
                 <StatusListRow
                   key={`${item.kind}-${item.id ?? item.name}`}

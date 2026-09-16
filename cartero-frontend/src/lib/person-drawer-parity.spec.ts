@@ -146,7 +146,7 @@ describe('objetivo 2: uma única data canônica', () => {
   })
 
   it('o drawer usa o helper, não o slice', () => {
-    expect(DRAWER).toContain('civilDayOf(item.paidAt)')
+    expect(DRAWER).toContain('accountCivilDayOf(item.paidAt, user?.timeZone ?? null)')
     expect(DRAWER).not.toContain("item.paidAt?.slice(0, 10)")
   })
 
@@ -303,7 +303,7 @@ describe('a data civil vale para TODA exibicao de `paidAt`', () => {
   const VIEW = semComentarios(ler('./person-settlement-view.ts'))
 
   it('a linha do historico converte antes de formatar', () => {
-    expect(VIEW).toContain('const settledDay = civilDayOf(item.paidAt)')
+    expect(VIEW).toContain('const settledDay = accountCivilDayOf(item.paidAt, timeZone)')
     expect(VIEW).not.toContain('fullDate(item.paidAt)')
   })
 
@@ -320,8 +320,8 @@ describe('a data civil vale para TODA exibicao de `paidAt`', () => {
     const debt = ler('../app/(dashboard)/debts/debt-detail-drawer.tsx')
     const recv = ler('../app/(dashboard)/receivables/receivable-detail-drawer.tsx')
 
-    expect(debt).toContain('formatDate(civilDayOf(debt.paidAt))')
-    expect(recv).toContain('formatDate(civilDayOf(receivable.paidAt))')
+    expect(debt).toContain('formatDate(accountCivilDayOf(debt.paidAt, user?.timeZone ?? null))')
+    expect(recv).toContain('formatDate(accountCivilDayOf(receivable.paidAt, user?.timeZone ?? null))')
   })
 
   it('`formatDate` sozinho NAO resolve — ele fatia em UTC', () => {

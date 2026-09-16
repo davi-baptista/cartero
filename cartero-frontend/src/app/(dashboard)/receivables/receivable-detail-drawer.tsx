@@ -18,7 +18,7 @@ import {
   ROW_AMOUNT_TONE,
 } from '@/components/ui/financial-list-row'
 import { formatCurrency, formatDate } from '@/lib/formatters'
-import { civilDayOf } from '@/lib/date'
+import { accountCivilDayOf, accountToday } from '@/lib/date'
 import {
   canEditSettlementDate,
   settlementDateActionLabel,
@@ -29,6 +29,7 @@ import {
   canDeleteReceivable,
   resolveReceivableDeletePolicy,
 } from '@/lib/receivable-delete-policy'
+import { useAuth } from '@/providers/auth-provider'
 import type { Receivable } from '@/types'
 
 /**
@@ -70,9 +71,12 @@ export function ReceivableDetailDrawer({
   onToggleReceived: (receivable: Receivable) => void
   onEditSettlementDate?: (receivable: Receivable) => void
 }) {
+  const { user } = useAuth()
+
   if (!receivable) return null
 
-  const status = settlementStatus(receivable)
+  const today = accountToday(user?.timeZone ?? null)
+  const status = settlementStatus(receivable, today)
   const overdue = status === 'overdue'
   const isAutomatic = Boolean(receivable.transactionId)
   const policy = resolveReceivableDeletePolicy(receivable)
@@ -181,7 +185,7 @@ export function ReceivableDetailDrawer({
         {receivable.isPaid && (
           <DetailRow label="Recebido em">
             {receivable.paidAt ? (
-              formatDate(civilDayOf(receivable.paidAt))
+              formatDate(accountCivilDayOf(receivable.paidAt, user?.timeZone ?? null))
             ) : (
               <span className="text-muted-foreground">não registrada</span>
             )}

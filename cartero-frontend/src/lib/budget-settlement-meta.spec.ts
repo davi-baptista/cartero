@@ -327,7 +327,7 @@ describe('F17: row de dívida', () => {
 describe('F6: a page aplica a policy sem mexer no resto', () => {
   it('as duas rows recebem metadata', () => {
     expect(BUDGET_CODE).toContain('settlementRowMeta(view.status,')
-    expect(BUDGET_CODE).toContain('debtRowMeta(item)')
+    expect(BUDGET_CODE).toContain('debtRowMeta(item, today)')
     expect(BUDGET_CODE).toContain('metaAcerto')
     expect(BUDGET_CODE).toContain('metaDivida')
   })
@@ -344,7 +344,7 @@ describe('F6: a page aplica a policy sem mexer no resto', () => {
 
   it('probe 12: a fatura não foi tocada', () => {
     /* Invoice já estava correta: mesma metadata, mesmo trailing. */
-    expect(BUDGET_CODE).toContain('invoiceRowPresentation(inv)')
+    expect(BUDGET_CODE).toContain('invoiceRowPresentation(inv, todayDate)')
     expect(BUDGET_CODE).toContain('apresentacao.timingLabel')
     expect(BUDGET_CODE).toContain('apresentacao.statusLabel')
   })

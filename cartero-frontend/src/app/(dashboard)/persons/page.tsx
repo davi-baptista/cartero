@@ -80,6 +80,8 @@ import {
 import {
 } from '@/lib/person-statement'
 import { PersonStatementDrawer } from '@/components/person-statement-drawer'
+import { accountToday } from '@/lib/date'
+import { useAuth } from '@/providers/auth-provider'
 import type { Person } from '@/types'
 
 // ─── Statement sheet ─────────────────────────────────────────────────────────
@@ -220,6 +222,8 @@ const VAZIO = {
 
 export default function PersonsPage() {
   const qc = useQueryClient()
+  const { user } = useAuth()
+  const today = useMemo(() => accountToday(user?.timeZone ?? null), [user?.timeZone])
   const searchParams = useSearchParams()
   const periodParam = searchParams.get('period')
 
@@ -491,9 +495,10 @@ export default function PersonsPage() {
           settledDebtsCount: balance.settledDebtsCount,
         }
       }),
-      personRowsCycle(period),
+      personRowsCycle(period, today),
+      today,
     )
-  }, [persons, balanceById, balancesLoading, period])
+  }, [persons, balanceById, balancesLoading, period, today])
 
   /*
     ── O resumo sai das MESMAS linhas ──
@@ -760,7 +765,7 @@ export default function PersonsPage() {
                 */
                 nextItemLabel(
                   balance.nextItem,
-                  undefined,
+                  today,
                   rowLabelDirection(status, balance.nextItem),
                 ),
                 balance.settledAt,

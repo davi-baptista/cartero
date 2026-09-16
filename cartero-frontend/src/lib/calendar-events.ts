@@ -124,6 +124,12 @@ export interface CalendarInput {
   transactions: readonly Transaction[]
   /** Nome do banco por id — evita `banks.find()` dentro do laço. */
   bankNames: ReadonlyMap<string, string>
+  /**
+   * "Hoje", em `YYYY-MM-DD` (TZ3) — decide `overdue` vs. `pending` via
+   * `settlementStatus`. Opcional: por padrão usa o fuso do navegador
+   * (`formatDateValue()`), o comportamento legado exato.
+   */
+  today?: string
 }
 
 /**
@@ -214,7 +220,7 @@ export function buildCalendarEvents(
     const day = inMonth(debt.dueDate)
     if (day === null) continue
 
-    const status = settlementStatus(debt)
+    const status = settlementStatus(debt, input.today)
     push(day, {
       id: `debt:${debt.id}`,
       kind: 'debt',
@@ -232,7 +238,7 @@ export function buildCalendarEvents(
     const day = inMonth(receivable.dueDate)
     if (day === null) continue
 
-    const status = settlementStatus(receivable)
+    const status = settlementStatus(receivable, input.today)
     push(day, {
       id: `receivable:${receivable.id}`,
       kind: 'receivable',

@@ -346,7 +346,7 @@ describe('P-9: a page aplica a policy', () => {
       global e não reresolve "hoje" por conta própria — resolver o mês corrente
       em dois lugares foi o que uma fase anterior desfez.
     */
-    expect(code).toContain('personRowsCycle(period)')
+    expect(code).toContain('personRowsCycle(period, today)')
     expect(code).not.toContain('currentPeriod()')
   })
 })

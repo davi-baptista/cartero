@@ -29,6 +29,8 @@ import { getBanks } from '@/services/banks.service'
 import { getCategories } from '@/services/categories.service'
 import { previewSubscription } from '@/services/subscriptions.service'
 import { formatCurrency, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
+import { accountTodayDate } from '@/lib/date'
+import { useAuth } from '@/providers/auth-provider'
 import type { Category, Subscription } from '@/types'
 import { TransactionType } from '@/types'
 
@@ -55,8 +57,8 @@ const PAYMENT_TYPES = [
   TransactionType.BOLETO,
 ]
 
-function currentCycle() {
-  const now = new Date()
+function currentCycle(timeZone: string | null = null) {
+  const now = accountTodayDate(timeZone)
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
@@ -70,9 +72,9 @@ function cycleLabel(cycle: string) {
 }
 
 /** Últimos 24 meses — o suficiente para trazer histórico sem virar uma lista infinita. */
-function cycleOptions() {
+function cycleOptions(timeZone: string | null = null) {
   const options: string[] = []
-  const now = new Date()
+  const now = accountTodayDate(timeZone)
   for (let i = 0; i < 24; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
     options.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
@@ -109,6 +111,8 @@ export function SubscriptionSheet({
   onSubmit,
 }: SubscriptionSheetProps) {
   const isEdit = !!editSubscription
+  const { user } = useAuth()
+  const timeZone = user?.timeZone ?? null
 
   const {
     register,
@@ -125,7 +129,7 @@ export function SubscriptionSheet({
       type: TransactionType.CREDIT_CARD,
       amount: 0,
       dayOfMonth: 1,
-      startedAt: currentCycle(),
+      startedAt: currentCycle(timeZone),
     },
   })
 
@@ -159,7 +163,7 @@ export function SubscriptionSheet({
   const amount = useWatch({ control, name: 'amount' })
 
   // Só faz sentido prever quando o início é retroativo e ainda não existe.
-  const isRetroactive = !isEdit && !!startedAt && startedAt < currentCycle()
+  const isRetroactive = !isEdit && !!startedAt && startedAt < currentCycle(timeZone)
 
   const { data: preview = [], isFetching: previewLoading } = useQuery({
     queryKey: ['subscription-preview', bankId, dayOfMonth, startedAt, type],
@@ -189,10 +193,10 @@ export function SubscriptionSheet({
         amount: 0,
         description: '',
         dayOfMonth: 1,
-        startedAt: currentCycle(),
+        startedAt: currentCycle(timeZone),
       })
     }
-  }, [open, editSubscription, reset])
+  }, [open, editSubscription, reset, timeZone])
 
   // Quem fecha o drawer é a página, no `onSuccess` da mutação — igual aos
   // demais. Fechar aqui escondia o formulário mesmo quando o salvamento
@@ -408,7 +412,7 @@ export function SubscriptionSheet({
                     <SelectValue>{field.value ? cycleLabel(field.value) : undefined}</SelectValue>
                   </SelectTrigger>
                   <SelectContent alignItemWithTrigger={false}>
-                    {cycleOptions().map((c) => (
+                    {cycleOptions(timeZone).map((c) => (
                       <SelectItem key={c} value={c}>{cycleLabel(c)}</SelectItem>
                     ))}
                   </SelectContent>

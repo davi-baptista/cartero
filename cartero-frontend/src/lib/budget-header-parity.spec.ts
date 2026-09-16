@@ -218,9 +218,9 @@ describe('sem regressão', () => {
 
   it('as rows abaixo não mudaram', () => {
     for (const marca of [
-      'invoiceRowPresentation(inv)',
+      'invoiceRowPresentation(inv, todayDate)',
       'settlementRowMeta(view.status,',
-      'debtRowMeta(item)',
+      'debtRowMeta(item, today)',
       'apresentacao.statusLabel',
     ]) {
       expect(BUDGET, marca).toContain(marca)

@@ -62,6 +62,7 @@ import {
   settlementStatus,
 } from '@/lib/settlement-status'
 import { apiErrorMessage } from '@/lib/api-error'
+import { accountToday } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type { Debt, TransactionType } from '@/types'
 import { InstallmentScope } from '@/types'
@@ -87,7 +88,9 @@ const DebtRow = memo(function DebtRow({
    */
   onTogglePaid: (d: Debt) => void
 }) {
-  const overdue = isOverdue(debt)
+  const { user } = useAuth()
+  const today = accountToday(user?.timeZone ?? null)
+  const overdue = isOverdue(debt, today)
   /* A LINHA inteira — o pulso de destaque precisa incluir o círculo. */
   const rowRef = useRef<HTMLElement>(null)
 
@@ -149,7 +152,7 @@ const DebtRow = memo(function DebtRow({
             estado sairia da árvore de acessibilidade junto com a cor.
           */}
           <span className="sr-only">
-            {DEBT_STATUS_LABEL[settlementStatus(debt)]}
+            {DEBT_STATUS_LABEL[settlementStatus(debt, today)]}
           </span>
         </button>
       }
@@ -222,6 +225,7 @@ type TabFilter = 'pending' | 'paid'
 
 export default function DebtsPage() {
   const { user } = useAuth()
+  const today = useMemo(() => accountToday(user?.timeZone ?? null), [user?.timeZone])
   const qc = useQueryClient()
   const searchParams = useSearchParams()
   const highlightId = searchParams.get('highlight') ?? undefined
@@ -418,9 +422,9 @@ export default function DebtsPage() {
   const summary = useMemo(() => {
     if (!debts) return { pending: 0, paid: 0, overdueCount: 0 }
     const pending = debts.filter((d) => !d.isPaid).reduce((s, d) => s + Number(d.amount), 0)
-    const overdueCount = debts.filter(isOverdue).length
+    const overdueCount = debts.filter((d) => isOverdue(d, today)).length
     return { pending, overdueCount }
-  }, [debts])
+  }, [debts, today])
 
   const filtered = useMemo(() => {
     if (!debts) return []

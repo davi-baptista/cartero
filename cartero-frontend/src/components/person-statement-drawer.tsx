@@ -101,7 +101,7 @@ import {
   competenceCard,
   competenceCardSign,
 } from '@/lib/person-competence-card'
-import { civilDayOf } from '@/lib/date'
+import { accountCivilDayOf, accountToday } from '@/lib/date'
 import {
   DRAWER_SECTION_INSET,
   DrawerSectionEmpty,
@@ -147,7 +147,8 @@ function StatementRow({
   /** Só em item resolvido: corrige a data real do acerto. */
   onEditSettlementDate?: () => void
 }) {
-  const status = settlementStatus(item)
+  const { user: statusUser } = useAuth()
+  const status = settlementStatus(item, accountToday(statusUser?.timeZone ?? null))
   const isReceivable = kind === 'receivable'
   /** Cobrança automática: a compra é a fonte de verdade dos seus valores. */
   const isAutomatic =
@@ -890,7 +891,7 @@ export function PersonStatementDrawer({
         Pessoas (que usa `civilDay` no backend) dizia 03/09 e este drawer
         dizia 04/09 — o mesmo registro com dois dias na mesma tela.
       */
-      const dia = item.paidAt ? civilDayOf(item.paidAt) : null
+      const dia = item.paidAt ? accountCivilDayOf(item.paidAt, user?.timeZone ?? null) : null
       /* Um resolvido sem data torna a conclusão indefensável para o mês. */
       if (!dia) return null
       if (maior === null || dia > maior) maior = dia
@@ -1044,7 +1045,7 @@ export function PersonStatementDrawer({
         drawer diz "em atraso".
       */
       dueContextOf: (item) => dueContext(item, competence),
-      resolvedLabelOf: (item, kind) => resolvedLabel(item, kind),
+      resolvedLabelOf: (item, kind) => resolvedLabel(item, kind, user?.timeZone ?? null),
     })
 
     return {
@@ -1461,7 +1462,7 @@ export function PersonStatementDrawer({
                           A data real da resolução, que o arquivamento por
                           competência não mostra sozinho.
                         */
-                        dueLabel={resolvedLabel(r, 'receivable')}
+                        dueLabel={resolvedLabel(r, 'receivable', user?.timeZone ?? null)}
                         onToggle={() => handleReceivableToggle(r)}
                         onEdit={() => handleEditReceivable(r)}
                         onDelete={() => handleDeleteReceivable(r)}
@@ -1475,7 +1476,7 @@ export function PersonStatementDrawer({
                         key={d.id}
                         kind="debt"
                         item={d}
-                        dueLabel={resolvedLabel(d, 'debt')}
+                        dueLabel={resolvedLabel(d, 'debt', user?.timeZone ?? null)}
                         onToggle={() => handleDebtToggle(d)}
                         onEdit={() => handleEditDebt(d)}
                         onDelete={() => handleDeleteDebt(d)}

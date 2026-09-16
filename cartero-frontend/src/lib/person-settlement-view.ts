@@ -1,4 +1,4 @@
-import { civilDayOf, formatDateValue } from '@/lib/date'
+import { accountCivilDayOf, formatDateValue } from '@/lib/date'
 import type { SettlementCompetence } from '@/types'
 
 /**
@@ -361,6 +361,11 @@ export function resolvedLabel(
     dueMonth: SettlementCompetence
   },
   kind: 'debt' | 'receivable',
+  /**
+   * `User.timeZone` (TZ2/TZ3). `null` preserva a conversão -3h/Fortaleza
+   * legada de `civilDayOf`, sem alterar nenhuma conta ainda não migrada.
+   */
+  timeZone: string | null = null,
 ): string {
   const verb = kind === 'receivable' ? 'Recebido' : 'Pago'
 
@@ -385,7 +390,7 @@ export function resolvedLabel(
     que a exibicao, senao 31/12 as 23h UTC compararia com um ano e imprimiria
     o outro.
   */
-  const settledDay = civilDayOf(item.paidAt)
+  const settledDay = accountCivilDayOf(item.paidAt, timeZone)
 
   const due = item.dueDate.slice(0, 10)
   const [dueYear, dueMonth] = due.split('-').map(Number)

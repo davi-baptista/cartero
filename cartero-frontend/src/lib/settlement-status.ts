@@ -30,16 +30,18 @@ interface Settleable {
  * coincide com a cronológica. Evita a armadilha de `new Date(iso)` cair no dia
  * anterior em fuso negativo.
  */
-export function settlementStatus(item: Settleable): SettlementStatus {
+export function settlementStatus(
+  item: Settleable,
+  today: string = formatDateValue(),
+): SettlementStatus {
   if (item.isPaid) return 'paid'
 
-  const today = formatDateValue()
   return item.dueDate.slice(0, 10) < today ? 'overdue' : 'pending'
 }
 
 /** `true` quando venceu e continua em aberto. */
-export function isOverdue(item: Settleable): boolean {
-  return settlementStatus(item) === 'overdue'
+export function isOverdue(item: Settleable, today: string = formatDateValue()): boolean {
+  return settlementStatus(item, today) === 'overdue'
 }
 
 /**

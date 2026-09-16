@@ -291,7 +291,7 @@ describe('B13-B18: a cor da fatura', () => {
 
     /* O prazo de DÍVIDA continua aqui, com a mesma régua. */
     expect(semComentarios(ler('./budget-row-view.ts'))).toContain('timingUrgency')
-    expect(BUDGET_CODE).toContain('invoiceRowPresentation(inv)')
+    expect(BUDGET_CODE).toContain('invoiceRowPresentation(inv, todayDate)')
   })
 
   it('resolvido usa o verde de conclusão, não a régua temporal', () => {
@@ -369,7 +369,7 @@ describe('B19-B24: a row de pessoa e de dívida', () => {
       é toda de obrigação aberta, e o payload não carrega estado de quitação
       para a tela consultar.
     */
-    expect(BUDGET_CODE).toContain('budgetDueTone(item.dueDate, false)')
+    expect(BUDGET_CODE).toContain('budgetDueTone(item.dueDate, false, todayDate)')
   })
 })
 

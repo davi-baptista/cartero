@@ -22,6 +22,8 @@ import {
 } from '@/lib/invoice-dates'
 import { formatDate, formatMonthYear } from '@/lib/formatters'
 import { formatDateValue } from '@/lib/date'
+import { currentPeriod } from '@/components/month-nav'
+import { useAuth } from '@/providers/auth-provider'
 import type { Bank } from '@/types'
 
 const numberField = (message: string) => z.preprocess(
@@ -60,7 +62,7 @@ export function BankSheet({
   period,
 }: BankSheetProps) {
   const isEditing = editTarget !== null
-
+  const { user } = useAuth()
 
   const {
     register,
@@ -106,7 +108,7 @@ export function BankSheet({
   const ciclo = useMemo(() => {
     if (!Number.isInteger(dueDay) || dueDay < 1 || dueDay > 31) return null
 
-    const base = period ?? currentPeriod()
+    const base = period ?? currentPeriod(user?.timeZone ?? null)
     const seguinte =
       base.month === 12
         ? { month: 1, year: base.year + 1 }
@@ -271,12 +273,6 @@ function CycleRow({ label, value }: { label: string; value: string }) {
       <span className="text-xs tabular-nums">{value}</span>
     </div>
   )
-}
-
-/** A competência de hoje, quando a superfície não informa uma. */
-function currentPeriod(): { month: number; year: number } {
-  const hoje = new Date()
-  return { month: hoje.getMonth() + 1, year: hoje.getFullYear() }
 }
 
 function capitalize(texto: string): string {

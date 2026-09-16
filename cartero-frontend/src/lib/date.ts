@@ -13,6 +13,39 @@ export function todayDateValue(): string {
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
+ * TZ3 — dia civil "de hoje" pela timezone financeira da conta
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `timeZone` vem de `User.timeZone` (TZ1). `null` é conta legada — preserva
+ * EXATAMENTE `formatDateValue`, isto é, o dia civil do NAVEGADOR, como
+ * sempre foi. Só contas com timezone configurada passam a usar essa
+ * timezone (IANA, via `Intl`) em vez do relógio do navegador.
+ *
+ * Nunca um offset fixo, nunca `America/Fortaleza` como default — a
+ * distinção entre "conta com timezone" e "legado" precisa ficar explícita
+ * em quem chama, nunca escondida atrás de `timeZone ?? 'America/Fortaleza'`.
+ */
+export function accountToday(timeZone: string | null, now: Date = new Date()): string {
+  if (timeZone === null) return formatDateValue(now)
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now)
+
+  const lookup = Object.fromEntries(parts.map((p) => [p.type, p.value]))
+  return `${lookup.year}-${lookup.month}-${lookup.day}`
+}
+
+/** Mesma authority de `accountToday`, devolvendo um `Date` local em vez de string. */
+export function accountTodayDate(timeZone: string | null, now: Date = new Date()): Date {
+  return parseDateOnly(accountToday(timeZone, now))
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
  * O dia civil de um INSTANTE, em Fortaleza (UTC-3)
  * ══════════════════════════════════════════════════════════════════════════
  *
@@ -47,4 +80,34 @@ export function civilDayOf(instant: string | Date): string {
   return new Date(date.getTime() - 3 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10)
+}
+
+/**
+ * `civilDayOf`, mas ciente da timezone financeira da conta (TZ2/TZ3).
+ *
+ * `timeZone === null` preserva `civilDayOf` INTACTO — a mesma -3h fixa de
+ * Fortaleza que toda conta legada sempre teve. Só contas com
+ * `User.timeZone` configurado resolvem o dia civil do instante pela sua
+ * própria timezone (IANA, via `Intl`), nunca por um offset fixo.
+ */
+export function accountCivilDayOf(
+  instant: string | Date,
+  timeZone: string | null,
+): string {
+  if (typeof instant === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(instant)) {
+    return instant
+  }
+
+  if (timeZone === null) return civilDayOf(instant)
+
+  const date = typeof instant === 'string' ? new Date(instant) : instant
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+
+  const lookup = Object.fromEntries(parts.map((p) => [p.type, p.value]))
+  return `${lookup.year}-${lookup.month}-${lookup.day}`
 }

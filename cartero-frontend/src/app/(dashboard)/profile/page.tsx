@@ -37,6 +37,7 @@ import {
 } from '@/lib/push-toggle-state'
 import { pushErrorMessage } from '@/lib/push-error-copy'
 import { formatCurrency } from '@/lib/formatters'
+import { currentPeriod } from '@/components/month-nav'
 import { MaintenanceMode } from './maintenance-mode'
 
 // ─── Section Card ─────────────────────────────────────────────────────────────
@@ -94,9 +95,9 @@ export default function ProfilePage() {
     não vale. O resolver não tem esse problema — ele responde pela data.
   */
   const currentMonth = useMemo(() => {
-    const now = new Date()
-    return { year: now.getFullYear(), month: now.getMonth() + 1 }
-  }, [])
+    const { year, month } = currentPeriod(user?.timeZone ?? null)
+    return { year, month }
+  }, [user?.timeZone])
 
   const { data: resolvedSalary, isLoading: salaryLoading } = useQuery({
     queryKey: ['salary', currentMonth.year, currentMonth.month],
@@ -242,11 +243,10 @@ export default function ProfilePage() {
    */
   const salaryMut = useMutation({
     mutationFn: () => {
-      const now = new Date()
       return upsertSalary({
         amount: salary,
-        month: now.getMonth() + 1,
-        year: now.getFullYear(),
+        month: currentMonth.month,
+        year: currentMonth.year,
       })
     },
     onSuccess: (result) => {

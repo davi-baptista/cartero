@@ -3,8 +3,9 @@
 import { createContext, useContext, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { formatMonthYear } from '@/lib/formatters'
-import { formatDateValue } from '@/lib/date'
+import { accountTodayDate, formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/providers/auth-provider'
 
 export type MonthPeriod = { month: number; year: number }
 
@@ -20,9 +21,15 @@ export function monthBounds({ month, year }: MonthPeriod) {
   }
 }
 
-/** Mês/ano atuais — ponto de partida padrão das páginas com filtro por mês. */
-export function currentPeriod(): MonthPeriod {
-  const today = new Date()
+/**
+ * Mês/ano atuais — ponto de partida padrão das páginas com filtro por mês.
+ *
+ * `timeZone` (TZ3): `null` preserva o comportamento legado EXATO — mês/ano
+ * do relógio do NAVEGADOR. Só contas com `User.timeZone` configurado
+ * resolvem "hoje" pela timezone financeira da conta.
+ */
+export function currentPeriod(timeZone: string | null = null): MonthPeriod {
+  const today = accountTodayDate(timeZone)
   return { month: today.getMonth() + 1, year: today.getFullYear() }
 }
 
@@ -98,7 +105,10 @@ const MonthPeriodContext = createContext<{
 } | null>(null)
 
 export function MonthPeriodProvider({ children }: { children: React.ReactNode }) {
-  const [period, setPeriod] = useState<MonthPeriod>(currentPeriod)
+  const { user } = useAuth()
+  const [period, setPeriod] = useState<MonthPeriod>(() =>
+    currentPeriod(user?.timeZone ?? null),
+  )
   const value = useMemo(() => ({ period, setPeriod }), [period])
   return <MonthPeriodContext value={value}>{children}</MonthPeriodContext>
 }

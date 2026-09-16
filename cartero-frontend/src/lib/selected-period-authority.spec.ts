@@ -148,7 +148,8 @@ describe('itens 16, 18 e 24: a fonte canônica da competência', () => {
   it('é o contexto global, compartilhado entre as telas', () => {
     // Um único estado; o Orçamento não mantém cópia paralela (item 47).
     expect(code(MONTH_NAV)).toContain('MonthPeriodContext')
-    expect(code(MONTH_NAV)).toContain('useState<MonthPeriod>(currentPeriod)')
+    expect(code(MONTH_NAV)).toContain('useState<MonthPeriod>(() =>')
+    expect(code(MONTH_NAV)).toContain('currentPeriod(user?.timeZone ?? null)')
   })
 
   it('item 29: o fallback resolve o mês civil, não UTC cru', () => {

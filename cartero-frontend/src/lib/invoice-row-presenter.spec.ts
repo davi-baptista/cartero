@@ -194,7 +194,7 @@ describe('as duas telas consomem a MESMA autoridade', () => {
   })
 
   it('Orçamento pede a mesma coisa', () => {
-    expect(BUDGET).toContain('invoiceRowPresentation(inv)')
+    expect(BUDGET).toContain('invoiceRowPresentation(inv, todayDate)')
     expect(BUDGET).toContain('apresentacao.timingLabel')
     expect(BUDGET).toContain('apresentacao.timingTone')
     expect(BUDGET).toContain('apresentacao.statusLabel')

@@ -65,6 +65,7 @@ import {
   settlementStatus,
 } from '@/lib/settlement-status'
 import { apiErrorMessage } from '@/lib/api-error'
+import { accountToday } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type { Receivable } from '@/types'
 import { InstallmentScope } from '@/types'
@@ -90,7 +91,9 @@ const ReceivableRow = memo(function ReceivableRow({
    */
   onToggleReceived: (r: Receivable) => void
 }) {
-  const overdue = isOverdue(receivable)
+  const { user } = useAuth()
+  const today = accountToday(user?.timeZone ?? null)
+  const overdue = isOverdue(receivable, today)
   /* A LINHA inteira — o pulso de destaque precisa incluir o círculo. */
   const rowRef = useRef<HTMLElement>(null)
 
@@ -154,7 +157,7 @@ const ReceivableRow = memo(function ReceivableRow({
             o estado sairia da árvore de acessibilidade junto com a cor.
           */}
           <span className="sr-only">
-            {RECEIVABLE_STATUS_LABEL[settlementStatus(receivable)]}
+            {RECEIVABLE_STATUS_LABEL[settlementStatus(receivable, today)]}
           </span>
         </button>
       }
@@ -239,6 +242,7 @@ type TabFilter = 'pending' | 'received'
 
 export default function ReceivablesPage() {
   const { user } = useAuth()
+  const today = useMemo(() => accountToday(user?.timeZone ?? null), [user?.timeZone])
   const qc = useQueryClient()
   const searchParams = useSearchParams()
   const highlightId = searchParams.get('highlight') ?? undefined
@@ -435,9 +439,9 @@ export default function ReceivablesPage() {
   const summary = useMemo(() => {
     if (!receivables) return { pending: 0, overdueCount: 0 }
     const pending = receivables.filter((r) => !r.isPaid).reduce((s, r) => s + Number(r.amount), 0)
-    const overdueCount = receivables.filter(isOverdue).length
+    const overdueCount = receivables.filter((r) => isOverdue(r, today)).length
     return { pending, overdueCount }
-  }, [receivables])
+  }, [receivables, today])
 
   const filtered = useMemo(() => {
     if (!receivables) return []

@@ -352,7 +352,7 @@ describe('itens 12, 43 e 44: a lista continua sendo de contatos', () => {
       passar na frente de R$ 50 vencidos ontem.
     */
     expect(code(PAGINA)).toContain('sortPersonRowsForMonth(')
-    expect(code(PAGINA)).toContain('personRowsCycle(period)')
+    expect(code(PAGINA)).toContain('personRowsCycle(period, today)')
     expect(code(PAGINA)).not.toContain('sort((a, b) => b.netBalance')
     expect(code(PAGINA)).not.toContain('orderBy')
   })

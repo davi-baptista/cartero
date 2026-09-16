@@ -277,7 +277,7 @@ describe('F8-F11: as rows da fila viva', () => {
     */
     const row = bloco('priorInvoices.map(')
 
-    expect(row).toContain('invoiceRowPresentation(inv)')
+    expect(row).toContain('invoiceRowPresentation(inv, todayDate)')
     expect(row).toContain('apresentacao.statusLabel')
     expect(row).toContain('apresentacao.timingLabel')
     /* Preserva a identidade de fatura: banco e ícone próprios. */

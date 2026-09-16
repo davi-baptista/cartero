@@ -40,6 +40,8 @@ import {
 import {
 } from '@/lib/invoice-composition'
 import { getInvoiceCloseDate, parseInvoiceDate } from '@/lib/invoice-dates'
+import { accountTodayDate } from '@/lib/date'
+import { useAuth } from '@/providers/auth-provider'
 import {
   INVOICE_STATUS_COLOR,
   INVOICE_STATUS_LABEL,
@@ -326,6 +328,7 @@ export default function BankInvoicesPage() {
   const params = useParams()
   const router = useRouter()
   const bankId = params.id as string
+  const { user } = useAuth()
 
   /* Criação a partir do estado vazio — o banco já vem do contexto. */
   const [createOpen, setCreateOpen] = useState(false)
@@ -530,7 +533,7 @@ export default function BankInvoicesPage() {
    */
   function isAtual(inv: Invoice): boolean {
     if (inv.status !== InvoiceStatus.OPEN || !bank) return false
-    const now = new Date()
+    const now = accountTodayDate(user?.timeZone ?? null)
     const month = now.getMonth() + 1
     const year = now.getFullYear()
     const close = getInvoiceCloseDate(year, month, bank.invoiceDueDate, bank.invoiceDueDaysAfterClose)

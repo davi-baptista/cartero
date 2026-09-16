@@ -118,7 +118,7 @@ describe('D1-D8: o conteúdo do drawer', () => {
 
   it('a competência vem da SUPERFÍCIE, não do relógio', () => {
     /* `/banks` tem seletor de mês; a projeção precisa falar do mês exibido. */
-    expect(SHEET).toContain('period ?? currentPeriod()')
+    expect(SHEET).toContain('period ?? currentPeriod(user?.timeZone ?? null)')
     expect(BANKS).toContain('period={period}')
   })
 
