@@ -44,4 +44,13 @@ export class UpdateUserDto {
   @Min(1)
   @Max(30)
   notifyDaysBefore?: number;
+
+  /**
+   * Timezone financeira da conta (TZ1). Validação estrutural aqui; a
+   * validação semântica de IANA acontece no service, mesmo padrão do fluxo
+   * de cadastro.
+   */
+  @IsOptional()
+  @IsString()
+  timeZone?: string;
 }

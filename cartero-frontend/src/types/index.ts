@@ -27,6 +27,14 @@ export interface User {
   createIncomeOnReceivablePaid: boolean
   createExpenseOnDebtPaid: boolean
   notifyDaysBefore: number
+  /**
+   * Timezone financeira da conta (IANA, ex. "America/Sao_Paulo") — TZ1.
+   *
+   * `null` é uma conta legada ou que nunca configurou isso explicitamente.
+   * Nenhuma tela lê este campo para decidir "hoje"/competência ainda — essa
+   * unificação é trabalho de fases futuras (TZ2+).
+   */
+  timeZone: string | null
   createdAt: string
   updatedAt: string
 }

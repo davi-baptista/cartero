@@ -25,6 +25,14 @@ model User {
   createIncomeOnReceivablePaid Boolean   @default(false)
   createExpenseOnDebtPaid      Boolean   @default(false)
   notifyDaysBefore             Int       @default(3)
+  /// Timezone financeiro da conta (IANA, ex. "America/Sao_Paulo") — TZ1.
+  ///
+  /// SEM default de propósito: `null` distingue uma conta legada (criada
+  /// antes desta feature, ou que nunca configurou isso explicitamente) de
+  /// uma conta que escolheu um fuso. Nenhuma feature financeira lê este
+  /// campo ainda — a unificação de "hoje"/competência entre camadas é
+  /// trabalho de fases futuras (TZ2+), não desta.
+  timeZone                     String?
   createdAt                    DateTime  @default(now())
   updatedAt                    DateTime  @updatedAt
 

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   UnauthorizedException,
@@ -14,6 +15,7 @@ import {
   canMintSession,
   type CarteroJwtPayload,
 } from './token-purpose';
+import { resolveIanaTimeZone } from 'src/common/helpers/timezone.helper';
 
 @Injectable()
 export class AuthService {
@@ -32,6 +34,30 @@ export class AuthService {
       throw new ConflictException('Email já registrado');
     }
 
+    /*
+      Rejeita explicitamente em vez de descartar em silêncio: um client que
+      envie algo inválido (ex.: um offset por engano) precisa saber que não
+      foi persistido, não achar que salvou. Ausente (`undefined`) é o caminho
+      normal — vira `timeZone: null`, igual a uma conta legada (TZ1: nenhuma
+      feature financeira ainda lê este campo).
+
+      `resolveIanaTimeZone` faz validate+canonicalize num só passo — o valor
+      gravado é sempre o CANÔNICO devolvido pelo runtime, nunca o input cru
+      (TZ1.0.1: `AuthService.register` chegou a persistir o raw input já
+      validado, sem nunca canonicalizar).
+    */
+    let timeZone: string | undefined;
+    if (dto.timeZone !== undefined) {
+      const resolved = resolveIanaTimeZone(dto.timeZone);
+      if (resolved === null) {
+        throw new BadRequestException({
+          message: 'Timezone inválida.',
+          code: 'INVALID_TIME_ZONE',
+        });
+      }
+      timeZone = resolved;
+    }
+
     const hashed = await hash(dto.password, 10);
 
     const user = await this.prisma.user.create({
@@ -39,6 +65,7 @@ export class AuthService {
         email: dto.email,
         password: hashed,
         name: dto.name,
+        timeZone,
       },
     });
 
