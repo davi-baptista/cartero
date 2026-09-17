@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as webpush from 'web-push';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { financialCivilDay } from 'src/common/helpers/financial-timezone.helper';
 import { SubscribeDto } from './dto/subscribe.dto';
 import { UnsubscribeDto } from './dto/unsubscribe.dto';
 import { SubscriptionStatusDto } from './dto/subscription-status.dto';
@@ -101,7 +102,11 @@ export class NotificationsService {
 
     let sent = 0;
     for (const user of users) {
-      const items = await this.findUpcomingItems(user.id, user.notifyDaysBefore);
+      const items = await this.findUpcomingItems(
+        user.id,
+        user.notifyDaysBefore,
+        user.timeZone,
+      );
       if (items.length === 0) continue;
 
       const payload = this.buildNotificationPayload(items);
@@ -119,15 +124,34 @@ export class NotificationsService {
   private async findUpcomingItems(
     userId: string,
     daysBefore: number,
+    timeZone: string | null = null,
   ): Promise<DueItem[]> {
     const now = new Date();
-    // "Vence hoje ou nos próximos N dias" compara por dia, não pela hora exata —
-    // senão uma dívida vencendo hoje de manhã já cairia fora do filtro à tarde.
-    const todayStart = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
+    /*
+      TZ5: "hoje", pela timezone financeira da conta.
+
+      `timeZone === null` preserva EXATAMENTE o comportamento legado —
+      `todayStart` continua construído pelos getters LOCAIS do processo
+      (`getFullYear/getMonth/getDate`, sem `UTC`), nunca Fortaleza e nunca
+      UTC puro. Esse sempre foi o "hoje" de Notifications, e não é reescrito
+      para equivaler a nenhum outro domínio (§21) — mudar o legado não é o
+      objetivo deste TZ5, só dar às contas com timezone configurada um
+      caminho próprio, explícito.
+
+      Para `timeZone != null`, o dia civil vem de `financialCivilDay` e é
+      ancorado à MEIA-NOITE UTC daquele dia — meia-noite UTC sempre antecede
+      o meio-dia UTC do MESMO dia civil (a âncora de `dueDate`,
+      `parseDateOnly`), então a comparação por intervalo permanece correta.
+    */
+    const todayStart =
+      timeZone === null
+        ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        : (() => {
+            const [year, month, day] = financialCivilDay(now, timeZone)
+              .split('-')
+              .map(Number);
+            return new Date(Date.UTC(year, month - 1, day));
+          })();
     const windowEnd = new Date(
       todayStart.getTime() + (daysBefore + 1) * 24 * 60 * 60 * 1000,
     );

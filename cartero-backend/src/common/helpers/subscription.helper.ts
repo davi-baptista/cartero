@@ -1,3 +1,5 @@
+import { financialCompetence } from './financial-timezone.helper';
+
 /**
  * Um ciclo de assinatura é identificado por "YYYY-MM" — o mês de competência,
  * não a data em que a cobrança caiu. Essa distinção é o que impede que uma
@@ -24,8 +26,27 @@ export function formatCycle({ year, month }: Cycle): string {
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
-export function currentCycle(now: Date = new Date()): Cycle {
-  return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
+/**
+ * O ciclo (ano/mês) que a conta considera corrente no instante dado.
+ *
+ * `timeZone === null` preserva EXATAMENTE o comportamento legado — dia civil
+ * UTC (`getUTCFullYear`/`getUTCMonth`), nunca Fortaleza: esse sempre foi o
+ * "hoje" das assinaturas, e este TZ5 não o reescreve para equivaler
+ * artificialmente ao legado de outros domínios (que É Fortaleza). Só contas
+ * com `User.timeZone` configurado passam a resolver o ciclo pela timezone
+ * financeira da própria conta, via `financialCompetence` (TZ2/Intl-IANA).
+ *
+ * Nunca `timeZone ?? algumaZonaPadrão`: os dois caminhos ficam explícitos em
+ * quem chama.
+ */
+export function currentCycle(
+  now: Date = new Date(),
+  timeZone: string | null = null,
+): Cycle {
+  if (timeZone === null) {
+    return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
+  }
+  return financialCompetence(now, timeZone);
 }
 
 export function addCycles({ year, month }: Cycle, delta: number): Cycle {
@@ -77,8 +98,12 @@ function toCivilDay(now: Date): Date {
  * A comparação é por DIA CIVIL: o horário da reativação não pode decidir se
  * uma cobrança acontece.
  */
-export function resumeCycle(dayOfMonth: number, now: Date = new Date()): Cycle {
-  const today = currentCycle(now);
+export function resumeCycle(
+  dayOfMonth: number,
+  now: Date = new Date(),
+  timeZone: string | null = null,
+): Cycle {
+  const today = currentCycle(now, timeZone);
   const charge = chargeDateForCycle(today, dayOfMonth);
 
   // `>=` porque o dia da cobrança ainda conta: reativar em 20/08 com cobrança
@@ -105,6 +130,7 @@ export function pendingCycles(
   dayOfMonth: number,
   now: Date = new Date(),
   activeSince: string | null = null,
+  timeZone: string | null = null,
 ): Cycle[] {
   const afterLastGenerated = lastGeneratedFor
     ? addCycles(parseCycle(lastGeneratedFor), 1)
@@ -120,7 +146,7 @@ export function pendingCycles(
       : afterLastGenerated;
 
   const cycles: Cycle[] = [];
-  const today = currentCycle(now);
+  const today = currentCycle(now, timeZone);
 
   for (
     let cycle = start;
@@ -155,6 +181,7 @@ export function nextChargeDate(
     isActive: boolean;
   },
   now: Date = new Date(),
+  timeZone: string | null = null,
 ): Date | null {
   if (!subscription.isActive) return null;
 
@@ -164,6 +191,7 @@ export function nextChargeDate(
     subscription.dayOfMonth,
     now,
     subscription.activeSince,
+    timeZone,
   );
 
   // Ciclo pendente é cobrança que já venceu e ainda não foi gerada; é ela que
@@ -172,7 +200,7 @@ export function nextChargeDate(
     return chargeDateForCycle(pending[0], subscription.dayOfMonth);
   }
 
-  const today = currentCycle(now);
+  const today = currentCycle(now, timeZone);
   const chargeThisMonth = chargeDateForCycle(today, subscription.dayOfMonth);
 
   // Nada pendente e o dia ainda não chegou: a cobrança deste mês é a próxima,

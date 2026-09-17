@@ -134,7 +134,11 @@ export class SubscriptionsService {
    * mudasse. Pausada devolve `null`: não existe próxima cobrança, e inventar
    * uma data seria mentir sobre o estado.
    */
-  async findAll(userId: string, now: Date = new Date()) {
+  async findAll(
+    userId: string,
+    now: Date = new Date(),
+    timeZone: string | null = null,
+  ) {
     const subscriptions = await this.prisma.subscription.findMany({
       where: { userId },
       include: { bank: true, category: true },
@@ -143,17 +147,25 @@ export class SubscriptionsService {
 
     return subscriptions.map((subscription) => ({
       ...subscription,
-      nextCharge: nextChargeDate(subscription, now),
+      nextCharge: nextChargeDate(subscription, now, timeZone),
     }));
   }
 
-  async findOne(id: string, userId: string, now: Date = new Date()) {
+  async findOne(
+    id: string,
+    userId: string,
+    now: Date = new Date(),
+    timeZone: string | null = null,
+  ) {
     const subscription = await this.prisma.subscription.findFirst({
       where: { id, userId },
       include: { bank: true, category: true },
     });
     if (!subscription) throw new NotFoundException('Assinatura não encontrada');
-    return { ...subscription, nextCharge: nextChargeDate(subscription, now) };
+    return {
+      ...subscription,
+      nextCharge: nextChargeDate(subscription, now, timeZone),
+    };
   }
 
   /**
@@ -177,6 +189,7 @@ export class SubscriptionsService {
   async create(
     userId: string,
     dto: CreateSubscriptionDto,
+    timeZone: string | null = null,
   ): Promise<SubscriptionCreateResult> {
     await this.entityValidation.validateBank(dto.bankId, userId);
 
@@ -196,10 +209,15 @@ export class SubscriptionsService {
      * isso, um retry devolveria a assinatura sem completar o que ficou pelo
      * caminho.
      */
-    const generation = await this.reconcile(subscription, alreadyExisted);
+    const generation = await this.reconcile(
+      subscription,
+      alreadyExisted,
+      new Date(),
+      timeZone,
+    );
 
     return {
-      subscription: await this.findOne(subscription.id, userId),
+      subscription: await this.findOne(subscription.id, userId, new Date(), timeZone),
       generation,
       alreadyExisted,
     };
@@ -280,6 +298,8 @@ export class SubscriptionsService {
   private async reconcile(
     subscription: Subscription,
     alreadyExisted: boolean,
+    now: Date = new Date(),
+    timeZone: string | null = null,
   ): Promise<GenerationSummary> {
     const summary: GenerationSummary = {
       subscriptions: 1,
@@ -290,7 +310,7 @@ export class SubscriptionsService {
     };
 
     try {
-      const items = await this.runForSubscription(subscription);
+      const items = await this.runForSubscription(subscription, now, timeZone);
       summary.generated = items.filter((item) => !item.skipped).length;
       summary.skipped = items.filter((item) => item.skipped).length;
     } catch (error) {
@@ -335,8 +355,13 @@ export class SubscriptionsService {
     );
   }
 
-  async update(id: string, userId: string, dto: UpdateSubscriptionDto) {
-    const current = await this.findOne(id, userId);
+  async update(
+    id: string,
+    userId: string,
+    dto: UpdateSubscriptionDto,
+    timeZone: string | null = null,
+  ) {
+    const current = await this.findOne(id, userId, new Date(), timeZone);
 
     if (dto.bankId)
       await this.entityValidation.validateBank(dto.bankId, userId);
@@ -373,7 +398,9 @@ export class SubscriptionsService {
      * seguinte, então reativar nunca cria uma cobrança de surpresa.
      */
     const activeSince = reactivating
-      ? formatCycle(resumeCycle(dto.dayOfMonth ?? current.dayOfMonth))
+      ? formatCycle(
+          resumeCycle(dto.dayOfMonth ?? current.dayOfMonth, new Date(), timeZone),
+        )
       : undefined;
 
     // Campo a campo de propósito: `startedAt` e `lastGeneratedFor` não podem
@@ -399,7 +426,7 @@ export class SubscriptionsService {
       },
     });
 
-    return this.findOne(id, userId);
+    return this.findOne(id, userId, new Date(), timeZone);
   }
 
   async remove(id: string, userId: string) {
@@ -421,10 +448,11 @@ export class SubscriptionsService {
     startedAt: string,
     type: TransactionType,
     now: Date = new Date(),
+    timeZone: string | null = null,
   ): Promise<GenerationPlanItem[]> {
     // `null` nos dois últimos: o preview de CRIAÇÃO não tem histórico nem
     // marco de ativação — é uma assinatura que ainda não existe.
-    const cycles = pendingCycles(startedAt, null, dayOfMonth, now, null);
+    const cycles = pendingCycles(startedAt, null, dayOfMonth, now, null, timeZone);
     if (cycles.length === 0) return [];
 
     const bank = await this.entityValidation.validateBank(bankId, userId);
@@ -462,6 +490,11 @@ export class SubscriptionsService {
     now: Date = new Date(),
     source: GenerationSource = 'dashboard',
   ): Promise<SubscriptionRunResult[]> {
+    const { timeZone } = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { timeZone: true },
+    });
+
     const subscriptions = await this.prisma.subscription.findMany({
       where: { userId, isActive: true },
     });
@@ -470,7 +503,11 @@ export class SubscriptionsService {
 
     for (const subscription of subscriptions) {
       try {
-        const generated = await this.runForSubscription(subscription, now);
+        const generated = await this.runForSubscription(
+          subscription,
+          now,
+          timeZone,
+        );
         if (generated.length > 0) {
           results.push({
             subscriptionId: subscription.id,
@@ -537,8 +574,15 @@ export class SubscriptionsService {
     now: Date = new Date(),
     source: GenerationSource = 'external-cron',
   ): Promise<GenerationSummary> {
+    /*
+      TZ5: `timeZone` vem JUNTO desta MESMA consulta batelada — um `include`
+      na busca que já existia, não uma query por assinatura. Cada assinatura
+      resolve sua PRÓPRIA competência pela timezone da SUA conta; nenhuma
+      usa a de outra (owner isolation), e nenhuma query nova por linha.
+    */
     const subscriptions = await this.prisma.subscription.findMany({
       where: { isActive: true },
+      include: { user: { select: { timeZone: true } } },
     });
 
     const summary: GenerationSummary = {
@@ -551,7 +595,11 @@ export class SubscriptionsService {
 
     for (const subscription of subscriptions) {
       try {
-        const items = await this.runForSubscription(subscription, now);
+        const items = await this.runForSubscription(
+          subscription,
+          now,
+          subscription.user.timeZone,
+        );
         summary.generated += items.filter((item) => !item.skipped).length;
         summary.skipped += items.filter((item) => item.skipped).length;
       } catch (error) {
@@ -608,6 +656,7 @@ export class SubscriptionsService {
   private async runForSubscription(
     subscription: Subscription,
     now: Date = new Date(),
+    timeZone: string | null = null,
   ): Promise<GenerationPlanItem[]> {
     const cycles = pendingCycles(
       subscription.startedAt,
@@ -615,6 +664,7 @@ export class SubscriptionsService {
       subscription.dayOfMonth,
       now,
       subscription.activeSince,
+      timeZone,
     );
     if (cycles.length === 0) return [];
 

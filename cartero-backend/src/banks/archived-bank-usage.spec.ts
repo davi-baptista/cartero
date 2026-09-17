@@ -262,6 +262,7 @@ describe('Subscription — geração não roda em banco arquivado', () => {
       },
       transaction: { create: transactionCreate, findFirst: vi.fn() },
       invoice: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+      user: { findUniqueOrThrow: vi.fn().mockResolvedValue({ timeZone: null }) },
       $transaction: vi.fn(),
     } as unknown as PrismaService;
 

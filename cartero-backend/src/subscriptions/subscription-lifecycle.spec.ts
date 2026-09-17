@@ -59,7 +59,12 @@ function buildHarness(setup: Setup = {}) {
         bank,
         category: setup.category ?? { id: 'cat-1', name: 'Assinatura' },
       })),
-      findMany: vi.fn(async () => setup.subscriptions ?? [subscription]),
+      findMany: vi.fn(async () =>
+        (setup.subscriptions ?? [subscription]).map((sub) => ({
+          ...sub,
+          user: { timeZone: null },
+        })),
+      ),
       create: vi.fn(async ({ data }: any) => ({ id: 'sub-new', ...data })),
       update: vi.fn(async ({ data }: any) => {
         writes.subscriptionUpdates.push(data);
@@ -104,6 +109,9 @@ function buildHarness(setup: Setup = {}) {
       })),
       create: vi.fn(async ({ data }: any) => ({ id: 'cat-sys', ...data })),
       update: vi.fn(async ({ data }: any) => ({ id: 'cat-sys', ...data })),
+    },
+    user: {
+      findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })),
     },
   };
   prisma.$transaction = vi.fn(async (fn: any) => fn(prisma));

@@ -11,6 +11,6 @@ export class CommitmentsController {
 
   @Get()
   getCommitments(@CurrentUser() user: User) {
-    return this.commitmentsService.getCommitments(user.id);
+    return this.commitmentsService.getCommitments(user.id, user.timeZone);
   }
 }

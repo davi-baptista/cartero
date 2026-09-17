@@ -99,6 +99,11 @@ export interface ForecastInput {
   /** Quantos meses à frente projetar, contando o corrente. */
   horizonMonths: number;
   today?: Date;
+  /**
+   * Timezone financeira da conta (TZ5). `null`/ausente preserva o "hoje"
+   * legado — dia civil UTC, o mesmo que `currentCycle` sempre usou aqui.
+   */
+  timeZone?: string | null;
 }
 
 const invoiceKey = (bankId: string, year: number, month: number) =>
@@ -116,8 +121,9 @@ const invoiceKey = (bankId: string, year: number, month: number) =>
 function firstCycle(
   subscription: ForecastableSubscription,
   today: Date,
+  timeZone: string | null = null,
 ): Cycle | null {
-  const next = nextChargeDate(subscription, today);
+  const next = nextChargeDate(subscription, today, timeZone);
   if (!next) return null;
   return { year: next.getUTCFullYear(), month: next.getUTCMonth() + 1 };
 }
@@ -165,7 +171,8 @@ export function forecastSubscriptionOccurrences(
   input: ForecastInput,
 ): ForecastOccurrence[] {
   const today = input.today ?? new Date();
-  const firstPeriod = currentCycle(today);
+  const timeZone = input.timeZone ?? null;
+  const firstPeriod = currentCycle(today, timeZone);
   const lastPeriod = addCycles(firstPeriod, input.horizonMonths - 1);
 
   const occurrences: ForecastOccurrence[] = [];
@@ -175,7 +182,7 @@ export function forecastSubscriptionOccurrences(
     // a checagem explícita documenta a regra de produto.
     if (!subscription.isActive) continue;
 
-    const start = firstCycle(subscription, today);
+    const start = firstCycle(subscription, today, timeZone);
     if (!start) continue;
 
     const archived = input.archivedBankIds.has(subscription.bankId);
@@ -265,11 +272,12 @@ export function forecastInvoiceLookups(
   schedules: Map<string, InvoiceSchedule>,
   horizonMonths: number,
   today: Date = new Date(),
+  timeZone: string | null = null,
 ): Array<{ bankId: string; year: number; month: number }> {
   const seen = new Set<string>();
   const lookups: Array<{ bankId: string; year: number; month: number }> = [];
 
-  const firstPeriod = currentCycle(today);
+  const firstPeriod = currentCycle(today, timeZone);
   // A folga cobre a competência de uma cobrança do fim do horizonte que caia
   // em fatura posterior.
   const lastPeriod = addCycles(firstPeriod, horizonMonths + 1);

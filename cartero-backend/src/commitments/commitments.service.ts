@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { currentCycle } from 'src/common/helpers/subscription.helper';
 import {
   buildInvoiceKey,
   forecastInvoiceLookups,
@@ -34,9 +35,9 @@ const INSTALLMENT_SUFFIX = /\s(\d+)\/(\d+)$/;
 export class CommitmentsService {
   constructor(private prisma: PrismaService) {}
 
-  async getCommitments(userId: string) {
+  async getCommitments(userId: string, timeZone: string | null = null) {
     const [installments, subscriptions] = await Promise.all([
-      this.getActiveInstallments(userId),
+      this.getActiveInstallments(userId, timeZone),
       this.prisma.subscription.findMany({
         where: { userId, isActive: true },
         include: { bank: true, category: true },
@@ -61,7 +62,11 @@ export class CommitmentsService {
     const own = installments.filter((item) => !item.personName);
     const others = installments.filter((item) => item.personName);
 
-    const { months, nextOccurrences } = await this.getForecast(userId);
+    const { months, nextOccurrences } = await this.getForecast(
+      userId,
+      6,
+      timeZone,
+    );
 
     return {
       installments: own,
@@ -101,6 +106,7 @@ export class CommitmentsService {
    */
   private async getActiveInstallments(
     userId: string,
+    timeZone: string | null = null,
   ): Promise<ActiveInstallment[]> {
     const rows = await this.prisma.transaction.findMany({
       where: {
@@ -118,9 +124,15 @@ export class CommitmentsService {
       },
     });
 
-    const now = new Date();
-    const currentYear = now.getUTCFullYear();
-    const currentMonth = now.getUTCMonth() + 1;
+    /*
+      TZ5: "mês corrente" para decidir se a parcela ainda é futura.
+      `timeZone === null` preserva o dia civil UTC legado — nunca Fortaleza,
+      já que este nunca foi o "hoje" das parcelas (ver subscription.helper.ts).
+    */
+    const { year: currentYear, month: currentMonth } = currentCycle(
+      new Date(),
+      timeZone,
+    );
 
     const groups = new Map<string, ActiveInstallment>();
 
@@ -193,8 +205,13 @@ export class CommitmentsService {
    * período (uma consulta agregada por todas as competências alcançadas) e
    * parcelas da janela. Sem N+1.
    */
-  private async getForecast(userId: string, horizonMonths = 6) {
+  private async getForecast(
+    userId: string,
+    horizonMonths = 6,
+    timeZone: string | null = null,
+  ) {
     const now = new Date();
+    const firstCycle = currentCycle(now, timeZone);
 
     const months: Array<{
       month: number;
@@ -208,7 +225,7 @@ export class CommitmentsService {
 
     for (let i = 0; i < horizonMonths; i++) {
       const d = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + i, 1),
+        Date.UTC(firstCycle.year, firstCycle.month - 1 + i, 1),
       );
       months.push({
         month: d.getUTCMonth() + 1,
@@ -279,6 +296,7 @@ export class CommitmentsService {
       schedules,
       horizonMonths,
       now,
+      timeZone,
     );
 
     const knownInvoices = new Map<string, KnownInvoice>();
@@ -316,6 +334,7 @@ export class CommitmentsService {
       archivedBankIds,
       horizonMonths,
       today: now,
+      timeZone,
     });
 
     for (const occurrence of occurrences) {

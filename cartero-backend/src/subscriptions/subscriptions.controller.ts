@@ -67,7 +67,7 @@ export class SubscriptionsController {
   @Get()
   @UseGuards(JwtAuthGuard)
   findAll(@CurrentUser() user: User) {
-    return this.subscriptionsService.findAll(user.id);
+    return this.subscriptionsService.findAll(user.id, new Date(), user.timeZone);
   }
 
   /**
@@ -86,6 +86,8 @@ export class SubscriptionsController {
       query.dayOfMonth,
       query.startedAt,
       query.type,
+      new Date(),
+      user.timeZone,
     );
   }
 
@@ -99,13 +101,18 @@ export class SubscriptionsController {
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   findOne(@Param('id') id: string, @CurrentUser() user: User) {
-    return this.subscriptionsService.findOne(id, user.id);
+    return this.subscriptionsService.findOne(
+      id,
+      user.id,
+      new Date(),
+      user.timeZone,
+    );
   }
 
   @Post()
   @UseGuards(JwtAuthGuard)
   create(@CurrentUser() user: User, @Body() dto: CreateSubscriptionDto) {
-    return this.subscriptionsService.create(user.id, dto);
+    return this.subscriptionsService.create(user.id, dto, user.timeZone);
   }
 
   @Patch(':id')
@@ -115,7 +122,7 @@ export class SubscriptionsController {
     @CurrentUser() user: User,
     @Body() dto: UpdateSubscriptionDto,
   ) {
-    return this.subscriptionsService.update(id, user.id, dto);
+    return this.subscriptionsService.update(id, user.id, dto, user.timeZone);
   }
 
   @Delete(':id')
