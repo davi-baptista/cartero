@@ -35,6 +35,7 @@ function buildHarness() {
       id: 'sub-fortaleza',
       userId: 'user-fortaleza',
       user: { timeZone: 'America/Fortaleza' },
+      bank,
       bankId: BANK_ID,
       categoryId: 'cat-1',
       title: 'Fortaleza sub',
@@ -51,6 +52,7 @@ function buildHarness() {
       id: 'sub-tokyo',
       userId: 'user-tokyo',
       user: { timeZone: 'Asia/Tokyo' },
+      bank,
       bankId: BANK_ID,
       categoryId: 'cat-1',
       title: 'Tokyo sub',
@@ -107,7 +109,7 @@ function buildHarness() {
 
 describe('runForAll — TZ5: isolamento de timezone entre contas no mesmo lote', () => {
   it('B4/P7: mesma execução, mesmo instante — Fortaleza NÃO gera outubro ainda; Tóquio já gera', async () => {
-    const { service, writes } = buildHarness();
+    const { service, writes, prisma } = buildHarness();
 
     const summary = await service.runForAll(REAL_BOUNDARY);
 
@@ -128,6 +130,7 @@ describe('runForAll — TZ5: isolamento de timezone entre contas no mesmo lote',
 
     expect(porAssinatura.get('Fortaleza sub')).toBe(9);
     expect(porAssinatura.get('Tokyo sub')).toBe(10);
+    expect(prisma.bank.findFirst).not.toHaveBeenCalled();
   });
 
   it('B5: cada Transaction criada carrega o userId da PRÓPRIA assinatura, nunca da outra', async () => {

@@ -497,6 +497,7 @@ export class SubscriptionsService {
 
     const subscriptions = await this.prisma.subscription.findMany({
       where: { userId, isActive: true },
+      include: { bank: true },
     });
 
     const results: SubscriptionRunResult[] = [];
@@ -507,6 +508,7 @@ export class SubscriptionsService {
           subscription,
           now,
           timeZone,
+          subscription.bank,
         );
         if (generated.length > 0) {
           results.push({
@@ -582,7 +584,10 @@ export class SubscriptionsService {
     */
     const subscriptions = await this.prisma.subscription.findMany({
       where: { isActive: true },
-      include: { user: { select: { timeZone: true } } },
+      include: {
+        user: { select: { timeZone: true } },
+        bank: true,
+      },
     });
 
     const summary: GenerationSummary = {
@@ -599,6 +604,7 @@ export class SubscriptionsService {
           subscription,
           now,
           subscription.user.timeZone,
+          subscription.bank,
         );
         summary.generated += items.filter((item) => !item.skipped).length;
         summary.skipped += items.filter((item) => item.skipped).length;
@@ -657,6 +663,14 @@ export class SubscriptionsService {
     subscription: Subscription,
     now: Date = new Date(),
     timeZone: string | null = null,
+    bankOverride?: Pick<
+      Bank,
+      | 'id'
+      | 'userId'
+      | 'isArchived'
+      | 'invoiceDueDate'
+      | 'invoiceDueDaysAfterClose'
+    >,
   ): Promise<GenerationPlanItem[]> {
     const cycles = pendingCycles(
       subscription.startedAt,
@@ -668,9 +682,11 @@ export class SubscriptionsService {
     );
     if (cycles.length === 0) return [];
 
-    const bank = await this.prisma.bank.findFirst({
-      where: { id: subscription.bankId, userId: subscription.userId },
-    });
+    const bank =
+      bankOverride ??
+      (await this.prisma.bank.findFirst({
+        where: { id: subscription.bankId, userId: subscription.userId },
+      }));
 
     /**
      * Banco arquivado não gera movimento novo, nem pelo cron.
