@@ -16,6 +16,7 @@ interface DueItem {
 
 const DUE_DATE_NOTIFICATION = 'DUE_DATE_SUMMARY';
 const CLAIM_LEASE_MS = 5 * 60 * 1000;
+const DELIVERY_SLOTS = ['08:00', '12:00', '18:00', '22:00'] as const;
 
 @Injectable()
 export class NotificationsService {
@@ -110,6 +111,11 @@ export class NotificationsService {
       },
     });
     const now = new Date();
+    const deliverySlot = this.currentDeliverySlot(now);
+    if (deliverySlot === null) {
+      this.logger.log('Nenhum slot de notificação ativo neste instante');
+      return { sent: 0 };
+    }
     const usersById = new Map(users.map((user) => [user.id, user]));
     const candidates = await this.findUpcomingItemsBatch(users, now);
     let sent = 0;
@@ -120,13 +126,14 @@ export class NotificationsService {
       const civilDay = this.currentCivilDay(now, user.timeZone);
       const occurrence = await this.prisma.notificationOccurrence.upsert({
         where: {
-          userId_type_civilDay: {
+          userId_type_civilDay_deliverySlot: {
             userId,
             type: DUE_DATE_NOTIFICATION,
             civilDay,
+            deliverySlot,
           },
         },
-        create: { userId, type: DUE_DATE_NOTIFICATION, civilDay },
+        create: { userId, type: DUE_DATE_NOTIFICATION, civilDay, deliverySlot },
         update: {},
       });
 
@@ -159,6 +166,23 @@ export class NotificationsService {
   private currentCivilDay(now: Date, timeZone: string | null): string {
     if (timeZone !== null) return financialCivilDay(now, timeZone);
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
+
+  /**
+   * V2.1.1 keeps the four existing external calls. Their product identity is
+   * the Fortaleza civil hour, not the UTC instant or process startup time.
+   * V2.2 will replace this trigger-derived slot with account-local selection.
+   */
+  private currentDeliverySlot(now: Date): (typeof DELIVERY_SLOTS)[number] | null {
+    const hour = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Fortaleza',
+      hour: '2-digit',
+      hourCycle: 'h23',
+    }).format(now);
+    const slot = `${hour}:00`;
+    return (DELIVERY_SLOTS as readonly string[]).includes(slot)
+      ? (slot as (typeof DELIVERY_SLOTS)[number])
+      : null;
   }
 
   private async findUpcomingItemsBatch(

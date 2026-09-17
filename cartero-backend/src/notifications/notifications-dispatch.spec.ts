@@ -14,7 +14,7 @@ type Subscription = {
   auth: string;
 };
 
-function harness(userCount = 1) {
+function harness(userCount = 1, timeZone: string | null = null) {
   const subscriptions: Subscription[] = [];
   const users = Array.from({ length: userCount }, (_, index) => {
     const id = `user-${index}`;
@@ -28,7 +28,7 @@ function harness(userCount = 1) {
     return {
       id,
       notifyDaysBefore: 0,
-      timeZone: null,
+      timeZone,
       pushSubscriptions: [subscription],
     };
   });
@@ -45,11 +45,20 @@ function harness(userCount = 1) {
     debt: {
       findMany: vi.fn(async () => {
         reads.debts++;
+        const now = new Date();
+        const dueDay = timeZone
+          ? new Intl.DateTimeFormat('en-CA', {
+              timeZone,
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+            }).format(now)
+          : now.toISOString().slice(0, 10);
         return users.map((user) => ({
           id: `debt-${user.id}`,
           userId: user.id,
           title: 'Conta',
-          dueDate: new Date(),
+          dueDate: new Date(`${dueDay}T03:00:00.000Z`),
         }));
       }),
     },
@@ -69,9 +78,10 @@ function harness(userCount = 1) {
       upsert: vi.fn(async ({ where, create }: any) => {
         const found = occurrences.find(
           (row) =>
-            row.userId === where.userId_type_civilDay.userId &&
-            row.type === where.userId_type_civilDay.type &&
-            row.civilDay === where.userId_type_civilDay.civilDay,
+            row.userId === where.userId_type_civilDay_deliverySlot.userId &&
+            row.type === where.userId_type_civilDay_deliverySlot.type &&
+            row.civilDay === where.userId_type_civilDay_deliverySlot.civilDay &&
+            row.deliverySlot === where.userId_type_civilDay_deliverySlot.deliverySlot,
         );
         if (found) return found;
         const row = { id: `occ-${occurrences.length}`, ...create };
@@ -160,7 +170,8 @@ function harness(userCount = 1) {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
+  // 11:00Z = 08:00 in the current external trigger timezone.
+  vi.setSystemTime(new Date('2026-09-17T11:00:00.000Z'));
   vi.mocked(webpush.setVapidDetails).mockClear();
   vi.mocked(webpush.sendNotification).mockReset();
   vi.mocked(webpush.sendNotification).mockResolvedValue({} as never);
@@ -228,9 +239,38 @@ describe('durable notification dispatch', () => {
   it('creates a new logical occurrence on the next civil day', async () => {
     const h = harness();
     await h.service.runDueDateCheck();
-    vi.setSystemTime(new Date('2026-09-18T12:00:00.000Z'));
+    vi.setSystemTime(new Date('2026-09-18T11:00:00.000Z'));
     await h.service.runDueDateCheck();
     expect(h.occurrences).toHaveLength(2);
     expect(webpush.sendNotification).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves four independent product slots on one account civil day', async () => {
+    const h = harness(1, 'America/Fortaleza');
+    for (const instant of [
+      '2026-09-17T11:00:00.000Z', // 08:00 Fortaleza
+      '2026-09-17T15:00:00.000Z', // 12:00 Fortaleza
+      '2026-09-17T21:00:00.000Z', // 18:00 Fortaleza
+      '2026-09-18T01:00:00.000Z', // 22:00 Fortaleza
+    ]) {
+      vi.setSystemTime(new Date(instant));
+      await h.service.runDueDateCheck();
+    }
+    expect(h.occurrences.map((row) => row.deliverySlot)).toEqual([
+      '08:00',
+      '12:00',
+      '18:00',
+      '22:00',
+    ]);
+    expect(webpush.sendNotification).toHaveBeenCalledTimes(4);
+  });
+
+  it('repeating one slot does not create or send another occurrence', async () => {
+    const h = harness(1, 'America/Fortaleza');
+    await h.service.runDueDateCheck();
+    await h.service.runDueDateCheck();
+    expect(h.occurrences).toHaveLength(1);
+    expect(h.occurrences[0].deliverySlot).toBe('08:00');
+    expect(webpush.sendNotification).toHaveBeenCalledTimes(1);
   });
 });
