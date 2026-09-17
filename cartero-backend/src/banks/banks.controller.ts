@@ -61,7 +61,7 @@ export class BanksController {
     @CurrentUser() user: User,
     @Body() dto: UpdateBankDto,
   ) {
-    return this.banksService.previewBillingConfig(id, user.id, dto);
+    return this.banksService.previewBillingConfig(id, user.id, dto, user.timeZone);
   }
 
   @Patch(':id')
@@ -70,7 +70,7 @@ export class BanksController {
     @CurrentUser() user: User,
     @Body() dto: UpdateBankDto,
   ) {
-    return this.banksService.update(id, user.id, dto);
+    return this.banksService.update(id, user.id, dto, user.timeZone);
   }
 
   @Delete(':id')

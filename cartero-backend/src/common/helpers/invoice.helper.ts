@@ -1,4 +1,5 @@
 import { Bank, Invoice, InvoiceStatus, Prisma } from '@prisma/client';
+import { financialCivilDay } from './financial-timezone.helper';
 
 export const SYSTEM_RECEIVABLE_BANK_NAME = '__system_receivables__';
 export const DEFAULT_INVOICE_DAYS_AFTER_CLOSE = 7;
@@ -158,14 +159,51 @@ export function getInvoiceCloseDate(invoice: Pick<Invoice, 'closeDate'>): Date {
  * estado de uma fatura histórica durante o cron.
  *
  * `PAID` é terminal e não é derivado aqui — quem chama decide preservá-lo.
+ *
+ * ── TZ6: dois caminhos explícitos para "hoje" ──
+ *
+ * `timeZone === null` preserva o legado EXATO: dia civil UTC
+ * (`isAfterCivilDay`/`toCivilDay`, via `getUTCFullYear/getUTCMonth/getUTCDate`).
+ * Este SEMPRE foi o "hoje" de Invoice — nunca Fortaleza, apesar do cron
+ * disparar em horário de Fortaleza (isso decide só QUANDO o job roda, nunca
+ * a regra de negócio). Só contas com `User.timeZone` configurado passam a
+ * comparar `today` pela timezone financeira da própria conta
+ * (`financialCivilDay`, TZ2/Intl-IANA) — `closeDate`/`dueDate` continuam
+ * sendo lidas como estão, nunca reconvertidas.
+ *
+ * Nunca `timeZone ?? 'America/Fortaleza'`: os dois caminhos ficam visíveis
+ * em quem chama, a mesma exigência arquitetural de TZ2/TZ5.
  */
 export function deriveStatusFromInvoiceDates(
   invoice: Pick<Invoice, 'closeDate' | 'dueDate'>,
   today: Date = new Date(),
+  timeZone: string | null = null,
 ): InvoiceStatus {
-  if (isAfterCivilDay(today, invoice.dueDate)) return 'OVERDUE';
-  if (!isAfterCivilDay(invoice.closeDate, today)) return 'CLOSED';
+  if (timeZone === null) {
+    if (isAfterCivilDay(today, invoice.dueDate)) return 'OVERDUE';
+    if (!isAfterCivilDay(invoice.closeDate, today)) return 'CLOSED';
+    return 'OPEN';
+  }
+
+  const todayCivil = financialCivilDay(today, timeZone);
+  const dueCivil = civilDayOfUtc(invoice.dueDate);
+  const closeCivil = civilDayOfUtc(invoice.closeDate);
+
+  if (todayCivil > dueCivil) return 'OVERDUE';
+  if (closeCivil <= todayCivil) return 'CLOSED';
   return 'OPEN';
+}
+
+/**
+ * Dia civil (UTC) de uma data-fato (`closeDate`/`dueDate`) como `YYYY-MM-DD`.
+ *
+ * Essas datas são CIVIS, não instantes — nunca reconvertidas pela timezone
+ * da conta (TZ2 §4/§8: date-only storage nunca se desloca por timezone). Só
+ * a definição de "hoje" muda por conta; o dia que a fatura guarda é lido do
+ * mesmo jeito nos dois caminhos.
+ */
+function civilDayOfUtc(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
 /**

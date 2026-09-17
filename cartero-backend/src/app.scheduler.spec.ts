@@ -10,11 +10,18 @@ beforeAll(() => {
 });
 
 /**
- * O cron diário é o único mecanismo que avança o status das faturas pelo tempo.
+ * O cron (hourly) é o mecanismo que avança o status das faturas pelo tempo.
  * PAID nunca é atribuído aqui — é sempre ação do usuário.
  *
  * `syncInvoiceStatus` usa `new Date()` internamente, então os testes controlam
  * o tempo com `vi.useFakeTimers`, nunca dependendo do relógio real.
+ *
+ * `{ legacyGate: false }` em toda chamada: este arquivo testa a DERIVAÇÃO de
+ * status (transições, idempotência, calendário por banco, PAID excluído),
+ * não a POLÍTICA de quando o scheduler tem permissão de agir sobre contas
+ * legacy null (isso é `app.scheduler-timezone.spec.ts`, TZ6.1). `false`
+ * corresponde ao que `onApplicationBootstrap` sempre fez de verdade —
+ * processar imediatamente, em qualquer hora, sem gate.
  */
 
 function buildHarness(invoices: any[]) {
@@ -38,6 +45,7 @@ function augustInvoice(overrides: Parameters<typeof makeInvoice>[0] = {}) {
   return {
     ...makeInvoice({ month: 8, year: 2026, ...overrides }),
     bank: makeBank({ invoiceDueDate: 10, invoiceDueDaysAfterClose: 7 }),
+    user: { timeZone: null },
   };
 }
 
@@ -61,7 +69,7 @@ describe('AppScheduler.syncInvoiceStatus', () => {
         augustInvoice({ id: 'i1', status: 'OPEN' }),
       ]);
 
-      await harness.scheduler.syncInvoiceStatus();
+      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
 
       expect(harness.updates).toHaveLength(0);
     }),
@@ -74,7 +82,7 @@ describe('AppScheduler.syncInvoiceStatus', () => {
         augustInvoice({ id: 'i1', status: 'OPEN' }),
       ]);
 
-      await harness.scheduler.syncInvoiceStatus();
+      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
 
       expect(harness.updates).toEqual([{ id: 'i1', status: 'CLOSED' }]);
     }),
@@ -87,7 +95,7 @@ describe('AppScheduler.syncInvoiceStatus', () => {
         augustInvoice({ id: 'i1', status: 'CLOSED' }),
       ]);
 
-      await harness.scheduler.syncInvoiceStatus();
+      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
 
       expect(harness.updates).toEqual([{ id: 'i1', status: 'OVERDUE' }]);
     }),
@@ -100,7 +108,7 @@ describe('AppScheduler.syncInvoiceStatus', () => {
         augustInvoice({ id: 'i1', status: 'CLOSED' }),
       ]);
 
-      await harness.scheduler.syncInvoiceStatus();
+      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
 
       expect(harness.updates).toHaveLength(0);
     }),
@@ -115,7 +123,7 @@ describe('AppScheduler.syncInvoiceStatus', () => {
         augustInvoice({ id: 'i1', status: 'OPEN' }),
       ]);
 
-      await harness.scheduler.syncInvoiceStatus();
+      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
 
       expect(harness.updates).toEqual([{ id: 'i1', status: 'OVERDUE' }]);
     }),
@@ -128,7 +136,7 @@ describe('AppScheduler.syncInvoiceStatus', () => {
         augustInvoice({ id: 'i1', status: 'CLOSED' }),
       ]);
 
-      await harness.scheduler.syncInvoiceStatus();
+      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
 
       // CLOSED → OVERDUE é uma escrita legítima; o que não pode haver é
       // escrita quando o status já corresponde ao calendário.
@@ -142,13 +150,13 @@ describe('AppScheduler.syncInvoiceStatus', () => {
       const invoice = augustInvoice({ id: 'i1', status: 'OPEN' });
       const harness = buildHarness([invoice]);
 
-      await harness.scheduler.syncInvoiceStatus();
+      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
       expect(harness.updates).toHaveLength(1);
 
       // Simula o registro já persistido com o novo status.
       invoice.status = 'OVERDUE';
       harness.updates.length = 0;
-      await harness.scheduler.syncInvoiceStatus();
+      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
 
       expect(harness.updates).toHaveLength(0);
     }),
@@ -161,7 +169,7 @@ describe('AppScheduler.syncInvoiceStatus', () => {
       // pagamento é estado manual e final para o cron.
       const harness = buildHarness([]);
 
-      await harness.scheduler.syncInvoiceStatus();
+      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
 
       const where = (harness.prisma.invoice.findMany as any).mock.calls[0][0]
         .where;
@@ -173,7 +181,7 @@ describe('AppScheduler.syncInvoiceStatus', () => {
   it('consulta apenas faturas OPEN e CLOSED — PAID e OVERDUE ficam de fora', async () => {
     const harness = buildHarness([]);
 
-    await harness.scheduler.syncInvoiceStatus();
+    await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
 
     const where = (harness.prisma.invoice.findMany as any).mock.calls[0][0]
       .where;
@@ -188,7 +196,7 @@ describe('AppScheduler.syncInvoiceStatus', () => {
         augustInvoice({ id: 'i2', status: 'CLOSED' }),
       ]);
 
-      await harness.scheduler.syncInvoiceStatus();
+      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
 
       expect(harness.updates.map((u) => u.status)).not.toContain('PAID');
     }),
@@ -205,16 +213,19 @@ describe('AppScheduler.syncInvoiceStatus', () => {
       // estado de faturas históricas durante o cron.
       const harness = buildHarness([
         augustInvoice({ id: 'fecha-cedo', status: 'OPEN' }),
-        makeInvoice({
-          id: 'fecha-tarde',
-          month: 8,
-          year: 2026,
-          status: 'OPEN',
-          schedule: { invoiceDueDate: 28, invoiceDueDaysAfterClose: 7 },
-        }),
+        {
+          ...makeInvoice({
+            id: 'fecha-tarde',
+            month: 8,
+            year: 2026,
+            status: 'OPEN',
+            schedule: { invoiceDueDate: 28, invoiceDueDaysAfterClose: 7 },
+          }),
+          user: { timeZone: null },
+        },
       ]);
 
-      await harness.scheduler.syncInvoiceStatus();
+      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
 
       expect(harness.updates).toEqual([{ id: 'fecha-cedo', status: 'CLOSED' }]);
     }),
@@ -224,16 +235,19 @@ describe('AppScheduler.syncInvoiceStatus', () => {
     'trata a virada de ano: fatura de janeiro que fecha em dezembro',
     at('2026-01-02T12:00:00.000Z', async () => {
       const harness = buildHarness([
-        makeInvoice({
-          id: 'jan',
-          month: 1,
-          year: 2026,
-          status: 'OPEN',
-          schedule: { invoiceDueDate: 5, invoiceDueDaysAfterClose: 7 },
-        }),
+        {
+          ...makeInvoice({
+            id: 'jan',
+            month: 1,
+            year: 2026,
+            status: 'OPEN',
+            schedule: { invoiceDueDate: 5, invoiceDueDaysAfterClose: 7 },
+          }),
+          user: { timeZone: null },
+        },
       ]);
 
-      await harness.scheduler.syncInvoiceStatus();
+      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
 
       // Fecha 29/12/2025 — em 02/01/2026 já passou.
       expect(harness.updates).toEqual([{ id: 'jan', status: 'CLOSED' }]);

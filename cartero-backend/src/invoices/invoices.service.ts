@@ -165,8 +165,14 @@ export class InvoicesService {
    * Desfaz o pagamento de uma fatura, devolvendo o status que ela teria pelas
    * próprias datas. Necessário para editar lançamentos de uma fatura paga —
    * a edição é bloqueada enquanto ela estiver nesse estado.
+   *
+   * TZ6.1: `timeZone` vem de `@CurrentUser()`, já disponível no controller —
+   * nenhuma query nova. Contas com timezone configurada precisam derivar
+   * pela MESMA authority que o scheduler usa (TZ2/Intl-IANA), senão reabrir
+   * e o cron discordariam do status de uma fatura da mesma conta.
+   * `timeZone === null` preserva a derivação UTC exata de sempre.
    */
-  async reopen(id: string, userId: string) {
+  async reopen(id: string, userId: string, timeZone: string | null = null) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id, userId },
       include: { bank: true },
@@ -183,7 +189,7 @@ export class InvoicesService {
         // Das datas congeladas da própria fatura, não da configuração atual
         // do banco: reabrir não é motivo para recalcular o calendário de uma
         // fatura histórica.
-        status: deriveStatusFromInvoiceDates(invoice),
+        status: deriveStatusFromInvoiceDates(invoice, new Date(), timeZone),
       },
     });
   }
@@ -195,18 +201,20 @@ export class InvoicesService {
    * Devolve os ids afetados: quem chamou precisa deles para desfazer depois,
    * já que o registro não guarda por que uma fatura foi reaberta.
    */
-  async reopenAllPaid(userId: string) {
+  async reopenAllPaid(userId: string, timeZone: string | null = null) {
     const paid = await this.prisma.invoice.findMany({
       where: { userId, status: 'PAID' },
       include: { bank: true },
     });
+
+    const now = new Date();
 
     await this.prisma.$transaction(
       paid.map((invoice) =>
         this.prisma.invoice.update({
           where: { id: invoice.id, userId },
           data: {
-            status: deriveStatusFromInvoiceDates(invoice),
+            status: deriveStatusFromInvoiceDates(invoice, now, timeZone),
           },
         }),
       ),

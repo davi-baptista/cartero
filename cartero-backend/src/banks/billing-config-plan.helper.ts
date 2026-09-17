@@ -76,6 +76,15 @@ export interface BillingConfigPlanInput {
   /** Faturas do banco. Filtrar antes é opcional — o plano decide. */
   invoices: PlannableInvoice[];
   today?: Date;
+  /**
+   * Timezone financeira da conta (TZ6.1). `null`/ausente preserva a
+   * derivação UTC legada de `deriveStatusFromInvoiceDates` — a mesma que o
+   * scheduler usa para contas sem `User.timeZone`. Precisa ser a MESMA
+   * authority que o scheduler/reopen usam para a conta, senão o plano de
+   * mudança de ciclo discordaria do status que o cron atribuiria à mesma
+   * fatura.
+   */
+  timeZone?: string | null;
 }
 
 /**
@@ -92,9 +101,13 @@ export interface BillingConfigPlanInput {
  *
  * `PAID` é terminal e nunca chega aqui como candidata.
  */
-function isEffectivelyOpen(invoice: PlannableInvoice, today: Date): boolean {
+function isEffectivelyOpen(
+  invoice: PlannableInvoice,
+  today: Date,
+  timeZone: string | null,
+): boolean {
   if (invoice.status !== 'OPEN') return false;
-  return deriveStatusFromInvoiceDates(invoice, today) === 'OPEN';
+  return deriveStatusFromInvoiceDates(invoice, today, timeZone) === 'OPEN';
 }
 
 function sameDay(a: Date, b: Date): boolean {
@@ -105,6 +118,7 @@ export function planBillingConfigUpdate(
   input: BillingConfigPlanInput,
 ): BillingConfigPlan {
   const today = input.today ?? new Date();
+  const timeZone = input.timeZone ?? null;
   const { current, next } = input;
 
   const scheduleUnchanged =
@@ -132,7 +146,7 @@ export function planBillingConfigUpdate(
     }
 
     // Status atrasado: gravada como OPEN, mas o calendário já a fechou.
-    if (!isEffectivelyOpen(invoice, today)) {
+    if (!isEffectivelyOpen(invoice, today, timeZone)) {
       skipped.push({ ...identity, reason: 'EFFECTIVELY_CLOSED' });
       continue;
     }
@@ -163,6 +177,7 @@ export function planBillingConfigUpdate(
     const statusAfter = deriveStatusFromInvoiceDates(
       { closeDate: nextClose, dueDate: nextDue },
       today,
+      timeZone,
     );
 
     changes.push({

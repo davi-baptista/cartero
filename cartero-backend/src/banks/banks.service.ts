@@ -123,7 +123,12 @@ export class BanksService {
     }));
   }
 
-  async update(id: string, userId: string, dto: UpdateBankDto) {
+  async update(
+    id: string,
+    userId: string,
+    dto: UpdateBankDto,
+    timeZone: string | null = null,
+  ) {
     // Corrigir o vencimento de um cartão encerrado é legítimo, e sem
     // `allowArchived` o próprio formulário de edição ficaria inacessível.
     const bank = await this.entityValidationService.validateBank(id, userId, {
@@ -173,6 +178,7 @@ export class BanksService {
       current: bank,
       next: nextSchedule,
       invoices: await this.loadPlannableInvoices(id, userId),
+      timeZone,
     });
 
     /**
@@ -293,6 +299,7 @@ export class BanksService {
     id: string,
     userId: string,
     dto: UpdateBankDto,
+    timeZone: string | null = null,
   ): Promise<BillingConfigPreview> {
     const bank = await this.entityValidationService.validateBank(id, userId, {
       allowArchived: true,
@@ -302,6 +309,7 @@ export class BanksService {
       current: bank,
       next: this.resolveNextSchedule(bank, dto),
       invoices: await this.loadPlannableInvoices(id, userId),
+      timeZone,
     });
 
     // Contagem de cobranças: mesma condição de `syncPendingAutoReceivables`.

@@ -34,7 +34,7 @@ export class InvoicesController {
   // Rotas em lote antes de `:id`, senão o parâmetro as capturaria.
   @Post('reopen-all-paid')
   reopenAllPaid(@CurrentUser() user: User) {
-    return this.invoicesService.reopenAllPaid(user.id);
+    return this.invoicesService.reopenAllPaid(user.id, user.timeZone);
   }
 
   @Post('mark-many-paid')
@@ -44,7 +44,7 @@ export class InvoicesController {
 
   @Post(':id/reopen')
   reopen(@Param('id') id: string, @CurrentUser() user: User) {
-    return this.invoicesService.reopen(id, user.id);
+    return this.invoicesService.reopen(id, user.id, user.timeZone);
   }
 
   // Estática, e ANTES de `:id` — senão `/invoices/actionable` seria
