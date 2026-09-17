@@ -6,6 +6,7 @@ import { financialCivilDay } from 'src/common/helpers/financial-timezone.helper'
 import { SubscribeDto } from './dto/subscribe.dto';
 import { UnsubscribeDto } from './dto/unsubscribe.dto';
 import { SubscriptionStatusDto } from './dto/subscription-status.dto';
+import { resolveDueNotificationSlots } from './notification-slots';
 
 interface DueItem {
   id?: string;
@@ -16,7 +17,6 @@ interface DueItem {
 
 const DUE_DATE_NOTIFICATION = 'DUE_DATE_SUMMARY';
 const CLAIM_LEASE_MS = 5 * 60 * 1000;
-const DELIVERY_SLOTS = ['08:00', '12:00', '18:00', '22:00'] as const;
 
 @Injectable()
 export class NotificationsService {
@@ -111,11 +111,6 @@ export class NotificationsService {
       },
     });
     const now = new Date();
-    const deliverySlot = this.currentDeliverySlot(now);
-    if (deliverySlot === null) {
-      this.logger.log('Nenhum slot de notificação ativo neste instante');
-      return { sent: 0 };
-    }
     const usersById = new Map(users.map((user) => [user.id, user]));
     const candidates = await this.findUpcomingItemsBatch(users, now);
     let sent = 0;
@@ -123,39 +118,57 @@ export class NotificationsService {
     for (const [userId, items] of candidates) {
       const user = usersById.get(userId);
       if (!user) continue;
-      const civilDay = this.currentCivilDay(now, user.timeZone);
-      const occurrence = await this.prisma.notificationOccurrence.upsert({
-        where: {
-          userId_type_civilDay_deliverySlot: {
+      const scheduleZone = user.timeZone ?? 'America/Fortaleza';
+      const dueSlots = resolveDueNotificationSlots({
+        now,
+        timeZone: scheduleZone,
+      });
+
+      for (const dueSlot of dueSlots) {
+        // Legacy accounts keep process-local civil-day authority; only the
+        // delivery schedule uses Fortaleza until enrollment exists.
+        const civilDay =
+          user.timeZone === null
+            ? this.currentCivilDay(now, null)
+            : dueSlot.civilDay;
+        const occurrence = await this.prisma.notificationOccurrence.upsert({
+          where: {
+            userId_type_civilDay_deliverySlot: {
+              userId,
+              type: DUE_DATE_NOTIFICATION,
+              civilDay,
+              deliverySlot: dueSlot.slot,
+            },
+          },
+          create: {
             userId,
             type: DUE_DATE_NOTIFICATION,
             civilDay,
-            deliverySlot,
+            deliverySlot: dueSlot.slot,
           },
-        },
-        create: { userId, type: DUE_DATE_NOTIFICATION, civilDay, deliverySlot },
-        update: {},
-      });
+          update: {},
+        });
 
-      await this.prisma.notificationDelivery.createMany({
-        data: user.pushSubscriptions.map((subscription) => ({
-          occurrenceId: occurrence.id,
-          pushSubscriptionId: subscription.id,
-        })),
-        skipDuplicates: true,
-      });
+        await this.prisma.notificationDelivery.createMany({
+          data: user.pushSubscriptions.map((subscription) => ({
+            occurrenceId: occurrence.id,
+            pushSubscriptionId: subscription.id,
+          })),
+          skipDuplicates: true,
+        });
 
-      const payload = this.buildNotificationPayload(items);
-      for (const subscription of user.pushSubscriptions) {
-        const claimed = await this.claimDelivery(
-          occurrence.id,
-          subscription.id,
-          now,
-        );
-        if (!claimed) continue;
-        const result = await this.sendPush(subscription, payload);
-        await this.finishDelivery(claimed.id, subscription.id, result);
-        if (result === 'sent') sent++;
+        const payload = this.buildNotificationPayload(items);
+        for (const subscription of user.pushSubscriptions) {
+          const claimed = await this.claimDelivery(
+            occurrence.id,
+            subscription.id,
+            now,
+          );
+          if (!claimed) continue;
+          const result = await this.sendPush(subscription, payload);
+          await this.finishDelivery(claimed.id, subscription.id, result);
+          if (result === 'sent') sent++;
+        }
       }
     }
 
@@ -166,23 +179,6 @@ export class NotificationsService {
   private currentCivilDay(now: Date, timeZone: string | null): string {
     if (timeZone !== null) return financialCivilDay(now, timeZone);
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  }
-
-  /**
-   * V2.1.1 keeps the four existing external calls. Their product identity is
-   * the Fortaleza civil hour, not the UTC instant or process startup time.
-   * V2.2 will replace this trigger-derived slot with account-local selection.
-   */
-  private currentDeliverySlot(now: Date): (typeof DELIVERY_SLOTS)[number] | null {
-    const hour = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Fortaleza',
-      hour: '2-digit',
-      hourCycle: 'h23',
-    }).format(now);
-    const slot = `${hour}:00`;
-    return (DELIVERY_SLOTS as readonly string[]).includes(slot)
-      ? (slot as (typeof DELIVERY_SLOTS)[number])
-      : null;
   }
 
   private async findUpcomingItemsBatch(

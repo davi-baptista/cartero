@@ -273,4 +273,24 @@ describe('durable notification dispatch', () => {
     expect(h.occurrences[0].deliverySlot).toBe('08:00');
     expect(webpush.sendNotification).toHaveBeenCalledTimes(1);
   });
+
+  it('uses each account timezone for slot eligibility at the same instant', async () => {
+    vi.setSystemTime(new Date('2026-09-17T23:30:00.000Z'));
+    const tokyo = harness(1, 'Asia/Tokyo');
+    await tokyo.service.runDueDateCheck();
+    expect(tokyo.occurrences.map((row) => row.deliverySlot)).toEqual(['08:00']);
+
+    vi.mocked(webpush.sendNotification).mockClear();
+    const fortaleza = harness(1, 'America/Fortaleza');
+    await fortaleza.service.runDueDateCheck();
+    expect(fortaleza.occurrences).toHaveLength(0);
+  });
+
+  it('does not create a legacy occurrence outside the four Fortaleza slots', async () => {
+    vi.setSystemTime(new Date('2026-09-17T14:00:00.000Z')); // 11:00 Fortaleza
+    const h = harness();
+    await h.service.runDueDateCheck();
+    expect(h.occurrences).toHaveLength(0);
+    expect(webpush.sendNotification).not.toHaveBeenCalled();
+  });
 });
