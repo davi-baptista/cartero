@@ -24,6 +24,39 @@ function isLegacyMidnightTick(now: Date): boolean {
   return hour === '00';
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Candidate pruning — margem de segurança global (TZ6.2)
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `closeDate`/`dueDate` são gravados como `YYYY-MM-DDT03:00:00Z` (âncora de
+ * `dateForDayUtc`, `invoice.helper.ts`). Cada conta compara esse instante
+ * contra o SEU PRÓPRIO dia civil (`timeZone === null` → UTC; `timeZone`
+ * setado → `financialCivilDay` da conta). Como `User.timeZone` aceita
+ * QUALQUER IANA reconhecido pelo runtime (`resolveIanaTimeZone`, TZ1 — sem
+ * allowlist restrita), o pruning precisa ser seguro para todo o intervalo
+ * físico de offsets IANA (UTC-12 a UTC+14), não só para as timezones
+ * exercitadas nos testes.
+ *
+ * Medido contra as 417 zonas de `Intl.supportedValuesOf('timeZone')`, para a
+ * âncora `03:00Z`: nenhuma zona alcança o dia civil do `dueDate`/`closeDate`
+ * mais de 17h ANTES do instante gravado (o extremo mais adiantado testado,
+ * `Etc/GMT+12`/`Pacific/Kiritimati`, UTC+14), e nenhuma zona ainda está
+ * atrás mais de 9h DEPOIS dele (o extremo mais atrasado, UTC-12). A margem
+ * usada aqui (18h/10h) arredonda esses limites medidos para cima —
+ * intencionalmente, como cinto de segurança sobre a medição.
+ *
+ * Só EXCLUI candidatos cujo `dueDate` está tão longe no futuro que NENHUMA
+ * timezone real poderia tê-lo alcançado ainda. Nunca poda pelo passado —
+ * catch-up de faturas atrasadas (scheduler fora do ar por dias/semanas)
+ * nunca é afetado, porque a condição só compara contra o futuro.
+ */
+export const CANDIDATE_PRUNING_SAFETY_MARGIN_MS = 18 * 60 * 60 * 1000;
+
+export function candidatePruningCutoff(now: Date): Date {
+  return new Date(now.getTime() + CANDIDATE_PRUNING_SAFETY_MARGIN_MS);
+}
+
 @Injectable()
 export class AppScheduler implements OnApplicationBootstrap {
   private readonly logger = new Logger(AppScheduler.name);
@@ -85,9 +118,30 @@ export class AppScheduler implements OnApplicationBootstrap {
       `user: { select: { timeZone: true } }` entra no MESMO select — Prisma
       resolve com um JOIN, não uma query por fatura. `userId` já existia na
       linha; só a leitura da timezone do dono é nova, e vem de graça.
+
+      ── Candidate pruning (TZ6.2) ──
+
+      OPEN transiciona no `closeDate`; CLOSED transiciona no `dueDate`. Usar
+      só `dueDate` como corte para as duas (como uma primeira versão desta
+      mudança fazia) é um FALSO NEGATIVO real: uma fatura OPEN cujo
+      `closeDate` já passou mas `dueDate` ainda está longe no futuro (ex.:
+      intervalo de 10 dias entre fechamento e vencimento) seria podada antes
+      de nunca ter sido promovida a CLOSED. Por isso o corte é condicional ao
+      PRÓPRIO status da linha — `OR` de dois ramos, nunca um único campo:
+        OPEN   → poda por `closeDate`
+        CLOSED → poda por `dueDate`
+      Cada ramo só EXCLUI quando aquele é o status real da linha (`AND
+      status`), então o `OR` nunca inclui uma linha por engano sob o ramo
+      errado.
     */
     const invoices = await this.prisma.invoice.findMany({
-      where: { status: { in: ['OPEN', 'CLOSED'] } },
+      where: {
+        status: { in: ['OPEN', 'CLOSED'] },
+        OR: [
+          { status: 'OPEN', closeDate: { lte: candidatePruningCutoff(now) } },
+          { status: 'CLOSED', dueDate: { lte: candidatePruningCutoff(now) } },
+        ],
+      },
       select: {
         id: true,
         status: true,
