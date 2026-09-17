@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   acknowledgeOnce,
+  areTimeZonesOperationallyEquivalent,
   isSupportedTimeZone,
   mismatchKey,
   resolveDeviceTimeZone,
   supportedTimeZones,
 } from './settings'
+
+const FIXED_NOW = new Date('2026-09-17T12:00:00.000Z')
 
 describe('mobile timezone acknowledgement', () => {
   it('acknowledges one exact mismatch and allows a new pair', async () => {
@@ -125,5 +128,81 @@ describe('backend contract parity — canonical IANA identifiers only', () => {
   it('rejects raw UTC offsets', () => {
     expect(isSupportedTimeZone('-03:00')).toBe(false)
     expect(isSupportedTimeZone('UTC-3')).toBe(false)
+  })
+})
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * TZ V1.2 — areTimeZonesOperationallyEquivalent (Mobile)
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Mesmos testes e mesma regra do Web (`cartero-frontend/src/lib/
+ * timezone-settings.spec.ts`) — não pode haver um app mais permissivo que
+ * o outro para o mesmo par de timezones.
+ */
+describe('areTimeZonesOperationallyEquivalent', () => {
+  it('E1: identical timezone is equivalent (fast path)', () => {
+    expect(
+      areTimeZonesOperationallyEquivalent('America/Fortaleza', 'America/Fortaleza', FIXED_NOW),
+    ).toBe(true)
+  })
+
+  it('E2: America/Fortaleza vs America/Sao_Paulo — equivalent (no DST since 2019, same offset always)', () => {
+    expect(
+      areTimeZonesOperationallyEquivalent('America/Fortaleza', 'America/Sao_Paulo', FIXED_NOW),
+    ).toBe(true)
+  })
+
+  it('E3: America/Fortaleza vs America/Manaus — NOT equivalent (Manaus is UTC-4, Fortaleza is UTC-3)', () => {
+    expect(
+      areTimeZonesOperationallyEquivalent('America/Fortaleza', 'America/Manaus', FIXED_NOW),
+    ).toBe(false)
+  })
+
+  it('E4: America/Fortaleza vs Europe/Lisbon — NOT equivalent', () => {
+    expect(
+      areTimeZonesOperationallyEquivalent('America/Fortaleza', 'Europe/Lisbon', FIXED_NOW),
+    ).toBe(false)
+  })
+
+  it('E5: Africa/Abidjan vs Atlantic/Azores — same offset NOW, diverge seasonally — NOT equivalent', () => {
+    const offsetNow = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Africa/Abidjan',
+      timeZoneName: 'longOffset',
+    })
+      .formatToParts(FIXED_NOW)
+      .find((p) => p.type === 'timeZoneName')?.value
+    const offsetNowAzores = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Atlantic/Azores',
+      timeZoneName: 'longOffset',
+    })
+      .formatToParts(FIXED_NOW)
+      .find((p) => p.type === 'timeZoneName')?.value
+    expect(offsetNow).toBe(offsetNowAzores)
+
+    expect(
+      areTimeZonesOperationallyEquivalent('Africa/Abidjan', 'Atlantic/Azores', FIXED_NOW),
+    ).toBe(false)
+  })
+
+  it('E6: Asia/Calcutta (forma canônica de Kolkata) vs timezone de offset diferente — NOT equivalent', () => {
+    expect(
+      areTimeZonesOperationallyEquivalent('Asia/Calcutta', 'America/Fortaleza', FIXED_NOW),
+    ).toBe(false)
+  })
+
+  it('P3: America/Fortaleza vs America/Recife — also equivalent (proves the rule is general, not hardcoded)', () => {
+    expect(
+      areTimeZonesOperationallyEquivalent('America/Fortaleza', 'America/Recife', FIXED_NOW),
+    ).toBe(true)
+  })
+
+  it('E7: timezone :45 (Pacific/Chatham) continua suportada pela comparação', () => {
+    expect(
+      areTimeZonesOperationallyEquivalent('Pacific/Chatham', 'Pacific/Chatham', FIXED_NOW),
+    ).toBe(true)
+    expect(
+      areTimeZonesOperationallyEquivalent('Pacific/Chatham', 'America/Fortaleza', FIXED_NOW),
+    ).toBe(false)
   })
 })

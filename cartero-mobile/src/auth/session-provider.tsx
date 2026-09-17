@@ -22,6 +22,7 @@ import { INITIAL_SESSION, SessionMachine } from './session-machine'
 import type { SessionState } from './types'
 import {
   acknowledgeOnce,
+  areTimeZonesOperationallyEquivalent,
   isSupportedTimeZone,
   mismatchKey,
   resolveDeviceTimeZone,
@@ -162,6 +163,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const userId = session.status === 'signedIn' ? session.user?.id : null
       const device = resolveDeviceTimeZone()
       if (!account || !userId || !device || account === device) {
+        setTimezoneMismatch(null)
+        return
+      }
+      /*
+        Equivalência operacional (TZ V1.2) — checada ANTES de qualquer ack,
+        igual ao Web. Um par equivalente nunca grava reconhecimento: se uma
+        futura atualização do tzdata fizer as regras divergirem, o mesmo
+        par volta a ser avaliado do zero.
+      */
+      if (areTimeZonesOperationallyEquivalent(account, device, new Date())) {
         setTimezoneMismatch(null)
         return
       }
