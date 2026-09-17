@@ -39,6 +39,7 @@ import { pushErrorMessage } from '@/lib/push-error-copy'
 import { formatCurrency } from '@/lib/formatters'
 import { currentPeriod } from '@/components/month-nav'
 import { MaintenanceMode } from './maintenance-mode'
+import { isSupportedTimeZone, supportedTimeZones } from '@/lib/timezone-settings'
 
 // ─── Section Card ─────────────────────────────────────────────────────────────
 
@@ -140,6 +141,8 @@ export default function ProfilePage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [timeZoneSearch, setTimeZoneSearch] = useState('')
+  const [timeZoneDraft, setTimeZoneDraft] = useState(user?.timeZone ?? '')
 
   /**
    * Reconciliação no mount.
@@ -217,6 +220,7 @@ export default function ProfilePage() {
       setCreateIncomeOnReceivablePaid(user.createIncomeOnReceivablePaid ?? false)
       setCreateExpenseOnDebtPaid(user.createExpenseOnDebtPaid ?? false)
       setNotifyDaysBefore(user.notifyDaysBefore ?? 3)
+      setTimeZoneDraft(user.timeZone ?? '')
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
@@ -296,6 +300,17 @@ export default function ProfilePage() {
       toast.success('Preferências atualizadas')
     },
     onError: () => toast.error('Não foi possível atualizar as preferências'),
+  })
+
+  const timeZoneMut = useMutation({
+    mutationFn: () => updateMe({ timeZone: timeZoneDraft }),
+    onSuccess: (updated) => {
+      updateUser(updated)
+      setTimeZoneDraft(updated.timeZone ?? '')
+      void qc.invalidateQueries()
+      toast.success('Timezone financeira atualizada')
+    },
+    onError: () => toast.error('Não foi possível atualizar a timezone'),
   })
 
   async function handleTogglePush(nextEnabled: boolean) {
@@ -433,6 +448,11 @@ export default function ProfilePage() {
   const preferencesUnchanged =
     createIncomeOnReceivablePaid === (user.createIncomeOnReceivablePaid ?? false) &&
     createExpenseOnDebtPaid === (user.createExpenseOnDebtPaid ?? false)
+  const filteredTimeZones = supportedTimeZones().filter((zone) =>
+    zone.toLowerCase().includes(timeZoneSearch.trim().toLowerCase()),
+  )
+  const timeZoneUnchanged = timeZoneDraft === (user.timeZone ?? '')
+  const timeZoneValid = timeZoneDraft.length > 0 && isSupportedTimeZone(timeZoneDraft)
 
   return (
     <div className="flex flex-col gap-6">
@@ -485,6 +505,50 @@ export default function ProfilePage() {
             />
             <p className="text-[11px] text-muted-foreground/60">
               O email não pode ser alterado
+            </p>
+          </Field>
+        </SectionCard>
+
+        <SectionCard
+          title="Timezone financeira"
+          description="Usada para hoje, competências, vencimentos, notificações e ciclos de assinatura. Alterar não reescreve dados históricos."
+          footer={
+            <Button
+              size="sm"
+              onClick={() => timeZoneMut.mutate()}
+              disabled={timeZoneMut.isPending || timeZoneUnchanged || !timeZoneValid}
+            >
+              {timeZoneMut.isPending ? 'Salvando…' : 'Salvar timezone'}
+            </Button>
+          }
+        >
+          <Field label="Timezone atual">
+            {user.timeZone ? (
+              <p className="rounded-lg border border-border bg-background px-3 py-2 text-sm">{user.timeZone}</p>
+            ) : (
+              <p className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted-foreground">Não configurada — conta legada</p>
+            )}
+          </Field>
+          <Field label="Escolher timezone">
+            <Input
+              value={timeZoneSearch}
+              onChange={(event) => setTimeZoneSearch(event.target.value)}
+              placeholder="Pesquisar por região ou cidade"
+              className="h-8 text-sm"
+              aria-label="Pesquisar timezone"
+            />
+            <select
+              value={timeZoneDraft}
+              onChange={(event) => setTimeZoneDraft(event.target.value)}
+              size={Math.min(Math.max(filteredTimeZones.length, 3), 8)}
+              className="rounded-lg border border-input bg-background px-3 py-2 text-sm"
+              aria-label="Timezone financeira"
+            >
+              <option value="" disabled>Selecione uma timezone</option>
+              {filteredTimeZones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              O valor salvo é um identificador IANA canônico. Contas legadas só mudam após confirmação explícita.
             </p>
           </Field>
         </SectionCard>

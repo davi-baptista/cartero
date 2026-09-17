@@ -1,13 +1,12 @@
 import { Stack } from 'expo-router'
 import { theme } from '../../src/ui/theme'
+import { TimezoneMismatchBanner } from '../../src/timezone/timezone-mismatch-banner'
 
 export default function AppLayout() {
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: theme.color.background },
-      }}
-    />
+    <>
+      <TimezoneMismatchBanner />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.color.background } }} />
+    </>
   )
 }

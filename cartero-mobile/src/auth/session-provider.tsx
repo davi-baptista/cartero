@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import { AppState, type AppStateStatus } from 'react-native'
+import * as SecureStore from 'expo-secure-store'
 import { ApiClient } from '../api/client'
 import { API_URL } from '../config'
 import { snapshotStore } from '../../modules/cartero-widget-snapshot/src'
@@ -19,6 +20,18 @@ import { WidgetPrivacyService } from '../widget/privacy-service'
 import { secureCredentialStore } from './secure-store'
 import { INITIAL_SESSION, SessionMachine } from './session-machine'
 import type { SessionState } from './types'
+import {
+  acknowledgeOnce,
+  isSupportedTimeZone,
+  mismatchKey,
+  resolveDeviceTimeZone,
+  type TimezoneMismatch,
+} from '../timezone/settings'
+
+const timezoneAcknowledgementStore = {
+  get: (key: string) => SecureStore.getItemAsync(key),
+  set: (key: string, value: string) => SecureStore.setItemAsync(key, value),
+}
 
 /**
  * Liga a máquina de sessão ao estado do React.
@@ -35,12 +48,17 @@ interface SessionContextValue {
   privacy: WidgetPrivacyService
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  timezoneMismatch: TimezoneMismatch | null
+  updateTimeZone: (timeZone: string) => Promise<void>
+  dismissTimezoneMismatch: () => void
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null)
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SessionState>(INITIAL_SESSION)
+  const [timezoneMismatch, setTimezoneMismatch] = useState<TimezoneMismatch | null>(null)
+  const timezoneCheckInFlight = useRef<Promise<void> | null>(null)
 
   /*
     Cliente e máquina criados UMA vez. Recriá-los a cada render descartaria o
@@ -136,9 +154,50 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const { api, machine, snapshot, invoices, privacy } = refs.current
 
+  const checkTimezoneMismatch = () => {
+    if (timezoneCheckInFlight.current) return timezoneCheckInFlight.current
+    const run = (async () => {
+      const session = machine.getState()
+      const account = session.status === 'signedIn' ? session.user?.timeZone : null
+      const userId = session.status === 'signedIn' ? session.user?.id : null
+      const device = resolveDeviceTimeZone()
+      if (!account || !userId || !device || account === device) {
+        setTimezoneMismatch(null)
+        return
+      }
+      const key = mismatchKey(userId, account, device)
+      if ((await timezoneAcknowledgementStore.get(key)) === '1') {
+        setTimezoneMismatch(null)
+        return
+      }
+      await acknowledgeOnce(timezoneAcknowledgementStore, userId, account, device)
+      setTimezoneMismatch({ account, device })
+    })()
+    timezoneCheckInFlight.current = run.finally(() => {
+      timezoneCheckInFlight.current = null
+    })
+    return timezoneCheckInFlight.current
+  }
+
+  const updateTimeZone = async (timeZone: string) => {
+    if (!isSupportedTimeZone(timeZone)) throw new Error('INVALID_TIME_ZONE')
+    const user = await api.authorized<NonNullable<SessionState['user']>>('/users/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ timeZone }),
+    })
+    machine.replaceUser(user)
+    setTimezoneMismatch(null)
+    await syncWidgetSnapshots({ budget: snapshot, invoices })
+  }
+
   useEffect(() => {
     void machine.bootstrap()
   }, [machine])
+
+  useEffect(() => {
+    if (state.status === 'signedIn') void checkTimezoneMismatch()
+    else setTimezoneMismatch(null)
+  }, [state.status, state.user?.id, state.user?.timeZone])
 
   /*
     Os snapshots acompanham a sessão, sem interferir nela.
@@ -162,6 +221,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onChange = (next: AppStateStatus) => {
       if (next === 'active' && machine.getState().status === 'signedIn') {
+        void checkTimezoneMismatch()
         void syncWidgetSnapshots({ budget: snapshot, invoices })
       }
     }
@@ -176,6 +236,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       api,
       privacy,
       signIn: (email, password) => machine.signIn(email, password),
+      timezoneMismatch,
+      updateTimeZone,
+      dismissTimezoneMismatch: () => setTimezoneMismatch(null),
       /*
         Os DOIS snapshots são neutralizados ANTES de a sessão terminar. Na
         ordem inversa, uma falha entre as etapas deixaria a credencial
@@ -188,7 +251,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         await machine.signOut()
       },
     }),
-    [state, api, machine, snapshot, invoices, privacy],
+    [state, api, machine, snapshot, invoices, privacy, timezoneMismatch],
   )
 
   return (

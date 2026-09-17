@@ -37,6 +37,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useAuth } from '@/providers/auth-provider'
+import { TimezoneMismatchNotice } from '@/components/timezone-mismatch-notice'
 import { NavigationProgress } from '@/components/ui/navigation-progress'
 import { MonthNav, MonthPeriodProvider, useMonthPeriod } from '@/components/month-nav'
 import { SubscriptionRunner } from '@/components/subscription-runner'
@@ -265,6 +266,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <MonthPeriodProvider>
     <SidebarProvider>
+      <TimezoneMismatchNotice />
       <NavigationProgress />
       <SubscriptionRunner />
       <div className="flex min-h-screen w-full">

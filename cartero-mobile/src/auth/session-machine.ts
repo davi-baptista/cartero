@@ -145,4 +145,9 @@ export class SessionMachine {
   handleSessionLost(): void {
     this.set({ status: 'signedOut', user: null, error: 'sessionExpired' })
   }
+
+  replaceUser(user: NonNullable<SessionState['user']>): void {
+    if (this.state.status !== 'signedIn') return
+    this.set({ ...this.state, user })
+  }
 }

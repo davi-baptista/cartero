@@ -5,12 +5,14 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { useSession } from '../../src/auth/session-provider'
 import { theme } from '../../src/ui/theme'
+import { isSupportedTimeZone, supportedTimeZones } from '../../src/timezone/settings'
 
 /**
  * Configurações do Cartero Mobile.
@@ -33,8 +35,10 @@ type ToggleState =
   | { status: 'partial'; showAmounts: boolean }
 
 export default function SettingsScreen() {
-  const { state, privacy } = useSession()
+  const { state, privacy, updateTimeZone } = useSession()
   const ownerId = state.user?.id ?? null
+  const [timeZoneSearch, setTimeZoneSearch] = useState('')
+  const [timeZoneDraft, setTimeZoneDraft] = useState(state.user?.timeZone ?? '')
 
   /*
     Começa em `loading`, e o switch aparece DESLIGADO.
@@ -63,6 +67,10 @@ export default function SettingsScreen() {
       active = false
     }
   }, [ownerId, privacy])
+
+  useEffect(() => {
+    setTimeZoneDraft(state.user?.timeZone ?? '')
+  }, [state.user?.id, state.user?.timeZone])
 
   const onToggle = useCallback(
     async (nextShow: boolean) => {
@@ -97,6 +105,22 @@ export default function SettingsScreen() {
 
   const showAmounts = toggle.status === 'loading' ? false : toggle.showAmounts
   const busy = toggle.status === 'loading' || toggle.status === 'saving'
+  const timeZones = supportedTimeZones().filter((zone) =>
+    zone.toLowerCase().includes(timeZoneSearch.trim().toLowerCase()),
+  )
+  const timeZoneChanged = timeZoneDraft !== (state.user?.timeZone ?? '')
+  const timeZoneValid = timeZoneDraft.length > 0 && isSupportedTimeZone(timeZoneDraft)
+  const [timeZoneSaving, setTimeZoneSaving] = useState(false)
+
+  const saveTimeZone = async () => {
+    if (!timeZoneValid || !timeZoneChanged) return
+    setTimeZoneSaving(true)
+    try {
+      await updateTimeZone(timeZoneDraft)
+    } finally {
+      setTimeZoneSaving(false)
+    }
+  }
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -162,6 +186,45 @@ export default function SettingsScreen() {
             </Text>
           ) : null}
         </View>
+
+        <Text style={styles.sectionLabel}>Conta</Text>
+        <View style={styles.card}>
+          <Text style={styles.rowTitle}>Timezone financeira</Text>
+          <Text style={styles.rowHint}>
+            Usada para hoje, competências, vencimentos, notificações e assinaturas. Não reescreve dados históricos.
+          </Text>
+          <Text style={styles.currentTimeZone}>
+            {state.user?.timeZone ?? 'Não configurada — conta legada'}
+          </Text>
+          <TextInput
+            value={timeZoneSearch}
+            onChangeText={setTimeZoneSearch}
+            placeholder="Pesquisar timezone"
+            placeholderTextColor={theme.color.textMuted}
+            style={styles.timeZoneInput}
+            accessibilityLabel="Pesquisar timezone"
+          />
+          <View style={styles.timeZoneList}>
+            {timeZones.slice(0, 12).map((zone) => (
+              <Pressable
+                key={zone}
+                onPress={() => setTimeZoneDraft(zone)}
+                style={[styles.zoneOption, timeZoneDraft === zone && styles.zoneOptionSelected]}
+                accessibilityRole="button"
+                accessibilityLabel={`Selecionar ${zone}`}
+              >
+                <Text style={styles.zoneText}>{zone}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable
+            onPress={() => void saveTimeZone()}
+            disabled={timeZoneSaving || !timeZoneChanged || !timeZoneValid}
+            style={[styles.saveButton, (timeZoneSaving || !timeZoneChanged || !timeZoneValid) && styles.disabled]}
+          >
+            <Text style={styles.saveButtonText}>{timeZoneSaving ? 'Salvando…' : 'Salvar timezone'}</Text>
+          </Pressable>
+        </View>
       </View>
     </SafeAreaView>
   )
@@ -203,4 +266,21 @@ const styles = StyleSheet.create({
   rowTitle: { color: theme.color.text, fontSize: theme.font.body },
   rowHint: { color: theme.color.textMuted, fontSize: theme.font.small },
   error: { color: theme.color.danger, fontSize: theme.font.small },
+  currentTimeZone: { color: theme.color.text, fontSize: theme.font.small, fontWeight: '600' },
+  timeZoneInput: {
+    minHeight: theme.touchTarget,
+    borderColor: theme.color.border,
+    borderWidth: 1,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.space.sm,
+    color: theme.color.text,
+    fontSize: theme.font.small,
+  },
+  timeZoneList: { gap: theme.space.xs, maxHeight: 240 },
+  zoneOption: { minHeight: theme.touchTarget, justifyContent: 'center', paddingHorizontal: theme.space.sm, borderRadius: theme.radius.md },
+  zoneOptionSelected: { backgroundColor: theme.color.background, borderColor: theme.color.primary, borderWidth: 1 },
+  zoneText: { color: theme.color.text, fontSize: theme.font.small },
+  saveButton: { minHeight: theme.touchTarget, borderRadius: theme.radius.md, backgroundColor: theme.color.primary, alignItems: 'center', justifyContent: 'center' },
+  saveButtonText: { color: theme.color.background, fontSize: theme.font.small, fontWeight: '700' },
+  disabled: { opacity: 0.45 },
 })
