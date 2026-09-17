@@ -266,7 +266,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <MonthPeriodProvider>
     <SidebarProvider>
-      <TimezoneMismatchNotice />
       <NavigationProgress />
       <SubscriptionRunner />
       <div className="flex min-h-screen w-full">
@@ -318,6 +317,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Content */}
         <div className="flex min-w-0 flex-1 flex-col">
+          <TimezoneMismatchNotice />
           <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 sm:gap-3">
             <SidebarToggle />
             <Image

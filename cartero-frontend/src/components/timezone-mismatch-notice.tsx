@@ -1,16 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/providers/auth-provider'
 import { updateMe } from '@/services/users.service'
-import {
-  acknowledgeMismatch,
-  hasAcknowledgedMismatch,
-  resolveDeviceTimeZone,
-} from '@/lib/timezone-settings'
+import { resolveDeviceTimeZone, resolveMismatchDecision } from '@/lib/timezone-settings'
 
 type Mismatch = { account: string; device: string }
 
@@ -18,6 +14,11 @@ export function TimezoneMismatchNotice() {
   const { user, updateUser } = useAuth()
   const queryClient = useQueryClient()
   const [mismatch, setMismatch] = useState<Mismatch | null>(null)
+  /*
+    Par account->device já decidido nesta montagem lógica — ver
+    `resolveMismatchDecision` para o porquê (Strict Mode do React, dev only).
+  */
+  const shownForRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!user?.timeZone) {
@@ -27,19 +28,15 @@ export function TimezoneMismatchNotice() {
 
     const check = () => {
       const device = resolveDeviceTimeZone()
-      const account = user.timeZone
-      if (
-        !device ||
-        !account ||
-        device === account ||
-        hasAcknowledgedMismatch(user.id, account, device)
-      ) {
+      const decision = resolveMismatchDecision(user.id, user.timeZone, device, shownForRef.current)
+
+      if (!decision.show) {
         setMismatch(null)
         return
       }
 
-      acknowledgeMismatch(user.id, account, device)
-      setMismatch({ account, device })
+      shownForRef.current = `${decision.mismatch.account}->${decision.mismatch.device}`
+      setMismatch(decision.mismatch)
     }
 
     check()
@@ -65,7 +62,7 @@ export function TimezoneMismatchNotice() {
   }
 
   return (
-    <aside className="mx-auto flex max-w-5xl items-center justify-between gap-4 border-b border-border bg-muted/50 px-4 py-3 text-sm">
+    <aside className="flex flex-wrap items-center justify-between gap-4 border-b border-border bg-muted/50 px-4 py-3 text-sm">
       <p>
         O dispositivo está em <strong>{mismatch.device}</strong>, mas sua conta usa{' '}
         <strong>{mismatch.account}</strong>. Isso afeta datas financeiras e horários de notificações.

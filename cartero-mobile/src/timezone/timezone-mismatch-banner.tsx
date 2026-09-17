@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Pressable, Text, View } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { useSession } from '../auth/session-provider'
 import { theme } from '../ui/theme'
 
@@ -17,7 +18,17 @@ export function TimezoneMismatchBanner() {
     }
   }
 
+  /*
+    Este banner é montado em `(app)/_layout.tsx`, ACIMA do `<Stack>` — fora do
+    `SafeAreaView` de qualquer tela individual. Sem seu próprio inset de
+    topo, o texto ficava atrás da status bar (confirmado em runtime real,
+    AVD `Cartero_API_36`: o relógio/ícones do sistema sobrepunham a primeira
+    linha do aviso). `edges={['top']}` aplica só o padding que falta, sem
+    duplicar o inset inferior que a tela por baixo já aplica no seu próprio
+    `SafeAreaView`.
+  */
   return (
+    <SafeAreaView edges={['top']} style={{ backgroundColor: theme.color.surface }}>
     <View style={{ padding: theme.space.md, backgroundColor: theme.color.surface, borderBottomWidth: 1, borderBottomColor: theme.color.border, gap: theme.space.sm }}>
       <Text style={{ color: theme.color.text, fontSize: theme.font.small }}>
         Este dispositivo está em {timezoneMismatch.device}, mas a conta usa {timezoneMismatch.account}.
@@ -34,5 +45,6 @@ export function TimezoneMismatchBanner() {
         </Pressable>
       </View>
     </View>
+    </SafeAreaView>
   )
 }
