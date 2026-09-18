@@ -393,6 +393,7 @@ describe('TransactionsService.update — preservação estrutural em edição te
     );
     const before = harness.state.transactions.map((tx) => ({
       id: tx.id,
+      parentId: tx.parentId,
       invoiceId: tx.invoiceId,
       date: tx.date,
       amount: tx.amount,
@@ -404,6 +405,7 @@ describe('TransactionsService.update — preservação estrutural em edição te
 
     expect(harness.state.transactions.map((tx) => ({
       id: tx.id,
+      parentId: tx.parentId,
       invoiceId: tx.invoiceId,
       date: tx.date,
       amount: tx.amount,
