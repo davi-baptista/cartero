@@ -2,11 +2,16 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { EnvService } from 'src/env/env.service';
+import { PrismaService } from 'src/prisma/prisma.service';
 import { canAuthenticateRequest, type CarteroJwtPayload } from './token-purpose';
+import type { AuthenticatedUser } from './authenticated-user';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private envService: EnvService) {
+  constructor(
+    private envService: EnvService,
+    private prisma: PrismaService,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -14,7 +19,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  validate(payload: CarteroJwtPayload) {
+  async validate(payload: CarteroJwtPayload): Promise<AuthenticatedUser> {
     /*
       Assinatura e validade não bastam.
 
@@ -37,6 +42,27 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Credenciais ínvalidas');
     }
 
-    return { id: payload.sub };
+    /*
+      `timeZone` vem do BANCO, nunca do claim do JWT: é editável pelo usuário
+      (`PATCH /users/me`) e um claim assinado ficaria stale até o token
+      expirar. `@CurrentUser()` devolvia só `{ id: payload.sub }` — controllers
+      que liam `user.timeZone` sempre recebiam `undefined`, para todo usuário,
+      em toda request, independente do dado persistido (o crash não era
+      "conta com timezone nula"; era a timezone nunca chegar aqui).
+
+      Select estreito por primary key — uma leitura indexada por request,
+      nada de N+1: nenhum outro campo é lido por nenhum controller a partir
+      deste objeto (auditado — só `.id` e `.timeZone`).
+    */
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, timeZone: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Credenciais ínvalidas');
+    }
+
+    return user;
   }
 }

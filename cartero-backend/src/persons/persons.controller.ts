@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from 'src/auth/current-user.decorator';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
-import type { User } from '@prisma/client';
+import type { AuthenticatedUser } from 'src/auth/authenticated-user';
 import { PersonsService } from './persons.service';
 import { CreatePersonDto } from './dto/create-person.dto';
 import { UpdatePersonDto } from './dto/update-person.dto';
@@ -26,28 +26,28 @@ export class PersonsController {
   constructor(private PersonsService: PersonsService) {}
 
   @Post()
-  create(@CurrentUser() user: User, @Body() dto: CreatePersonDto) {
+  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreatePersonDto) {
     return this.PersonsService.create(user.id, dto);
   }
 
   @Patch(':id')
   update(
     @Param('id') id: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdatePersonDto,
   ) {
     return this.PersonsService.update(id, user.id, dto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string, @CurrentUser() user: User) {
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.PersonsService.remove(id, user.id);
   }
 
   @Get(':id/statement')
   getStatement(
     @Param('id') id: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: AuthenticatedUser,
     @Query() filters: GetStatementDto,
   ) {
     return this.PersonsService.getStatement(id, user.id, filters);
@@ -56,7 +56,7 @@ export class PersonsController {
   @Post(':id/settle')
   settle(
     @Param('id') id: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: SettlePersonDto,
   ) {
     return this.PersonsService.settle(id, user.id, dto);
@@ -70,7 +70,7 @@ export class PersonsController {
     404 — sem nada indicando que a causa é a ordem.
   */
   @Get('monthly-summary')
-  monthlySummary(@CurrentUser() user: User, @Query() dto: MonthlySummaryDto) {
+  monthlySummary(@CurrentUser() user: AuthenticatedUser, @Query() dto: MonthlySummaryDto) {
     return this.PersonsService.monthlySummary(user.id, {
       year: dto.year,
       month: dto.month,
@@ -78,12 +78,12 @@ export class PersonsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string, @CurrentUser() user: User) {
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.PersonsService.findOne(id, user.id);
   }
 
   @Get()
-  findAll(@CurrentUser() user: User, @Query() filters: FindPersonsDto) {
+  findAll(@CurrentUser() user: AuthenticatedUser, @Query() filters: FindPersonsDto) {
     return this.PersonsService.findAll(user.id, filters);
   }
 }

@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from 'src/auth/current-user.decorator';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
-import type { User } from '@prisma/client';
+import type { AuthenticatedUser } from 'src/auth/authenticated-user';
 import { SalaryService } from './salary.service';
 import { GetSalaryDto } from './dto/get-salary.dto';
 import { UpsertSalaryDto } from './dto/upsert-salary.dto';
@@ -37,7 +37,7 @@ export class SalaryController {
   constructor(private salaryService: SalaryService) {}
 
   @Get()
-  resolve(@CurrentUser() user: User, @Query() query: GetSalaryDto) {
+  resolve(@CurrentUser() user: AuthenticatedUser, @Query() query: GetSalaryDto) {
     return this.salaryService.resolve(user.id, {
       year: query.year,
       month: query.month,
@@ -49,18 +49,18 @@ export class SalaryController {
     primeiro capturaria `/salary/history` com `year: 'history'`.
   */
   @Get('history')
-  list(@CurrentUser() user: User) {
+  list(@CurrentUser() user: AuthenticatedUser) {
     return this.salaryService.list(user.id);
   }
 
   @Put()
-  upsert(@CurrentUser() user: User, @Body() dto: UpsertSalaryDto) {
+  upsert(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpsertSalaryDto) {
     return this.salaryService.upsert(user.id, dto);
   }
 
   @Patch(':year/:month')
   updateAmount(
-    @CurrentUser() user: User,
+    @CurrentUser() user: AuthenticatedUser,
     @Param() params: SalaryCompetenceParamsDto,
     @Body() dto: UpdateSalaryAmountDto,
   ) {

@@ -12,7 +12,7 @@ import {
 import { CurrentUser } from 'src/auth/current-user.decorator';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { BanksService } from './banks.service';
-import type { User } from '@prisma/client';
+import type { AuthenticatedUser } from 'src/auth/authenticated-user';
 import { CreateBankDto } from './dto/create-bank.dto';
 import { UpdateBankDto } from './dto/update-bank.dto';
 import { FindBanksDto } from './dto/find-banks.dto';
@@ -27,7 +27,7 @@ export class BanksController {
   ) {}
 
   @Post()
-  create(@CurrentUser() user: User, @Body() dto: CreateBankDto) {
+  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateBankDto) {
     return this.banksService.create(user.id, dto);
   }
 
@@ -40,12 +40,12 @@ export class BanksController {
    * (banco de sistema, assinaturas ativas).
    */
   @Post(':id/archive')
-  archive(@Param('id') id: string, @CurrentUser() user: User) {
+  archive(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.banksService.archive(id, user.id);
   }
 
   @Post(':id/restore')
-  restore(@Param('id') id: string, @CurrentUser() user: User) {
+  restore(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.banksService.restore(id, user.id);
   }
 
@@ -58,7 +58,7 @@ export class BanksController {
   @Post(':id/preview-billing-config')
   previewBillingConfig(
     @Param('id') id: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateBankDto,
   ) {
     return this.banksService.previewBillingConfig(id, user.id, dto, user.timeZone);
@@ -67,29 +67,29 @@ export class BanksController {
   @Patch(':id')
   update(
     @Param('id') id: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateBankDto,
   ) {
     return this.banksService.update(id, user.id, dto, user.timeZone);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string, @CurrentUser() user: User) {
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.banksService.remove(id, user.id);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string, @CurrentUser() user: User) {
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.banksService.findOne(id, user.id);
   }
 
   @Get()
-  findAll(@CurrentUser() user: User, @Query() filters: FindBanksDto) {
+  findAll(@CurrentUser() user: AuthenticatedUser, @Query() filters: FindBanksDto) {
     return this.banksService.findAll(user.id, filters.status);
   }
 
   @Get(':id/invoices')
-  findInvoices(@Param('id') id: string, @CurrentUser() user: User) {
+  findInvoices(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.invoicesService.findAll(user.id, { bankId: id });
   }
 }

@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from 'src/auth/current-user.decorator';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
-import type { User } from '@prisma/client';
+import type { AuthenticatedUser } from 'src/auth/authenticated-user';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { FindTransactionsDto } from './dto/find-transactions.dto';
 import { TransactionsService } from './transactions.service';
@@ -32,7 +32,7 @@ export class TransactionsController {
    * criação — invertendo a ordem, `POST /transactions/preview` cairia nele.
    */
   @Post('preview')
-  preview(@CurrentUser() user: User, @Body() dto: PreviewTransactionDto) {
+  preview(@CurrentUser() user: AuthenticatedUser, @Body() dto: PreviewTransactionDto) {
     return this.transactionsService.previewCreate(user.id, dto);
   }
 
@@ -40,26 +40,26 @@ export class TransactionsController {
   @Post(':id/preview-update')
   previewUpdate(
     @Param('id') id: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: PreviewUpdateTransactionDto,
   ) {
     return this.transactionsService.previewUpdate(id, user.id, dto);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string, @CurrentUser() user: User) {
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.transactionsService.findOne(id, user.id);
   }
 
   @Get()
-  findAll(@CurrentUser() user: User, @Query() filters: FindTransactionsDto) {
+  findAll(@CurrentUser() user: AuthenticatedUser, @Query() filters: FindTransactionsDto) {
     return this.transactionsService.findAll(user.id, filters);
   }
 
   @Patch(':id')
   update(
     @Param('id') id: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateTransactionDto,
     @Query('scope') scope?: string,
   ) {
@@ -67,13 +67,13 @@ export class TransactionsController {
   }
 
   @Post()
-  create(@CurrentUser() user: User, @Body() dto: CreateTransactionDto) {
+  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateTransactionDto) {
     return this.transactionsService.create(user.id, dto, user.timeZone);
   }
 
   /** O que a exclusão faria — sem gravar nada. */
   @Post(':id/preview-delete')
-  previewDelete(@Param('id') id: string, @CurrentUser() user: User) {
+  previewDelete(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.transactionsService.previewDelete(id, user.id);
   }
 
@@ -88,7 +88,7 @@ export class TransactionsController {
   @Delete(':id')
   remove(
     @Param('id') id: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('scope') scope?: string,
     @Body() dto?: DeleteTransactionDto,
   ) {

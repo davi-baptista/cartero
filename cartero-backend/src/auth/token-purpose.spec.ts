@@ -57,16 +57,33 @@ const USER = {
   email: 'davi@cartero.app',
   name: 'Davi',
   password: 'hash',
+  timeZone: 'America/Fortaleza',
 };
 
-function buildAuthService() {
-  const prisma = {
+/*
+  `findUnique` honra `select` de verdade — igual ao Prisma real — em vez de
+  devolver o `USER` inteiro. `JwtStrategy.validate()` pede só
+  `{ id, timeZone }`; um double que ignorasse o `select` deixaria passar uma
+  regressão que voltasse a expor `email`/`password` no principal
+  autenticado sem que nenhum teste aqui percebesse.
+*/
+function buildPrisma() {
+  return {
     user: {
-      findUnique: vi.fn().mockResolvedValue(USER),
+      findUnique: vi.fn(
+        async ({ select }: { select?: Record<string, boolean> } = {}) => {
+          if (!select) return USER;
+          return Object.fromEntries(
+            Object.keys(select).map((key) => [key, USER[key as keyof typeof USER]]),
+          );
+        },
+      ),
       create: vi.fn().mockResolvedValue(USER),
     },
   } as unknown as PrismaService;
+}
 
+function buildAuthService(prisma: PrismaService = buildPrisma()) {
   return new AuthService(prisma, jwt, env);
 }
 
@@ -98,14 +115,17 @@ describe('o caminho feliz permanece', () => {
     auth = buildAuthService();
   });
 
-  it('B1: access token novo autentica rota protegida', () => {
-    const strategy = new JwtStrategy(env);
+  it('B1: access token novo autentica rota protegida', async () => {
+    const strategy = new JwtStrategy(env, buildPrisma());
     const tokens = (auth as never as { generateToken(id: string) })['generateToken'](
       USER.id,
     ) as { access_token: string; refresh_token: string };
 
     const payload = claimsOf(tokens.access_token);
-    expect(strategy.validate(payload)).toEqual({ id: USER.id });
+    await expect(strategy.validate(payload)).resolves.toEqual({
+      id: USER.id,
+      timeZone: USER.timeZone,
+    });
   });
 
   it('B2: refresh token novo renova a sessão', async () => {
@@ -154,9 +174,9 @@ describe('finalidade cruzada é recusada', () => {
     });
   });
 
-  it('B5/B6: refresh token NÃO autentica rotas protegidas', () => {
+  it('B5/B6: refresh token NÃO autentica rotas protegidas', async () => {
     const auth = buildAuthService();
-    const strategy = new JwtStrategy(env);
+    const strategy = new JwtStrategy(env, buildPrisma());
     const tokens = (auth as never as { generateToken(id: string) })['generateToken'](
       USER.id,
     ) as { refresh_token: string };
@@ -167,7 +187,7 @@ describe('finalidade cruzada é recusada', () => {
       A estratégia é única para TODAS as rotas com `JwtAuthGuard` — recusar
       aqui vale para `/users/me`, `/banks`, `/categories` e qualquer outra.
     */
-    expect(() => strategy.validate(payload)).toThrowError();
+    await expect(strategy.validate(payload)).rejects.toThrowError();
   });
 });
 
@@ -291,8 +311,8 @@ describe('tokens emitidos antes desta fase', () => {
     expect(claimsOf(renewed.refresh_token).tokenUse).toBe(TOKEN_USE.refresh);
   });
 
-  it('L3: refresh LEGADO não ganha acesso de API', () => {
-    const strategy = new JwtStrategy(env);
+  it('L3: refresh LEGADO não ganha acesso de API', async () => {
+    const strategy = new JwtStrategy(env, buildPrisma());
     const payload = claimsOf(legacyToken(REFRESH_TOKEN_TTL_SECONDS));
 
     /*
@@ -301,15 +321,18 @@ describe('tokens emitidos antes desta fase', () => {
       que esta fase fecha — manter isso durante a janela de migração seria
       manter o buraco aberto justamente onde ele é mais grave.
     */
-    expect(() => strategy.validate(payload)).toThrowError();
+    await expect(strategy.validate(payload)).rejects.toThrowError();
   });
 
-  it('L3b: access LEGADO continua autenticando durante a migração', () => {
-    const strategy = new JwtStrategy(env);
+  it('L3b: access LEGADO continua autenticando durante a migração', async () => {
+    const strategy = new JwtStrategy(env, buildPrisma());
     const payload = claimsOf(legacyToken(ACCESS_TOKEN_TTL_SECONDS));
 
     // Sessão web aberta agora não quebra no deploy.
-    expect(strategy.validate(payload)).toEqual({ id: USER.id });
+    await expect(strategy.validate(payload)).resolves.toEqual({
+      id: USER.id,
+      timeZone: USER.timeZone,
+    });
   });
 
   it('L4: token NOVO nunca depende do caminho legado', () => {

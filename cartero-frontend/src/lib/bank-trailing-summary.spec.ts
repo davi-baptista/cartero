@@ -337,7 +337,14 @@ describe('a página consome as policies compartilhadas', () => {
 
   it('o resumo sai da policy, não de ifs na JSX', () => {
     expect(code).toContain('bankMonthSummaryLines(')
-    expect(code).toContain('monthCycleOf(period, currentPeriod())')
+    /*
+      `currentPeriod()` sem argumento caía no default `null` e derrubava a
+      página com "Missing account timezone" para QUALQUER usuário — não é
+      caso de conta legada, é `requireAccountTimeZone` explodindo em toda
+      renderização da aba ativa. A timezone da conta precisa vir explícita.
+    */
+    expect(code).toContain('monthCycleOf(period, currentPeriod(user?.timeZone ?? null))')
+    expect(code).not.toContain('currentPeriod())')
     expect(code).not.toContain('monthSummary.paidCount > 0 &&')
   })
 

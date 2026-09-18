@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from 'src/auth/current-user.decorator';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
-import type { User } from '@prisma/client';
+import type { AuthenticatedUser } from 'src/auth/authenticated-user';
 import { InvoicesService } from './invoices.service';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { FindInvoicesDto } from './dto/find-invoices.dto';
@@ -25,7 +25,7 @@ export class InvoicesController {
   @Patch(':id')
   update(
     @Param('id') id: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateInvoiceDto,
   ) {
     return this.invoicesService.update(id, user.id, dto);
@@ -33,17 +33,17 @@ export class InvoicesController {
 
   // Rotas em lote antes de `:id`, senão o parâmetro as capturaria.
   @Post('reopen-all-paid')
-  reopenAllPaid(@CurrentUser() user: User) {
+  reopenAllPaid(@CurrentUser() user: AuthenticatedUser) {
     return this.invoicesService.reopenAllPaid(user.id, user.timeZone);
   }
 
   @Post('mark-many-paid')
-  markManyPaid(@CurrentUser() user: User, @Body() dto: MarkManyPaidDto) {
+  markManyPaid(@CurrentUser() user: AuthenticatedUser, @Body() dto: MarkManyPaidDto) {
     return this.invoicesService.markManyPaid(user.id, dto.ids);
   }
 
   @Post(':id/reopen')
-  reopen(@Param('id') id: string, @CurrentUser() user: User) {
+  reopen(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.invoicesService.reopen(id, user.id, user.timeZone);
   }
 
@@ -51,19 +51,19 @@ export class InvoicesController {
   // capturada como um `id` literal.
   @Get('actionable')
   findActionable(
-    @CurrentUser() user: User,
+    @CurrentUser() user: AuthenticatedUser,
     @Query() filters: FindActionableInvoicesDto,
   ) {
     return this.invoicesService.findActionable(user.id, filters.limit);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string, @CurrentUser() user: User) {
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.invoicesService.findOne(id, user.id);
   }
 
   @Get()
-  findAll(@CurrentUser() user: User, @Query() filters: FindInvoicesDto) {
+  findAll(@CurrentUser() user: AuthenticatedUser, @Query() filters: FindInvoicesDto) {
     return this.invoicesService.findAll(user.id, filters);
   }
 }

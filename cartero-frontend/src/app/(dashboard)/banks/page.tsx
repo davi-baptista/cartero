@@ -58,6 +58,7 @@ import {
 } from '@/components/month-nav'
 import { useDetailNavigation } from '@/lib/detail-navigation'
 import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
+import { useAuth } from '@/providers/auth-provider'
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -423,6 +424,7 @@ function ArchivedBankRow({
 
 export default function BanksPage() {
   const qc = useQueryClient()
+  const { user } = useAuth()
 
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editBank, setEditBank] = useState<Bank | null>(null)
@@ -731,7 +733,7 @@ export default function BanksPage() {
               */}
               {bankMonthSummaryLines(
                 monthSummary,
-                monthCycleOf(period, currentPeriod()),
+                monthCycleOf(period, currentPeriod(user?.timeZone ?? null)),
               ).map((linha) => {
                 if (linha.kind === 'composition') {
                   return (

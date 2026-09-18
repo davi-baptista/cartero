@@ -9,7 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { CurrentUser } from 'src/auth/current-user.decorator';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
-import type { User } from '@prisma/client';
+import type { AuthenticatedUser } from 'src/auth/authenticated-user';
 import { NotificationsService } from './notifications.service';
 import { SubscribeDto } from './dto/subscribe.dto';
 import { UnsubscribeDto } from './dto/unsubscribe.dto';
@@ -30,7 +30,7 @@ export class NotificationsController {
 
   @Post('subscribe')
   @UseGuards(JwtAuthGuard)
-  subscribe(@CurrentUser() user: User, @Body() dto: SubscribeDto) {
+  subscribe(@CurrentUser() user: AuthenticatedUser, @Body() dto: SubscribeDto) {
     return this.notificationsService.subscribe(user.id, dto);
   }
 
@@ -42,7 +42,7 @@ export class NotificationsController {
   @Post('subscription-status')
   @UseGuards(JwtAuthGuard)
   subscriptionStatus(
-    @CurrentUser() user: User,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: SubscriptionStatusDto,
   ) {
     return this.notificationsService.getSubscriptionStatus(user.id, dto);
@@ -50,7 +50,7 @@ export class NotificationsController {
 
   @Delete('subscribe')
   @UseGuards(JwtAuthGuard)
-  unsubscribe(@CurrentUser() user: User, @Body() dto: UnsubscribeDto) {
+  unsubscribe(@CurrentUser() user: AuthenticatedUser, @Body() dto: UnsubscribeDto) {
     return this.notificationsService.unsubscribe(user.id, dto);
   }
 

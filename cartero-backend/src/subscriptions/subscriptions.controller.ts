@@ -10,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import type { User } from '@prisma/client';
+import type { AuthenticatedUser } from 'src/auth/authenticated-user';
 import { CurrentUser } from 'src/auth/current-user.decorator';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { CronSecretGuard } from 'src/auth/cron-secret.guard';
@@ -66,7 +66,7 @@ export class SubscriptionsController {
 
   @Get()
   @UseGuards(JwtAuthGuard)
-  findAll(@CurrentUser() user: User) {
+  findAll(@CurrentUser() user: AuthenticatedUser) {
     return this.subscriptionsService.findAll(user.id, new Date(), user.timeZone);
   }
 
@@ -79,7 +79,7 @@ export class SubscriptionsController {
    */
   @Get('preview')
   @UseGuards(JwtAuthGuard)
-  preview(@CurrentUser() user: User, @Query() query: PreviewSubscriptionDto) {
+  preview(@CurrentUser() user: AuthenticatedUser, @Query() query: PreviewSubscriptionDto) {
     return this.subscriptionsService.previewFor(
       user.id,
       query.bankId,
@@ -94,13 +94,13 @@ export class SubscriptionsController {
   /** Rede de segurança chamada quando o app abre. */
   @Post('run')
   @UseGuards(JwtAuthGuard)
-  run(@CurrentUser() user: User) {
+  run(@CurrentUser() user: AuthenticatedUser) {
     return this.subscriptionsService.runForUser(user.id);
   }
 
   @Get(':id')
   @UseGuards(JwtAuthGuard)
-  findOne(@Param('id') id: string, @CurrentUser() user: User) {
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.subscriptionsService.findOne(
       id,
       user.id,
@@ -111,7 +111,7 @@ export class SubscriptionsController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  create(@CurrentUser() user: User, @Body() dto: CreateSubscriptionDto) {
+  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSubscriptionDto) {
     return this.subscriptionsService.create(user.id, dto, user.timeZone);
   }
 
@@ -119,7 +119,7 @@ export class SubscriptionsController {
   @UseGuards(JwtAuthGuard)
   update(
     @Param('id') id: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateSubscriptionDto,
   ) {
     return this.subscriptionsService.update(id, user.id, dto, user.timeZone);
@@ -127,7 +127,7 @@ export class SubscriptionsController {
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
-  remove(@Param('id') id: string, @CurrentUser() user: User) {
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.subscriptionsService.remove(id, user.id);
   }
 }
