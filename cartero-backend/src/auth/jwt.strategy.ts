@@ -53,6 +53,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       Select estreito por primary key — uma leitura indexada por request,
       nada de N+1: nenhum outro campo é lido por nenhum controller a partir
       deste objeto (auditado — só `.id` e `.timeZone`).
+
+      Com o schema hardening (`User.timeZone` `NOT NULL`), o Prisma tipa
+      `user.timeZone` como `string` — `AuthenticatedUser` reflete essa
+      garantia, e nenhum caller downstream precisa tratar `null`.
     */
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },

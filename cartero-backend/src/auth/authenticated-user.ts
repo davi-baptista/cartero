@@ -12,8 +12,13 @@
  * `timeZone` vem do BANCO a cada request — nunca do claim do JWT. O valor é
  * editável pelo usuário (`PATCH /users/me`), e um claim assinado ficaria
  * stale até o token expirar (até 15min de defasagem, silenciosa).
+ *
+ * `string`, não `string | null`: o schema hardening (`User.timeZone` agora
+ * `NOT NULL`) tornou persistir uma conta sem timezone um estado inválido a
+ * nível de banco. O principal autenticado reflete essa garantia — nenhum
+ * caller downstream precisa (nem deveria) tratar `null` aqui.
  */
 export interface AuthenticatedUser {
   id: string;
-  timeZone: string | null;
+  timeZone: string;
 }

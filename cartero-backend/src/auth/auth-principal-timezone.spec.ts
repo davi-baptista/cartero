@@ -24,6 +24,13 @@ import { SubscriptionsService } from 'src/subscriptions/subscriptions.service';
  * A correção: `validate()` busca `{ id, timeZone }` no Prisma por
  * `payload.sub` a cada request — nunca do claim do JWT (editável pelo
  * usuário, um claim assinado ficaria stale até o token expirar).
+ *
+ * Schema hardening (`User.timeZone` `NOT NULL`): persistir uma conta sem
+ * timezone deixou de ser um estado alcançável, e `AuthenticatedUser.timeZone`
+ * é `string`, não `string | null`. Os testes que antes exercitavam um
+ * principal com `timeZone: null` foram removidos — não porque o cenário
+ * parou de importar, mas porque o banco agora o torna impossível por
+ * construção; testá-lo aqui testaria um estado que o schema já rejeita.
  */
 
 const SECRET = 'segredo-de-teste';
@@ -36,7 +43,7 @@ function signAccessToken(sub: string) {
   return jwt.sign({ sub, tokenUse: 'access' });
 }
 
-function buildPrisma(usersById: Record<string, { id: string; timeZone: string | null }>) {
+function buildPrisma(usersById: Record<string, { id: string; timeZone: string }>) {
   return {
     user: {
       findUnique: vi.fn(
@@ -89,7 +96,7 @@ describe('JwtStrategy — principal autenticado carrega a timezone persistida', 
   });
 
   it('B6: mudar a timeZone persistida reflete numa request posterior, SEM emitir novo JWT', async () => {
-    const usersById: Record<string, { id: string; timeZone: string | null }> = {
+    const usersById: Record<string, { id: string; timeZone: string }> = {
       u1: { id: 'u1', timeZone: 'America/Fortaleza' },
     };
     const prisma = buildPrisma(usersById);
@@ -118,16 +125,6 @@ describe('JwtStrategy — principal autenticado carrega a timezone persistida', 
     await expect(strategy.validate(payload)).rejects.toThrow();
   });
 
-  it('timeZone nula persistida propaga como null — nunca uma fabricação silenciosa', async () => {
-    const prisma = buildPrisma({ u1: { id: 'u1', timeZone: null } });
-    const strategy = new JwtStrategy(env, prisma);
-
-    const payload = jwt.verify(signAccessToken('u1'), { secret: SECRET });
-    const principal = await strategy.validate(payload);
-
-    expect(principal).toEqual({ id: 'u1', timeZone: null });
-  });
-
   it('P2 (mutação): se validate() lesse timeZone do payload/claim, o teste B2 falharia — prova negativa via leitura do payload real', () => {
     /*
       Prova estrutural complementar ao teste B2 em runtime: o payload que
@@ -152,13 +149,18 @@ describe('CommitmentsController — recebe a timezone do principal autenticado',
     expect(service.getCommitments).toHaveBeenCalledWith('u1', 'America/Fortaleza');
   });
 
-  it('timeZone ausente no principal (conta legada/null) NÃO regride para um fallback — propaga null explicitamente', async () => {
-    const service = { getCommitments: vi.fn().mockResolvedValue({ installments: [], subscriptions: [] }) };
-    const controller = new CommitmentsController(service as unknown as CommitmentsService);
-
-    await controller.getCommitments({ id: 'u1', timeZone: null });
-
-    expect(service.getCommitments).toHaveBeenCalledWith('u1', null);
+  it('P3 (estrutural): o controller nunca aplica `?? algumaZonaPadrão` sobre user.timeZone', () => {
+    /*
+      Com o schema NOT NULL, `AuthenticatedUser.timeZone` já é garantido
+      `string` — não há mais um estado de "principal sem timezone" a
+      propagar. O risco residual é outro: um fallback oculto sendo
+      reintroduzido no controller. Esta é uma prova estrutural, não de
+      valor: nenhuma string de fallback pode aparecer na chamada.
+    */
+    const src = CommitmentsController.toString();
+    expect(src).not.toContain("timeZone ?? 'America/Fortaleza'");
+    expect(src).not.toContain('timeZone ?? "America/Fortaleza"');
+    expect(src).not.toContain("timeZone ?? 'UTC'");
   });
 });
 
