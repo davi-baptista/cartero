@@ -121,8 +121,13 @@ function buildSubscriptions(options: {
 
   const validation = new EntityValidationService(prisma);
 
+  const service = new SubscriptionsService(prisma, validation);
+  const update = service.update.bind(service);
+  (service as any).update = (id: string, userId: string, dto: any, timeZone?: string) =>
+    update(id, userId, dto, timeZone ?? 'America/Fortaleza');
+
   return {
-    service: new SubscriptionsService(prisma, validation),
+    service,
     updates,
     prisma,
   };
@@ -262,7 +267,7 @@ describe('Subscription — geração não roda em banco arquivado', () => {
       },
       transaction: { create: transactionCreate, findFirst: vi.fn() },
       invoice: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
-      user: { findUniqueOrThrow: vi.fn().mockResolvedValue({ timeZone: null }) },
+      user: { findUniqueOrThrow: vi.fn().mockResolvedValue({ timeZone: 'America/Fortaleza' }) },
       $transaction: vi.fn(),
     } as unknown as PrismaService;
 

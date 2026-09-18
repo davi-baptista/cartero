@@ -3,11 +3,29 @@ import {
   addCycles,
   chargeDateForCycle,
   compareCycles,
-  currentCycle,
+  currentCycle as currentCycleImpl,
   formatCycle,
   parseCycle,
-  pendingCycles,
+  pendingCycles as pendingCyclesImpl,
 } from './subscription.helper';
+
+const TEST_TIME_ZONE = 'America/Fortaleza';
+const currentCycle = (now?: Date) => currentCycleImpl(now, TEST_TIME_ZONE);
+const pendingCycles = (
+  startedAt: string,
+  lastGeneratedFor: string | null,
+  dayOfMonth: number,
+  now?: Date,
+  activeSince: string | null = null,
+) =>
+  pendingCyclesImpl(
+    startedAt,
+    lastGeneratedFor,
+    dayOfMonth,
+    now,
+    activeSince,
+    TEST_TIME_ZONE,
+  );
 
 /**
  * Assinaturas são governadas por CICLOS ("YYYY-MM"), não por datas. O ciclo é o

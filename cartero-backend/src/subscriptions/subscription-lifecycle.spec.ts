@@ -57,12 +57,13 @@ function buildHarness(setup: Setup = {}) {
       findFirst: vi.fn(async () => ({
         ...subscription,
         bank,
+        user: { timeZone: 'America/Fortaleza' },
         category: setup.category ?? { id: 'cat-1', name: 'Assinatura' },
       })),
       findMany: vi.fn(async () =>
         (setup.subscriptions ?? [subscription]).map((sub) => ({
           ...sub,
-          user: { timeZone: null },
+          user: { timeZone: 'America/Fortaleza' },
         })),
       ),
       create: vi.fn(async ({ data }: any) => ({ id: 'sub-new', ...data })),
@@ -111,13 +112,29 @@ function buildHarness(setup: Setup = {}) {
       update: vi.fn(async ({ data }: any) => ({ id: 'cat-sys', ...data })),
     },
     user: {
-      findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })),
+    findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Fortaleza' })),
     },
   };
   prisma.$transaction = vi.fn(async (fn: any) => fn(prisma));
 
   const validation = new EntityValidationService(prisma as PrismaService);
   const service = new SubscriptionsService(prisma as PrismaService, validation);
+  const defaultTimeZone = 'America/Fortaleza';
+  const originalCreate = service.create.bind(service);
+  const originalUpdate = service.update.bind(service);
+  const originalRemove = service.remove.bind(service);
+  const originalFindAll = service.findAll.bind(service);
+  const originalFindOne = service.findOne.bind(service);
+  (service as any).create = (userId: string, dto: any, timeZone?: string | null) =>
+    originalCreate(userId, dto, timeZone ?? defaultTimeZone);
+  (service as any).update = (id: string, userId: string, dto: any, timeZone?: string | null) =>
+    originalUpdate(id, userId, dto, timeZone ?? defaultTimeZone);
+  (service as any).remove = (id: string, userId: string, timeZone?: string | null) =>
+    originalRemove(id, userId, timeZone ?? defaultTimeZone);
+  (service as any).findAll = (userId: string, now?: Date, timeZone?: string | null) =>
+    originalFindAll(userId, now, timeZone ?? defaultTimeZone);
+  (service as any).findOne = (id: string, userId: string, now?: Date, timeZone?: string | null) =>
+    originalFindOne(id, userId, now, timeZone ?? defaultTimeZone);
 
   // Injeta falha controlada, para testar isolamento sem depender de erro real.
   if (setup.failFor?.length) {

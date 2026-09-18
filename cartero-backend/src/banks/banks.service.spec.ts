@@ -87,8 +87,16 @@ function buildHarness(options: {
     validateBank: vi.fn().mockResolvedValue(bank),
   } as unknown as EntityValidationService;
 
+  const service = new BanksService(prisma as unknown as PrismaService, validation);
+  const create = service.create.bind(service);
+  const update = service.update.bind(service);
+  (service as any).create = (userId: string, dto: any, timeZone?: string) =>
+    create(userId, dto, timeZone ?? 'America/Fortaleza');
+  (service as any).update = (id: string, userId: string, dto: any, timeZone?: string) =>
+    update(id, userId, dto, timeZone ?? 'America/Fortaleza');
+
   return {
-    service: new BanksService(prisma as unknown as PrismaService, validation),
+    service,
     prisma,
     calls,
     bank,

@@ -68,7 +68,7 @@ function buildPrisma(data: {
     },
     user: {
       findUnique: vi.fn().mockResolvedValue({}),
-      findUniqueOrThrow: vi.fn().mockResolvedValue({ timeZone: null }),
+      findUniqueOrThrow: vi.fn().mockResolvedValue({ timeZone: 'America/Fortaleza' }),
       update: vi.fn(),
     },
     invoice: {

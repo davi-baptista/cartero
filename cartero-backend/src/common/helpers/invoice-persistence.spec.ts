@@ -1,11 +1,35 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Prisma } from '@prisma/client';
 import {
-  deriveStatusFromInvoiceDates,
-  findOrCreateInvoiceForPeriod,
+  deriveStatusFromInvoiceDates as deriveStatusFromInvoiceDatesImpl,
+  findOrCreateInvoiceForPeriod as findOrCreateInvoiceForPeriodImpl,
   getInvoiceCloseDate,
   getInvoiceDueDate,
 } from './invoice.helper';
+
+const findOrCreateInvoiceForPeriod = (
+  tx: any,
+  userId: string,
+  bankId: string,
+  schedule: any,
+  year: number,
+  month: number,
+) =>
+  findOrCreateInvoiceForPeriodImpl(
+    tx,
+    userId,
+    bankId,
+    schedule,
+    year,
+    month,
+    'America/Fortaleza',
+  );
+const deriveStatusFromInvoiceDates = (
+  invoice: any,
+  today?: Date,
+  timeZone?: string | null,
+) =>
+  deriveStatusFromInvoiceDatesImpl(invoice, today, timeZone ?? 'America/Fortaleza');
 import { USER_ID, makeInvoice } from 'src/common/testing/fixtures';
 
 /**

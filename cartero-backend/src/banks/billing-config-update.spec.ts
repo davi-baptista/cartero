@@ -3,7 +3,13 @@ import { BanksService } from './banks.service';
 import type { EntityValidationService } from 'src/common/entity-validation.service';
 import type { PrismaService } from 'src/prisma/prisma.service';
 import { USER_ID, makeBank, makeInvoice } from 'src/common/testing/fixtures';
-import { planBillingConfigUpdate } from './billing-config-plan.helper';
+import { planBillingConfigUpdate as planBillingConfigUpdateImpl } from './billing-config-plan.helper';
+
+const planBillingConfigUpdate = (input: any) =>
+  planBillingConfigUpdateImpl({
+    ...input,
+    timeZone: input.timeZone ?? 'America/Fortaleza',
+  });
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -116,8 +122,20 @@ function buildHarness(setup: Setup = {}) {
     validateBank: vi.fn().mockResolvedValue(bank),
   } as unknown as EntityValidationService;
 
+  const service = new BanksService(prisma as unknown as PrismaService, validation);
+  const update = service.update.bind(service);
+  const previewBillingConfig = service.previewBillingConfig.bind(service);
+  (service as any).update = (id: string, userId: string, dto: any, timeZone?: string) =>
+    update(id, userId, dto, timeZone ?? 'America/Fortaleza');
+  (service as any).previewBillingConfig = (
+    id: string,
+    userId: string,
+    dto: any,
+    timeZone?: string,
+  ) => previewBillingConfig(id, userId, dto, timeZone ?? 'America/Fortaleza');
+
   return {
-    service: new BanksService(prisma as unknown as PrismaService, validation),
+    service,
     prisma,
     writes,
     bank,

@@ -53,7 +53,7 @@ function buildService(setup: Setup) {
 
   const prisma: any = {
     salaryHistory: { findFirst: vi.fn(async () => null) },
-    user: { findUnique: vi.fn(async () => ({})), findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })), update: vi.fn() },
+    user: { findUnique: vi.fn(async () => ({})), findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Fortaleza' })), update: vi.fn() },
     invoice: {
       /*
         Honra o `where`: são DUAS consultas (competência exibida e fila viva

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planBillingConfigUpdate } from './billing-config-plan.helper';
+import { planBillingConfigUpdate as planBillingConfigUpdateImpl } from './billing-config-plan.helper';
 import {
   getInvoiceCloseDateForPeriod,
   getInvoiceDueDateForPeriod,
@@ -26,6 +26,11 @@ import {
 
 const SCHEDULE_8 = { invoiceDueDate: 8, invoiceDueDaysAfterClose: 7 };
 const SCHEDULE_15 = { invoiceDueDate: 15, invoiceDueDaysAfterClose: 7 };
+const planBillingConfigUpdate = (input: any) =>
+  planBillingConfigUpdateImpl({
+    ...input,
+    timeZone: input.timeZone ?? 'America/Fortaleza',
+  });
 
 /** Fatura com as datas que a configuração indicada produziria. */
 function invoiceAt(

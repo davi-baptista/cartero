@@ -78,7 +78,7 @@ describe('InvoicesService.reopen — timezone da conta (TZ6.1 §11)', () => {
     }
   });
 
-  it('P3 (mutação real, não fabricada): omitir timeZone preserva a derivação UTC legada, não Fortaleza/Tokyo', async () => {
+  it('P3: omitir timeZone é rejeitado pelo contrato explícito', async () => {
     vi.useFakeTimers();
     // UTC-dia do `now` ainda é 16/09 — closeDate (17/09) ainda não chegou.
     vi.setSystemTime(now);
@@ -91,10 +91,10 @@ describe('InvoicesService.reopen — timezone da conta (TZ6.1 §11)', () => {
       const { prisma, updateCalls } = buildPrismaDouble(invoice);
       const service = new InvoicesService(prisma as any, {} as any);
 
-      // Sem terceiro argumento — chamador legado (nenhum User.timeZone).
-      await service.reopen('inv-1', USER_ID);
-
-      expect((updateCalls[0] as any).data.status).toBe('OPEN');
+      await expect(service.reopen('inv-1', USER_ID)).rejects.toThrow(
+        /Missing or invalid/,
+      );
+      expect(updateCalls).toHaveLength(0);
     } finally {
       vi.useRealTimers();
     }

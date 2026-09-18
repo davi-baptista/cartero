@@ -106,11 +106,11 @@ describe('AppScheduler.syncInvoiceStatus — inclusividade exata do cutoff', () 
           status: 'CLOSED',
           closeDate: new Date(exactCutoff.getTime() - 3 * 24 * 60 * 60 * 1000),
           dueDate: exactCutoff,
-          user: { timeZone: null },
+          user: { timeZone: 'America/Fortaleza' },
         },
       ]);
 
-      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
+      await harness.scheduler.syncInvoiceStatus();
 
       const call = harness.findManyCalls[0];
       const closedBranch = call.where.OR.find((b: any) => b.status === 'CLOSED');
@@ -136,11 +136,11 @@ describe('AppScheduler.syncInvoiceStatus — inclusividade exata do cutoff', () 
           status: 'CLOSED',
           closeDate: new Date(justPastCutoff.getTime() - 3 * 24 * 60 * 60 * 1000),
           dueDate: justPastCutoff,
-          user: { timeZone: null },
+          user: { timeZone: 'America/Fortaleza' },
         },
       ]);
 
-      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
+      await harness.scheduler.syncInvoiceStatus();
 
       // Excluída pelo próprio harness de filtragem (ramo CLOSED usa
       // `dueDate <= cutoff`) — nenhuma tentativa de update.
@@ -163,11 +163,11 @@ describe('AppScheduler.syncInvoiceStatus — inclusividade exata do cutoff', () 
           status: 'OPEN',
           closeDate: new Date('2027-01-01T03:00:00.000Z'),
           dueDate: new Date('2027-01-10T03:00:00.000Z'),
-          user: { timeZone: null },
+          user: { timeZone: 'America/Fortaleza' },
         },
       ]);
 
-      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
+      await harness.scheduler.syncInvoiceStatus();
 
       expect(harness.updates).toHaveLength(0);
     }),
@@ -186,11 +186,11 @@ describe('AppScheduler.syncInvoiceStatus — inclusividade exata do cutoff', () 
           status: 'OPEN',
           closeDate: new Date('2026-09-17T03:00:00.000Z'),
           dueDate: new Date('2026-09-20T03:00:00.000Z'),
-          user: { timeZone: null },
+          user: { timeZone: 'America/Fortaleza' },
         },
       ]);
 
-      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
+      await harness.scheduler.syncInvoiceStatus();
 
       expect(harness.updates).toEqual([{ id: 'open-should-close', status: 'CLOSED' }]);
     }),
@@ -207,11 +207,11 @@ describe('AppScheduler.syncInvoiceStatus — candidate pruning (TZ6.2)', () => {
           status: 'OPEN',
           closeDate: new Date('2026-12-01T03:00:00.000Z'),
           dueDate: new Date('2026-12-10T03:00:00.000Z'),
-          user: { timeZone: null },
+          user: { timeZone: 'America/Fortaleza' },
         },
       ]);
 
-      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
+      await harness.scheduler.syncInvoiceStatus();
 
       expect(harness.updates).toHaveLength(0);
       const call = harness.findManyCalls[0];
@@ -229,11 +229,11 @@ describe('AppScheduler.syncInvoiceStatus — candidate pruning (TZ6.2)', () => {
           status: 'CLOSED',
           closeDate: new Date('2026-11-20T03:00:00.000Z'),
           dueDate: new Date('2026-12-10T03:00:00.000Z'),
-          user: { timeZone: null },
+          user: { timeZone: 'America/Fortaleza' },
         },
       ]);
 
-      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
+      await harness.scheduler.syncInvoiceStatus();
 
       expect(harness.updates).toHaveLength(0);
     }),
@@ -248,11 +248,11 @@ describe('AppScheduler.syncInvoiceStatus — candidate pruning (TZ6.2)', () => {
           status: 'OPEN',
           closeDate: new Date('2026-08-01T03:00:00.000Z'),
           dueDate: new Date('2026-08-10T03:00:00.000Z'),
-          user: { timeZone: null },
+          user: { timeZone: 'America/Fortaleza' },
         },
       ]);
 
-      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
+      await harness.scheduler.syncInvoiceStatus();
 
       expect(harness.updates).toEqual([{ id: 'overdue-open', status: 'OVERDUE' }]);
     }),
@@ -267,11 +267,11 @@ describe('AppScheduler.syncInvoiceStatus — candidate pruning (TZ6.2)', () => {
           status: 'CLOSED',
           closeDate: new Date('2026-08-01T03:00:00.000Z'),
           dueDate: new Date('2026-08-10T03:00:00.000Z'),
-          user: { timeZone: null },
+          user: { timeZone: 'America/Fortaleza' },
         },
       ]);
 
-      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
+      await harness.scheduler.syncInvoiceStatus();
 
       expect(harness.updates).toEqual([{ id: 'overdue-closed', status: 'OVERDUE' }]);
     }),
@@ -290,7 +290,7 @@ describe('AppScheduler.syncInvoiceStatus — candidate pruning (TZ6.2)', () => {
         },
       ]);
 
-      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
+      await harness.scheduler.syncInvoiceStatus();
 
       expect(harness.updates).toEqual([{ id: 'very-late', status: 'OVERDUE' }]);
     }),
@@ -313,7 +313,7 @@ describe('AppScheduler.syncInvoiceStatus — candidate pruning (TZ6.2)', () => {
         },
       ]);
 
-      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
+      await harness.scheduler.syncInvoiceStatus();
 
       expect(harness.updates).toEqual([{ id: 'tokyo-boundary', status: 'OVERDUE' }]);
     }),
@@ -332,7 +332,7 @@ describe('AppScheduler.syncInvoiceStatus — candidate pruning (TZ6.2)', () => {
         },
       ]);
 
-      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
+      await harness.scheduler.syncInvoiceStatus();
 
       // now=17/09 12:00Z -> Fortaleza civil day = 17/09 09h -> dueCivil=17/09
       // -> todayCivil(17/09) > dueCivil(17/09) é falso -> ainda não OVERDUE,
@@ -350,11 +350,11 @@ describe('AppScheduler.syncInvoiceStatus — candidate pruning (TZ6.2)', () => {
           status: 'CLOSED',
           closeDate: new Date('2026-09-01T03:00:00.000Z'),
           dueDate: new Date('2026-09-16T03:00:00.000Z'),
-          user: { timeZone: null },
+          user: { timeZone: 'America/Fortaleza' },
         },
       ]);
 
-      // legacyGate: true (default do @Cron real) — tick de 01:00 UTC não é
+      // O tick de 01:00 UTC não é
       // meia-noite Fortaleza, então null não deve transicionar mesmo estando
       // dentro do candidate set (pruning não pode se tornar autoridade nova).
       await harness.scheduler.syncInvoiceStatus();
@@ -376,7 +376,7 @@ describe('AppScheduler.syncInvoiceStatus — candidate pruning (TZ6.2)', () => {
         },
       ]);
 
-      await harness.scheduler.syncInvoiceStatus({ legacyGate: false });
+      await harness.scheduler.syncInvoiceStatus();
 
       // now=17/09 12:00Z -> Kolkata (+5:30) civil day = 17/09 17h30 ->
       // dueCivil=17/09 -> todayCivil(17/09) > dueCivil(17/09) falso -> não
@@ -395,7 +395,7 @@ describe('AppScheduler.syncInvoiceStatus — candidate pruning (TZ6.2)', () => {
           status: 'OPEN',
           closeDate: new Date('2026-08-01T03:00:00.000Z'),
           dueDate: new Date('2026-08-10T03:00:00.000Z'),
-          user: { timeZone: null },
+          user: { timeZone: 'America/Fortaleza' },
         },
         {
           id: 'b-tokyo-due',
@@ -422,11 +422,11 @@ describe('AppScheduler.syncInvoiceStatus — candidate pruning (TZ6.2)', () => {
         status: 'OPEN',
         closeDate: new Date('2026-12-01T03:00:00.000Z'),
         dueDate: new Date('2026-12-10T03:00:00.000Z'),
-        user: { timeZone: null },
+          user: { timeZone: 'America/Fortaleza' },
       };
 
       const withPruning = buildFilteringHarness([...fixtures, farFuture]);
-      await withPruning.scheduler.syncInvoiceStatus({ legacyGate: false });
+      await withPruning.scheduler.syncInvoiceStatus();
 
       // "Sem pruning" = harness que NUNCA filtra por dueDate (simula o
       // comportamento pré-TZ6.2), só por status — para comparar resultado.
@@ -446,7 +446,7 @@ describe('AppScheduler.syncInvoiceStatus — candidate pruning (TZ6.2)', () => {
         },
       } as unknown as PrismaService;
       const withoutPruning = new AppScheduler(noPruningPrisma);
-      await withoutPruning.syncInvoiceStatus({ legacyGate: false });
+      await withoutPruning.syncInvoiceStatus();
 
       const sortById = (arr: { id: string; status: string }[]) =>
         [...arr].sort((a, b) => a.id.localeCompare(b.id));
@@ -464,7 +464,7 @@ describe('AppScheduler.syncInvoiceStatus — candidate pruning (TZ6.2)', () => {
           status: 'CLOSED',
           closeDate: new Date('2026-08-01T03:00:00.000Z'),
           dueDate: new Date('2026-08-10T03:00:00.000Z'),
-          user: { timeZone: null },
+          user: { timeZone: 'America/Fortaleza' },
         },
       ]);
 

@@ -127,7 +127,7 @@ function build({ persons = [], debts = [], receivables = [] }: Cenario) {
     debt: { findMany: debtFind },
     receivable: { findMany: receivableFind },
     user: {
-      findUniqueOrThrow: vi.fn().mockResolvedValue({ timeZone: null }),
+      findUniqueOrThrow: vi.fn().mockResolvedValue({ timeZone: 'America/Fortaleza' }),
     },
   } as unknown as PrismaService;
 

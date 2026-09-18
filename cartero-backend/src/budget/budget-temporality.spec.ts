@@ -67,7 +67,7 @@ function buildPrisma(universe: {
   const prisma: any = {
     user: {
       update: vi.fn(),
-      findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })),
+      findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Fortaleza' })),
     },
     invoice: { findMany: vi.fn(async () => []) },
     transaction: {

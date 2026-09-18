@@ -257,8 +257,16 @@ function buildHarness(state: DbState) {
     ),
   } as unknown as EntityValidationService;
 
+  const service = new TransactionsService(prisma, validation);
+  const create = service.create.bind(service);
+  const update = service.update.bind(service);
+  (service as any).create = (userId: string, dto: any, timeZone?: string) =>
+    create(userId, dto, timeZone ?? 'America/Fortaleza');
+  (service as any).update = (id: string, userId: string, dto: any, scope?: string, timeZone?: string) =>
+    update(id, userId, dto, scope, timeZone ?? 'America/Fortaleza');
+
   return {
-    service: new TransactionsService(prisma, validation),
+    service,
     state,
     created,
     updates,

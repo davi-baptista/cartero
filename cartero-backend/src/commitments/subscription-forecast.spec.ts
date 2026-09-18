@@ -70,6 +70,7 @@ function run(
     archivedBankIds: new Set(options.archived ?? []),
     horizonMonths: options.horizon ?? 6,
     today: new Date(options.today ?? '2026-08-05T12:00:00Z'),
+    timeZone: 'America/Fortaleza',
   });
 }
 
@@ -191,7 +192,7 @@ describe('forecast — coerência com nextCharge', () => {
     const subscription = sub({ lastGeneratedFor: '2026-07' });
     const today = new Date('2026-08-05T12:00:00Z');
 
-    const next = nextChargeDate(subscription, today);
+    const next = nextChargeDate(subscription, today, 'America/Fortaleza');
     const result = run([subscription], { today: '2026-08-05T12:00:00Z' });
 
     expect(day(result[0].chargeDate)).toBe(day(next!));
@@ -204,7 +205,7 @@ describe('forecast — coerência com nextCharge', () => {
     });
     const today = new Date('2026-08-20T12:00:00Z');
 
-    const next = nextChargeDate(subscription, today);
+    const next = nextChargeDate(subscription, today, 'America/Fortaleza');
     const result = run([subscription], { today: '2026-08-20T12:00:00Z' });
 
     expect(day(result[0].chargeDate)).toBe(day(next!));

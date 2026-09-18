@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CommitmentsService } from './commitments.service';
+import { CommitmentsService as CommitmentsServiceImpl } from './commitments.service';
 import type { PrismaService } from 'src/prisma/prisma.service';
 import { USER_ID, makeTransaction, money } from 'src/common/testing/fixtures';
+
+class CommitmentsService extends CommitmentsServiceImpl {
+  override getCommitments(userId: string, timeZone: string | null = 'America/Fortaleza') {
+    return super.getCommitments(userId, timeZone);
+  }
+}
 
 /**
  * Compromissos projeta o que já está contratado: parcelas ainda por vencer e

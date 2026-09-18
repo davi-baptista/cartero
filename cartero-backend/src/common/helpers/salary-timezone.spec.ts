@@ -7,7 +7,7 @@ import { currentCompetence, isCurrentCompetence } from './salary.helper';
  * ══════════════════════════════════════════════════════════════════════════
  *
  * Decide se `User.salary` (cache de "renda de hoje") deve acompanhar uma
- * alteração de `SalaryHistory`. `timeZone = null` preserva a authority
+ * alteração de `SalaryHistory`. A timezone explícita preserva a authority
  * legada (Fortaleza fixa); `timeZone` presente usa `financialCompetence`.
  */
 

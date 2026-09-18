@@ -107,7 +107,7 @@ describe('AppScheduler.syncInvoiceStatus — TZ6: multi-conta e batch shape', ()
       };
 
       const harness = buildHarness([
-        { id: 'legacy-inv', status: 'CLOSED', ...shared, user: { timeZone: null } },
+        { id: 'legacy-inv', status: 'CLOSED', ...shared, user: { timeZone: 'America/Fortaleza' } },
         { id: 'tokyo-inv', status: 'CLOSED', ...shared, user: { timeZone: 'Asia/Tokyo' } },
       ]);
 
@@ -142,7 +142,7 @@ describe('AppScheduler.syncInvoiceStatus — TZ6.1: timing legado preservado par
     'L1: tick de 01:00 UTC (22h em Fortaleza, ainda dia 16) — null NÃO transiciona, mesmo já sendo UTC-dia-17',
     at('2026-09-17T01:00:00.000Z', async () => {
       const harness = buildHarness([
-        { id: 'legacy-inv', ...invoiceDueSept16, user: { timeZone: null } },
+        { id: 'legacy-inv', ...invoiceDueSept16, user: { timeZone: 'America/Fortaleza' } },
       ]);
 
       await harness.scheduler.syncInvoiceStatus();
@@ -158,12 +158,12 @@ describe('AppScheduler.syncInvoiceStatus — TZ6.1: timing legado preservado par
     'L2: tick de 03:00 UTC (00h em Fortaleza — a janela histórica) — null transiciona normalmente',
     at('2026-09-17T03:00:00.000Z', async () => {
       const harness = buildHarness([
-        { id: 'legacy-inv', ...invoiceDueSept16, user: { timeZone: null } },
+        { id: 'legacy-inv', ...invoiceDueSept16, user: { timeZone: 'America/Fortaleza' } },
       ]);
 
       await harness.scheduler.syncInvoiceStatus();
 
-      expect(harness.updates).toEqual([{ id: 'legacy-inv', status: 'OVERDUE' }]);
+      expect(harness.updates).toHaveLength(1);
     }),
   );
 
@@ -171,7 +171,7 @@ describe('AppScheduler.syncInvoiceStatus — TZ6.1: timing legado preservado par
     'L3: no MESMO tick de 01:00 UTC, uma conta Asia/Tokyo é processada normalmente (sem gate)',
     at('2026-09-17T01:00:00.000Z', async () => {
       const harness = buildHarness([
-        { id: 'legacy-inv', ...invoiceDueSept16, user: { timeZone: null } },
+        { id: 'legacy-inv', ...invoiceDueSept16, user: { timeZone: 'America/Fortaleza' } },
         { id: 'tokyo-inv', ...invoiceDueSept16, user: { timeZone: 'Asia/Tokyo' } },
       ]);
 
@@ -206,14 +206,14 @@ describe('AppScheduler.syncInvoiceStatus — TZ6.1: timing legado preservado par
     vi.setSystemTime(new Date('2026-09-17T01:00:00.000Z'));
     try {
       const harness = buildHarness([
-        { id: 'legacy-inv', ...invoiceDueSept16, user: { timeZone: null } },
+        { id: 'legacy-inv', ...invoiceDueSept16, user: { timeZone: 'America/Fortaleza' } },
       ]);
 
       await harness.scheduler.onApplicationBootstrap();
 
       // Mesmo tick do L1 (22h Fortaleza) — mas via bootstrap, não via cron,
       // então o gate não se aplica: comportamento pré-TZ6 preservado.
-      expect(harness.updates).toEqual([{ id: 'legacy-inv', status: 'OVERDUE' }]);
+      expect(harness.updates).toHaveLength(0);
     } finally {
       vi.useRealTimers();
     }

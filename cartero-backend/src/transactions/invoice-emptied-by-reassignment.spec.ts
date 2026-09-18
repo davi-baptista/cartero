@@ -148,6 +148,9 @@ function buildHarness() {
     prisma as PrismaService,
     validation as unknown as EntityValidationService,
   );
+  const update = service.update.bind(service);
+  (service as any).update = (id: string, userId: string, dto: any, scope?: string, timeZone?: string) =>
+    update(id, userId, dto, scope, timeZone ?? 'America/Fortaleza');
 
   return { service, prisma, invoiceDeletes, invoiceUpdates, transaction };
 }

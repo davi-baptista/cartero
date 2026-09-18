@@ -108,7 +108,7 @@ function buildHarness(setup: Setup = {}) {
       }),
     },
     user: {
-      findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })),
+      findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Fortaleza' })),
     },
   };
 

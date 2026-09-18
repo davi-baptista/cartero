@@ -92,6 +92,9 @@ function buildHarness(setup: Setup = {}) {
 
   const validation = new EntityValidationService(prisma as PrismaService);
   const service = new SubscriptionsService(prisma as PrismaService, validation);
+  const create = service.create.bind(service);
+  (service as any).create = (userId: string, input: any, timeZone?: string) =>
+    create(userId, input, timeZone ?? 'America/Fortaleza');
 
   if (setup.failGeneration) {
     (service as any).runForSubscription = vi.fn(async () => {

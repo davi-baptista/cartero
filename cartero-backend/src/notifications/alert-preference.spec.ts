@@ -49,7 +49,7 @@ describe('Alerta de vencimento de dívida', () => {
   it('a busca exige isAlertEnabled', async () => {
     const harness = buildHarness();
 
-    await (harness.service as any).findUpcomingItems(USER_ID, 0);
+    await (harness.service as any).findUpcomingItems(USER_ID, 0, 'America/Fortaleza');
 
     expect(harness.debtWhere).toHaveLength(1);
     expect(harness.debtWhere[0]).toMatchObject({ isAlertEnabled: true });
@@ -59,7 +59,7 @@ describe('Alerta de vencimento de dívida', () => {
     // A cláusula nova não pode ter substituído a antiga.
     const harness = buildHarness();
 
-    await (harness.service as any).findUpcomingItems(USER_ID, 0);
+    await (harness.service as any).findUpcomingItems(USER_ID, 0, 'America/Fortaleza');
 
     expect(harness.debtWhere[0]).toMatchObject({ isPaid: false });
   });
@@ -73,7 +73,7 @@ describe('Alerta de vencimento de dívida', () => {
      */
     const harness = buildHarness();
 
-    await (harness.service as any).findUpcomingItems(USER_ID, 0);
+    await (harness.service as any).findUpcomingItems(USER_ID, 0, 'America/Fortaleza');
 
     const call = harness.prisma.receivable.findMany.mock.calls[0][0];
     expect(call.where).not.toHaveProperty('isAlertEnabled');

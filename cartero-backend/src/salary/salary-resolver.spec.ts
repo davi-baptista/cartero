@@ -89,7 +89,7 @@ function buildHarness(entries: Entry[] = []) {
         writes.push({ kind: 'cache', salary: data.salary });
         return {};
       }),
-      findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })),
+      findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Fortaleza' })),
     },
   };
 
@@ -339,7 +339,7 @@ describe('Upsert', () => {
 
 describe('Cache `User.salary`', () => {
   it('sincroniza quando a alteração afeta o mês corrente', async () => {
-    const now = currentCompetence();
+    const now = currentCompetence(new Date(), 'America/Fortaleza');
     const harness = buildHarness([]);
 
     await harness.service.upsert(USER_ID, {
@@ -360,7 +360,7 @@ describe('Cache `User.salary`', () => {
      * valor que ainda não vale, e qualquer tela sem mês passaria a mentir.
      * O cache é RECALCULADO pelo resolver, não copiado do valor gravado.
      */
-    const now = currentCompetence();
+    const now = currentCompetence(new Date(), 'America/Fortaleza');
     const future =
       now.month === 12
         ? { year: now.year + 1, month: 1 }
@@ -382,7 +382,7 @@ describe('Cache `User.salary`', () => {
   });
 
   it('entrada PASSADA não altera o cache do mês corrente', async () => {
-    const now = currentCompetence();
+    const now = currentCompetence(new Date(), 'America/Fortaleza');
     const harness = buildHarness([
       { year: now.year, month: now.month, amount: 5000 },
     ]);
@@ -414,12 +414,12 @@ describe('Helpers de competência', () => {
      */
     const utcVirouSetembro = new Date('2026-09-01T01:00:00.000Z');
 
-    expect(currentCompetence(utcVirouSetembro)).toEqual({
+    expect(currentCompetence(utcVirouSetembro, 'America/Fortaleza')).toEqual({
       year: 2026,
       month: 8,
     });
     expect(
-      isCurrentCompetence({ year: 2026, month: 8 }, utcVirouSetembro),
+      isCurrentCompetence({ year: 2026, month: 8 }, utcVirouSetembro, 'America/Fortaleza'),
     ).toBe(true);
   });
 });

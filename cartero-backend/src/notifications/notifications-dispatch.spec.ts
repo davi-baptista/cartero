@@ -14,7 +14,7 @@ type Subscription = {
   auth: string;
 };
 
-function harness(userCount = 1, timeZone: string | null = null) {
+function harness(userCount = 1, timeZone: string | null = 'America/Fortaleza') {
   const subscriptions: Subscription[] = [];
   const users = Array.from({ length: userCount }, (_, index) => {
     const id = `user-${index}`;

@@ -81,7 +81,7 @@ function buildService(invoices: InvoiceRow[], debts: DebtRow[] = []) {
 
   const prisma: any = {
     salaryHistory: { findFirst: vi.fn(async () => null) },
-    user: { findUnique: vi.fn(async () => ({})), findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })), update: vi.fn() },
+    user: { findUnique: vi.fn(async () => ({})), findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Fortaleza' })), update: vi.fn() },
     invoice: {
       /*
         Honra o `where` de verdade. Um duplo que devolvesse a mesma lista para

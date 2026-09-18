@@ -69,6 +69,7 @@ function buildHarness(setup: Setup = {}) {
     user: {
       findUniqueOrThrow: vi.fn(async () => ({
         createExpenseOnDebtPaid: setup.createExpenseOnDebtPaid ?? true,
+        timeZone: 'America/Fortaleza',
       })),
     },
     bank: { findUnique: vi.fn(async () => makeBank()) },

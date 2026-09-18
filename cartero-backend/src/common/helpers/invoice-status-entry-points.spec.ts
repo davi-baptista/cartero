@@ -87,7 +87,7 @@ describe('planBillingConfigUpdate — isEffectivelyOpen usa a MESMA authority', 
       ...schedule,
       invoices: [invoice],
       today: instant,
-      timeZone: null,
+      timeZone: 'America/Fortaleza',
     });
 
     expect(plan.skipped).toHaveLength(0);
@@ -98,18 +98,12 @@ describe('planBillingConfigUpdate — isEffectivelyOpen usa a MESMA authority', 
     // Omitir `timeZone` do input inteiramente deve produzir o MESMO
     // resultado que passá-lo como `null` explicitamente — nunca um default
     // diferente escondido dentro de planBillingConfigUpdate.
-    const withNull = planBillingConfigUpdate({
-      ...schedule,
-      invoices: [invoice],
-      today: instant,
-      timeZone: null,
-    });
-    const omitted = planBillingConfigUpdate({
-      ...schedule,
-      invoices: [invoice],
-      today: instant,
-    });
-
-    expect(omitted).toEqual(withNull);
+    expect(() =>
+      planBillingConfigUpdate({
+        ...schedule,
+        invoices: [invoice],
+        today: instant,
+      }),
+    ).toThrow(/Missing or invalid billing account timezone/);
   });
 });

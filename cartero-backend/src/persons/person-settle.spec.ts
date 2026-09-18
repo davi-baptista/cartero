@@ -86,6 +86,7 @@ function buildHarness(setup: Setup = {}) {
         createExpenseOnDebtPaid: setup.createExpenseOnDebtPaid ?? true,
         createIncomeOnReceivablePaid:
           setup.createIncomeOnReceivablePaid ?? true,
+        timeZone: 'America/Fortaleza',
       })),
     },
     debt: {

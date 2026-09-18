@@ -55,7 +55,7 @@ const HOJE = new Date(Date.UTC(2026, 7, 24, 15));
 function buildService(rows: DebtRow[]) {
   const prisma: any = {
     salaryHistory: { findFirst: vi.fn(async () => null) },
-    user: { findUnique: vi.fn(async () => ({})), findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })), update: vi.fn() },
+    user: { findUnique: vi.fn(async () => ({})), findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Fortaleza' })), update: vi.fn() },
     invoice: { findMany: vi.fn(async () => []) },
     transaction: {
       findMany: vi.fn(async () => []),

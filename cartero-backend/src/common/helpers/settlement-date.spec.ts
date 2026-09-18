@@ -6,10 +6,21 @@ import {
 } from '@nestjs/common';
 import {
   correctSettlementDate,
-  resolveSettlementDate,
+  resolveSettlementDate as resolveSettlementDateImpl,
 } from './settlement.core';
 import type { Prisma } from '@prisma/client';
 import { USER_ID } from 'src/common/testing/fixtures';
+
+const resolveSettlementDate = (
+  date: string | undefined,
+  now?: Date,
+  timeZone?: string | null,
+) =>
+  resolveSettlementDateImpl(
+    date,
+    now,
+    timeZone === undefined ? 'America/Fortaleza' : timeZone,
+  );
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -30,8 +41,7 @@ import { USER_ID } from 'src/common/testing/fixtures';
 const HOJE = new Date(Date.UTC(2026, 7, 24, 15));
 
 describe('resolveSettlementDate', () => {
-  it('item 48: sem data explícita, usa hoje', () => {
-    // Fallback para o consumidor que ainda não envia o campo.
+  it('item 48: sem data explícita usa hoje com timezone explícita', () => {
     expect(resolveSettlementDate(undefined, HOJE)).toBe(HOJE);
   });
 
@@ -88,10 +98,10 @@ describe('resolveSettlementDate — TZ2: timezone da conta', () => {
   */
   const AGORA = new Date('2026-09-16T15:30:00.000Z');
 
-  it('D1: timeZone=null (legado) preserva o comportamento exato — 16/09 é aceito, não é futuro', () => {
+  it('D1: timeZone=null é rejeitado pelo contrato atual', () => {
     expect(() =>
       resolveSettlementDate('2026-09-16', AGORA, null),
-    ).not.toThrow();
+    ).toThrow(/Missing or invalid/);
   });
 
   it('D2/T28: mesma data informada (17/09), Fortaleza aceita mas Tokyo recusa como futuro', () => {
@@ -119,7 +129,9 @@ describe('resolveSettlementDate — TZ2: timezone da conta', () => {
     // Prova que null e 'America/Fortaleza' concordam no dia 16/09 (não é
     // coincidência: a authority legada TAMBÉM é Fortaleza) — mas divergem de
     // Tokyo, que é o que os testes acima já demonstram.
-    expect(() => resolveSettlementDate('2026-09-16', AGORA, null)).not.toThrow();
+    expect(() => resolveSettlementDate('2026-09-16', AGORA, null)).toThrow(
+      /Missing or invalid/,
+    );
     expect(() =>
       resolveSettlementDate('2026-09-16', AGORA, 'America/Fortaleza'),
     ).not.toThrow();

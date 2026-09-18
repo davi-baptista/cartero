@@ -87,7 +87,7 @@ function buildHarness(entries: Entry[] = trilhaPadrao()) {
     },
     user: {
       update: vi.fn(async () => ({})),
-      findUniqueOrThrow: vi.fn(async () => ({ timeZone: null })),
+      findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Fortaleza' })),
     },
   };
 

@@ -1,10 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatCycle,
-  nextChargeDate,
-  pendingCycles,
-  resumeCycle,
+  nextChargeDate as nextChargeDateImpl,
+  pendingCycles as pendingCyclesImpl,
+  resumeCycle as resumeCycleImpl,
 } from './subscription.helper';
+
+const TEST_TIME_ZONE = 'America/Fortaleza';
+const resumeCycle = (dayOfMonth: number, now?: Date) =>
+  resumeCycleImpl(dayOfMonth, now, TEST_TIME_ZONE);
+const pendingCycles = (
+  startedAt: string,
+  lastGeneratedFor: string | null,
+  dayOfMonth: number,
+  now?: Date,
+  activeSince: string | null = null,
+) =>
+  pendingCyclesImpl(
+    startedAt,
+    lastGeneratedFor,
+    dayOfMonth,
+    now,
+    activeSince,
+    TEST_TIME_ZONE,
+  );
+const nextChargeDate = (subscription: any, now?: Date) =>
+  nextChargeDateImpl(subscription, now, TEST_TIME_ZONE);
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
