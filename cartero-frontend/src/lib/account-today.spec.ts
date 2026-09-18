@@ -51,7 +51,7 @@ describe('accountToday — W1/W2/W3/W4/W5/W6/W14', () => {
   })
 
   it('W6: timeZone=null preserva EXATAMENTE formatDateValue (fuso do navegador)', () => {
-    expect(accountToday(null, AGORA)).toBe(formatDateValue(AGORA))
+    expect(() => accountToday(null, AGORA)).toThrow(/Missing account timezone/)
   })
 
   it('P5: null nunca alcança Intl com uma timezone escolhida internamente', () => {
@@ -73,7 +73,7 @@ describe('accountToday — W1/W2/W3/W4/W5/W6/W14', () => {
       DATE_SRC.indexOf('export function accountToday('),
       DATE_SRC.indexOf('export function accountTodayDate('),
     )
-    expect(fn).toContain('if (timeZone === null) return formatDateValue(now)')
+    expect(fn).toContain('requireAccountTimeZone')
     expect(fn).not.toContain("timeZone ?? 'America/Fortaleza'")
     expect(fn).not.toContain('timeZone: timeZone ??')
   })
@@ -89,7 +89,7 @@ describe('accountToday — W1/W2/W3/W4/W5/W6/W14', () => {
     // regra sem DST atualmente) concordam não prova nada sozinho — o que
     // importa é que `null` passa pelo branch de `formatDateValue`, nunca por
     // Intl com uma timezone fixa escolhida internamente.
-    expect(accountToday(null, AGORA)).toBe(formatDateValue(AGORA))
+    expect(() => accountToday(null, AGORA)).toThrow(/Missing account timezone/)
   })
 })
 
@@ -101,23 +101,21 @@ describe('accountTodayDate', () => {
   })
 
   it('timeZone=null preserva o Date local do navegador', () => {
-    const d = accountTodayDate(null, AGORA)
-    expect(formatDateValue(d)).toBe(formatDateValue(AGORA))
+    expect(() => accountTodayDate(null, AGORA)).toThrow(/Missing account timezone/)
   })
 })
 
 describe('accountCivilDayOf — P5 (legado null não pode cair em Fortaleza por acidente)', () => {
   it('timeZone=null é IDÊNTICO a civilDayOf (o -3h fixo legado)', () => {
     const instante = '2026-09-04T00:30:00.000Z'
-    expect(accountCivilDayOf(instante, null)).toBe(civilDayOf(instante))
-    expect(accountCivilDayOf(instante, null)).toBe('2026-09-03')
+    expect(() => accountCivilDayOf(instante, null)).toThrow(/Missing account timezone/)
   })
 
   it('timeZone configurado usa Intl, e pode divergir do -3h fixo', () => {
     // Mesmo instante, Tóquio já é dia 4 às 09h30 locais.
     const instante = '2026-09-04T00:30:00.000Z'
     expect(accountCivilDayOf(instante, 'Asia/Tokyo')).toBe('2026-09-04')
-    expect(accountCivilDayOf(instante, null)).toBe('2026-09-03')
+    expect(() => accountCivilDayOf(instante, null)).toThrow(/Missing account timezone/)
   })
 
   it('valor já em formato dia civil passa intacto, mesmo com timeZone setado', () => {
@@ -142,7 +140,7 @@ describe('accountCivilDayOf — P5 (legado null não pode cair em Fortaleza por 
     const fn = DATE_SRC.slice(
       DATE_SRC.indexOf('export function accountCivilDayOf('),
     )
-    expect(fn).toContain('if (timeZone === null) return civilDayOf(instant)')
+    expect(fn).toContain('requireAccountTimeZone')
     expect(fn).not.toContain("timeZone ?? 'America/Fortaleza'")
     expect(fn).not.toContain('timeZone: timeZone ??')
   })

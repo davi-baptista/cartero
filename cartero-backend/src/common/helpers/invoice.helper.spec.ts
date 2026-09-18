@@ -361,7 +361,7 @@ describe('deriveInvoiceStatus — fronteiras de status', () => {
 
   it('antes do fechamento é OPEN', () => {
     expect(
-      deriveInvoiceStatus(closesSameMonth, year, month, utc(2026, 3, 1)),
+      deriveInvoiceStatus(closesSameMonth, year, month, utc(2026, 3, 1), 'America/Fortaleza'),
     ).toBe('OPEN');
   });
 
@@ -372,28 +372,28 @@ describe('deriveInvoiceStatus — fronteiras de status', () => {
       year,
       month,
     );
-    expect(deriveInvoiceStatus(closesSameMonth, year, month, closeDate)).toBe(
+    expect(deriveInvoiceStatus(closesSameMonth, year, month, closeDate, 'America/Fortaleza')).toBe(
       'CLOSED',
     );
   });
 
   it('entre fechamento e vencimento é CLOSED', () => {
     expect(
-      deriveInvoiceStatus(closesSameMonth, year, month, utc(2026, 3, 7)),
+      deriveInvoiceStatus(closesSameMonth, year, month, utc(2026, 3, 7), 'America/Fortaleza'),
     ).toBe('CLOSED');
   });
 
   it('no instante do vencimento ainda é CLOSED', () => {
     // OVERDUE exige `today > dueDate` — vencer hoje não é estar vencida.
     const dueDate = getInvoiceDueDateForPeriod(closesSameMonth, year, month);
-    expect(deriveInvoiceStatus(closesSameMonth, year, month, dueDate)).toBe(
+    expect(deriveInvoiceStatus(closesSameMonth, year, month, dueDate, 'America/Fortaleza')).toBe(
       'CLOSED',
     );
   });
 
   it('depois do vencimento é OVERDUE', () => {
     expect(
-      deriveInvoiceStatus(closesSameMonth, year, month, utc(2026, 3, 11)),
+      deriveInvoiceStatus(closesSameMonth, year, month, utc(2026, 3, 11), 'America/Fortaleza'),
     ).toBe('OVERDUE');
   });
 
@@ -401,7 +401,7 @@ describe('deriveInvoiceStatus — fronteiras de status', () => {
     // `deriveInvoiceStatus` decide pelo tempo; PAID é sempre ação do usuário.
     // Isso é o que permite reabrir uma fatura paga e recebê-la como OVERDUE.
     const statuses = [utc(2026, 3, 1), utc(2026, 3, 5), utc(2026, 3, 30)].map(
-      (today) => deriveInvoiceStatus(closesSameMonth, year, month, today),
+      (today) => deriveInvoiceStatus(closesSameMonth, year, month, today, 'America/Fortaleza'),
     );
 
     expect(statuses).not.toContain('PAID');

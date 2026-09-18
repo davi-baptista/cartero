@@ -30,9 +30,9 @@ const MONTH_BOUNDARY = new Date('2026-09-30T23:30:00.000Z');
 const YEAR_BOUNDARY = new Date('2026-12-31T23:30:00.000Z');
 
 describe('currentCycle — TZ5', () => {
-  it('M9: timeZone=null preserva EXATAMENTE o dia civil UTC legado', () => {
-    expect(currentCycle(AGORA, null)).toEqual({ year: 2026, month: 9 });
-    expect(currentCycle(MONTH_BOUNDARY, null)).toEqual({ year: 2026, month: 9 });
+  it('M9: timezone ausente falha explicitamente', () => {
+    expect(() => currentCycle(AGORA, null)).toThrow(/Missing or invalid/);
+    expect(() => currentCycle(MONTH_BOUNDARY, undefined)).toThrow(/Missing or invalid/);
   });
 
   it('M1: America/Fortaleza', () => {
@@ -85,7 +85,7 @@ describe('currentCycle — TZ5', () => {
 
   it('P5 estrutural: null nunca alcança Intl com uma timezone escolhida internamente', () => {
     const fn = SRC.slice(SRC.indexOf('export function currentCycle('));
-    expect(fn).toContain('if (timeZone === null)');
+    expect(fn).toContain('requireAccountTimeZone');
     expect(fn).not.toContain("timeZone ?? 'America/Fortaleza'");
     expect(fn).not.toContain('timeZone: timeZone ??');
   });
@@ -106,8 +106,8 @@ describe('pendingCycles — TZ5: boundary genuíno entre contas', () => {
   const REAL_BOUNDARY = new Date('2026-10-01T02:00:00.000Z');
 
   it('D1: legacy null preserva o baseline UTC (outubro já pendente)', () => {
-    const cycles = pendingCycles('2026-01', null, 1, REAL_BOUNDARY, null, null);
-    expect(cycles.at(-1)).toEqual({ year: 2026, month: 10 });
+    const cycles = pendingCycles('2026-01', null, 1, REAL_BOUNDARY, null, 'America/Fortaleza');
+    expect(cycles.at(-1)).toEqual({ year: 2026, month: 9 });
   });
 
   it('D2/T28: Fortaleza ainda não considera outubro; Tóquio já considera', () => {
@@ -146,7 +146,7 @@ describe('resumeCycle — TZ5', () => {
     diretamente); aqui só confirmamos que `null` preserva o legado exato.
   */
   it('D1: legacy null preserva o baseline UTC', () => {
-    expect(resumeCycle(5, MONTH_BOUNDARY, null)).toEqual({
+    expect(resumeCycle(5, MONTH_BOUNDARY, 'America/Fortaleza')).toEqual({
       year: 2026,
       month: 10,
     });
@@ -171,7 +171,7 @@ describe('nextChargeDate — TZ5', () => {
   };
 
   it('D1: legacy null preserva o baseline UTC', () => {
-    const next = nextChargeDate(base, MONTH_BOUNDARY, null);
+    const next = nextChargeDate(base, MONTH_BOUNDARY, 'America/Fortaleza');
     // UTC: setembro já gerado, próxima cobrança é outubro (dia 5).
     expect(next?.getUTCFullYear()).toBe(2026);
     expect(next?.getUTCMonth()).toBe(9); // outubro (0-based)

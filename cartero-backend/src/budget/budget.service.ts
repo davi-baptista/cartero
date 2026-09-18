@@ -7,6 +7,7 @@ import {
   financialCivilDay,
   financialCompetence,
 } from 'src/common/helpers/financial-timezone.helper';
+import { requireAccountTimeZone } from 'src/common/helpers/timezone.helper';
 import { resolveContribution } from 'src/common/helpers/budget-contribution.helper';
 import {
   classifyDebtForBudget,
@@ -35,7 +36,10 @@ const DIRECT_PAYMENT_TYPES: TransactionType[] = [
  * `timeZone !== null` usa `financialCivilDay` (TZ2), a nova authority IANA.
  */
 function budgetToday(now: Date, timeZone: string | null): string {
-  return timeZone === null ? civilDay(now) : financialCivilDay(now, timeZone);
+  return financialCivilDay(
+    now,
+    requireAccountTimeZone(timeZone, 'budget account timezone'),
+  );
 }
 
 /**
@@ -181,15 +185,10 @@ function isCurrentCompetence(
   now: Date = new Date(),
   timeZone: string | null = null,
 ): boolean {
-  if (timeZone === null) {
-    const fortaleza = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-    return (
-      fortaleza.getUTCFullYear() === year &&
-      fortaleza.getUTCMonth() + 1 === month
-    );
-  }
-
-  const current = financialCompetence(now, timeZone);
+  const current = financialCompetence(
+    now,
+    requireAccountTimeZone(timeZone, 'budget account timezone'),
+  );
   return current.year === year && current.month === month;
 }
 

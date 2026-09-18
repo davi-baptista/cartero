@@ -171,7 +171,7 @@ describe('itens 16, 18 e 24: a fonte canônica da competência', () => {
 
   it('o mês civil resolvido bate com o relógio local', () => {
     const agora = new Date()
-    expect(currentPeriod()).toEqual({
+    expect(currentPeriod('America/Fortaleza')).toEqual({
       month: agora.getMonth() + 1,
       year: agora.getFullYear(),
     })

@@ -11,6 +11,16 @@ export function todayDateValue(): string {
   return formatDateValue()
 }
 
+export function requireAccountTimeZone(
+  timeZone: string | null | undefined,
+  context = 'account timezone',
+): string {
+  if (typeof timeZone !== 'string' || timeZone.length === 0) {
+    throw new Error(`Missing ${context}`)
+  }
+  return timeZone
+}
+
 /**
  * ══════════════════════════════════════════════════════════════════════════
  * TZ3 — dia civil "de hoje" pela timezone financeira da conta
@@ -25,11 +35,10 @@ export function todayDateValue(): string {
  * distinção entre "conta com timezone" e "legado" precisa ficar explícita
  * em quem chama, nunca escondida atrás de `timeZone ?? 'America/Fortaleza'`.
  */
-export function accountToday(timeZone: string | null, now: Date = new Date()): string {
-  if (timeZone === null) return formatDateValue(now)
-
+export function accountToday(timeZone: string | null | undefined, now: Date = new Date()): string {
+  const accountTimeZone = requireAccountTimeZone(timeZone)
   const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
+    timeZone: accountTimeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -40,7 +49,7 @@ export function accountToday(timeZone: string | null, now: Date = new Date()): s
 }
 
 /** Mesma authority de `accountToday`, devolvendo um `Date` local em vez de string. */
-export function accountTodayDate(timeZone: string | null, now: Date = new Date()): Date {
+export function accountTodayDate(timeZone: string | null | undefined, now: Date = new Date()): Date {
   return parseDateOnly(accountToday(timeZone, now))
 }
 
@@ -92,17 +101,17 @@ export function civilDayOf(instant: string | Date): string {
  */
 export function accountCivilDayOf(
   instant: string | Date,
-  timeZone: string | null,
+  timeZone: string | null | undefined,
 ): string {
   if (typeof instant === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(instant)) {
     return instant
   }
 
-  if (timeZone === null) return civilDayOf(instant)
+  const accountTimeZone = requireAccountTimeZone(timeZone)
 
   const date = typeof instant === 'string' ? new Date(instant) : instant
   const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
+    timeZone: accountTimeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

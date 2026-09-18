@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { CARTERO_TIME_ZONE, currentCarteroCompetence } from './competence'
+import { currentCarteroCompetence } from './competence'
 
 const COMPETENCE_SRC = readFileSync(new URL('./competence.ts', import.meta.url), 'utf-8')
 
@@ -89,12 +89,8 @@ describe('currentCarteroCompetence — M1-M9', () => {
   })
 
   it('M9: timeZone=null preserva EXATAMENTE o resultado histórico Fortaleza', () => {
-    expect(currentCarteroCompetence(AGORA, null)).toEqual(
-      currentCarteroCompetence(AGORA, CARTERO_TIME_ZONE),
-    )
-    expect(currentCarteroCompetence(MONTH_BOUNDARY, null)).toEqual(
-      currentCarteroCompetence(MONTH_BOUNDARY, CARTERO_TIME_ZONE),
-    )
+    expect(() => currentCarteroCompetence(AGORA, null)).toThrow(/Missing account timezone/)
+    expect(() => currentCarteroCompetence(AGORA)).toThrow(/Missing account timezone/)
   })
 
   it('P5 estrutural: null nunca alcança Intl com uma timezone escolhida internamente', () => {
@@ -110,8 +106,8 @@ describe('currentCarteroCompetence — M1-M9', () => {
       COMPETENCE_SRC.indexOf('export function currentCarteroCompetence'),
     )
 
-    expect(fn).toContain('if (timeZone === null)')
-    expect(fn).not.toContain('timeZone ?? CARTERO_TIME_ZONE')
+    expect(fn).toContain("throw new Error('Missing account timezone')")
+    expect(fn).not.toContain('CARTERO_TIME_ZONE')
     expect(fn).not.toContain('timeZone: timeZone ??')
   })
 })

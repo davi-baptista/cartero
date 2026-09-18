@@ -1,5 +1,6 @@
 import { Bank, Invoice, InvoiceStatus, Prisma } from '@prisma/client';
 import { financialCivilDay } from './financial-timezone.helper';
+import { requireAccountTimeZone } from './timezone.helper';
 
 export const SYSTEM_RECEIVABLE_BANK_NAME = '__system_receivables__';
 export const DEFAULT_INVOICE_DAYS_AFTER_CLOSE = 7;
@@ -177,15 +178,12 @@ export function getInvoiceCloseDate(invoice: Pick<Invoice, 'closeDate'>): Date {
 export function deriveStatusFromInvoiceDates(
   invoice: Pick<Invoice, 'closeDate' | 'dueDate'>,
   today: Date = new Date(),
-  timeZone: string | null = null,
+  timeZone: string | null | undefined = undefined,
 ): InvoiceStatus {
-  if (timeZone === null) {
-    if (isAfterCivilDay(today, invoice.dueDate)) return 'OVERDUE';
-    if (!isAfterCivilDay(invoice.closeDate, today)) return 'CLOSED';
-    return 'OPEN';
-  }
-
-  const todayCivil = financialCivilDay(today, timeZone);
+  const todayCivil = financialCivilDay(
+    today,
+    requireAccountTimeZone(timeZone, 'invoice account timezone'),
+  );
   const dueCivil = civilDayOfUtc(invoice.dueDate);
   const closeCivil = civilDayOfUtc(invoice.closeDate);
 
@@ -319,6 +317,7 @@ export function deriveInvoiceStatus(
   year: number,
   month: number,
   today: Date = new Date(),
+  timeZone: string | null | undefined = undefined,
 ): InvoiceStatus {
   const closeDate = getInvoiceCloseDateForPeriod(schedule, year, month);
   const dueDate = getInvoiceDueDateForPeriod(schedule, year, month);
@@ -326,9 +325,11 @@ export function deriveInvoiceStatus(
   // Comparação por dia civil, pela mesma razão de `getInvoicePeriodForDate`:
   // o horário em que cada data foi ancorada não pode decidir o status.
   // Vencer hoje ainda não é estar vencida; fechar hoje já é estar fechada.
-  if (isAfterCivilDay(today, dueDate)) return 'OVERDUE';
-  if (!isAfterCivilDay(closeDate, today)) return 'CLOSED';
-  return 'OPEN';
+  return deriveStatusFromInvoiceDates(
+    { closeDate, dueDate },
+    today,
+    timeZone,
+  );
 }
 
 /**
@@ -348,6 +349,7 @@ export async function findOrCreateInvoiceForPeriod(
   schedule: InvoiceSchedule,
   year: number,
   month: number,
+  timeZone: string | null | undefined = undefined,
 ): Promise<Invoice> {
   const existing = await tx.invoice.findFirst({
     where: { userId, bankId, month, year },
@@ -368,7 +370,7 @@ export async function findOrCreateInvoiceForPeriod(
       dueDate,
       // Derivado das MESMAS datas que estão sendo gravadas, não de um segundo
       // cálculo — assim status e datas não podem nascer contraditórios.
-      status: deriveStatusFromInvoiceDates({ closeDate, dueDate }),
+      status: deriveStatusFromInvoiceDates({ closeDate, dueDate }, new Date(), timeZone),
     },
   });
 }
@@ -380,6 +382,7 @@ export async function findOrCreateInvoice(
   invoiceDueDate: number,
   invoiceDueDaysAfterClose: number,
   transactionDate: Date,
+  timeZone: string | null | undefined = undefined,
 ): Promise<Invoice> {
   const schedule = { invoiceDueDate, invoiceDueDaysAfterClose };
   const { year, month } = getInvoicePeriodForDate(schedule, transactionDate);
@@ -390,6 +393,7 @@ export async function findOrCreateInvoice(
     schedule,
     year,
     month,
+    timeZone,
   );
 }
 

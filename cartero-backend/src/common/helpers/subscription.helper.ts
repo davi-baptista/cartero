@@ -1,4 +1,5 @@
 import { financialCompetence } from './financial-timezone.helper';
+import { requireAccountTimeZone } from './timezone.helper';
 
 /**
  * Um ciclo de assinatura é identificado por "YYYY-MM" — o mês de competência,
@@ -41,12 +42,12 @@ export function formatCycle({ year, month }: Cycle): string {
  */
 export function currentCycle(
   now: Date = new Date(),
-  timeZone: string | null = null,
+  timeZone: string | null | undefined = undefined,
 ): Cycle {
-  if (timeZone === null) {
-    return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
-  }
-  return financialCompetence(now, timeZone);
+  return financialCompetence(
+    now,
+    requireAccountTimeZone(timeZone, 'subscription account timezone'),
+  );
 }
 
 export function addCycles({ year, month }: Cycle, delta: number): Cycle {

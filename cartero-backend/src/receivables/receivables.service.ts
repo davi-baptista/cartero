@@ -277,6 +277,7 @@ export class ReceivablesService {
                 bank: receivableBank!,
                 paymentType: paymentBank ? (paymentType ?? null) : null,
                 category,
+                timeZone: userPreferences.timeZone,
               },
             );
           } else if (paidAt === null && receivable.paymentTransactionId) {

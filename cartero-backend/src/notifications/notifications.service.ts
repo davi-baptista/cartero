@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as webpush from 'web-push';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { financialCivilDay } from 'src/common/helpers/financial-timezone.helper';
+import { requireAccountTimeZone } from 'src/common/helpers/timezone.helper';
 import { SubscribeDto } from './dto/subscribe.dto';
 import { UnsubscribeDto } from './dto/unsubscribe.dto';
 import { SubscriptionStatusDto } from './dto/subscription-status.dto';
@@ -118,7 +119,10 @@ export class NotificationsService {
     for (const [userId, items] of candidates) {
       const user = usersById.get(userId);
       if (!user) continue;
-      const scheduleZone = user.timeZone ?? 'America/Fortaleza';
+      const scheduleZone = requireAccountTimeZone(
+        user.timeZone,
+        'notification account timezone',
+      );
       const dueSlots = resolveDueNotificationSlots({
         now,
         timeZone: scheduleZone,
@@ -127,10 +131,7 @@ export class NotificationsService {
       for (const dueSlot of dueSlots) {
         // Legacy accounts keep process-local civil-day authority; only the
         // delivery schedule uses Fortaleza until enrollment exists.
-        const civilDay =
-          user.timeZone === null
-            ? this.currentCivilDay(now, null)
-            : dueSlot.civilDay;
+        const civilDay = dueSlot.civilDay;
         const occurrence = await this.prisma.notificationOccurrence.upsert({
           where: {
             userId_type_civilDay_deliverySlot: {
@@ -174,11 +175,6 @@ export class NotificationsService {
 
     this.logger.log(`Notificações de vencimento enviadas: ${sent}`);
     return { sent };
-  }
-
-  private currentCivilDay(now: Date, timeZone: string | null): string {
-    if (timeZone !== null) return financialCivilDay(now, timeZone);
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
 
   private async findUpcomingItemsBatch(
@@ -228,9 +224,12 @@ export class NotificationsService {
     const result = new Map<string, DueItem[]>();
     const byUser = new Map(users.map((user) => [user.id, user]));
     const startFor = (user: { timeZone: string | null }) =>
-      user.timeZone === null
-        ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
-        : this.utcDayStart(financialCivilDay(now, user.timeZone));
+      this.utcDayStart(
+        financialCivilDay(
+          now,
+          requireAccountTimeZone(user.timeZone, 'notification account timezone'),
+        ),
+      );
     const add = (userId: string, item: DueItem) => {
       const user = byUser.get(userId);
       if (!user) return;
@@ -351,15 +350,13 @@ export class NotificationsService {
       o meio-dia UTC do MESMO dia civil (a âncora de `dueDate`,
       `parseDateOnly`), então a comparação por intervalo permanece correta.
     */
-    const todayStart =
-      timeZone === null
-        ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
-        : (() => {
-            const [year, month, day] = financialCivilDay(now, timeZone)
-              .split('-')
-              .map(Number);
-            return new Date(Date.UTC(year, month - 1, day));
-          })();
+    const [year, month, day] = financialCivilDay(
+      now,
+      requireAccountTimeZone(timeZone, 'notification account timezone'),
+    )
+      .split('-')
+      .map(Number);
+    const todayStart = new Date(Date.UTC(year, month - 1, day));
     const windowEnd = new Date(
       todayStart.getTime() + (daysBefore + 1) * 24 * 60 * 60 * 1000,
     );

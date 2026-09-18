@@ -45,6 +45,7 @@ describe('S46/S47: isolamento de falha entre Budget e Invoices', () => {
       store,
       fetchBudget: async () => ({ totalToPay: 100, totalPaid: 50, totalPending: 50 }),
       currentOwnerId: () => 'user-a',
+      currentTimeZone: () => 'America/Fortaleza',
       now: () => new Date('2026-09-15T12:00:00.000Z'),
     })
 
@@ -71,6 +72,7 @@ describe('S46/S47: isolamento de falha entre Budget e Invoices', () => {
         throw new Error('502')
       },
       currentOwnerId: () => 'user-a',
+      currentTimeZone: () => 'America/Fortaleza',
       now: () => new Date('2026-09-15T12:00:00.000Z'),
     })
 
@@ -95,6 +97,7 @@ describe('S46/S47: isolamento de falha entre Budget e Invoices', () => {
         throw new Error('offline')
       },
       currentOwnerId: () => 'user-a',
+      currentTimeZone: () => 'America/Fortaleza',
     })
 
     const invoices = new InvoicesSync({
@@ -124,6 +127,7 @@ describe('S46/S47: isolamento de falha entre Budget e Invoices', () => {
         throw new Error('falha')
       },
       currentOwnerId: () => 'user-a',
+      currentTimeZone: () => 'America/Fortaleza',
     })
     const invoices = new InvoicesSync({
       store,
@@ -155,6 +159,7 @@ describe('coalescing entre os dois syncs', () => {
         return { totalToPay: 1, totalPaid: 1, totalPending: 0 }
       },
       currentOwnerId: () => 'user-a',
+      currentTimeZone: () => 'America/Fortaleza',
     })
     const invoices = new InvoicesSync({
       store,
@@ -187,6 +192,7 @@ describe('coalescing entre os dois syncs', () => {
         return { totalToPay: 1, totalPaid: 1, totalPending: 0 }
       },
       currentOwnerId: () => 'user-a',
+      currentTimeZone: () => 'America/Fortaleza',
     })
     const invoices = new InvoicesSync({
       store,

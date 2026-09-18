@@ -755,6 +755,7 @@ export class SubscriptionsService {
                 bank.invoiceDueDate,
                 bank.invoiceDueDaysAfterClose,
                 date,
+                timeZone,
               );
 
               if (invoice.status === 'PAID') {

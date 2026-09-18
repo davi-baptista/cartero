@@ -63,12 +63,12 @@ export class TransactionsController {
     @Body() dto: UpdateTransactionDto,
     @Query('scope') scope?: string,
   ) {
-    return this.transactionsService.update(id, user.id, dto, scope);
+    return this.transactionsService.update(id, user.id, dto, scope, user.timeZone);
   }
 
   @Post()
   create(@CurrentUser() user: User, @Body() dto: CreateTransactionDto) {
-    return this.transactionsService.create(user.id, dto);
+    return this.transactionsService.create(user.id, dto, user.timeZone);
   }
 
   /** O que a exclusão faria — sem gravar nada. */

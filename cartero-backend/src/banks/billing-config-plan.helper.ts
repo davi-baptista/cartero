@@ -5,6 +5,7 @@ import {
   getInvoiceDueDateForPeriod,
   type InvoiceSchedule,
 } from 'src/common/helpers/invoice.helper';
+import { requireAccountTimeZone } from 'src/common/helpers/timezone.helper';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -118,7 +119,10 @@ export function planBillingConfigUpdate(
   input: BillingConfigPlanInput,
 ): BillingConfigPlan {
   const today = input.today ?? new Date();
-  const timeZone = input.timeZone ?? null;
+  const timeZone = requireAccountTimeZone(
+    input.timeZone,
+    'billing account timezone',
+  );
   const { current, next } = input;
 
   const scheduleUnchanged =

@@ -9,6 +9,7 @@ import {
   parseCycle,
   type Cycle,
 } from 'src/common/helpers/subscription.helper';
+import { requireAccountTimeZone } from 'src/common/helpers/timezone.helper';
 import {
   getInvoicePeriodForDate,
   type InvoiceSchedule,
@@ -171,7 +172,10 @@ export function forecastSubscriptionOccurrences(
   input: ForecastInput,
 ): ForecastOccurrence[] {
   const today = input.today ?? new Date();
-  const timeZone = input.timeZone ?? null;
+  const timeZone = requireAccountTimeZone(
+    input.timeZone,
+    'forecast account timezone',
+  );
   const firstPeriod = currentCycle(today, timeZone);
   const lastPeriod = addCycles(firstPeriod, input.horizonMonths - 1);
 
@@ -277,7 +281,10 @@ export function forecastInvoiceLookups(
   const seen = new Set<string>();
   const lookups: Array<{ bankId: string; year: number; month: number }> = [];
 
-  const firstPeriod = currentCycle(today, timeZone);
+  const firstPeriod = currentCycle(
+    today,
+    requireAccountTimeZone(timeZone, 'forecast account timezone'),
+  );
   // A folga cobre a competência de uma cobrança do fim do horizonte que caia
   // em fatura posterior.
   const lastPeriod = addCycles(firstPeriod, horizonMonths + 1);

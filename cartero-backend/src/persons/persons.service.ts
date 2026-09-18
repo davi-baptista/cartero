@@ -426,6 +426,7 @@ export class PersonsService {
                   bank: paymentBank,
                   paymentType: dto.paymentType as TransactionType,
                   category: debtCategory,
+                  timeZone: user.timeZone,
                 })
               : null;
 
@@ -471,6 +472,7 @@ export class PersonsService {
                   bank: receivableBank,
                   paymentType: null,
                   category: receivableCategory,
+                  timeZone: user.timeZone,
                 })
               : null;
 

@@ -21,20 +21,12 @@
  * ano — sem precisar somar offsets à mão. Subtrair três horas manualmente
  * funcionaria hoje e passaria a mentir se a regra de fuso mudasse.
  */
-export const CARTERO_TIME_ZONE = 'America/Fortaleza'
 
 export interface Competence {
   /** 1–12, como o backend espera em `GET /budget?month=`. */
   month: number
   year: number
 }
-
-const legacyFormatter = new Intl.DateTimeFormat('en-CA', {
-  timeZone: CARTERO_TIME_ZONE,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-})
 
 function competenceFromParts(parts: Intl.DateTimeFormatPart[]): Competence {
   const get = (type: Intl.DateTimeFormatPartTypes) =>
@@ -62,10 +54,10 @@ function competenceFromParts(parts: Intl.DateTimeFormatPart[]): Competence {
  */
 export function currentCarteroCompetence(
   now: Date = new Date(),
-  timeZone: string | null = null,
+  timeZone: string | null | undefined = undefined,
 ): Competence {
-  if (timeZone === null) {
-    return competenceFromParts(legacyFormatter.formatToParts(now))
+  if (typeof timeZone !== 'string' || timeZone.length === 0) {
+    throw new Error('Missing account timezone')
   }
 
   const accountFormatter = new Intl.DateTimeFormat('en-CA', {

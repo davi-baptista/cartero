@@ -16,8 +16,8 @@ const AGORA = new Date('2026-09-16T15:30:00.000Z');
 const BOUNDARY = new Date('2026-09-30T23:30:00.000Z'); // 20:30 Fortaleza (set), 08:30 Tokyo (out)
 
 describe('currentCompetence — TZ2', () => {
-  it('D1: timeZone=null preserva a authority legada (Fortaleza fixa)', () => {
-    expect(currentCompetence(AGORA, null)).toEqual({ year: 2026, month: 9 });
+  it('D1: timezone ausente falha explicitamente', () => {
+    expect(() => currentCompetence(AGORA, null)).toThrow(/Missing or invalid/);
   });
 
   it('D2/T28: mesmo instante, Fortaleza e Tokyo concordam longe do boundary', () => {
@@ -39,11 +39,6 @@ describe('currentCompetence — TZ2', () => {
     expect(currentCompetence(BOUNDARY, 'Asia/Tokyo')).toEqual({
       year: 2026,
       month: 10,
-    });
-    // legado (null) concorda com Fortaleza.
-    expect(currentCompetence(BOUNDARY, null)).toEqual({
-      year: 2026,
-      month: 9,
     });
   });
 });

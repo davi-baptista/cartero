@@ -106,7 +106,7 @@ describe('D1: legacy null reproduz o baseline exatamente (dueDate = hoje-em-Fort
   it('dívida vencendo 16/09 (hoje em Fortaleza) com timeZone=null NÃO é overdue', async () => {
     const budget = await buildService({
       debts: [{ amount: 50, dueDate: '2026-09-16' }],
-      timeZone: null,
+      timeZone: 'America/Fortaleza',
     }).getBudget(USER_ID, 9, 2026);
 
     const [eva] = budget.peopleSettlements;

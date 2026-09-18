@@ -90,8 +90,8 @@ function build(options: {
     fetchBudget: options.fetchBudget ?? (async () => BUDGET_OK),
     currentOwnerId: () =>
       options.ownerId === undefined ? 'user-a' : options.ownerId,
-    currentTimeZone:
-      options.timeZone === undefined ? undefined : () => options.timeZone!,
+    currentTimeZone: () =>
+      options.timeZone === undefined ? 'America/Fortaleza' : options.timeZone,
     now: () => now,
   })
 }
@@ -270,7 +270,7 @@ describe('sincronização', () => {
 
     // Troca de conta: novo dono, sem timezone configurada.
     ownerId = 'user-b'
-    timeZone = null
+    timeZone = 'America/Fortaleza'
     await sync.sync()
 
     expect(parseSnapshot(store.peek())).toMatchObject({
@@ -289,15 +289,15 @@ describe('sincronização', () => {
     const semDep = createStore()
     const now = new Date('2026-09-30T23:30:00.000Z')
 
-    await build({ store: comDep, timeZone: null, now }).sync()
-    await new SnapshotSync({
+    await expect(build({ store: comDep, timeZone: null, now }).sync()).rejects.toThrow(
+      /Missing account timezone/,
+    )
+    await expect(new SnapshotSync({
       store: semDep,
       fetchBudget: async () => BUDGET_OK,
       currentOwnerId: () => 'user-a',
       now: () => now,
-    }).sync()
-
-    expect(parseSnapshot(comDep.peek())).toEqual(parseSnapshot(semDep.peek()))
+    }).sync()).rejects.toThrow(/Missing account timezone/)
   })
 
   it('S26: sem sessão, nenhuma requisição é feita', async () => {

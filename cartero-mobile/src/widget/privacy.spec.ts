@@ -360,6 +360,7 @@ describe('o sync do Budget lê a preferência', () => {
       store,
       fetchBudget: async () => BUDGET,
       currentOwnerId: () => OWNER_A,
+      currentTimeZone: () => 'America/Fortaleza',
       hideAmounts,
       coordinator,
       now: () => new Date('2026-09-14T12:00:00.000Z'),
@@ -415,6 +416,7 @@ describe('o sync do Budget lê a preferência', () => {
         throw new Error('http_502')
       },
       currentOwnerId: () => OWNER_A,
+      currentTimeZone: () => 'America/Fortaleza',
       hideAmounts: (id) => service.getHideAmounts(id),
       now: () => new Date('2026-09-14T12:00:00.000Z'),
     })
@@ -473,6 +475,7 @@ describe('generatedAt responde pelos DADOS, não pelo arquivo', () => {
         totalPending: 60,
       }),
       currentOwnerId: () => OWNER_A,
+      currentTimeZone: () => 'America/Fortaleza',
       now: () => new Date('2026-09-14T18:00:00.000Z'),
     }).sync()
 
@@ -557,6 +560,7 @@ describe('sync e toggle disputando o mesmo arquivo', () => {
         return { totalToPay: 757.24, totalPaid: 446.24, totalPending: 311 }
       },
       currentOwnerId: () => OWNER_A,
+      currentTimeZone: () => 'America/Fortaleza',
       hideAmounts: (id) => service.getHideAmounts(id),
       coordinator,
       now: () => new Date('2026-09-14T12:00:00.000Z'),
@@ -583,6 +587,7 @@ describe('sync e toggle disputando o mesmo arquivo', () => {
       store,
       fetchBudget: async () => ({ totalToPay: 1, totalPaid: 0, totalPending: 1 }),
       currentOwnerId: () => OWNER_A,
+      currentTimeZone: () => 'America/Fortaleza',
       coordinator,
     })
 
@@ -599,6 +604,7 @@ describe('sync e toggle disputando o mesmo arquivo', () => {
       store,
       fetchBudget: async () => ({ totalToPay: 1, totalPaid: 0, totalPending: 1 }),
       currentOwnerId: () => OWNER_A,
+      currentTimeZone: () => 'America/Fortaleza',
       coordinator,
     })
 

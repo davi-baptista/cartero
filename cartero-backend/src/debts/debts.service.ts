@@ -262,6 +262,7 @@ export class DebtsService {
               bank: paymentBank!,
               paymentType: paymentType as TransactionType,
               category,
+              timeZone: userPreferences.timeZone,
             });
           } else if (paidAt === null && debt.paymentTransactionId) {
             // Zera o vínculo ANTES do delete: o FK é `ON DELETE SET NULL`, e

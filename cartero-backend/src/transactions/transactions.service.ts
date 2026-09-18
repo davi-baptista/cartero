@@ -67,7 +67,11 @@ export class TransactionsService {
     private entityValidationService: EntityValidationService,
   ) {}
 
-  async create(userId: string, dto: CreateTransactionDto) {
+  async create(
+    userId: string,
+    dto: CreateTransactionDto,
+    timeZone: string | null | undefined = undefined,
+  ) {
     const bank = await this.entityValidationService.validateBank(
       dto.bankId,
       userId,
@@ -142,6 +146,7 @@ export class TransactionsService {
                 bank.invoiceDueDate,
                 bank.invoiceDueDaysAfterClose,
                 originalDate,
+                timeZone,
               );
               firstInvoicePeriod = {
                 year: invoice.year,
@@ -163,6 +168,7 @@ export class TransactionsService {
                 },
                 period.year,
                 period.month,
+                timeZone,
               );
             }
 
@@ -880,6 +886,7 @@ export class TransactionsService {
     userId: string,
     dto: UpdateTransactionDto,
     scope?: string,
+    timeZone?: string | null,
   ) {
     const existingTransaction =
       await this.entityValidationService.validateTransaction(id, userId);
@@ -1130,6 +1137,7 @@ export class TransactionsService {
                   schedule,
                   period.year,
                   period.month,
+                  timeZone,
                 );
               } else {
                 invoice = await findOrCreateInvoice(
@@ -1139,6 +1147,7 @@ export class TransactionsService {
                   bank!.invoiceDueDate,
                   bank!.invoiceDueDaysAfterClose,
                   date,
+                  timeZone,
                 );
               }
 

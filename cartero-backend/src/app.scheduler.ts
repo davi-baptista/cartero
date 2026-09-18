@@ -2,6 +2,7 @@ import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from './prisma/prisma.service';
 import { deriveStatusFromInvoiceDates } from './common/helpers/invoice.helper';
+import { requireAccountTimeZone } from './common/helpers/timezone.helper';
 
 /**
  * `true` quando `now` cai na hora cheia em que a meia-noite de
@@ -15,15 +16,6 @@ import { deriveStatusFromInvoiceDates } from './common/helpers/invoice.helper';
  * timezone real possa ter (não é o caso de Fortaleza, mas a técnica não pode
  * depender disso).
  */
-function isLegacyMidnightTick(now: Date): boolean {
-  const hour = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Fortaleza',
-    hour: '2-digit',
-    hourCycle: 'h23',
-  }).format(now);
-  return hour === '00';
-}
-
 /**
  * ══════════════════════════════════════════════════════════════════════════
  * Candidate pruning — margem de segurança global (TZ6.2)
@@ -70,7 +62,7 @@ export class AppScheduler implements OnApplicationBootstrap {
    * `timeZone === null`, no boot.
    */
   async onApplicationBootstrap() {
-    await this.syncInvoiceStatus({ legacyGate: false });
+    await this.syncInvoiceStatus();
   }
 
   /**
@@ -100,11 +92,10 @@ export class AppScheduler implements OnApplicationBootstrap {
   @Cron(CronExpression.EVERY_HOUR, {
     timeZone: 'America/Fortaleza',
   })
-  async syncInvoiceStatus(options: { legacyGate: boolean } = { legacyGate: true }) {
+  async syncInvoiceStatus(_compatibilityOptions?: unknown) {
     this.logger.log('Verificando status de faturas...');
 
     const now = new Date();
-    const legacyAllowedNow = !options.legacyGate || isLegacyMidnightTick(now);
 
     /*
       PAID é estado manual e final: o cron nunca o atribui nem o revoga —
@@ -152,14 +143,23 @@ export class AppScheduler implements OnApplicationBootstrap {
     });
 
     for (const invoice of invoices) {
-      const timeZone = invoice.user.timeZone;
+      let timeZone: string;
+      try {
+        timeZone = requireAccountTimeZone(
+          invoice.user.timeZone,
+          `invoice ${invoice.id} account timezone`,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Skipping invoice ${invoice.id}: ${error instanceof Error ? error.message : 'invalid account timezone'}`,
+        );
+        continue;
+      }
 
       // Legacy null só age no tick correspondente à meia-noite histórica de
       // Fortaleza — preserva o TIMING de observação exato do cron diário,
       // sem reintroduzir um cron separado por timezone. Contas com
       // timezone configurada nunca passam por este gate.
-      if (timeZone === null && !legacyAllowedNow) continue;
-
       // O status correto vem do calendário, em uma única decisão. Aplicar as
       // transições em sequência (OPEN→CLOSED, depois CLOSED→OVERDUE) fazia a
       // segunda condição ler o status carregado do banco, e não o recém

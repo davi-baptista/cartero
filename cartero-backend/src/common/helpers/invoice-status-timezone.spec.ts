@@ -32,25 +32,25 @@ describe('deriveStatusFromInvoiceDates — TZ6', () => {
   describe('I1: legacy null — baseline UTC exato', () => {
     it('mantém OPEN antes do fechamento', () => {
       expect(
-        deriveStatusFromInvoiceDates(AUGUST, new Date('2026-08-01T12:00:00.000Z'), null),
+        deriveStatusFromInvoiceDates(AUGUST, new Date('2026-08-01T12:00:00.000Z'), 'America/Fortaleza'),
       ).toBe('OPEN');
     });
 
     it('vira CLOSED no dia do fechamento', () => {
       expect(
-        deriveStatusFromInvoiceDates(AUGUST, new Date('2026-08-03T12:00:00.000Z'), null),
+        deriveStatusFromInvoiceDates(AUGUST, new Date('2026-08-03T12:00:00.000Z'), 'America/Fortaleza'),
       ).toBe('CLOSED');
     });
 
     it('mantém CLOSED no dia do vencimento — vencer hoje não é estar vencida', () => {
       expect(
-        deriveStatusFromInvoiceDates(AUGUST, new Date('2026-08-10T02:00:00.000Z'), null),
+        deriveStatusFromInvoiceDates(AUGUST, new Date('2026-08-10T02:00:00.000Z'), 'America/Fortaleza'),
       ).toBe('CLOSED');
     });
 
     it('vira OVERDUE no dia seguinte ao vencimento', () => {
       expect(
-        deriveStatusFromInvoiceDates(AUGUST, new Date('2026-08-11T12:00:00.000Z'), null),
+        deriveStatusFromInvoiceDates(AUGUST, new Date('2026-08-11T12:00:00.000Z'), 'America/Fortaleza'),
       ).toBe('OVERDUE');
     });
   });
@@ -248,9 +248,9 @@ describe('deriveStatusFromInvoiceDates — TZ6', () => {
         closeDate: new Date('2026-08-03T03:00:00.000Z'),
         dueDate: new Date('2026-08-10T03:00:00.000Z'),
       };
-      expect(
+      expect(() =>
         deriveStatusFromInvoiceDates(invoice, new Date('2026-08-11T01:00:00.000Z'), null),
-      ).toBe('OVERDUE');
+      ).toThrow(/Missing or invalid/);
     });
   });
 
@@ -260,7 +260,7 @@ describe('deriveStatusFromInvoiceDates — TZ6', () => {
         SRC.indexOf('export function deriveStatusFromInvoiceDates('),
         SRC.indexOf('function civilDayOfUtc('),
       );
-      expect(fn).toContain('if (timeZone === null)');
+      expect(fn).toContain('requireAccountTimeZone');
       expect(fn).not.toContain("timeZone ?? 'America/Fortaleza'");
       expect(fn).not.toContain('timeZone: timeZone ??');
     });

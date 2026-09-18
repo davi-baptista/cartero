@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { financialCompetence } from './financial-timezone.helper';
+import { requireAccountTimeZone } from './timezone.helper';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -122,15 +123,12 @@ export function isCurrentCompetence(
  */
 export function currentCompetence(
   now: Date = new Date(),
-  timeZone: string | null = null,
+  timeZone: string | null | undefined = undefined,
 ): SalaryCompetence {
-  if (timeZone !== null) return financialCompetence(now, timeZone);
-
-  const fortaleza = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-  return {
-    year: fortaleza.getUTCFullYear(),
-    month: fortaleza.getUTCMonth() + 1,
-  };
+  return financialCompetence(
+    now,
+    requireAccountTimeZone(timeZone, 'salary account timezone'),
+  );
 }
 
 /** Valida uma competência recebida da API. */

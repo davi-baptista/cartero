@@ -2,6 +2,7 @@ import {
   financialCivilDay,
   financialCompetence,
 } from './financial-timezone.helper';
+import { requireAccountTimeZone } from './timezone.helper';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -146,9 +147,10 @@ function competenceKeyWithDay(date: Date): string {
  * Fortaleza fixa). `timeZone !== null` usa `financialCivilDay` (TZ2).
  */
 function accountToday(now: Date, timeZone: string | null): string {
-  return timeZone === null
-    ? competenceKeyWithDay(now)
-    : financialCivilDay(now, timeZone);
+  return financialCivilDay(
+    now,
+    requireAccountTimeZone(timeZone, 'settlement account timezone'),
+  );
 }
 
 /**
@@ -212,9 +214,10 @@ export function resolveDefaultCompetence(
   today: Date = new Date(),
   timeZone: string | null = null,
 ): SettlementCompetence {
-  if (timeZone === null) return competenceOf(today);
-
-  const { year, month } = financialCompetence(today, timeZone);
+  const { year, month } = financialCompetence(
+    today,
+    requireAccountTimeZone(timeZone, 'settlement account timezone'),
+  );
   return { year, month };
 }
 

@@ -57,15 +57,15 @@ describe('findUpcomingItems — TZ5', () => {
     vi.setSystemTime(new Date('2026-09-17T02:30:00.000Z'));
 
     const harness = buildHarness();
-    await (harness.service as any).findUpcomingItems(USER_ID, 0, null);
+    await (harness.service as any).findUpcomingItems(USER_ID, 0, 'America/Fortaleza');
 
     const { dueDate } = harness.debtWhere[0];
     // O processo local (America/Sao_Paulo) ainda está em 16/09 às 23h30 —
     // o legado usa exatamente isso, não o dia UTC (que já seria 17/09).
     const gte = dueDate.gte as Date;
-    expect(gte.getFullYear()).toBe(2026);
-    expect(gte.getMonth()).toBe(8); // setembro (0-based)
-    expect(gte.getDate()).toBe(16);
+    expect(gte.getUTCFullYear()).toBe(2026);
+    expect(gte.getUTCMonth()).toBe(8); // setembro (0-based)
+    expect(gte.getUTCDate()).toBe(16);
   });
 
   it('D2/T28: America/Fortaleza e Asia/Tokyo divergem no mesmo instante', async () => {
@@ -130,7 +130,7 @@ describe('findUpcomingItems — TZ5', () => {
     const fn = NOTIFICATIONS_SRC.slice(
       NOTIFICATIONS_SRC.indexOf('private async findUpcomingItems('),
     );
-    expect(fn).toContain('timeZone === null');
+    expect(fn).toContain('requireAccountTimeZone');
     expect(fn).not.toContain("timeZone ?? 'America/Fortaleza'");
     expect(fn).not.toContain('timeZone: timeZone ??');
   });

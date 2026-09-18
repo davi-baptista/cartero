@@ -194,7 +194,7 @@ export default function SettingsScreen() {
             Usada para hoje, competências, vencimentos, notificações e assinaturas. Não reescreve dados históricos.
           </Text>
           <Text style={styles.currentTimeZone}>
-            {state.user?.timeZone ?? 'Não configurada — conta legada'}
+            {state.user?.timeZone ?? 'Timezone indisponível'}
           </Text>
           <TextInput
             value={timeZoneSearch}

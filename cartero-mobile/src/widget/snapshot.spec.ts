@@ -243,7 +243,7 @@ describe('reais → centavos', () => {
 
 describe('competência corrente (America/Fortaleza)', () => {
   it('S14: um instante comum resolve o mês civil de Fortaleza', () => {
-    expect(currentCarteroCompetence(new Date('2026-09-14T15:00:00Z'))).toEqual({
+    expect(currentCarteroCompetence(new Date('2026-09-14T15:00:00Z'), 'America/Fortaleza')).toEqual({
       month: 9,
       year: 2026,
     })
@@ -255,7 +255,7 @@ describe('competência corrente (America/Fortaleza)', () => {
       ainda é SETEMBRO — e é este caso que mata uma implementação baseada em
       UTC ou no fuso do aparelho.
     */
-    expect(currentCarteroCompetence(new Date('2026-10-01T01:00:00Z'))).toEqual({
+    expect(currentCarteroCompetence(new Date('2026-10-01T01:00:00Z'), 'America/Fortaleza')).toEqual({
       month: 9,
       year: 2026,
     })
@@ -263,13 +263,13 @@ describe('competência corrente (America/Fortaleza)', () => {
 
   it('S15: a virada acontece na hora certa, não antes nem depois', () => {
     // 30/09 23h59 em Fortaleza = 01/10 02h59 UTC.
-    expect(currentCarteroCompetence(new Date('2026-10-01T02:59:00Z'))).toEqual({
+    expect(currentCarteroCompetence(new Date('2026-10-01T02:59:00Z'), 'America/Fortaleza')).toEqual({
       month: 9,
       year: 2026,
     })
 
     // 01/10 00h00 em Fortaleza = 01/10 03h00 UTC.
-    expect(currentCarteroCompetence(new Date('2026-10-01T03:00:00Z'))).toEqual({
+    expect(currentCarteroCompetence(new Date('2026-10-01T03:00:00Z'), 'America/Fortaleza')).toEqual({
       month: 10,
       year: 2026,
     })
@@ -277,12 +277,12 @@ describe('competência corrente (America/Fortaleza)', () => {
 
   it('S16: a virada de ANO segue a mesma régua', () => {
     // 01/01/2027 01h UTC ainda é 31/12/2026 em Fortaleza.
-    expect(currentCarteroCompetence(new Date('2027-01-01T01:00:00Z'))).toEqual({
+    expect(currentCarteroCompetence(new Date('2027-01-01T01:00:00Z'), 'America/Fortaleza')).toEqual({
       month: 12,
       year: 2026,
     })
 
-    expect(currentCarteroCompetence(new Date('2027-01-01T03:00:00Z'))).toEqual({
+    expect(currentCarteroCompetence(new Date('2027-01-01T03:00:00Z'), 'America/Fortaleza')).toEqual({
       month: 1,
       year: 2027,
     })
@@ -315,7 +315,7 @@ describe('competência corrente (America/Fortaleza)', () => {
     for (let mes = 0; mes < 12; mes += 1) {
       const virada = new Date(Date.UTC(2026, mes, 1, 1, 0, 0))
       const localMonth = virada.getMonth() + 1
-      const carteroMonth = currentCarteroCompetence(virada).month
+      const carteroMonth = currentCarteroCompetence(virada, 'America/Fortaleza').month
 
       if (localMonth !== carteroMonth) {
         divergiu = true
@@ -337,7 +337,7 @@ describe('competência corrente (America/Fortaleza)', () => {
         const virada = new Date(Date.UTC(2026, mes, 1, 1, 0, 0))
         const [ano, mesFortaleza] = fortalezaParts(virada).split('-')
 
-        expect(currentCarteroCompetence(virada)).toEqual({
+        expect(currentCarteroCompetence(virada, 'America/Fortaleza')).toEqual({
           month: Number(mesFortaleza),
           year: Number(ano),
         })

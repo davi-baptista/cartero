@@ -9,8 +9,9 @@ import {
   deleteInvoiceIfEmpty,
   findOrCreateInvoice,
 } from './invoice.helper';
-import { civilDay, parseDateOnly } from './date-only.helper';
+import { parseDateOnly } from './date-only.helper';
 import { financialCivilDay } from './financial-timezone.helper';
+import { requireAccountTimeZone } from './timezone.helper';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -47,6 +48,7 @@ export interface DebtPaymentInput {
   bank: Pick<Bank, 'id' | 'invoiceDueDate' | 'invoiceDueDaysAfterClose'>;
   paymentType: TransactionType;
   category: SettlementCategory;
+  timeZone?: string | null;
 }
 
 export interface ReceivablePaymentInput {
@@ -66,6 +68,7 @@ export interface ReceivablePaymentInput {
    */
   paymentType: TransactionType | null;
   category: SettlementCategory;
+  timeZone?: string | null;
 }
 
 /**
@@ -118,6 +121,7 @@ export async function createDebtPaymentTransaction(
       bank.invoiceDueDate,
       bank.invoiceDueDaysAfterClose,
       paidAt,
+      input.timeZone,
     );
     invoiceId = invoice.id;
   }
@@ -168,6 +172,7 @@ export async function createReceivablePaymentTransaction(
       bank.invoiceDueDate,
       bank.invoiceDueDaysAfterClose,
       paidAt,
+      input.timeZone,
     );
     invoiceId = invoice.id;
   }
@@ -263,7 +268,7 @@ export async function removeSettlementTransaction(
 export function resolveSettlementDate(
   value: string | undefined,
   now: Date = new Date(),
-  timeZone: string | null = null,
+  timeZone: string | null | undefined = undefined,
 ): Date {
   /*
     Sem data explícita, HOJE — mantém funcionando o consumidor que ainda não
@@ -272,7 +277,10 @@ export function resolveSettlementDate(
   if (!value) return now;
 
   const informada = value.slice(0, 10);
-  const hoje = timeZone === null ? civilDay(now) : financialCivilDay(now, timeZone);
+  const hoje = financialCivilDay(
+    now,
+    requireAccountTimeZone(timeZone, 'settlement account timezone'),
+  );
 
   if (informada > hoje) {
     throw new BadRequestException({

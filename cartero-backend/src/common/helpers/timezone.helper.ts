@@ -71,3 +71,20 @@ export function resolveIanaTimeZone(value: string): string | null {
   return Intl.DateTimeFormat(undefined, { timeZone: value }).resolvedOptions()
     .timeZone;
 }
+
+/**
+ * Domain boundary for authenticated financial work.
+ *
+ * Prisma remains nullable during the rollout, but null is no longer a
+ * supported business state. Callers at infrastructure boundaries must fail
+ * explicitly instead of selecting a historical timezone implicitly.
+ */
+export function requireAccountTimeZone(
+  value: string | null | undefined,
+  context = 'account timezone',
+): string {
+  if (typeof value !== 'string' || resolveIanaTimeZone(value) === null) {
+    throw new Error(`Missing or invalid ${context}`);
+  }
+  return value;
+}
