@@ -1071,9 +1071,10 @@ export class TransactionsService {
           const amount = dto.amount ?? Number(transaction.amount);
           const isRefund = dto.isRefund ?? transaction.isRefund;
           const installmentIndex = this.getInstallmentIndex(transaction);
-          const date =
-            installmentIndex !== null && installmentBaseDate
-              ? installmentBaseDate
+          const date = editingInstallmentDate && installmentIndex !== null && installmentBaseDate
+            ? installmentBaseDate
+            : isInstallment
+              ? transaction.date
               : dto.date
                 ? parseDateOnly(dto.date)
                 : transaction.date;

@@ -53,6 +53,7 @@ import { getPersons, createPerson } from '@/services/persons.service'
 import { previewTransaction } from '@/services/transactions.service'
 import type { Transaction, Bank, Category, Person } from '@/types'
 import { TransactionType } from '@/types'
+import { belongsToSeries } from '@/lib/installment-series'
 
 const transactionTypeValues = [
   TransactionType.INCOME,
@@ -126,7 +127,7 @@ export function TransactionSheet({
   timeZone,
 }: TransactionSheetProps) {
   const isEditing = editTarget !== null
-  const isInstallment = Boolean(editTarget?.parentId) || /\s\d+\/\d+$/.test(editTarget?.title ?? '')
+  const isInstallment = editTarget ? belongsToSeries(editTarget) : false
   /** Gerado por assinatura: a categoria é da regra, não deste lançamento. */
   const isFromSubscription = Boolean(editTarget?.subscriptionId)
   const submittingRef = useRef(false)

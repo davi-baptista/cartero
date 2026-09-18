@@ -6,6 +6,7 @@ import {
   splitInstallmentCents,
   toCents,
   belongsToInstallmentSeries,
+  getInstallmentMetadata,
   parseInstallmentTitle,
 } from './installment.helper';
 
@@ -66,7 +67,8 @@ describe('splitInstallmentCents — resto distribuído nas primeiras', () => {
 
   it('a diferença entre a maior e a menor parcela nunca passa de 1 centavo', () => {
     const parcels = splitInstallmentCents(10000, 7);
-    expect(Math.max(...parcels) - Math.min(...parcels)).toBe(1);
+    expect(parcels[0]).toBe(1432);
+    expect(parcels.slice(1).every((value) => value === 1428)).toBe(true);
   });
 
   it('as parcelas maiores vêm primeiro', () => {
@@ -117,8 +119,19 @@ describe('splitInstallmentAmount — casos reais do Cartero', () => {
     // O caso da Televisão: 219669 centavos ÷ 10 deixa resto 9.
     const parcels = splitInstallmentAmount(2196.69, 10);
     expect(sumCents(parcels)).toBe(toCents(2196.69));
-    expect(parcels[0]).toBeCloseTo(219.67, 10);
+    expect(parcels[0]).toBeCloseTo(219.75, 10);
     expect(parcels[9]).toBeCloseTo(219.66, 10);
+  });
+
+  it('R$ 0,11 em 10x coloca o centavo restante na primeira parcela', () => {
+    expect(splitInstallmentAmount(0.11, 10)).toEqual([
+      0.02,
+      ...Array.from({ length: 9 }, () => 0.01),
+    ]);
+  });
+
+  it('R$ 100,00 em 3x gera 33,34 + 2x 33,33', () => {
+    expect(splitInstallmentAmount(100, 3)).toEqual([33.34, 33.33, 33.33]);
   });
 
   it('R$ 44,47 em 6x soma exatamente o total', () => {
@@ -157,9 +170,8 @@ describe('splitInstallmentAmount — restos específicos', () => {
     expect(parcels).toHaveLength(count);
     expect(parcels.reduce((sum, value) => sum + value, 0)).toBe(totalCents);
     // Exatamente `remainder` parcelas recebem o centavo extra.
-    expect(
-      parcels.filter((value) => value === Math.max(...parcels)),
-    ).toHaveLength(remainder);
+    expect(parcels[0]).toBe(1000 + remainder);
+    expect(parcels.slice(1).every((value) => value === 1000)).toBe(true);
   });
 });
 
@@ -204,9 +216,9 @@ describe('invariantes do rateio', () => {
       for (const count of counts) {
         if (totalCents < count) continue;
         const parcels = splitInstallmentCents(totalCents, count);
-        expect(Math.max(...parcels) - Math.min(...parcels)).toBeLessThanOrEqual(
-          1,
-        );
+        const base = Math.floor(totalCents / count);
+        expect(parcels[0]).toBe(base + (totalCents % count));
+        expect(parcels.slice(1).every((value) => value === base)).toBe(true);
       }
     }
   });
@@ -277,6 +289,34 @@ describe('identidade de parcelamento: lineage, não cardinalidade', () => {
   it('exige o espaço antes do sufixo', () => {
     /* `1/5` no meio de um nome próprio não deve virar parcelamento. */
     expect(parseInstallmentTitle('Conta12/24')).toBeNull();
+  });
+
+  it('nova standalone date-like não entra no fallback legado', () => {
+    const transaction = {
+      parentId: null,
+      title: 'Periodo de 24(08 a 11/09',
+      createdAt: new Date('2026-09-18T19:00:00.000Z'),
+    };
+
+    expect(getInstallmentMetadata(transaction)).toBeNull();
+    expect(belongsToInstallmentSeries(transaction)).toBe(false);
+  });
+
+  it('metadata estrutural vence título date-like ou renomeado', () => {
+    const transaction = {
+      parentId: 'root',
+      title: 'Periodo de 24(08 a 11/09',
+      installmentIndex: 2,
+      installmentCount: 9,
+      createdAt: new Date('2026-09-18T20:00:00.000Z'),
+    };
+
+    expect(getInstallmentMetadata(transaction)).toEqual({
+      index: 2,
+      count: 9,
+      structural: true,
+    });
+    expect(belongsToInstallmentSeries(transaction)).toBe(true);
   });
 
   it('a resposta NÃO muda quando as irmãs desaparecem', () => {

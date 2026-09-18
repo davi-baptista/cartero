@@ -375,6 +375,45 @@ describe('TransactionsService.create — compra simples', () => {
   });
 });
 
+describe('TransactionsService.update — preservação estrutural em edição textual', () => {
+  it('edit all preserves installment schedule when changing description', async () => {
+    const harness = buildHarness(
+      baseState({
+        invoices: [
+          makeInvoice({ id: 'invoice-1', month: 8 }),
+          makeInvoice({ id: 'invoice-2', month: 9 }),
+          makeInvoice({ id: 'invoice-3', month: 10 }),
+        ],
+        transactions: [
+          makeTransaction({ id: 'tx-root', title: 'Compra 1/3', invoiceId: 'invoice-1', installmentIndex: 1, installmentCount: 3 }),
+          makeTransaction({ id: 'tx-2', parentId: 'tx-root', title: 'Compra 2/3', invoiceId: 'invoice-2', date: utcDate(2026, 9, 1), installmentIndex: 2, installmentCount: 3 }),
+          makeTransaction({ id: 'tx-3', parentId: 'tx-root', title: 'Compra 3/3', invoiceId: 'invoice-3', date: utcDate(2026, 10, 1), installmentIndex: 3, installmentCount: 3 }),
+        ],
+      }),
+    );
+    const before = harness.state.transactions.map((tx) => ({
+      id: tx.id,
+      invoiceId: tx.invoiceId,
+      date: tx.date,
+      amount: tx.amount,
+      installmentIndex: tx.installmentIndex,
+      installmentCount: tx.installmentCount,
+    }));
+
+    await harness.service.update('tx-root', USER_ID, { description: 'depois', date: '2026-08-01' } as any, 'ALL');
+
+    expect(harness.state.transactions.map((tx) => ({
+      id: tx.id,
+      invoiceId: tx.invoiceId,
+      date: tx.date,
+      amount: tx.amount,
+      installmentIndex: tx.installmentIndex,
+      installmentCount: tx.installmentCount,
+    }))).toEqual(before);
+    expect(harness.state.transactions.map((tx) => tx.description)).toEqual(['depois', 'depois', 'depois']);
+  });
+});
+
 describe('TransactionsService.create — compra de terceiro', () => {
   it('gera um recebível espelho herdando pessoa, valor e título', async () => {
     const harness = buildHarness(baseState());
@@ -504,8 +543,8 @@ describe('TransactionsService.create — valor total dividido entre as parcelas'
 
     const amounts = harness.created.transactions.map((tx) => Number(tx.amount));
     expect(sumCents(amounts)).toBe(Math.round(2196.69 * 100));
-    // Resto de 9 centavos: as nove primeiras ficam um centavo maiores.
-    expect(amounts[0]).toBeCloseTo(219.67, 10);
+    // Resto de 9 centavos: fica integralmente na primeira parcela.
+    expect(amounts[0]).toBeCloseTo(219.75, 10);
     expect(amounts[9]).toBeCloseTo(219.66, 10);
   });
 

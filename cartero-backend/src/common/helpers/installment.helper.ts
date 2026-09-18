@@ -82,9 +82,7 @@ export function splitInstallmentCents(
   const base = Math.floor(totalCents / count);
   const remainder = totalCents - base * count;
 
-  return Array.from({ length: count }, (_, index) =>
-    index < remainder ? base + 1 : base,
-  );
+  return [base + remainder, ...Array.from({ length: count - 1 }, () => base)];
 }
 
 /**

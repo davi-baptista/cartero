@@ -1087,7 +1087,7 @@ export default function TransactionsPage() {
     void installments
     // Em parcelamento o título é derivado da série ("Nome x/y"); o backend
     // ignora alterações nele, e mandá-lo daria a impressão de que pegou.
-    const payload = tx.parentId ? rest : { ...rest, title }
+    const payload = belongsToInstallmentSeries(tx) ? rest : { ...rest, title }
     return {
       ...payload,
       personId: data.type === TransactionType.CREDIT_CARD ? (personId ?? null) : null,
