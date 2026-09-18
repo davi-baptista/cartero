@@ -83,6 +83,8 @@ export interface Transaction {
   categoryId: string
   invoiceId?: string
   parentId?: string
+  installmentIndex?: number | null
+  installmentCount?: number | null
   personId?: string
   person?: Person
   /** Preenchido quando o lançamento foi gerado por uma assinatura. */

@@ -1,6 +1,42 @@
 import type { Transaction } from '@/types'
 import { InstallmentScope } from '@/types'
 
+const STRUCTURAL_INSTALLMENT_CUTOFF = '2026-09-18T19:00:00.000Z'
+
+export interface InstallmentMetadata {
+  index: number
+  count: number
+  structural: boolean
+}
+
+/** Structural fields win; title parsing is a finite fallback for old rows. */
+export function installmentMetadata(tx: Transaction): InstallmentMetadata | null {
+  if (tx.installmentIndex != null && tx.installmentCount != null) {
+    return {
+      index: tx.installmentIndex,
+      count: tx.installmentCount,
+      structural: true,
+    }
+  }
+
+  if (
+    tx.installmentIndex != null ||
+    tx.installmentCount != null ||
+    !tx.createdAt ||
+    tx.createdAt >= STRUCTURAL_INSTALLMENT_CUTOFF
+  ) {
+    return null
+  }
+
+  const match = tx.title.match(/\s(\d+)\/(\d+)$/)
+  if (!match) return null
+  const index = Number(match[1])
+  const count = Number(match[2])
+  return count >= 2 && index >= 1 && index <= count
+    ? { index, count, structural: false }
+    : null
+}
+
 /**
  * Seleção de parcelas no cliente, espelhando o seletor do backend.
  *
@@ -23,21 +59,17 @@ export function seriesRootId(tx: Transaction): string {
 
 /** Quantas parcelas o título declara (`2/10` → 10), se declarar. */
 export function declaredInstallmentCount(tx: Transaction): number | null {
-  const match = tx.title.match(/\s\d+\/(\d+)$/)
-  return match ? Number(match[1]) : null
+  return installmentMetadata(tx)?.count ?? null
 }
 
 /** Posição da parcela no título (`2/10` → 2), se houver. */
 export function installmentPosition(tx: Transaction): number | null {
-  const match = tx.title.match(/\s(\d+)\/\d+$/)
-  return match ? Number(match[1]) : null
+  return installmentMetadata(tx)?.index ?? null
 }
 
 /** A transação pertence a um parcelamento, em qualquer posição. */
 export function belongsToSeries(tx: Transaction): boolean {
-  const declared = declaredInstallmentCount(tx)
-  if (declared !== null) return declared > 1
-  return Boolean(tx.parentId)
+  return Boolean(tx.parentId) || installmentMetadata(tx) !== null
 }
 
 export interface SeriesSelection {

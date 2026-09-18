@@ -35,7 +35,11 @@ import { MotionRow } from '@/components/ui/motion-row'
 import { TransactionSheet, type TransactionFormData } from './transaction-sheet'
 import { InstallmentScopeDialog } from './installment-scope-dialog'
 import type { PreviewUpdatePayload } from '@/services/transactions.service'
-import { belongsToSeries as belongsToInstallmentSeries } from '@/lib/installment-series'
+import {
+  belongsToSeries as belongsToInstallmentSeries,
+  installmentMetadata,
+  installmentPosition,
+} from '@/lib/installment-series'
 import {
   getTransactions,
   getTransaction,
@@ -124,13 +128,14 @@ function formatInvoicePeriod(invoice?: Transaction['invoice']) {
 
 /** Total de parcelas da compra, lido do sufixo "x/y" do título. */
 function getInstallmentCount(tx: Transaction): number | null {
-  const match = tx.title.match(/\s\d+\/(\d+)$/)
-  return match ? Number(match[1]) : null
+  return installmentMetadata(tx)?.count ?? null
 }
 
 /** Título sem o sufixo de parcela — "Notebook 1/10" vira "Notebook". */
-function stripInstallmentSuffix(title: string): string {
-  return title.replace(/\s\d+\/\d+$/, '')
+function stripInstallmentSuffix(tx: Transaction): string {
+  return installmentMetadata(tx)
+    ? tx.title.replace(/\s\d+\/\d+$/, '')
+    : tx.title
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -286,7 +291,7 @@ function InstallmentGroup({
   const visibleBank = root.bank?.isSystem ? undefined : root.bank
   const count = getInstallmentCount(root) ?? installments.length
   const total = installments.reduce((sum, tx) => sum + tx.amount, 0)
-  const baseTitle = stripInstallmentSuffix(root.title)
+  const baseTitle = stripInstallmentSuffix(root)
 
   const visible = showAll ? installments : installments.slice(0, VISIBLE_INSTALLMENTS)
   const hiddenCount = installments.length - visible.length
@@ -359,7 +364,8 @@ function InstallmentRow({
   tx: Transaction
   onView: (tx: Transaction) => void
 }) {
-  const label = tx.title.match(/\s(\d+\/\d+)$/)?.[1] ?? tx.title
+  const metadata = installmentMetadata(tx)
+  const label = metadata ? `${metadata.index}/${metadata.count}` : tx.title
 
   return (
     <button
@@ -404,7 +410,7 @@ function TransactionDetailsDialog({
     ? resolveCategoryIcon(transaction.category.icon).Icon
     : null
   const CategoryIcon = categoryIcon
-  const installment = Boolean(transaction.parentId) || /\s\d+\/\d+$/.test(transaction.title)
+  const installment = belongsToInstallmentSeries(transaction)
 
   /**
    * Posição na série e total da compra.
@@ -421,9 +427,9 @@ function TransactionDetailsDialog({
   const seriesInfo = (() => {
     if (!installment) return null
 
-    const declared = transaction.title.match(/\s\d+\/(\d+)$/)
-    const count = declared ? Number(declared[1]) : null
-    const position = transaction.title.match(/\s(\d+)\/\d+$/)?.[1]
+    const metadata = installmentMetadata(transaction)
+    const count = metadata?.count ?? null
+    const position = metadata?.index?.toString()
     const rootId = transaction.parentId ?? transaction.id
     const series = siblings.filter(
       (tx) => (tx.parentId ?? tx.id) === rootId,
@@ -1010,7 +1016,7 @@ export default function TransactionsPage() {
     for (const tx of filteredTransactions) {
       // A primeira parcela é a raiz da série e tem parentId nulo — ela se
       // identifica pelo próprio id, senão viraria um item solto.
-      const isInstallment = Boolean(tx.parentId) || /\s\d+\/\d+$/.test(tx.title)
+      const isInstallment = belongsToInstallmentSeries(tx)
       if (!isInstallment) {
         items.push({ kind: 'single', tx })
         continue
@@ -1029,8 +1035,8 @@ export default function TransactionsPage() {
     // Ordena as parcelas de cada grupo por número (1/10, 2/10, …).
     for (const list of groups.values()) {
       list.sort((a, b) => {
-        const na = Number(a.title.match(/\s(\d+)\/\d+$/)?.[1] ?? 0)
-        const nb = Number(b.title.match(/\s(\d+)\/\d+$/)?.[1] ?? 0)
+        const na = installmentPosition(a) ?? 0
+        const nb = installmentPosition(b) ?? 0
         return na - nb
       })
     }

@@ -1,5 +1,5 @@
 import {
-  readInstallmentNumber,
+  readStructuralInstallmentNumber,
   type InstallmentDeletePlan,
   type InstallmentPreservationReason,
 } from '../common/helpers/installment-delete-plan';
@@ -118,13 +118,13 @@ export function serializeDeletePlan(
     ),
     deletable: plan.deletable.map((item) => ({
       id: item.id,
-      installmentNumber: readInstallmentNumber(item.title),
+      installmentNumber: readStructuralInstallmentNumber(item),
       amount: Number(item.amount),
       date: item.date,
     })),
     preserved: plan.preserved.map(({ transaction: item, reason }) => ({
       id: item.id,
-      installmentNumber: readInstallmentNumber(item.title),
+      installmentNumber: readStructuralInstallmentNumber(item),
       amount: Number(item.amount),
       date: item.date,
       reason,

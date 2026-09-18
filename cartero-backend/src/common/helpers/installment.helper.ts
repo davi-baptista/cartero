@@ -16,6 +16,15 @@
 export class InvalidInstallmentSplitError extends Error {}
 
 /**
+ * Rows created before the structural rollout may still need the legacy title
+ * fallback. New rows must never become installments merely because a user
+ * typed `1/2` into a standalone title.
+ */
+export const STRUCTURAL_INSTALLMENT_CUTOFF = new Date(
+  '2026-09-18T19:00:00.000Z',
+);
+
+/**
  * Converte reais em centavos inteiros.
  *
  * `Math.round` em vez de truncamento: um `amount` que chegue como 10.999999
@@ -150,6 +159,58 @@ export function parseInstallmentTitle(
   return { number, total };
 }
 
+export interface StructuralInstallmentMetadata {
+  index: number;
+  count: number;
+  structural: boolean;
+}
+
+function parseLegacyInstallmentTitle(title: string): {
+  number: number;
+  total: number;
+} | null {
+  const match = title.match(/\s(\d+)\/(\d+)$/);
+  if (!match) return null;
+  const number = Number(match[1]);
+  const total = Number(match[2]);
+  return number >= 1 && total >= 1 && number <= total
+    ? { number, total }
+    : null;
+}
+
+/** Structural metadata is authoritative; title parsing is finite legacy-only. */
+export function getInstallmentMetadata(transaction: {
+  installmentIndex?: number | null;
+  installmentCount?: number | null;
+  title: string;
+  createdAt?: Date;
+}): StructuralInstallmentMetadata | null {
+  if (
+    transaction.installmentIndex != null &&
+    transaction.installmentCount != null
+  ) {
+    return {
+    index: transaction.installmentIndex,
+    count: transaction.installmentCount,
+      structural: true,
+    };
+  }
+
+  if (
+    transaction.installmentIndex != null ||
+    transaction.installmentCount != null ||
+    (transaction.createdAt &&
+      transaction.createdAt >= STRUCTURAL_INSTALLMENT_CUTOFF)
+  ) {
+    return null;
+  }
+
+  const legacy = parseLegacyInstallmentTitle(transaction.title);
+  return legacy
+    ? { index: legacy.number, count: legacy.total, structural: false }
+    : null;
+}
+
 /**
  * Esta transação pertence a uma compra parcelada?
  *
@@ -162,8 +223,15 @@ export function parseInstallmentTitle(
  */
 export function belongsToInstallmentSeries(transaction: {
   parentId: string | null;
+  installmentIndex?: number | null;
+  installmentCount?: number | null;
   title: string;
+  createdAt?: Date;
 }): boolean {
+  // Existing child lineage remains a valid legacy signal even if its title
+  // was edited; only a root with no structural metadata needs the finite
+  // title fallback.
   if (transaction.parentId !== null) return true;
-  return parseInstallmentTitle(transaction.title) !== null;
+  const metadata = getInstallmentMetadata(transaction);
+  return metadata !== null && metadata.count >= 2;
 }

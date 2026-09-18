@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { currentCycle } from 'src/common/helpers/subscription.helper';
 import {
+  getInstallmentMetadata,
+  STRUCTURAL_INSTALLMENT_CUTOFF,
+} from 'src/common/helpers/installment.helper';
+import {
   buildInvoiceKey,
   forecastInvoiceLookups,
   forecastSubscriptionOccurrences,
@@ -28,8 +32,6 @@ export interface ActiveInstallment {
   /** Preenchido quando a compra foi feita em nome de outra pessoa. */
   personName: string | null;
 }
-
-const INSTALLMENT_SUFFIX = /\s(\d+)\/(\d+)$/;
 
 @Injectable()
 export class CommitmentsService {
@@ -113,8 +115,19 @@ export class CommitmentsService {
         userId,
         type: 'CREDIT_CARD',
         isRefund: false,
-        title: { contains: '/' },
         invoiceId: { not: null },
+        OR: [
+          {
+            installmentIndex: { not: null },
+            installmentCount: { not: null },
+          },
+          {
+            installmentIndex: null,
+            installmentCount: null,
+            createdAt: { lt: STRUCTURAL_INSTALLMENT_CUTOFF },
+            title: { contains: '/' },
+          },
+        ],
       },
       include: {
         invoice: { select: { month: true, year: true, status: true } },
@@ -137,11 +150,11 @@ export class CommitmentsService {
     const groups = new Map<string, ActiveInstallment>();
 
     for (const tx of rows) {
-      const match = INSTALLMENT_SUFFIX.exec(tx.title);
-      if (!match || !tx.invoice) continue;
+      const metadata = getInstallmentMetadata(tx);
+      if (!metadata || !tx.invoice) continue;
 
       const key = tx.parentId ?? tx.id;
-      const totalCount = Number(match[2]);
+      const totalCount = metadata.count;
       const amount = Number(tx.amount);
 
       // "Futura" é pela fatura, não pela data: todas as parcelas compartilham
@@ -152,7 +165,7 @@ export class CommitmentsService {
 
       const entry = groups.get(key) ?? {
         id: key,
-        title: tx.title.replace(INSTALLMENT_SUFFIX, ''),
+        title: tx.title.replace(/\s\d+\/\d+$/, ''),
         installmentAmount: amount,
         paidCount: 0,
         totalCount,
@@ -368,8 +381,19 @@ export class CommitmentsService {
         userId,
         type: 'CREDIT_CARD',
         isRefund: false,
-        title: { contains: '/' },
         personId: null,
+        OR: [
+          {
+            installmentIndex: { not: null },
+            installmentCount: { not: null },
+          },
+          {
+            installmentIndex: null,
+            installmentCount: null,
+            createdAt: { lt: STRUCTURAL_INSTALLMENT_CUTOFF },
+            title: { contains: '/' },
+          },
+        ],
         invoice: {
           AND: [
             {
@@ -390,12 +414,16 @@ export class CommitmentsService {
       select: {
         amount: true,
         title: true,
+        installmentIndex: true,
+        installmentCount: true,
+        createdAt: true,
         invoice: { select: { month: true, year: true } },
       },
     });
 
     for (const tx of rows) {
-      if (!INSTALLMENT_SUFFIX.test(tx.title) || !tx.invoice) continue;
+      const metadata = getInstallmentMetadata(tx);
+      if (!metadata || !tx.invoice) continue;
       const slot = months.find(
         (m) => m.month === tx.invoice!.month && m.year === tx.invoice!.year,
       );

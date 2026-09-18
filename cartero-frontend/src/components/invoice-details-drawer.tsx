@@ -43,7 +43,7 @@ import {
 } from '@/services/transactions.service'
 import { InstallmentDeleteDialog } from '@/app/(dashboard)/transactions/installment-delete-dialog'
 import { deleteSuccessMessage } from '@/lib/installment-delete-copy'
-import { belongsToSeries } from '@/lib/installment-series'
+import { belongsToSeries, installmentPosition } from '@/lib/installment-series'
 import {
   API_ERROR_CODES,
   apiErrorDetail,
@@ -730,8 +730,7 @@ export function InvoiceDetailsDrawer({
     invoice?.transactions ?? [],
   )
   const installmentNumber = (tx: Transaction) => {
-    const match = tx.title.match(/\s(\d+)\/\d+$/)
-    return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER
+    return installmentPosition(tx) ?? Number.MAX_SAFE_INTEGER
   }
   /**
    * Uma lista só, por data decrescente. Como toda parcela guarda a data da

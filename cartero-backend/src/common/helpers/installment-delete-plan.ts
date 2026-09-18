@@ -54,6 +54,8 @@ export interface InstallmentCandidate {
   date: Date;
   title: string;
   invoiceId: string | null;
+  installmentIndex?: number | null;
+  installmentCount?: number | null;
 }
 
 /** Fatos externos à transação que decidem se ela está protegida. */
@@ -197,6 +199,12 @@ export function buildInstallmentDeletePlan(
 export function readInstallmentNumber(title: string): number | null {
   const match = title.match(/\s(\d+)\/\d+$/);
   return match ? Number(match[1]) : null;
+}
+
+export function readStructuralInstallmentNumber(
+  candidate: InstallmentCandidate,
+): number | null {
+  return candidate.installmentIndex ?? readInstallmentNumber(candidate.title);
 }
 
 /**
