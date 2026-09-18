@@ -3,6 +3,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  ValidateIf,
   Max,
   Min,
   MinLength,
@@ -50,7 +51,7 @@ export class UpdateUserDto {
    * validação semântica de IANA acontece no service, mesmo padrão do fluxo
    * de cadastro.
    */
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   timeZone?: string;
 }

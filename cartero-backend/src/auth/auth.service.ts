@@ -46,6 +46,13 @@ export class AuthService {
       (TZ1.0.1: `AuthService.register` chegou a persistir o raw input já
       validado, sem nunca canonicalizar).
     */
+    if (typeof dto.timeZone !== 'string' || dto.timeZone.length === 0) {
+      throw new BadRequestException({
+        message: 'Timezone obrigatÃ³ria.',
+        code: 'TIME_ZONE_REQUIRED',
+      });
+    }
+
     let timeZone: string | undefined;
     if (dto.timeZone !== undefined) {
       const resolved = resolveIanaTimeZone(dto.timeZone);

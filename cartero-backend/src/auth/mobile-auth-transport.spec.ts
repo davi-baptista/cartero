@@ -74,7 +74,10 @@ describe('transporte de credencial: web x nativo', () => {
 
   it('B1b: registro WEB também não devolve o refresh token no JSON', async () => {
     const res = buildResponse();
-    const body = await controller.register({ ...LOGIN, name: 'Davi' }, res);
+    const body = await controller.register(
+      { ...LOGIN, name: 'Davi', timeZone: 'America/Fortaleza' },
+      res,
+    );
 
     expect(body).toHaveProperty('accessToken');
     expect(JSON.stringify(body)).not.toContain('refresh-new');

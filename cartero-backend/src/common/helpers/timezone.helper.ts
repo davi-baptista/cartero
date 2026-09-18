@@ -36,7 +36,11 @@
  * respeitado sem precisar mudar quem chama.
  */
 
-const VALID_TIME_ZONES = new Set(Intl.supportedValuesOf('timeZone'));
+const VALID_TIME_ZONES = new Set([
+  ...Intl.supportedValuesOf('timeZone'),
+  // Runtimes with older tzdata may only enumerate Asia/Calcutta.
+  'Asia/Kolkata',
+]);
 
 /**
  * `true` quando `value` é um identificador IANA reconhecido pelo runtime.

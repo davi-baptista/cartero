@@ -63,6 +63,32 @@ function buildAuthHarness() {
 }
 
 describe('N1-N6: cadastro (TZ1)', () => {
+  it('cadastro sem timeZone e rejeitado antes de criar usuario', async () => {
+    const harness = buildAuthHarness();
+
+    await expect(
+      harness.service.register({
+        email: 'sem-tz-rejeitado@cartero.test',
+        password: 'segredo123',
+        name: 'Sem TZ',
+      } as any),
+    ).rejects.toMatchObject({ response: { code: 'TIME_ZONE_REQUIRED' } });
+    expect(harness.created).toHaveLength(0);
+  });
+
+  it('cadastro com timeZone null e rejeitado', async () => {
+    const harness = buildAuthHarness();
+
+    await expect(
+      harness.service.register({
+        email: 'null-tz-rejeitado@cartero.test',
+        password: 'segredo123',
+        name: 'Null TZ',
+        timeZone: null,
+      } as any),
+    ).rejects.toMatchObject({ response: { code: 'TIME_ZONE_REQUIRED' } });
+    expect(harness.created).toHaveLength(0);
+  });
   it('N1: signup sem timeZone continua funcionando — resultado timeZone null', async () => {
     const harness = buildAuthHarness();
 
@@ -70,10 +96,11 @@ describe('N1-N6: cadastro (TZ1)', () => {
       email: 'sem-tz@cartero.test',
       password: 'segredo123',
       name: 'Sem TZ',
+      timeZone: 'America/Fortaleza',
     });
 
-    expect(result.user.timeZone).toBeNull();
-    expect(harness.created[0]).toMatchObject({ timeZone: undefined });
+    expect(result.user.timeZone).toBe('America/Fortaleza');
+    expect(harness.created[0]).toMatchObject({ timeZone: 'America/Fortaleza' });
   });
 
   it('N2: signup com America/Fortaleza é aceito', async () => {
@@ -187,10 +214,11 @@ describe('Legacy account safety (TZ1)', () => {
       email: 'legado@cartero.test',
       password: 'segredo123',
       name: 'Legado',
+      timeZone: 'America/Fortaleza',
     });
 
     // O `data` passado ao Prisma nunca contém uma string de timezone quando
     // o cliente não enviou nada — não há detecção server-side de propósito.
-    expect(harness.created[0].timeZone).toBeUndefined();
+    expect(harness.created[0].timeZone).toBe('America/Fortaleza');
   });
 });

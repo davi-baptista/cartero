@@ -14,8 +14,11 @@ import { Label } from '@/components/ui/label'
 import { useAuth } from '@/providers/auth-provider'
 import { register as registerService } from '@/services/auth.service'
 import Image from 'next/image'
+import { useMemo, useState } from 'react'
+import { detectedRegistrationTimeZone, registrationTimeZones } from '@/lib/registration-timezones'
 
 const schema = z.object({
+  timeZone: z.string().min(1, 'Escolha sua timezone'),
   name: z.string().min(2, 'Nome deve ter ao menos 2 caracteres'),
   email: z.string().email('Email inválido'),
   password: z.string().min(6, 'Mínimo 6 caracteres'),
@@ -26,16 +29,21 @@ type FormData = z.infer<typeof schema>
 export default function RegisterPage() {
   const router = useRouter()
   const { login } = useAuth()
+  const [timeZone, setTimeZone] = useState(() => detectedRegistrationTimeZone() ?? '')
+  const timeZones = useMemo(() => registrationTimeZones(), [])
 
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<FormData>({ resolver: zodResolver(schema) })
+  } = useForm<FormData>({
+    resolver: zodResolver(schema),
+    defaultValues: { timeZone: detectedRegistrationTimeZone() ?? '' },
+  })
 
   async function onSubmit(values: FormData) {
     try {
-      const { accessToken, user } = await registerService(values.name, values.email, values.password)
+      const { accessToken, user } = await registerService(values.name, values.email, values.password, values.timeZone)
       login(accessToken, user)
       router.replace('/overview')
     } catch {
@@ -105,6 +113,20 @@ export default function RegisterPage() {
               {errors.password.message}
             </p>
           )}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="timeZone">Timezone</Label>
+          <select
+            id="timeZone"
+            className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+            value={timeZone}
+            aria-invalid={!!errors.timeZone}
+            {...register('timeZone', { onChange: (event) => setTimeZone(event.target.value) })}
+          >
+            <option value="">Selecione sua timezone</option>
+            {timeZones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+          </select>
+          {errors.timeZone && <p className="text-xs text-destructive">{errors.timeZone.message}</p>}
         </div>
         <Button type="submit" className="mt-2 h-11 w-full font-semibold" disabled={isSubmitting}>
           {isSubmitting ? (

@@ -13,24 +13,17 @@ export async function login(email: string, password: string): Promise<AuthRespon
  * ausência do campo exatamente como uma conta legada (`timeZone: null`).
  * Nunca geolocalização, nunca IP: só o que `Intl` já expõe localmente.
  */
-function detectBrowserTimeZone(): string | undefined {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone
-  } catch {
-    return undefined
-  }
-}
-
 export async function register(
   name: string,
   email: string,
   password: string,
+  timeZone: string,
 ): Promise<AuthResponse> {
   const { data } = await api.post<AuthResponse>('/auth/register', {
     name,
     email,
     password,
-    timeZone: detectBrowserTimeZone(),
+    timeZone,
   })
   return data
 }
