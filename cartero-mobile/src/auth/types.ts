@@ -28,7 +28,7 @@ export interface AuthUser {
    * leitura deste campo no mobile — usada por `currentCarteroCompetence`
    * para resolver a competência do Budget snapshot.
    */
-  timeZone: string | null
+  timeZone: string
 }
 
 export interface SessionState {

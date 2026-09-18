@@ -32,7 +32,7 @@ model User {
   /// uma conta que escolheu um fuso. Nenhuma feature financeira lê este
   /// campo ainda — a unificação de "hoje"/competência entre camadas é
   /// trabalho de fases futuras (TZ2+), não desta.
-  timeZone                     String?
+  timeZone                     String
   createdAt                    DateTime  @default(now())
   updatedAt                    DateTime  @updatedAt
 

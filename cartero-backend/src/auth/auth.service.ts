@@ -53,16 +53,12 @@ export class AuthService {
       });
     }
 
-    let timeZone: string | undefined;
-    if (dto.timeZone !== undefined) {
-      const resolved = resolveIanaTimeZone(dto.timeZone);
-      if (resolved === null) {
+    const timeZone = resolveIanaTimeZone(dto.timeZone!);
+    if (timeZone === null) {
         throw new BadRequestException({
           message: 'Timezone inválida.',
           code: 'INVALID_TIME_ZONE',
-        });
-      }
-      timeZone = resolved;
+      });
     }
 
     const hashed = await hash(dto.password, 10);

@@ -34,7 +34,7 @@ export interface User {
    * Nenhuma tela lê este campo para decidir "hoje"/competência ainda — essa
    * unificação é trabalho de fases futuras (TZ2+).
    */
-  timeZone: string | null
+  timeZone: string
   createdAt: string
   updatedAt: string
 }
