@@ -48,6 +48,7 @@ import {
 } from '@/services/transactions.service'
 import { InstallmentDeleteDialog } from './installment-delete-dialog'
 import { deleteSuccessMessage } from '@/lib/installment-delete-copy'
+import { useAuth } from '@/providers/auth-provider'
 import {
   invalidateTransactionDependents,
   transactionAffectsPerson,
@@ -598,6 +599,7 @@ interface FilterState {
 
 export default function TransactionsPage() {
   const qc = useQueryClient()
+  const { user } = useAuth()
   const searchParams = useSearchParams()
 
   // ── State ──
@@ -1404,6 +1406,7 @@ export default function TransactionsPage() {
         }}
         editTarget={editTx}
         onSubmit={handleSheetSubmit}
+        timeZone={user?.timeZone}
       />
 
       {/* Escopo, impacto e confirmação num só lugar — inclusive o aceite de

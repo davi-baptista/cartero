@@ -870,6 +870,7 @@ export default function ReceivablesPage() {
         }}
         editTarget={editReceivable}
         editScope={editScope}
+        timeZone={user?.timeZone}
         onSubmit={handleSheetSubmit}
       />
 

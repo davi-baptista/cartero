@@ -67,6 +67,7 @@ import {
   invoiceComposition,
 } from '@/lib/invoice-composition'
 import { parseDateOnly, formatDateValue } from '@/lib/date'
+import { useAuth } from '@/providers/auth-provider'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import {
   INVOICE_STATUS_COLOR,
@@ -387,6 +388,7 @@ export function InvoiceDetailsDrawer({
   onOpenChange: (v: boolean) => void
 }) {
   const qc = useQueryClient()
+  const { user } = useAuth()
   const [reopenConfirm, setReopenConfirm] = useState(false)
   const [txSheetOpen, setTxSheetOpen] = useState(false)
   const [editTx, setEditTx] = useState<Transaction | null>(null)
@@ -943,6 +945,7 @@ export function InvoiceDetailsDrawer({
         editTarget={editTx}
         onSubmit={handleTxSubmit}
         createDefaults={createDefaults}
+        timeZone={user?.timeZone}
       />
 
       {/* `siblings` são as transações desta fatura. Como cada parcela cai numa

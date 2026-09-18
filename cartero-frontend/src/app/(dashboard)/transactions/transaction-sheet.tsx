@@ -45,7 +45,7 @@ import {
 import { TransactionPreviewPanel } from './transaction-preview-panel'
 import { cn } from '@/lib/utils'
 import { bankDisplayName, isSelectableBank } from '@/lib/bank-display'
-import { formatDateValue } from '@/lib/date'
+import { accountToday } from '@/lib/date'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { getBanks, createBank } from '@/services/banks.service'
 import { getCategories, createCategory } from '@/services/categories.service'
@@ -113,6 +113,8 @@ interface TransactionSheetProps {
     type?: TransactionType
     date?: string
   }
+  /** Timezone da conta autenticada — authority da data padrão de uma NOVA transação. */
+  timeZone: string | null | undefined
 }
 
 export function TransactionSheet({
@@ -121,6 +123,7 @@ export function TransactionSheet({
   editTarget,
   onSubmit,
   createDefaults,
+  timeZone,
 }: TransactionSheetProps) {
   const isEditing = editTarget !== null
   const isInstallment = Boolean(editTarget?.parentId) || /\s\d+\/\d+$/.test(editTarget?.title ?? '')
@@ -496,7 +499,7 @@ export function TransactionSheet({
           title: '',
           amount: 0,
           isRefund: false,
-          date: createDefaults?.date ?? formatDateValue(),
+          date: createDefaults?.date ?? accountToday(timeZone),
           description: '',
           installments: undefined,
           parcelado: false,
@@ -513,6 +516,7 @@ export function TransactionSheet({
     createDefaults?.bankId,
     createDefaults?.type,
     createDefaults?.date,
+    timeZone,
   ])
 
   async function handleFormSubmit(data: TransactionFormData) {

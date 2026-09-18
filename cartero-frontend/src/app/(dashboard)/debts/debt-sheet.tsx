@@ -28,7 +28,7 @@ import {
 } from '@/components/ui/select'
 import { createPerson, getPersons } from '@/services/persons.service'
 import { cn } from '@/lib/utils'
-import { formatDateValue } from '@/lib/date'
+import { accountToday } from '@/lib/date'
 import type { Debt, InstallmentScope } from '@/types'
 
 const schema = z
@@ -61,10 +61,12 @@ interface DebtSheetProps {
   editTarget: Debt | null
   editScope: InstallmentScope | null
   initialPersonId?: string
+  /** Timezone da conta autenticada — authority da data padrão de uma NOVA dívida. */
+  timeZone: string | null | undefined
   onSubmit: (data: DebtFormData, scope: InstallmentScope | null) => Promise<void>
 }
 
-export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPersonId, onSubmit }: DebtSheetProps) {
+export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPersonId, timeZone, onSubmit }: DebtSheetProps) {
   const isEditing = editTarget !== null
   const [creditorMode, setCreditorMode] = useState<CreditorMode>('manual')
   const [showInlineCreate, setShowInlineCreate] = useState(false)
@@ -102,7 +104,7 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPe
       personId: undefined,
       title: '',
       amount: 0,
-      occurredAt: formatDateValue(),
+      occurredAt: '',
       dueDate: '',
       description: '',
       isAlertEnabled: true,
@@ -132,7 +134,7 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPe
           personId: initialPersonId,
           title: '',
           amount: 0,
-          occurredAt: formatDateValue(),
+          occurredAt: accountToday(timeZone),
           dueDate: '',
           description: '',
           isAlertEnabled: true,
@@ -140,7 +142,7 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPe
         })
       }
     }
-  }, [open, editTarget, initialPersonId, reset])
+  }, [open, editTarget, initialPersonId, timeZone, reset])
 
   function handleModeChange(mode: CreditorMode) {
     setCreditorMode(mode)

@@ -827,6 +827,7 @@ export default function DebtsPage() {
         }}
         editTarget={editDebt}
         editScope={editScope}
+        timeZone={user?.timeZone}
         onSubmit={handleSheetSubmit}
       />
 

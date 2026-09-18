@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/select'
 import { createPerson, getPersons } from '@/services/persons.service'
 import { cn } from '@/lib/utils'
-import { formatDateValue } from '@/lib/date'
+import { accountToday } from '@/lib/date'
 import type { Receivable, InstallmentScope } from '@/types'
 
 const schema = z
@@ -61,6 +61,8 @@ interface ReceivableSheetProps {
   editTarget: Receivable | null
   editScope: InstallmentScope | null
   initialPersonId?: string
+  /** Timezone da conta autenticada — authority da data padrão de uma NOVA cobrança. */
+  timeZone: string | null | undefined
   onSubmit: (data: ReceivableFormData, scope: InstallmentScope | null) => Promise<void>
 }
 
@@ -70,6 +72,7 @@ export function ReceivableSheet({
   editTarget,
   editScope,
   initialPersonId,
+  timeZone,
   onSubmit,
 }: ReceivableSheetProps) {
   const isEditing = editTarget !== null
@@ -146,7 +149,7 @@ export function ReceivableSheet({
       personId: undefined,
       title: '',
       amount: 0,
-      occurredAt: formatDateValue(),
+      occurredAt: '',
       dueDate: '',
       description: '',
       installments: undefined,
@@ -174,14 +177,14 @@ export function ReceivableSheet({
           personId: initialPersonId,
           title: '',
           amount: 0,
-          occurredAt: formatDateValue(),
+          occurredAt: accountToday(timeZone),
           dueDate: '',
           description: '',
           installments: undefined,
         })
       }
     }
-  }, [open, editTarget, initialPersonId, reset])
+  }, [open, editTarget, initialPersonId, timeZone, reset])
 
   function handleModeChange(mode: DebtorMode) {
     setDebtorMode(mode)

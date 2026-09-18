@@ -891,6 +891,7 @@ export default function BankInvoicesPage() {
           await createTxMut.mutateAsync(data)
         }}
         createDefaults={{ bankId, type: TransactionType.CREDIT_CARD }}
+        timeZone={user?.timeZone}
       />
 
     </div>

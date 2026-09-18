@@ -1608,6 +1608,7 @@ export function PersonStatementDrawer({
         editTarget={editDebt}
         editScope={editScope}
         initialPersonId={person?.id}
+        timeZone={user?.timeZone}
         onSubmit={handleDebtSheetSubmit}
       />
       <ReceivableSheet
@@ -1622,6 +1623,7 @@ export function PersonStatementDrawer({
         editTarget={editReceivable}
         editScope={editScope}
         initialPersonId={person?.id}
+        timeZone={user?.timeZone}
         onSubmit={handleReceivableSheetSubmit}
       />
 
