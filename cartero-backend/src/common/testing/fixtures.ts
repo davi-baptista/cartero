@@ -116,6 +116,8 @@ export function makeInvoice(overrides: InvoiceOverrides = {}) {
 type TransactionOverrides = Partial<{
   id: string;
   parentId: string | null;
+  installmentIndex: number | null;
+  installmentCount: number | null;
   bankId: string;
   categoryId: string;
   invoiceId: string | null;
@@ -132,6 +134,8 @@ export function makeTransaction(overrides: TransactionOverrides = {}) {
   return {
     id: 'tx-1',
     parentId: null,
+    installmentIndex: null,
+    installmentCount: null,
     userId: USER_ID,
     bankId: 'bank-1',
     categoryId: 'cat-1',

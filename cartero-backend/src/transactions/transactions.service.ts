@@ -25,6 +25,8 @@ import {
 import { planTransaction } from './transaction-plan.helper';
 import {
   belongsToInstallmentSeries,
+  getInstallmentMetadata,
+  STRUCTURAL_INSTALLMENT_CUTOFF,
   round2,
 } from 'src/common/helpers/installment.helper';
 import {
@@ -194,6 +196,8 @@ export class TransactionsService {
               userId,
               invoiceId,
               parentId,
+              installmentIndex: installments > 1 ? i + 1 : null,
+              installmentCount: installments > 1 ? installments : null,
               personId: dto.personId,
               bankId: dto.bankId,
               categoryId: dto.categoryId,
@@ -818,7 +822,22 @@ export class TransactionsService {
         categoryId: filters.categoryId,
         bankId: filters.bankId,
         type: filters.type,
-        parentId: filters.installmentsOnly ? { not: null } : undefined,
+        ...(filters.installmentsOnly
+          ? {
+              OR: [
+                {
+                  installmentIndex: { not: null },
+                  installmentCount: { not: null },
+                },
+                { parentId: { not: null } },
+                {
+                  parentId: null,
+                  createdAt: { lt: STRUCTURAL_INSTALLMENT_CUTOFF },
+                  title: { contains: '/' },
+                },
+              ],
+            }
+          : {}),
         ...periodFilter,
       },
       include: {
@@ -1649,9 +1668,8 @@ export class TransactionsService {
   }
 
   private getInstallmentIndex(transaction: Transaction): number | null {
-    const match = transaction.title.match(/\s(\d+)\/\d+$/);
-    if (!match) return null;
-    return Math.max(0, Number(match[1]) - 1);
+    const metadata = getInstallmentMetadata(transaction);
+    return metadata ? metadata.index - 1 : null;
   }
 
   /**

@@ -660,6 +660,24 @@ describe('TransactionsService.create — parcelamento', () => {
     ]);
   });
 
+  it('mantém metadados nulos para compra à vista', async () => {
+    const harness = buildHarness(baseState());
+
+    await harness.service.create(USER_ID, {
+      bankId: 'bank-1',
+      categoryId: 'cat-1',
+      title: 'Mouse',
+      type: 'CREDIT_CARD',
+      amount: 50,
+      date: '2026-08-01',
+    } as any);
+
+    expect(harness.created.transactions[0]).toMatchObject({
+      installmentIndex: null,
+      installmentCount: null,
+    });
+  });
+
   it('a primeira parcela é a raiz da série', async () => {
     const harness = buildHarness(baseState());
 
@@ -677,6 +695,12 @@ describe('TransactionsService.create — parcelamento', () => {
     expect(root.parentId).toBeNull();
     expect(second.parentId).toBe(root.id);
     expect(third.parentId).toBe(root.id);
+    expect(root.installmentIndex).toBe(1);
+    expect(root.installmentCount).toBe(3);
+    expect(second.installmentIndex).toBe(2);
+    expect(second.installmentCount).toBe(3);
+    expect(third.installmentIndex).toBe(3);
+    expect(third.installmentCount).toBe(3);
   });
 
   it('cada parcela cai em uma fatura mensal subsequente', async () => {

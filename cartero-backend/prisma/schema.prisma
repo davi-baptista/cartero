@@ -253,6 +253,8 @@ model Subscription {
 model Transaction {
   id             String          @id @default(uuid())
   parentId       String?
+  installmentIndex Int?
+  installmentCount Int?
   userId         String
   bankId         String
   categoryId     String
@@ -277,6 +279,8 @@ model Transaction {
   receivable        Receivable?   @relation("ReimbursableLink")
   paymentReceivable Receivable?   @relation("ReceivablePaymentLink")
   paymentDebt       Debt?         @relation("DebtPaymentLink")
+
+  @@index([userId, parentId])
 }
 
 model Invoice {
