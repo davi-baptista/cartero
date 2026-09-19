@@ -13,7 +13,6 @@ import { MotionRow } from '@/components/ui/motion-row'
 import {
   FinancialListRow,
   ROW_AMOUNT_CLASS,
-  ROW_AMOUNT_TONE,
   ROW_ICON_BG_CLASS,
   ROW_ICON_CLASS,
   ROW_TRAILING_META_CLASS,
@@ -82,8 +81,8 @@ function SubscriptionRow({
       }
       trailing={
         <>
-          <span className={cn(ROW_AMOUNT_CLASS, ROW_AMOUNT_TONE.out)}>
-            −{formatCurrency(Number(subscription.amount))}
+          <span className={ROW_AMOUNT_CLASS}>
+            {formatCurrency(Number(subscription.amount))}
           </span>
           {/*
             `nextCharge` vem do BACKEND, pela mesma regra que decide a geração.
@@ -99,8 +98,8 @@ function SubscriptionRow({
         </>
       }
       trailingCompact={
-        <span className={cn(ROW_AMOUNT_CLASS, ROW_AMOUNT_TONE.out)}>
-          −{formatCurrency(Number(subscription.amount))}
+        <span className={ROW_AMOUNT_CLASS}>
+          {formatCurrency(Number(subscription.amount))}
         </span>
       }
     />
@@ -387,7 +386,7 @@ export default function SubscriptionsPage() {
         {!isLoading && activeCount > 0 && (
           <p className="mt-1.5 text-sm">
             <span className="text-muted-foreground">Por mês </span>
-            <span className="font-medium tabular-nums tracking-[-0.01em] text-destructive">
+            <span className="font-medium tabular-nums tracking-[-0.01em]">
               {formatCurrency(monthlyTotal)}
             </span>
             <span className="ml-2 text-xs text-muted-foreground">
