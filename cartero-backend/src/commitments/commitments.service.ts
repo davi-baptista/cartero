@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { currentCycle } from 'src/common/helpers/subscription.helper';
+import {
+  currentCycle,
+  nextChargeDate,
+} from 'src/common/helpers/subscription.helper';
 import { getInstallmentMetadata } from 'src/common/helpers/installment.helper';
 import {
   buildInvoiceKey,
@@ -349,12 +352,14 @@ export class CommitmentsService {
       );
       if (!slot) continue;
 
-      // Bloqueada não soma: a geração real não vai criar esse lançamento, e
-      // contabilizá-lo prometeria um gasto que não acontece.
-      if (occurrence.blocked) {
+      // Invoice payment is operational generation metadata, not a reason to
+      // erase a commitment from the financial month.
+      if (occurrence.blocked === 'bank-archived') {
         slot.blocked += 1;
         continue;
       }
+
+      if (occurrence.blocked === 'invoice-paid') slot.blocked += 1;
 
       slot.subscriptions += occurrence.amount;
       slot.total += occurrence.amount;
@@ -420,7 +425,12 @@ export class CommitmentsService {
     return {
       months,
       /** Próxima cobrança de cada assinatura, com data real. */
-      nextOccurrences: this.buildSubscriptionOccurrences(occurrences),
+      nextOccurrences: this.buildSubscriptionOccurrences(
+        occurrences,
+        forecastable,
+        now,
+        timeZone,
+      ),
     };
   }
 
@@ -433,16 +443,24 @@ export class CommitmentsService {
    */
   private buildSubscriptionOccurrences(
     occurrences: ForecastOccurrence[],
+    subscriptions: ForecastableSubscription[],
+    now: Date,
+    timeZone: string | null,
   ): ForecastOccurrence[] {
     // Uma por assinatura: a próxima. O resto do horizonte já está nos totais
     // mensais, e repetir seis linhas por assinatura afogaria a lista.
-    const seen = new Set<string>();
     const next: ForecastOccurrence[] = [];
 
-    for (const occurrence of occurrences) {
-      if (seen.has(occurrence.subscriptionId)) continue;
-      seen.add(occurrence.subscriptionId);
-      next.push(occurrence);
+    for (const subscription of subscriptions) {
+      const nextCharge = nextChargeDate(subscription, now, timeZone);
+      if (!nextCharge) continue;
+
+      const occurrence = occurrences.find(
+        (candidate) =>
+          candidate.subscriptionId === subscription.id &&
+          candidate.chargeDate.getTime() === nextCharge.getTime(),
+      );
+      if (occurrence) next.push(occurrence);
     }
 
     return next;

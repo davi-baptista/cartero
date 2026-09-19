@@ -516,6 +516,69 @@ describe('CommitmentsService — assinaturas e projeção', () => {
     expect(monthsTotal).toBeGreaterThan(0);
   });
 
+  it('mantém o ciclo atual já gerado e o próximo ciclo uma vez cada', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-20T12:00:00Z'));
+
+    try {
+      const prisma = buildPrisma({
+        subscriptions: [
+          subscriptionRow({
+            amount: money('10.01'),
+            dayOfMonth: 12,
+            lastGeneratedFor: '2026-08',
+          }),
+        ],
+      });
+
+      const result = await new CommitmentsService(prisma).getCommitments(
+        USER_ID,
+      );
+
+      expect(result.forecast[0].subscriptions).toBeCloseTo(10.01, 10);
+      expect(result.forecast[1].subscriptions).toBeCloseTo(10.01, 10);
+      expect(result.forecast[0].total).toBeCloseTo(10.01, 10);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('não apaga assinatura comprometida quando a fatura do mês está paga', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-20T12:00:00Z'));
+
+    try {
+      const prisma = buildPrisma({
+        subscriptions: [
+          subscriptionRow({
+            amount: money('10.01'),
+            dayOfMonth: 1,
+            type: 'CREDIT_CARD',
+            lastGeneratedFor: '2026-07',
+          }),
+        ],
+        invoices: [
+          {
+            bankId: 'bank-1',
+            year: 2026,
+            month: 8,
+            status: 'PAID',
+            dueDate: new Date('2026-08-10T03:00:00Z'),
+          },
+        ],
+      });
+
+      const result = await new CommitmentsService(prisma).getCommitments(
+        USER_ID,
+      );
+
+      expect(result.forecast[0].subscriptions).toBeCloseTo(10.01, 10);
+      expect(result.forecast[0].total).toBeCloseTo(10.01, 10);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a projeção é contínua, sem repetir nem pular meses', async () => {
     const prisma = buildPrisma({});
 

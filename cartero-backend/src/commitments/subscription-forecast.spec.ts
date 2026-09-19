@@ -86,12 +86,12 @@ describe('forecast — regras temporais da recorrência', () => {
     expect(day(result[0].chargeDate)).toBe('2026-08-12');
   });
 
-  it('dia já passado: a primeira ocorrência é no mês seguinte', () => {
+  it('dia já passado: a ocorrência do mês corrente continua comprometida', () => {
     const result = run([sub({ lastGeneratedFor: '2026-08' })], {
       today: '2026-08-20T12:00:00Z',
     });
 
-    expect(day(result[0].chargeDate)).toBe('2026-09-12');
+    expect(day(result[0].chargeDate)).toBe('2026-08-12');
   });
 
   it('no próprio dia da cobrança: o mês corrente conta', () => {
@@ -336,18 +336,14 @@ describe('forecast — faturas existentes e bloqueios', () => {
 });
 
 describe('forecast — dupla contagem', () => {
-  it('ciclo já gerado não reaparece como projeção', () => {
-    /**
-     * O ciclo de agosto já virou Transaction, e essa Transaction já entra em
-     * Compromissos pelo caminho das parcelas/lançamentos reais. Projetar o
-     * mesmo ciclo de novo somaria o valor duas vezes.
-     */
+  it('ciclo já gerado permanece uma única ocorrência comprometida', () => {
     const result = run([sub({ lastGeneratedFor: '2026-08' })], {
       today: '2026-08-20T12:00:00Z',
     });
 
-    expect(result.map((o) => o.cycle)).not.toContain('2026-08');
-    expect(result[0].cycle).toBe('2026-09');
+    expect(result.map((o) => o.cycle)).toContain('2026-08');
+    expect(result.filter((o) => o.cycle === '2026-08')).toHaveLength(1);
+    expect(result[1].cycle).toBe('2026-09');
   });
 
   it('nenhum ciclo aparece duas vezes', () => {

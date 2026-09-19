@@ -5,7 +5,6 @@ import {
   compareCycles,
   currentCycle,
   formatCycle,
-  nextChargeDate,
   parseCycle,
   type Cycle,
 } from 'src/common/helpers/subscription.helper';
@@ -124,9 +123,20 @@ function firstCycle(
   today: Date,
   timeZone: string | null = null,
 ): Cycle | null {
-  const next = nextChargeDate(subscription, today, timeZone);
-  if (!next) return null;
-  return { year: next.getUTCFullYear(), month: next.getUTCMonth() + 1 };
+  if (!subscription.isActive) return null;
+
+  /**
+   * Commitments is a monthly committed-cost read model, not a remaining
+   * balance.  `lastGeneratedFor` belongs to generation idempotency and must
+   * not remove an already materialized occurrence from its financial month.
+   * The applicable floor is therefore the subscription's original start, or
+   * the current activation start after a pause.
+   */
+  const floor = subscription.activeSince
+    ? parseCycle(subscription.activeSince)
+    : parseCycle(subscription.startedAt);
+  const current = currentCycle(today, timeZone);
+  return compareCycles(floor, current) > 0 ? floor : current;
 }
 
 /**
