@@ -26,6 +26,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -48,10 +49,12 @@ function SidebarNav({ pathname }: { pathname: string }) {
 
   return (
     <SidebarContent>
-      <SidebarGroup>
-        <SidebarGroupContent>
+      {navGroups.map(({ label: groupLabel, items }) => (
+        <SidebarGroup key={groupLabel} className="py-1.5">
+          <SidebarGroupLabel>{groupLabel}</SidebarGroupLabel>
+          <SidebarGroupContent>
           <SidebarMenu className="gap-0.5">
-            {navItems.map(({ href, label, icon: Icon }) => {
+            {items.map(({ href, label, icon: Icon }) => {
               const active = isNavItemActive(href, pathname)
 
               /*
@@ -85,8 +88,9 @@ function SidebarNav({ pathname }: { pathname: string }) {
               )
             })}
           </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      ))}
     </SidebarContent>
   )
 }
@@ -189,6 +193,13 @@ const navItems = [
   { href: '/debts', label: 'Dívidas', icon: HandCoins },
   { href: '/receivables', label: 'A Receber', icon: Wallet },
   { href: '/persons', label: 'Pessoas', icon: Users },
+]
+
+const navGroups = [
+  { label: 'GERAL', items: navItems.slice(0, 3).filter(({ href }) => href !== '/budget') },
+  { label: 'PLANEJAMENTO', items: [navItems[1], navItems[4], navItems[3]] },
+  { label: 'CONTAS', items: [navItems[5], navItems[7], navItems[8], navItems[9]] },
+  { label: 'ORGANIZA\u00c7\u00c3O', items: [navItems[6]] },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
