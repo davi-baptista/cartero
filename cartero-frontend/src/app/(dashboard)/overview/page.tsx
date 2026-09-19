@@ -807,7 +807,6 @@ function CalendarSection({
                   type="button"
                   onClick={() => {
                     setSelectedDay(isSelected ? null : day)
-                    setMode('day')
                   }}
                   aria-pressed={isSelected || undefined}
                   aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}` : ''}`}
@@ -858,7 +857,7 @@ function CalendarSection({
           {/* ─── Painel contextual: Hoje/dia selecionado × Atenção agora ─── */}
           <div className="mt-5 border-t border-border pt-4">
             <Tabs value={mode} onValueChange={(v) => setMode(v as 'day' | 'attention')}>
-              <TabsList>
+              <TabsList className="hidden">
                 <TabsTrigger value="day">{dayLabel}</TabsTrigger>
                 <TabsTrigger value="attention">Atenção agora</TabsTrigger>
               </TabsList>
@@ -969,6 +968,87 @@ function CalendarSection({
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+function AttentionNowSection({
+  invoices,
+  banks,
+  debts,
+  debtsTotal,
+  receivables,
+  receivablesTotal,
+  isLoading,
+  isError,
+  isFetching,
+  onRetry,
+  windowStr,
+  today,
+}: {
+  invoices: Invoice[]
+  banks: Bank[]
+  debts: Debt[]
+  debtsTotal: number
+  receivables: Receivable[]
+  receivablesTotal: number
+  isLoading: boolean
+  isError: boolean
+  isFetching: boolean
+  onRetry: () => void
+  windowStr: string
+  today: Date
+}) {
+  const isEmpty = invoices.length === 0 && debts.length === 0 && receivables.length === 0
+
+  return (
+    <section aria-label="Itens que requerem atenção">
+      <h2 className="text-[15px] font-semibold tracking-tight">Atenção agora</h2>
+      <p className="mb-4 mt-0.5 text-[11px] text-muted-foreground">
+        Pendências independentes do mês exibido
+      </p>
+      {isLoading ? (
+        <div className="space-y-5 py-1">
+          {[3, 2].map((count, sectionIndex) => (
+            <div key={sectionIndex} className="space-y-0">
+              <Skeleton className="mb-2 h-3 w-16" />
+              {Array.from({ length: count }).map((_, itemIndex) => (
+                <div key={itemIndex} className="flex items-center gap-3 py-3">
+                  <Skeleton className="size-7 shrink-0 rounded-lg" />
+                  <div className="flex flex-1 flex-col gap-1.5">
+                    <Skeleton className="h-3.5 w-32" />
+                    <Skeleton className="h-3 w-24" />
+                  </div>
+                  <Skeleton className="h-4 w-20" />
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : isError ? (
+        <WidgetError message="Não foi possível carregar as pendências" isFetching={isFetching} onRetry={onRetry} />
+      ) : isEmpty ? (
+        <div className="flex flex-col items-center justify-center py-10 text-center">
+          <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-receivable/10">
+            <CheckCircle2 className="size-5 text-receivable" />
+          </div>
+          <p className="text-sm font-medium">Tudo em dia</p>
+          <p className="mt-1 max-w-[22ch] text-xs text-muted-foreground">
+            Nenhum item vence nos próximos {ATTENTION_DAYS_WINDOW} dias.
+          </p>
+        </div>
+      ) : (
+        <AttentionPanel
+          invoices={invoices}
+          banks={banks}
+          debts={debts}
+          debtsTotal={debtsTotal}
+          receivables={receivables}
+          receivablesTotal={receivablesTotal}
+          windowStr={windowStr}
+          today={today}
+        />
+      )}
+    </section>
+  )
+}
 
 export default function OverviewPage() {
   // O mês é contexto do app, controlado pela barra superior.
@@ -1175,6 +1255,7 @@ export default function OverviewPage() {
         seção, reavaliando o estado inicial de `selectedDay` (hoje no mês
         atual, neutro em outro mês) sem um efeito chamando `setState`.
       */}
+      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
       <CalendarSection
         key={`${year}-${month}`}
         year={year}
@@ -1204,6 +1285,21 @@ export default function OverviewPage() {
         onRetryAttention={retryAttention}
         attentionWindowEnd={attention.windowEnd}
       />
+      <AttentionNowSection
+        invoices={attention.invoices}
+        banks={banks}
+        debts={attention.debts}
+        debtsTotal={attention.debtsAll.length}
+        receivables={attention.receivables}
+        receivablesTotal={attention.receivablesAll.length}
+        isLoading={attentionLoading}
+        isError={attentionError}
+        isFetching={attentionFetching}
+        onRetry={retryAttention}
+        windowStr={attention.windowEnd}
+        today={attentionToday}
+      />
+      </div>
 
       {/* Gastos por categoria — segunda superfície nesta rodada (§0/§23/§24). */}
       <div className="border-t border-border pt-6">
