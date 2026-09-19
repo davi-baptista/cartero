@@ -727,6 +727,8 @@ function CalendarSection({
 
   return (
     <section aria-label="Calendário e itens que requerem atenção">
+      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+      <div className="rounded-xl border border-border/60 bg-card/30 p-4 sm:p-5">
       <h2 className="text-[15px] font-semibold tracking-tight">Calendário</h2>
       <p className="mb-3 mt-0.5 text-[11px] text-muted-foreground">
         Vencimentos e movimentações com data neste mês
@@ -779,7 +781,7 @@ function CalendarSection({
           )}
 
           {/* Weekday headers */}
-          <div className="grid grid-cols-7 border-b border-border pb-1">
+          <div className="grid grid-cols-7 rounded-t-lg border-b border-border/70 bg-muted/20 px-1 pb-1">
             {WEEKDAYS.map((d) => (
               <div key={d} className="py-1 text-center text-[11px] font-medium text-muted-foreground">
                 {d}
@@ -788,7 +790,7 @@ function CalendarSection({
           </div>
 
           {/* Day grid */}
-          <div className="grid grid-cols-7 gap-y-0.5 pt-0.5">
+          <div className="grid grid-cols-7 gap-px overflow-hidden rounded-b-lg bg-border/30 p-px">
             {cells.map((day, idx) => {
               if (day === null) return <div key={`e-${idx}`} />
 
@@ -807,12 +809,13 @@ function CalendarSection({
                   type="button"
                   onClick={() => {
                     setSelectedDay(isSelected ? null : day)
+                    setMode('day')
                   }}
                   aria-pressed={isSelected || undefined}
                   aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}` : ''}`}
                   className={cn(
-                    'flex flex-col items-center gap-1 rounded-lg py-2 transition-colors cursor-pointer',
-                    isSelected ? 'bg-muted/60' : 'hover:bg-muted/30',
+                    'flex min-w-0 flex-col items-center gap-1 rounded-md bg-card/80 py-1.5 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring sm:py-2',
+                    isSelected ? 'bg-muted/80' : 'hover:bg-muted/50',
                     isPast && 'opacity-40',
                   )}
                 >
@@ -855,9 +858,12 @@ function CalendarSection({
           </div>
 
           {/* ─── Painel contextual: Hoje/dia selecionado × Atenção agora ─── */}
-          <div className="mt-5 border-t border-border pt-4">
+          </>
+        )}
+        </div>
+        <div className="rounded-xl border border-border/60 bg-card/30 p-4 sm:p-5 lg:mt-0">
             <Tabs value={mode} onValueChange={(v) => setMode(v as 'day' | 'attention')}>
-              <TabsList className="hidden">
+              <TabsList>
                 <TabsTrigger value="day">{dayLabel}</TabsTrigger>
                 <TabsTrigger value="attention">Atenção agora</TabsTrigger>
               </TabsList>
@@ -961,14 +967,14 @@ function CalendarSection({
               </TabsContent>
             </Tabs>
           </div>
-        </>
-      )}
+      </div>
     </section>
   )
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+/*
 function AttentionNowSection({
   invoices,
   banks,
@@ -1050,6 +1056,7 @@ function AttentionNowSection({
   )
 }
 
+*/
 export default function OverviewPage() {
   // O mês é contexto do app, controlado pela barra superior.
   const { period } = useMonthPeriod()
@@ -1284,20 +1291,6 @@ export default function OverviewPage() {
         attentionFetching={attentionFetching}
         onRetryAttention={retryAttention}
         attentionWindowEnd={attention.windowEnd}
-      />
-      <AttentionNowSection
-        invoices={attention.invoices}
-        banks={banks}
-        debts={attention.debts}
-        debtsTotal={attention.debtsAll.length}
-        receivables={attention.receivables}
-        receivablesTotal={attention.receivablesAll.length}
-        isLoading={attentionLoading}
-        isError={attentionError}
-        isFetching={attentionFetching}
-        onRetry={retryAttention}
-        windowStr={attention.windowEnd}
-        today={attentionToday}
       />
       </div>
 
