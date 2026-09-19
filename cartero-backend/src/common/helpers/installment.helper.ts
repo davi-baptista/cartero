@@ -16,15 +16,6 @@
 export class InvalidInstallmentSplitError extends Error {}
 
 /**
- * Rows created before the structural rollout may still need the legacy title
- * fallback. New rows must never become installments merely because a user
- * typed `1/2` into a standalone title.
- */
-export const STRUCTURAL_INSTALLMENT_CUTOFF = new Date(
-  '2026-09-18T19:00:00.000Z',
-);
-
-/**
  * Converte reais em centavos inteiros.
  *
  * `Math.round` em vez de truncamento: um `amount` que chegue como 10.999999
@@ -101,9 +92,8 @@ export function splitInstallmentAmount(total: number, count: number): number[] {
  * ══════════════════════════════════════════════════════════════════════════
  *
  * Uma compra não deixa de ser parcelada porque as outras parcelas foram
- * removidas. `1/5` que sobreviveu a uma exclusão parcial continua sendo a
- * primeira de cinco: o fato histórico não muda, e a tela continua — com
- * razão — mostrando `1/5`.
+ * removidas. O par estrutural preservado na linha continua registrando a
+ * posição e a cardinalidade históricas.
  *
  * ── O bug que isto corrige ──
  *
@@ -115,47 +105,9 @@ export function splitInstallmentAmount(total: number, count: number): number[] {
  *   execute   OPEN_SCOPE_REQUIRES_INSTALLMENT           ← recusa o que o
  *                                                         preview ofereceu
  *
- * A UI usava um terceiro critério — a regex do título, que SOBREVIVE à
- * exclusão — e por isso abria o fluxo de parcelas para algo que o servidor já
- * não aceitava.
- *
- * ── As duas evidências de lineage ──
- *
- * `parentId` prova filiação: quem aponta para uma raiz nasceu numa série.
- *
- * O sufixo `N/M` no título prova a origem da RAIZ, e é o único vestígio que
- * ela guarda depois de perder as filhas. Não é heurística de exibição: a
- * criação escreve esse sufixo justamente para marcar a série, e
- * `getInstallmentIndex` já dependia dele para ordenar.
- *
- * Nenhum campo novo foi criado: `installmentTotal`/`installmentGroupId` não
- * existem neste schema, e inventá-los exigiria migration para um fato que o
- * título já carrega.
+ * A UI e o servidor usam a mesma autoridade estrutural, evitando que títulos
+ * herdados de Receivable/Debt ou nomes manuais entrem no lifecycle.
  */
-
-/** O sufixo que a criação escreve em cada parcela: `Nome 3/12`. */
-const INSTALLMENT_TITLE_SUFFIX = /\s(\d+)\/(\d+)$/;
-
-/** `{ number, total }` quando o título numera a parcela, senão `null`. */
-export function parseInstallmentTitle(
-  title: string,
-): { number: number; total: number } | null {
-  const match = title.match(INSTALLMENT_TITLE_SUFFIX);
-  if (!match) return null;
-
-  const number = Number(match[1]);
-  const total = Number(match[2]);
-
-  /*
-    `x/1` não é parcelamento: a criação nunca gera esse sufixo para compra à
-    vista, e tratá-lo como série faria uma transação simples entrar no
-    lifecycle de parcelas.
-  */
-  if (!Number.isInteger(number) || !Number.isInteger(total)) return null;
-  if (total < 2 || number < 1 || number > total) return null;
-
-  return { number, total };
-}
 
 export interface StructuralInstallmentMetadata {
   index: number;
@@ -163,50 +115,22 @@ export interface StructuralInstallmentMetadata {
   structural: boolean;
 }
 
-function parseLegacyInstallmentTitle(title: string): {
-  number: number;
-  total: number;
-} | null {
-  const match = title.match(/\s(\d+)\/(\d+)$/);
-  if (!match) return null;
-  const number = Number(match[1]);
-  const total = Number(match[2]);
-  return number >= 1 && total >= 1 && number <= total
-    ? { number, total }
-    : null;
-}
-
-/** Structural metadata is authoritative; title parsing is finite legacy-only. */
+/** Structural metadata is the only Transaction installment authority. */
 export function getInstallmentMetadata(transaction: {
   installmentIndex?: number | null;
   installmentCount?: number | null;
-  title: string;
-  createdAt?: Date;
 }): StructuralInstallmentMetadata | null {
   if (
     transaction.installmentIndex != null &&
     transaction.installmentCount != null
   ) {
     return {
-    index: transaction.installmentIndex,
-    count: transaction.installmentCount,
+      index: transaction.installmentIndex,
+      count: transaction.installmentCount,
       structural: true,
     };
   }
-
-  if (
-    transaction.installmentIndex != null ||
-    transaction.installmentCount != null ||
-    (transaction.createdAt &&
-      transaction.createdAt >= STRUCTURAL_INSTALLMENT_CUTOFF)
-  ) {
-    return null;
-  }
-
-  const legacy = parseLegacyInstallmentTitle(transaction.title);
-  return legacy
-    ? { index: legacy.number, count: legacy.total, structural: false }
-    : null;
+  return null;
 }
 
 /**
@@ -223,13 +147,7 @@ export function belongsToInstallmentSeries(transaction: {
   parentId: string | null;
   installmentIndex?: number | null;
   installmentCount?: number | null;
-  title: string;
-  createdAt?: Date;
 }): boolean {
-  // Existing child lineage remains a valid legacy signal even if its title
-  // was edited; only a root with no structural metadata needs the finite
-  // title fallback.
-  if (transaction.parentId !== null) return true;
   const metadata = getInstallmentMetadata(transaction);
   return metadata !== null && metadata.count >= 2;
 }

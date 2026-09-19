@@ -4,7 +4,10 @@ import type { PrismaService } from 'src/prisma/prisma.service';
 import { USER_ID, makeTransaction, money } from 'src/common/testing/fixtures';
 
 class CommitmentsService extends CommitmentsServiceImpl {
-  override getCommitments(userId: string, timeZone: string | null = 'America/Fortaleza') {
+  override getCommitments(
+    userId: string,
+    timeZone: string | null = 'America/Fortaleza',
+  ) {
     return super.getCommitments(userId, timeZone);
   }
 }
@@ -38,12 +41,15 @@ function installmentRow(options: {
   bankName?: string;
   categoryName?: string;
 }) {
+  const suffix = options.title.match(/\s(\d+)\/(\d+)$/);
   return {
     ...makeTransaction({
       id: options.id,
       parentId: options.parentId ?? null,
       title: options.title,
       amount: money(options.amount),
+      installmentIndex: suffix ? Number(suffix[1]) : null,
+      installmentCount: suffix ? Number(suffix[2]) : null,
     }),
     invoice: {
       month: options.invoiceMonth,
@@ -97,6 +103,8 @@ function buildPrisma(options: {
   forecastRows?: {
     amount: ReturnType<typeof money>;
     title: string;
+    installmentIndex?: number | null;
+    installmentCount?: number | null;
     invoice: { month: number; year: number };
   }[];
   subscriptions?: any[];
@@ -539,6 +547,8 @@ describe('CommitmentsService — assinaturas e projeção', () => {
         {
           amount: money(250),
           title: 'Câmera 2/6',
+          installmentIndex: 2,
+          installmentCount: 6,
           invoice: { month: first.month, year: first.year },
         },
       ],

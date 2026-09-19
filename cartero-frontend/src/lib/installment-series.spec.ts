@@ -49,16 +49,13 @@ describe('installment-series structural authority', () => {
     expect(belongsToSeries(tx)).toBe(true)
   })
 
-  it('allows only pre-cutover rows to use title fallback', () => {
+  it('does not use title fallback even for pre-cutover rows', () => {
     const tx = transaction({
       title: 'Notebook 2/3',
       createdAt: '2026-09-18T18:59:59.999Z',
     })
 
-    expect(installmentMetadata(tx)).toEqual({
-      index: 2,
-      count: 3,
-      structural: false,
-    })
+    expect(installmentMetadata(tx)).toBeNull()
+    expect(belongsToSeries(tx)).toBe(false)
   })
 })

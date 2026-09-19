@@ -1,15 +1,13 @@
 import type { Transaction } from '@/types'
 import { InstallmentScope } from '@/types'
 
-const STRUCTURAL_INSTALLMENT_CUTOFF = '2026-09-18T19:00:00.000Z'
-
 export interface InstallmentMetadata {
   index: number
   count: number
   structural: boolean
 }
 
-/** Structural fields win; title parsing is a finite fallback for old rows. */
+/** Structural fields are the only Transaction installment authority. */
 export function installmentMetadata(tx: Transaction): InstallmentMetadata | null {
   if (tx.installmentIndex != null && tx.installmentCount != null) {
     return {
@@ -19,22 +17,7 @@ export function installmentMetadata(tx: Transaction): InstallmentMetadata | null
     }
   }
 
-  if (
-    tx.installmentIndex != null ||
-    tx.installmentCount != null ||
-    !tx.createdAt ||
-    tx.createdAt >= STRUCTURAL_INSTALLMENT_CUTOFF
-  ) {
-    return null
-  }
-
-  const match = tx.title.match(/\s(\d+)\/(\d+)$/)
-  if (!match) return null
-  const index = Number(match[1])
-  const count = Number(match[2])
-  return count >= 2 && index >= 1 && index <= count
-    ? { index, count, structural: false }
-    : null
+  return null
 }
 
 /**
@@ -57,19 +40,19 @@ export function seriesRootId(tx: Transaction): string {
   return tx.parentId ?? tx.id
 }
 
-/** Quantas parcelas o título declara (`2/10` → 10), se declarar. */
+/** Quantas parcelas o metadata estrutural declara, se houver. */
 export function declaredInstallmentCount(tx: Transaction): number | null {
   return installmentMetadata(tx)?.count ?? null
 }
 
-/** Posição da parcela no título (`2/10` → 2), se houver. */
+/** Posição da parcela no metadata estrutural, se houver. */
 export function installmentPosition(tx: Transaction): number | null {
   return installmentMetadata(tx)?.index ?? null
 }
 
 /** A transação pertence a um parcelamento, em qualquer posição. */
 export function belongsToSeries(tx: Transaction): boolean {
-  return Boolean(tx.parentId) || installmentMetadata(tx) !== null
+  return installmentMetadata(tx) !== null
 }
 
 export interface SeriesSelection {
@@ -79,7 +62,7 @@ export interface SeriesSelection {
   affectedTotal: number
   /** Total da série inteira, só quando ela está completa na lista. */
   seriesTotal: number | null
-  /** Quantas parcelas a série tem, pelo título — a verdade preferida. */
+  /** Quantas parcelas a série tem, pelo metadata estrutural. */
   declaredCount: number | null
   /**
    * `true` quando a lista carregada não tem a série completa. Nesse caso os

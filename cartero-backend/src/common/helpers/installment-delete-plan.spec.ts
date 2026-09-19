@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildInstallmentDeletePlan,
   deletableSetChanged,
-  readInstallmentNumber,
+  readStructuralInstallmentNumber,
   resolvePreservationReason,
   type InstallmentCandidate,
   type InstallmentProtectionFacts,
@@ -35,6 +35,8 @@ function parcela(
     date: new Date('2026-01-10T00:00:00Z'),
     title: `Notebook ${numero}/${total}`,
     invoiceId: `inv${numero}`,
+    installmentIndex: numero,
+    installmentCount: total,
     ...extras,
   };
 }
@@ -299,16 +301,8 @@ describe('faturas que ficam vazias', () => {
   });
 });
 
-describe('numeração', () => {
-  it('lê o número original do título', () => {
-    expect(readInstallmentNumber('Notebook 7/10')).toBe(7);
-  });
-
-  it('devolve null fora de série', () => {
-    expect(readInstallmentNumber('Mercado')).toBeNull();
-  });
-
-  it('7/10 continua 7 mesmo com 8, 9 e 10 removidas', () => {
+describe('numeração estrutural', () => {
+  it('preserva o índice estrutural após remoção parcial', () => {
     /*
       Renumerar reescreveria o contrato original da compra para caber no que
       sobrou. O título é registro histórico, não índice de array.
@@ -323,7 +317,7 @@ describe('numeração', () => {
     const sobrevivente = plan.preserved[0].transaction;
 
     expect(sobrevivente.title).toBe('Notebook 7/10');
-    expect(readInstallmentNumber(sobrevivente.title)).toBe(7);
+    expect(readStructuralInstallmentNumber(sobrevivente)).toBe(7);
   });
 });
 

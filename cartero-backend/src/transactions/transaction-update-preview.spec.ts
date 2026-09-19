@@ -32,6 +32,16 @@ interface Setup {
 }
 
 function buildHarness(setup: Setup) {
+  const transactions = setup.transactions.map((tx) => {
+    const suffix = tx.title.match(/\s(\d+)\/(\d+)$/);
+    return suffix
+      ? {
+          ...tx,
+          installmentIndex: tx.installmentIndex ?? Number(suffix[1]),
+          installmentCount: tx.installmentCount ?? Number(suffix[2]),
+        }
+      : tx;
+  });
   const invoices = setup.invoices ?? [
     makeInvoice({ id: 'i8', month: 8, year: 2026 }),
     makeInvoice({ id: 'i9', month: 9, year: 2026 }),
@@ -58,12 +68,13 @@ function buildHarness(setup: Setup) {
         const ids: string[] = where.id?.in ?? [];
         return invoices.filter((invoice) => ids.includes(invoice.id));
       }),
-      findFirst: vi.fn(async ({ where }: any) =>
-        invoices.find(
-          (invoice) =>
-            (where.month === undefined || invoice.month === where.month) &&
-            (where.year === undefined || invoice.year === where.year),
-        ) ?? null,
+      findFirst: vi.fn(
+        async ({ where }: any) =>
+          invoices.find(
+            (invoice) =>
+              (where.month === undefined || invoice.month === where.month) &&
+              (where.year === undefined || invoice.year === where.year),
+          ) ?? null,
       ),
       findUnique: vi.fn(
         async ({ where }: any) =>
@@ -74,7 +85,7 @@ function buildHarness(setup: Setup) {
     },
     transaction: {
       findMany: vi.fn(async ({ where }: any) =>
-        setup.transactions.filter(
+        transactions.filter(
           (tx) =>
             (where.parentId === undefined || tx.parentId === where.parentId) &&
             (where.OR === undefined ||
@@ -88,12 +99,11 @@ function buildHarness(setup: Setup) {
       ),
       findFirst: vi.fn(
         async ({ where }: any) =>
-          setup.transactions.find((tx) => tx.parentId === where.parentId) ??
-          null,
+          transactions.find((tx) => tx.parentId === where.parentId) ?? null,
       ),
       findUnique: vi.fn(
         async ({ where }: any) =>
-          setup.transactions.find((tx) => tx.id === where.id) ?? null,
+          transactions.find((tx) => tx.id === where.id) ?? null,
       ),
       create: writes.transactionCreate,
       update: writes.transactionUpdate,
@@ -147,7 +157,7 @@ function buildHarness(setup: Setup) {
 
   const validation = {
     validateTransaction: vi.fn(async (id: string) => {
-      const tx = setup.transactions.find((item) => item.id === id);
+      const tx = transactions.find((item) => item.id === id);
       if (!tx) throw new Error(`Transação não encontrada: ${id}`);
       return tx;
     }),
@@ -515,7 +525,11 @@ describe('previewUpdate — bloqueios', () => {
   it('bloqueia alteração financeira com recebível já pago', async () => {
     const harness = buildHarness({
       transactions: [
-        makeTransaction({ id: 'tx-1', personId: 'person-1', amount: money(300) }),
+        makeTransaction({
+          id: 'tx-1',
+          personId: 'person-1',
+          amount: money(300),
+        }),
       ],
       receivables: [
         makeReceivable({
@@ -692,7 +706,11 @@ describe('previewUpdate — banco arquivado como destino', () => {
       transactions: [makeTransaction({ id: 'tx-1', bankId: 'bank-active' })],
       banksById: {
         'bank-active': makeBank({ id: 'bank-active' }),
-        'bank-arch': makeBank({ id: 'bank-arch', name: 'Mercado Pago', isArchived: true }),
+        'bank-arch': makeBank({
+          id: 'bank-arch',
+          name: 'Mercado Pago',
+          isArchived: true,
+        }),
       },
     });
 

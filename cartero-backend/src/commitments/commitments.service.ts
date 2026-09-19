@@ -1,10 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { currentCycle } from 'src/common/helpers/subscription.helper';
-import {
-  getInstallmentMetadata,
-  STRUCTURAL_INSTALLMENT_CUTOFF,
-} from 'src/common/helpers/installment.helper';
+import { getInstallmentMetadata } from 'src/common/helpers/installment.helper';
 import {
   buildInvoiceKey,
   forecastInvoiceLookups,
@@ -120,12 +117,6 @@ export class CommitmentsService {
           {
             installmentIndex: { not: null },
             installmentCount: { not: null },
-          },
-          {
-            installmentIndex: null,
-            installmentCount: null,
-            createdAt: { lt: STRUCTURAL_INSTALLMENT_CUTOFF },
-            title: { contains: '/' },
           },
         ],
       },
@@ -386,12 +377,6 @@ export class CommitmentsService {
           {
             installmentIndex: { not: null },
             installmentCount: { not: null },
-          },
-          {
-            installmentIndex: null,
-            installmentCount: null,
-            createdAt: { lt: STRUCTURAL_INSTALLMENT_CUTOFF },
-            title: { contains: '/' },
           },
         ],
         invoice: {

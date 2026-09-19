@@ -24,11 +24,14 @@ function installmentRow(options: {
   invoiceMonth: number;
   invoiceYear: number;
 }) {
+  const suffix = options.title.match(/\s(\d+)\/(\d+)$/);
   return {
     ...makeTransaction({
       id: options.id,
       parentId: options.parentId ?? null,
       title: options.title,
+      installmentIndex: suffix ? Number(suffix[1]) : null,
+      installmentCount: suffix ? Number(suffix[2]) : null,
       amount: money(options.amount),
     }),
     invoice: {

@@ -26,7 +26,6 @@ import { planTransaction } from './transaction-plan.helper';
 import {
   belongsToInstallmentSeries,
   getInstallmentMetadata,
-  STRUCTURAL_INSTALLMENT_CUTOFF,
   round2,
 } from 'src/common/helpers/installment.helper';
 import {
@@ -474,7 +473,8 @@ export class TransactionsService {
       refundChanged ||
       editingInstallmentDate ||
       (Boolean(dto.date) &&
-        parseDateOnly(dto.date as string).getTime() !== existing.date.getTime());
+        parseDateOnly(dto.date as string).getTime() !==
+          existing.date.getTime());
 
     const preview: TransactionUpdatePreview = {
       affectedCount: affected.length,
@@ -565,7 +565,10 @@ export class TransactionsService {
     }
 
     // Competência/vencimento: só quando banco ou data mudam.
-    if ((bankChanged || editingInstallmentDate) && existing.type === 'CREDIT_CARD') {
+    if (
+      (bankChanged || editingInstallmentDate) &&
+      existing.type === 'CREDIT_CARD'
+    ) {
       // Banco arquivado como DESTINO já saiu como `blocked` acima; aqui a
       // transação pode simplesmente já pertencer a um banco arquivado.
       const bank = await this.entityValidationService.validateBank(
@@ -643,9 +646,8 @@ export class TransactionsService {
           : undefined;
 
         return {
-          installmentNumber: this.getInstallmentIndex(transaction) !== null
-            ? index + 1
-            : null,
+          installmentNumber:
+            this.getInstallmentIndex(transaction) !== null ? index + 1 : null,
           from: current ? { year: current.year, month: current.month } : null,
           to: { year: period.year, month: period.month },
           dueDate: {
@@ -739,7 +741,8 @@ export class TransactionsService {
           'update',
         );
       } catch (error) {
-        const response = (error as { response?: { message?: string } }).response;
+        const response = (error as { response?: { message?: string } })
+          .response;
         preview.blocked = {
           code: 'PAYMENT_TRANSACTION_LINKED',
           message:
@@ -828,12 +831,6 @@ export class TransactionsService {
                 {
                   installmentIndex: { not: null },
                   installmentCount: { not: null },
-                },
-                { parentId: { not: null } },
-                {
-                  parentId: null,
-                  createdAt: { lt: STRUCTURAL_INSTALLMENT_CUTOFF },
-                  title: { contains: '/' },
                 },
               ],
             }
@@ -1071,13 +1068,16 @@ export class TransactionsService {
           const amount = dto.amount ?? Number(transaction.amount);
           const isRefund = dto.isRefund ?? transaction.isRefund;
           const installmentIndex = this.getInstallmentIndex(transaction);
-          const date = editingInstallmentDate && installmentIndex !== null && installmentBaseDate
-            ? installmentBaseDate
-            : isInstallment
-              ? transaction.date
-              : dto.date
-                ? parseDateOnly(dto.date)
-                : transaction.date;
+          const date =
+            editingInstallmentDate &&
+            installmentIndex !== null &&
+            installmentBaseDate
+              ? installmentBaseDate
+              : isInstallment
+                ? transaction.date
+                : dto.date
+                  ? parseDateOnly(dto.date)
+                  : transaction.date;
 
           if (isRefund && type !== 'CREDIT_CARD') {
             throw new BadRequestException(
@@ -1677,10 +1677,10 @@ export class TransactionsService {
    * Todos os membros da série, em ordem de parcela.
    *
    * A identidade é estrutural — `parentId ?? id` —, não o título. A ordenação
-   * usa o número da parcela quando o título o traz, com `createdAt` como
+   * usa o índice estrutural, com `createdAt` como
    * desempate: a criação grava as parcelas em sequência, mas duas podem
    * compartilhar o mesmo timestamp, e aí `NEXT` precisaria de um critério
-   * estável. A dependência do título fica contida aqui, sem se espalhar.
+   * estável.
    */
   private async getInstallmentSeries(
     tx: Prisma.TransactionClient | PrismaService,
@@ -1702,7 +1702,7 @@ export class TransactionsService {
       if (indexA !== null && indexB !== null && indexA !== indexB) {
         return indexA - indexB;
       }
-      // Raiz primeiro quando os títulos não numeram as parcelas.
+      // Raiz primeiro quando não há índice estrutural para desempatar.
       if (a.id === seriesRootId) return -1;
       if (b.id === seriesRootId) return 1;
       return a.createdAt.getTime() - b.createdAt.getTime();

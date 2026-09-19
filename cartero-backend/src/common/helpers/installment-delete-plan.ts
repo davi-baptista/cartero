@@ -100,7 +100,10 @@ export function resolvePreservationReason(
   transaction: InstallmentCandidate,
   facts: InstallmentProtectionFacts,
 ): InstallmentPreservationReason | null {
-  if (transaction.invoiceId && facts.paidInvoiceIds.has(transaction.invoiceId)) {
+  if (
+    transaction.invoiceId &&
+    facts.paidInvoiceIds.has(transaction.invoiceId)
+  ) {
     return 'PAID_INVOICE';
   }
 
@@ -190,21 +193,12 @@ export function buildInstallmentDeletePlan(
 }
 
 /**
- * O número da parcela, lido do título — nunca recalculado.
- *
- * `7/10` continua sendo a sétima de dez mesmo depois que 8, 9 e 10 saírem. O
- * título registra o contrato original da compra, e renumerar reescreveria a
- * história para caber no que sobrou.
+ * O número da parcela vem do metadado estrutural e nunca é recalculado.
  */
-export function readInstallmentNumber(title: string): number | null {
-  const match = title.match(/\s(\d+)\/\d+$/);
-  return match ? Number(match[1]) : null;
-}
-
 export function readStructuralInstallmentNumber(
   candidate: InstallmentCandidate,
 ): number | null {
-  return candidate.installmentIndex ?? readInstallmentNumber(candidate.title);
+  return candidate.installmentIndex ?? null;
 }
 
 /**

@@ -55,6 +55,8 @@ function montar(cenario: Cenario) {
       id: p.id,
       title: `Notebook ${p.numero}/${p.total}`,
       parentId: p.parentId,
+      installmentIndex: p.numero,
+      installmentCount: p.total,
       invoiceId: p.invoiceId,
       amount: money(p.amount ?? 100),
       date: utcDate(2026, 1, 10),

@@ -262,8 +262,13 @@ function buildHarness(state: DbState) {
   const update = service.update.bind(service);
   (service as any).create = (userId: string, dto: any, timeZone?: string) =>
     create(userId, dto, timeZone ?? 'America/Fortaleza');
-  (service as any).update = (id: string, userId: string, dto: any, scope?: string, timeZone?: string) =>
-    update(id, userId, dto, scope, timeZone ?? 'America/Fortaleza');
+  (service as any).update = (
+    id: string,
+    userId: string,
+    dto: any,
+    scope?: string,
+    timeZone?: string,
+  ) => update(id, userId, dto, scope, timeZone ?? 'America/Fortaleza');
 
   return {
     service,
@@ -385,9 +390,31 @@ describe('TransactionsService.update — preservação estrutural em edição te
           makeInvoice({ id: 'invoice-3', month: 10 }),
         ],
         transactions: [
-          makeTransaction({ id: 'tx-root', title: 'Compra 1/3', invoiceId: 'invoice-1', installmentIndex: 1, installmentCount: 3 }),
-          makeTransaction({ id: 'tx-2', parentId: 'tx-root', title: 'Compra 2/3', invoiceId: 'invoice-2', date: utcDate(2026, 9, 1), installmentIndex: 2, installmentCount: 3 }),
-          makeTransaction({ id: 'tx-3', parentId: 'tx-root', title: 'Compra 3/3', invoiceId: 'invoice-3', date: utcDate(2026, 10, 1), installmentIndex: 3, installmentCount: 3 }),
+          makeTransaction({
+            id: 'tx-root',
+            title: 'Compra 1/3',
+            invoiceId: 'invoice-1',
+            installmentIndex: 1,
+            installmentCount: 3,
+          }),
+          makeTransaction({
+            id: 'tx-2',
+            parentId: 'tx-root',
+            title: 'Compra 2/3',
+            invoiceId: 'invoice-2',
+            date: utcDate(2026, 9, 1),
+            installmentIndex: 2,
+            installmentCount: 3,
+          }),
+          makeTransaction({
+            id: 'tx-3',
+            parentId: 'tx-root',
+            title: 'Compra 3/3',
+            invoiceId: 'invoice-3',
+            date: utcDate(2026, 10, 1),
+            installmentIndex: 3,
+            installmentCount: 3,
+          }),
         ],
       }),
     );
@@ -401,18 +428,29 @@ describe('TransactionsService.update — preservação estrutural em edição te
       installmentCount: tx.installmentCount,
     }));
 
-    await harness.service.update('tx-root', USER_ID, { description: 'depois', date: '2026-08-01' } as any, 'ALL');
+    await harness.service.update(
+      'tx-root',
+      USER_ID,
+      { description: 'depois', date: '2026-08-01' } as any,
+      'ALL',
+    );
 
-    expect(harness.state.transactions.map((tx) => ({
-      id: tx.id,
-      parentId: tx.parentId,
-      invoiceId: tx.invoiceId,
-      date: tx.date,
-      amount: tx.amount,
-      installmentIndex: tx.installmentIndex,
-      installmentCount: tx.installmentCount,
-    }))).toEqual(before);
-    expect(harness.state.transactions.map((tx) => tx.description)).toEqual(['depois', 'depois', 'depois']);
+    expect(
+      harness.state.transactions.map((tx) => ({
+        id: tx.id,
+        parentId: tx.parentId,
+        invoiceId: tx.invoiceId,
+        date: tx.date,
+        amount: tx.amount,
+        installmentIndex: tx.installmentIndex,
+        installmentCount: tx.installmentCount,
+      })),
+    ).toEqual(before);
+    expect(harness.state.transactions.map((tx) => tx.description)).toEqual([
+      'depois',
+      'depois',
+      'depois',
+    ]);
   });
 });
 
@@ -982,6 +1020,8 @@ describe('TransactionsService — remanejamento para fatura CLOSED', () => {
     const root = makeTransaction({
       id: 'tx-root',
       title: 'Notebook 1/2',
+      installmentIndex: 1,
+      installmentCount: 2,
       invoiceId: 'i-open',
       date: utcDate(2026, 8, 1),
     });
@@ -989,6 +1029,8 @@ describe('TransactionsService — remanejamento para fatura CLOSED', () => {
       id: 'tx-child',
       parentId: 'tx-root',
       title: 'Notebook 2/2',
+      installmentIndex: 2,
+      installmentCount: 2,
       invoiceId: 'i-open2',
       date: utcDate(2026, 8, 1),
     });
@@ -1054,6 +1096,8 @@ describe('TransactionsService — remanejamento para fatura CLOSED', () => {
             title: 'Notebook 1/2',
             invoiceId: 'i-open',
             date: utcDate(2026, 8, 1),
+            installmentIndex: 1,
+            installmentCount: 2,
           }),
           makeTransaction({
             id: 'tx-child',
@@ -1061,6 +1105,8 @@ describe('TransactionsService — remanejamento para fatura CLOSED', () => {
             title: 'Notebook 2/2',
             invoiceId: 'i-open',
             date: utcDate(2026, 8, 1),
+            installmentIndex: 2,
+            installmentCount: 2,
           }),
         ],
       }),

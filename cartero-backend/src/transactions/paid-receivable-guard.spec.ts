@@ -254,8 +254,13 @@ function buildHarness(state: DbState) {
 
   const service = new TransactionsService(prisma, validation);
   const update = service.update.bind(service);
-  (service as any).update = (id: string, userId: string, dto: any, scope?: string, timeZone?: string) =>
-    update(id, userId, dto, scope, timeZone ?? 'America/Fortaleza');
+  (service as any).update = (
+    id: string,
+    userId: string,
+    dto: any,
+    scope?: string,
+    timeZone?: string,
+  ) => update(id, userId, dto, scope, timeZone ?? 'America/Fortaleza');
 
   return {
     service,
@@ -520,6 +525,8 @@ describe('Crítico A — a guarda não excede o necessário', () => {
           makeTransaction({
             id: 'tx-root',
             title: 'Ingresso 1/2',
+            installmentIndex: 1,
+            installmentCount: 2,
             personId: 'person-1',
             amount: money(150),
           }),
@@ -527,6 +534,8 @@ describe('Crítico A — a guarda não excede o necessário', () => {
             id: 'tx-2',
             parentId: 'tx-root',
             title: 'Ingresso 2/2',
+            installmentIndex: 2,
+            installmentCount: 2,
             personId: 'person-1',
             amount: money(150),
           }),
@@ -555,6 +564,8 @@ describe('Crítico A — a guarda não excede o necessário', () => {
           makeTransaction({
             id: 'tx-root',
             title: 'Ingresso 1/2',
+            installmentIndex: 1,
+            installmentCount: 2,
             personId: 'person-1',
             amount: money(150),
             invoiceId: 'invoice-1',
@@ -563,6 +574,8 @@ describe('Crítico A — a guarda não excede o necessário', () => {
             id: 'tx-2',
             parentId: 'tx-root',
             title: 'Ingresso 2/2',
+            installmentIndex: 2,
+            installmentCount: 2,
             personId: 'person-1',
             amount: money(150),
             invoiceId: 'invoice-1',
@@ -912,6 +925,8 @@ describe('Crítico B — vencimento do recebível segue a fatura', () => {
             amount: money(150),
             invoiceId: 'i-aug',
             date: utcDate(2026, 8, 1),
+            installmentIndex: 1,
+            installmentCount: 2,
           }),
           makeTransaction({
             id: 'tx-2',
@@ -921,6 +936,8 @@ describe('Crítico B — vencimento do recebível segue a fatura', () => {
             amount: money(150),
             invoiceId: 'i-sep',
             date: utcDate(2026, 8, 1),
+            installmentIndex: 2,
+            installmentCount: 2,
           }),
         ],
         receivables: [
