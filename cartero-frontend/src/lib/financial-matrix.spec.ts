@@ -223,10 +223,7 @@ describe('Estorno atravessa as superfícies coerentemente', () => {
       }).values(),
     ].flat()
 
-    expect(events.find((e) => e.id === 'transaction:t-e')?.kind).toBe('refund')
-    expect(events.find((e) => e.id === 'transaction:t-e')?.kind).not.toBe(
-      'income',
-    )
+    expect(events.find((e) => e.id === 'transaction:t-e')).toBeUndefined()
   })
 })
 

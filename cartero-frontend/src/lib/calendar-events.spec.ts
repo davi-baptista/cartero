@@ -302,9 +302,7 @@ describe('Movimentações diretas', () => {
       ],
     })
 
-    const event = map.get(15)?.[0]
-    expect(event?.direction).toBe('out')
-    expect(event?.amount).toBe(120)
+    expect(flat(map)).toHaveLength(0)
   })
 
   it('receita aparece como entrada', () => {
@@ -321,8 +319,7 @@ describe('Movimentações diretas', () => {
       }),
     )[0]
 
-    expect(event.kind).toBe('income')
-    expect(event.direction).toBe('in')
+    expect(event).toBeUndefined()
   })
 
   it('estorno é tipo próprio, nem receita nem saída', () => {
@@ -339,8 +336,7 @@ describe('Movimentações diretas', () => {
       }),
     )[0]
 
-    expect(event.kind).toBe('refund')
-    expect(event.kind).not.toBe('income')
+    expect(event).toBeUndefined()
   })
 
   it('transação de outro mês não aparece', () => {
@@ -437,8 +433,8 @@ describe('Fatos distintos coexistem', () => {
     })
 
     expect(map.get(10)).toHaveLength(1)
-    expect(map.get(20)).toHaveLength(1)
-    expect(map.get(10)?.[0].id).not.toBe(map.get(20)?.[0].id)
+    expect(map.get(20)).toBeUndefined()
+    expect(map.get(10)?.[0].id).toBe('receivable:r1')
   })
 
   it('dívida paga + transação do pagamento são dois eventos', () => {
@@ -450,7 +446,7 @@ describe('Fatos distintos coexistem', () => {
     })
 
     expect(map.get(5)?.[0].status).toBe('Pago')
-    expect(map.get(12)?.[0].kind).toBe('expense')
+    expect(map.get(12)).toBeUndefined()
   })
 
   it('a fatura não é abatida por uma cobrança do mesmo dia', () => {
@@ -485,14 +481,12 @@ describe('Identidade e ordem', () => {
       invoices: [invoice({ id: 'i1', totalAmount: 100, dueDate: '2026-08-05' })],
       debts: [debt({ id: 'd1', dueDate: '2026-08-05' })],
       receivables: [receivable({ id: 'r1', dueDate: '2026-08-05' })],
-      transactions: [transaction({ id: 't1', amount: 5, date: '2026-08-05' })],
     })
 
     expect(map.get(5)?.map((e) => e.kind)).toEqual([
       'invoice-due',
       'debt',
       'receivable',
-      'expense',
     ])
   })
 })
@@ -528,7 +522,7 @@ describe('Dia civil', () => {
       ],
     })
 
-    expect(map.get(1)).toHaveLength(1)
+    expect(flat(map)).toHaveLength(0)
   })
 })
 
@@ -642,5 +636,28 @@ describe('O1/O2 (Overview Agenda V1): overdue de mês anterior — calendário v
     const result = selectAttentionInvoices([juneOverdue], banks, new Date(2026, 8, 16))
 
     expect(result.map((i) => i.id)).toEqual(['i-june'])
+  })
+
+  it('linked transactions do not create direct calendar events', () => {
+    const result = build({
+      transactions: [
+        transaction({
+          id: 'person-linked',
+          type: TransactionType.INCOME,
+          amount: 100,
+          date: '2026-08-15',
+          personId: 'p1',
+        }),
+        transaction({
+          id: 'subscription-linked',
+          type: TransactionType.PIX,
+          amount: 100,
+          date: '2026-08-15',
+          subscriptionId: 's1',
+        }),
+      ],
+    })
+
+    expect(flat(result)).toHaveLength(0)
   })
 })

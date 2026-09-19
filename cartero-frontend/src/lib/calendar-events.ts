@@ -1,7 +1,7 @@
-import { InvoiceStatus, TransactionType } from '@/types'
+import { InvoiceStatus } from '@/types'
 import type { Debt, Invoice, Receivable, Transaction } from '@/types'
 import { INVOICE_STATUS_LABEL } from '@/lib/invoice-status'
-import { expenseSignedAmount, isIncomeTransaction } from '@/lib/money-semantics'
+import { expenseSignedAmount } from '@/lib/money-semantics'
 import { settlementStatus } from '@/lib/settlement-status'
 
 /**
@@ -26,9 +26,6 @@ export type CalEventKind =
   | 'invoice-due'
   | 'debt'
   | 'receivable'
-  | 'expense'
-  | 'income'
-  | 'refund'
 
 /** Direção do dinheiro — separada do STATUS. */
 export type CalEventDirection = 'out' | 'in' | 'neutral'
@@ -60,25 +57,7 @@ export const CAL_KIND_LABEL: Record<CalEventKind, string> = {
   'invoice-due': 'Fatura',
   debt: 'Dívida',
   receivable: 'A receber',
-  expense: 'Saída',
-  income: 'Receita',
-  refund: 'Estorno',
 }
-
-/**
- * Tipos de Transaction que acontecem NA DATA da transação.
- *
- * `CREDIT_CARD` fica de fora de propósito: no calendário, crédito é
- * representado pelo vencimento da fatura. Incluir a compra também criaria dois
- * eventos para o mesmo dinheiro — um no dia da compra e outro quando a fatura
- * vence — e o calendário deixaria de dizer o que significa.
- */
-const DIRECT_TYPES: readonly TransactionType[] = [
-  TransactionType.DEBIT_CARD,
-  TransactionType.PIX,
-  TransactionType.BOLETO,
-  TransactionType.INCOME,
-]
 
 /** Extrai (ano, mês, dia) de uma data ISO sem passar por `Date`. */
 function civilParts(iso: string): [number, number, number] {
@@ -143,9 +122,6 @@ const KIND_ORDER: Record<CalEventKind, number> = {
   'invoice-due': 0,
   debt: 1,
   receivable: 2,
-  expense: 3,
-  refund: 4,
-  income: 5,
 }
 
 export function buildCalendarEvents(
@@ -257,34 +233,6 @@ export function buildCalendarEvents(
     })
   }
 
-  // ── Movimentações diretas: data da transação ──
-  for (const tx of input.transactions) {
-    if (!DIRECT_TYPES.includes(tx.type)) continue
-    const day = inMonth(tx.date)
-    if (day === null) continue
-
-    const isRefund = Boolean(tx.isRefund)
-    const income = isIncomeTransaction(tx)
-
-    push(day, {
-      id: `transaction:${tx.id}`,
-      /*
-        Estorno é tipo próprio: não é receita (não infla entrada) nem saída
-        (devolve dinheiro). A distinção já vale no Extrato.
-      */
-      kind: isRefund ? 'refund' : income ? 'income' : 'expense',
-      title: tx.title,
-      amount: Number(tx.amount),
-      status: TRANSACTION_STATUS[isRefund ? 'refund' : income ? 'income' : 'expense'],
-      direction: isRefund || income ? 'in' : 'out',
-      /** Transação é fato consumado por definição — ela só existe se ocorreu. */
-      settled: true,
-      detail: tx.category?.name,
-      /* Reusa o deep-link da Fase 8B em vez de criar um segundo mecanismo. */
-      href: `/transactions?startDate=${tx.date.slice(0, 10)}&endDate=${tx.date.slice(0, 10)}&highlight=${tx.id}`,
-    })
-  }
-
   // Ordem estável: tipo, depois título.
   for (const list of map.values()) {
     list.sort(
@@ -325,12 +273,6 @@ const RECEIVABLE_STATUS: Record<'paid' | 'overdue' | 'pending', string> = {
   paid: 'Recebido',
   overdue: 'Em atraso',
   pending: 'Pendente',
-}
-
-const TRANSACTION_STATUS: Record<'expense' | 'income' | 'refund', string> = {
-  expense: 'Pago',
-  income: 'Recebido',
-  refund: 'Estornado',
 }
 
 /** `formatCurrency` local para o helper não depender de componente. */
