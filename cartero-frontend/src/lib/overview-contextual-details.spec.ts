@@ -91,6 +91,12 @@ describe('overview contextual detail URL contract', () => {
     expect(overview).toContain("debt: count === 1 ? 'Dívida' : 'Dívidas'")
   })
 
+  it('keeps the Today empty state compact and intentionally quiet', () => {
+    expect(overview).toContain("isTodaySelected ? 'nenhum evento' : 'Nenhum evento neste dia.'")
+    expect(overview).toContain('py-1 text-xs text-muted-foreground')
+    expect(overview).not.toContain('Nenhum evento hoje.')
+  })
+
   it('preserves the canonical calendar source model', () => {
     expect(agenda).toContain('entityId: invoice.id')
     expect(agenda).toContain('entityId: debt.id')

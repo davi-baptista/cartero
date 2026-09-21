@@ -781,8 +781,8 @@ function CalendarSection({
                   Selecione um dia no calendário.
                 </p>
               ) : selectedEvents.length === 0 ? (
-                <p className="py-4 text-center text-xs text-muted-foreground">
-                  {isTodaySelected ? 'Nenhum evento hoje.' : 'Nenhum evento neste dia.'}
+                <p className="py-1 text-xs text-muted-foreground">
+                  {isTodaySelected ? 'nenhum evento' : 'Nenhum evento neste dia.'}
                 </p>
               ) : (
                 <div className="divide-y divide-border/50">
