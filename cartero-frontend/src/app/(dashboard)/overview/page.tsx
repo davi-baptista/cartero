@@ -368,7 +368,7 @@ function AttentionRowIcon({ icon: Icon, isSettled }: { icon: LucideIcon; isSettl
 
 function agendaKindLabel(kind: AgendaEntry['kind'], count: number): string {
   const labels = {
-    debt: count === 1 ? 'dívida' : 'dívidas',
+    debt: count === 1 ? 'Dívida' : 'Dívidas',
     receivable: count === 1 ? 'valor a receber' : 'valores a receber',
     'invoice-due': 'fatura',
   }
@@ -383,17 +383,25 @@ function AgendaMeta({
   description,
   status,
   isSettled,
+  isDueToday,
 }: {
   description: string
   status: string
   isSettled: boolean
+  isDueToday: boolean
 }) {
+  const statusClass = isSettled
+    ? 'text-paid'
+    : isDueToday
+      ? 'text-pending'
+      : 'text-destructive'
+
   return (
     <span className="flex min-w-0 truncate text-xs">
       <span className="truncate text-muted-foreground">{description}</span>
       <span className="ml-1 inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-muted-foreground">
         <span aria-hidden="true">·</span>
-        <span className={isSettled ? 'text-paid' : 'text-destructive'}>{status}</span>
+        <span className={statusClass}>{status}</span>
       </span>
     </span>
   )
@@ -422,6 +430,7 @@ function AgendaSummaryRow({
     : entry.urgency
   const isOverdue = urgency === 'overdue' && !isSettled
   const dueText = entry.dueDate ? formatDueDate(entry.dueDate) : undefined
+  const isDueToday = dueText === 'vence hoje'
   const title = group.personName ?? entry.title
   const description =
     count > 1
@@ -466,7 +475,7 @@ function AgendaSummaryRow({
       leading={<AttentionRowIcon icon={Icon} isSettled={isSettled} />}
       title={title}
       titleAdornment={isInvoice && invoice ? <InvoiceBadge status={invoice.status} /> : undefined}
-      meta={<AgendaMeta description={description} status={inlineStatus} isSettled={isSettled} />}
+      meta={<AgendaMeta description={description} status={inlineStatus} isSettled={isSettled} isDueToday={isDueToday} />}
       trailing={
         <span className="text-sm font-semibold tabular-nums tracking-[-0.02em] text-foreground">
           {formatCurrency(total)}
@@ -751,16 +760,18 @@ function CalendarSection({
                     setSelectedDayExpanded(false)
                   }}
                   aria-pressed={isSelected || undefined}
-                  aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}: ${eventKinds.map((kind) => CAL_KIND_LABEL[kind]).join(', ')}` : ''}`}
+                  aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}: ${eventKinds.map((kind) => CAL_KIND_LABEL[kind]).join(', ')}` : ''}${hasUnresolvedOverdue ? ', possui item vencido' : ''}`}
                   className={cn(
                     'flex min-w-0 flex-col items-center gap-1 rounded-md bg-card/80 py-1.5 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring sm:py-2',
                     isSelected
                       ? 'bg-muted/80'
-                      : hasEvents && !isHistoricalResolved
-                        ? 'bg-muted/55 hover:bg-muted/65'
-                        : hasEvents
-                          ? 'bg-muted/35 hover:bg-muted/45'
-                        : 'hover:bg-muted/50',
+                      : hasUnresolvedOverdue
+                        ? 'bg-destructive/8 hover:bg-destructive/12'
+                        : hasEvents && !isHistoricalResolved
+                          ? 'bg-muted/55 hover:bg-muted/65'
+                          : hasEvents
+                            ? 'bg-muted/35 hover:bg-muted/45'
+                          : 'hover:bg-muted/50',
                     isHistoricalResolved && !isSelected && 'opacity-40',
                   )}
                 >
