@@ -1,21 +1,19 @@
 'use client'
 
-import { useState, useMemo, memo, type ReactNode } from 'react'
+import { useState, useMemo, memo } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import type { LucideIcon } from 'lucide-react'
-import { ShoppingBag, CreditCard, HandCoins, Wallet, ArrowRight, CheckCircle2, ExternalLink, TriangleAlert, RotateCcw, Loader2 } from 'lucide-react'
+import { ShoppingBag, CreditCard, HandCoins, Wallet, ExternalLink, TriangleAlert, RotateCcw, Loader2 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useMonthPeriod } from '@/components/month-nav'
 import { getTransactions } from '@/services/transactions.service'
 import { getInvoices } from '@/services/invoices.service'
 import { getBanks } from '@/services/banks.service'
 import { getDebts } from '@/services/debts.service'
 import { getReceivables } from '@/services/receivables.service'
-import { formatCurrency, formatMonthYear } from '@/lib/formatters'
-import { bankDisplayName } from '@/lib/bank-display'
+import { formatCurrency, formatMonthYear, formatRelativeDate } from '@/lib/formatters'
 import {
   expenseSignedAmount,
   isOwnExpense,
@@ -36,15 +34,19 @@ import { cn } from '@/lib/utils'
 import {
   buildCalendarEvents,
   eventsForDay,
-  CAL_KIND_LABEL,
   type CalEvent,
   type CalEventDirection,
 } from '@/lib/calendar-events'
 import {
-  ATTENTION_DAYS_WINDOW,
-  attentionDueUrgency,
   buildAttentionSelection,
 } from '@/lib/overview-attention'
+import {
+  groupAttention,
+  groupSelectedDay,
+  limitAgenda,
+  type AgendaGroup,
+  type AgendaEntry,
+} from '@/lib/overview-agenda'
 import { FinancialListRow, ROW_AMOUNT_CLASS } from '@/components/ui/financial-list-row'
 import { Button } from '@/components/ui/button'
 import type { Invoice, Debt, Receivable, Bank, Transaction } from '@/types'
@@ -74,20 +76,13 @@ function formatDueDate(dateString: string): string {
   return formatDueTimingFromISO(dateString)
 }
 
-type DueUrgency = 'overdue' | 'urgent' | 'soon' | 'normal'
-
-const DUE_URGENCY_CLASS: Record<DueUrgency, string> = {
-  overdue: 'text-destructive',
-  urgent: 'text-pending',
-  soon: 'text-primary',
-  normal: 'text-muted-foreground',
-}
+type InvoiceDueUrgency = 'overdue' | 'urgent' | 'soon' | 'normal'
 
 function computeInvoiceDue(
   invoice: Invoice,
   bank: Bank | undefined,
   today: Date = new Date(),
-): { text: string; urgency: DueUrgency; diffDays: number } {
+): { text: string; urgency: InvoiceDueUrgency; diffDays: number } {
   if (!bank) return { text: '', urgency: 'normal', diffDays: 999 }
 
   today = new Date(today)
@@ -368,42 +363,62 @@ function AttentionRowIcon({ icon: Icon, isOverdue }: { icon: LucideIcon; isOverd
   )
 }
 
-function InvoiceAttentionRow({
-  invoice,
+function agendaKindLabel(kind: AgendaEntry['kind'], count: number): string {
+  const labels = {
+    debt: count === 1 ? 'dívida' : 'dívidas',
+    receivable: count === 1 ? 'valor a receber' : 'valores a receber',
+    'invoice-due': 'fatura',
+  }
+  return labels[kind]
+}
+
+function AgendaSummaryRow({
+  group,
   banks,
   today,
 }: {
-  invoice: Invoice
+  group: AgendaGroup
   banks: Bank[]
   today: Date
 }) {
-  const bank = banks.find((b) => b.id === invoice.bankId)
-  const monthYear = capitalize(formatMonthYear(invoice.month, invoice.year))
-  const total = Number(invoice.totalAmount)
-  const { text: dueText, urgency } = computeInvoiceDue(invoice, bank, today)
+  const entry = group.entries[0]
+  const count = group.entries.length
+  const total = group.entries.reduce((sum, item) => sum + item.amount, 0)
+  const isInvoice = entry.kind === 'invoice-due'
+  const invoice = entry.invoice
+  const bank = invoice ? banks.find((item) => item.id === invoice.bankId) : undefined
+  const urgency = invoice
+    ? computeInvoiceDue(invoice, bank, today).urgency
+    : entry.urgency
   const isOverdue = urgency === 'overdue'
-  const name = bankDisplayName(bank, 'Banco')
+  const dueText = entry.dueDate ? formatDueDate(entry.dueDate) : undefined
+  const title = group.personName ?? entry.title
+  const subtitle =
+    count > 1
+      ? `${count} ${agendaKindLabel(group.kind, count)}${isOverdue ? ' vencidas' : ''}`
+      : group.personName && !isInvoice
+        ? `${entry.title} · ${dueText ?? entry.status}`
+        : isInvoice && invoice
+          ? `Fatura de ${capitalize(formatMonthYear(invoice.month, invoice.year))}${dueText ? ` · ${dueText}` : ''}`
+          : `${agendaKindLabel(group.kind, count)} · ${dueText ?? entry.status}`
+  const href =
+    count > 1 && group.personId
+      ? `/persons?personId=${group.personId}`
+      : entry.href
+  const Icon = isInvoice ? CreditCard : group.kind === 'debt' ? HandCoins : Wallet
+  const directionClass = group.kind === 'receivable' ? CAL_DIRECTION_AMOUNT[entry.direction] : ''
+  const accessible = `${title}, ${subtitle}, ${formatCurrency(total)}`
 
   return (
     <FinancialListRow
-      href={`/banks/${invoice.bankId}/invoices?invoiceId=${invoice.id}`}
-      ariaLabel={`Fatura de ${name}, ${monthYear}, ${formatCurrency(total)}${dueText ? `, ${dueText}` : ''}`}
-      leading={<AttentionRowIcon icon={CreditCard} isOverdue={isOverdue} />}
-      title={name}
-      titleAdornment={<InvoiceBadge status={invoice.status} />}
-      meta={
-        <>
-          <span className="truncate">Fatura de {monthYear}</span>
-          {dueText && (
-            <>
-              <span aria-hidden="true">·</span>
-              <span className={DUE_URGENCY_CLASS[urgency]}>{dueText}</span>
-            </>
-          )}
-        </>
-      }
+      href={href}
+      ariaLabel={accessible}
+      leading={<AttentionRowIcon icon={Icon} isOverdue={isOverdue} />}
+      title={title}
+      titleAdornment={isInvoice && invoice ? <InvoiceBadge status={invoice.status} /> : undefined}
+      meta={<span className="truncate">{subtitle}</span>}
       trailing={
-        <span className={cn(ROW_AMOUNT_CLASS, isOverdue && 'text-destructive')}>
+        <span className={cn(ROW_AMOUNT_CLASS, directionClass, isOverdue && 'text-destructive')}>
           {formatCurrency(total)}
         </span>
       }
@@ -411,155 +426,40 @@ function InvoiceAttentionRow({
   )
 }
 
-function DebtAttentionRow({ debt, today }: { debt: Debt; today: Date }) {
-  const urgency = attentionDueUrgency(debt.dueDate, today)
-  const dueText = formatDueDate(debt.dueDate)
-  const counterpart = debt.person?.name ?? debt.creditorName
-  const isOverdue = urgency === 'overdue'
-
-  return (
-    <FinancialListRow
-      href={`/debts?highlight=${debt.id}`}
-      ariaLabel={`${debt.title}, ${formatCurrency(Number(debt.amount))}, ${dueText}`}
-      leading={<AttentionRowIcon icon={HandCoins} isOverdue={isOverdue} />}
-      title={debt.title}
-      meta={
-        <span className="truncate">
-          {counterpart ? `${counterpart} · ` : ''}
-          <span className={DUE_URGENCY_CLASS[urgency]}>{dueText}</span>
-        </span>
-      }
-      trailing={
-        <span className={cn(ROW_AMOUNT_CLASS, isOverdue && 'text-destructive')}>
-          {formatCurrency(Number(debt.amount))}
-        </span>
-      }
-    />
-  )
-}
-
-function ReceivableAttentionRow({ receivable, today }: { receivable: Receivable; today: Date }) {
-  const urgency = attentionDueUrgency(receivable.dueDate, today)
-  const dueText = formatDueDate(receivable.dueDate)
-  const counterpart = receivable.person?.name ?? receivable.debtorName
-  const isOverdue = urgency === 'overdue'
-
-  return (
-    <FinancialListRow
-      href={`/receivables?highlight=${receivable.id}`}
-      ariaLabel={`${receivable.title}, ${formatCurrency(Number(receivable.amount))}, ${dueText}`}
-      leading={<AttentionRowIcon icon={Wallet} isOverdue={isOverdue} />}
-      title={receivable.title}
-      meta={
-        <span className="truncate">
-          {counterpart ? `${counterpart} · ` : ''}
-          <span className={DUE_URGENCY_CLASS[urgency]}>{dueText}</span>
-        </span>
-      }
-      trailing={
-        <span className={cn(ROW_AMOUNT_CLASS, isOverdue && 'text-destructive')}>
-          {formatCurrency(Number(receivable.amount))}
-        </span>
-      }
-    />
-  )
-}
-
-function AttentionSection({
+function AgendaSection({
   title,
-  icon: Icon,
-  href,
-  remaining,
-  children,
+  groups,
+  banks,
+  today,
+  overflowLabel,
+  overflowCount,
 }: {
   title: string
-  icon: LucideIcon
-  href: string
-  remaining: number
-  children: ReactNode
-}) {
-  return (
-    <div>
-      <div className="mb-0.5 flex items-center gap-1.5">
-        <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
-        <span className="text-[11px] font-medium text-muted-foreground">{title}</span>
-      </div>
-      <div className="divide-y divide-border/50">{children}</div>
-      {remaining > 0 && (
-        <Link
-          href={href}
-          className="mt-1 flex items-center gap-1 pt-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowRight className="size-3 shrink-0" aria-hidden="true" />
-          Ver {remaining} {remaining === 1 ? 'item' : 'itens'} a mais
-        </Link>
-      )}
-    </div>
-  )
-}
-
-/**
- * Só o conteúdo já resolvido (loading/error/empty ficam a cargo do
- * `CalendarSection`, chamador único desta rodada — evita duplicar os três
- * estados em dois lugares).
- */
-function AttentionPanel({
-  invoices,
-  banks,
-  debts,
-  debtsTotal,
-  receivables,
-  receivablesTotal,
-  windowStr,
-  today,
-}: {
-  invoices: Invoice[]
+  groups: AgendaGroup[]
   banks: Bank[]
-  debts: Debt[]
-  debtsTotal: number
-  receivables: Receivable[]
-  receivablesTotal: number
-  windowStr: string
   today: Date
+  overflowLabel: string
+  overflowCount: number
 }) {
   return (
-    <div aria-label="Itens que requerem atenção" className="space-y-5">
-      {invoices.length > 0 && (
-        <AttentionSection title="Faturas" icon={CreditCard} href="/banks" remaining={0}>
-          {invoices.map((inv) => (
-            <InvoiceAttentionRow key={inv.id} invoice={inv} banks={banks} today={today} />
+    <section aria-label={title}>
+      <h3 className="mb-1.5 text-[11px] font-semibold text-muted-foreground">{title}</h3>
+      {groups.length > 0 && (
+        <div className="divide-y divide-border/50">
+          {groups.map((group) => (
+            <AgendaSummaryRow key={group.key} group={group} banks={banks} today={today} />
           ))}
-        </AttentionSection>
+        </div>
       )}
-
-      {debts.length > 0 && (
-        <AttentionSection
-          title="Dívidas"
-          icon={HandCoins}
-          href={`/debts?endDate=${windowStr}`}
-          remaining={debtsTotal - debts.length}
-        >
-          {debts.map((d) => (
-            <DebtAttentionRow key={d.id} debt={d} today={today} />
-          ))}
-        </AttentionSection>
+      {overflowCount > 0 && (
+        <p className="pt-2 text-[11px] text-muted-foreground">
+          + {overflowCount} {overflowLabel}
+        </p>
       )}
-
-      {receivables.length > 0 && (
-        <AttentionSection
-          title="A receber"
-          icon={Wallet}
-          href={`/receivables?endDate=${windowStr}`}
-          remaining={receivablesTotal - receivables.length}
-        >
-          {receivables.map((r) => (
-            <ReceivableAttentionRow key={r.id} receivable={r} today={today} />
-          ))}
-        </AttentionSection>
-      )}
-    </div>
+    </section>
   )
 }
+
 
 // ─── Calendar section ────────────────────────────────────────────────────────
 
@@ -584,34 +484,14 @@ const CAL_DIRECTION_AMOUNT: Record<CalEventDirection, string> = {
   neutral: 'text-pending',
 }
 
-/** Sinal explícito por direção, seguindo a convenção global. */
-function signedLabel(event: CalEvent): string {
-  const value = formatCurrency(event.amount)
-  if (event.direction === 'in') return `+${value}`
-  if (event.direction === 'out') return `-${value}`
-  return value
-}
-
-/** Ícone tonal de um evento do calendário — um ponto colorido por DIREÇÃO. */
-function CalendarEventLeading({ direction }: { direction: CalEventDirection }) {
-  return (
-    <div className={cn('flex size-7 shrink-0 items-center justify-center rounded-lg', 'bg-muted/40')}>
-      <span className={cn('size-2 rounded-full', CAL_DIRECTION_DOT[direction])} aria-hidden />
-    </div>
-  )
-}
-
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 
 /**
- * Painel contextual: "Hoje"/dia selecionado vs. "Atenção agora" — Overview
- * Agenda V1.
+ * Agenda contextual: dia selecionado e Atenção agora, sempre visíveis.
  *
- * Duas perguntas de produto diferentes (§1 da especificação): o calendário
- * responde "o que acontece NESTE DIA?", Atenção agora responde "o que ainda
- * exige minha atenção AGORA?". Compartilham o mesmo container visual (Tabs,
- * primitive já existente do design system — nada novo criado), mas cada
- * painel mantém sua própria fonte e sua própria régua temporal.
+ * O calendário responde "o que acontece NESTE DIA?" e Atenção agora responde
+ * "o que ainda exige minha atenção AGORA?". As duas respostas vivem no mesmo
+ * painel, sem uma escolha intermediária.
  */
 function CalendarSection({
   year,
@@ -627,14 +507,11 @@ function CalendarSection({
   onRetry,
   attentionInvoices,
   attentionDebts,
-  attentionDebtsTotal,
   attentionReceivables,
-  attentionReceivablesTotal,
   attentionLoading,
   attentionError,
   attentionFetching,
   onRetryAttention,
-  attentionWindowEnd,
 }: {
   year: number
   month: number
@@ -651,14 +528,11 @@ function CalendarSection({
   onRetry: () => void
   attentionInvoices: Invoice[]
   attentionDebts: Debt[]
-  attentionDebtsTotal: number
   attentionReceivables: Receivable[]
-  attentionReceivablesTotal: number
   attentionLoading: boolean
   attentionError: boolean
   attentionFetching: boolean
   onRetryAttention: () => void
-  attentionWindowEnd: string
 }) {
   /*
     "Hoje" (TZ3): conta com `User.timeZone` configurado usa a timezone
@@ -681,8 +555,6 @@ function CalendarSection({
   const [selectedDay, setSelectedDay] = useState<number | null>(
     isCurrentMonth ? todayDate : null,
   )
-  const [mode, setMode] = useState<'day' | 'attention'>('day')
-
   /** Nome por id: evita `banks.find()` dentro do laço de faturas. */
   const bankNames = useMemo(
     () => new Map(banks.map((bank) => [bank.id, bank.name])),
@@ -718,12 +590,22 @@ function CalendarSection({
     ? 'Selecione um dia'
     : isTodaySelected
       ? 'Hoje'
-      : `Dia ${selectedDay}`
+      : formatRelativeDate(`${year}-${String(month).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`)
 
-  const attentionAllEmpty =
-    attentionInvoices.length === 0 &&
-    attentionDebts.length === 0 &&
-    attentionReceivables.length === 0
+  const selectedGroups = limitAgenda(groupSelectedDay(selectedEvents), 4)
+  const selectedIds = new Set(selectedEvents.map((event) => event.id))
+  const attentionGroups = limitAgenda(
+    groupAttention({
+      invoices: attentionInvoices,
+      banks,
+      debts: attentionDebts,
+      receivables: attentionReceivables,
+      hiddenIds: selectedIds,
+      today,
+    }),
+    4,
+  )
+  const attentionAllEmpty = attentionGroups.visible.length === 0
 
   return (
     <section aria-label="Calendário e itens que requerem atenção">
@@ -809,16 +691,15 @@ function CalendarSection({
                   type="button"
                   onClick={() => {
                     setSelectedDay(isSelected ? null : day)
-                    setMode('day')
                   }}
                   aria-pressed={isSelected || undefined}
                   aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}` : ''}`}
                   className={cn(
                     'flex min-w-0 flex-col items-center gap-1 rounded-md bg-card/80 py-1.5 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring sm:py-2',
                     isSelected
-                      ? 'bg-muted/80 ring-1 ring-inset ring-border/70'
+                      ? 'bg-muted/80'
                       : hasEvents
-                        ? 'bg-muted/25 ring-1 ring-inset ring-border/40 hover:bg-muted/45'
+                        ? 'bg-muted/40 hover:bg-muted/55'
                         : 'hover:bg-muted/50',
                     isPast && 'opacity-40',
                   )}
@@ -866,111 +747,72 @@ function CalendarSection({
         )}
         </div>
         <div className="rounded-xl border border-border/50 bg-card/20 p-3.5 sm:p-4 lg:mt-0">
-            <Tabs value={mode} onValueChange={(v) => setMode(v as 'day' | 'attention')}>
-              <TabsList className="h-7 rounded-md border border-border/40 bg-muted/35 p-0.5">
-                <TabsTrigger className="h-6 px-2.5 py-0 text-[11px]" value="day">{dayLabel}</TabsTrigger>
-                <TabsTrigger className="h-6 px-2.5 py-0 text-[11px]" value="attention">Atenção agora</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="day">
-                {selectedDay === null ? (
-                  <p className="py-6 text-center text-xs text-muted-foreground">
-                    Selecione um dia no calendário para ver os fatos daquele dia.
-                  </p>
-                ) : selectedEvents.length === 0 ? (
-                  <p className="py-6 text-center text-xs text-muted-foreground">
-                    Nenhum evento financeiro {isTodaySelected ? 'hoje' : `no dia ${selectedDay}`}.
-                  </p>
-                ) : (
-                  <div className="divide-y divide-border/50">
-                    {selectedEvents.map((ev: CalEvent) => (
-                      <FinancialListRow
-                        key={ev.id}
-                        href={ev.href}
-                        ariaLabel={`${CAL_KIND_LABEL[ev.kind]}: ${ev.title}, ${signedLabel(ev)}, ${ev.status}${
-                          ev.detail ? `. ${ev.detail}` : ''
-                        }`}
-                        leading={<CalendarEventLeading direction={ev.direction} />}
-                        title={ev.title}
-                        meta={
-                          <span className="truncate">
-                            {CAL_KIND_LABEL[ev.kind]} · {ev.status}
-                          </span>
-                        }
-                        belowMeta={
-                          ev.detail && (
-                            <p className="mt-0.5 text-[11px] text-muted-foreground/70">{ev.detail}</p>
-                          )
-                        }
-                        trailing={
-                          <span className={cn(ROW_AMOUNT_CLASS, CAL_DIRECTION_AMOUNT[ev.direction])}>
-                            {signedLabel(ev)}
-                          </span>
-                        }
-                      />
-                    ))}
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="attention">
-                {/*
-                  Este painel responde ao PRESENTE, não ao mês exibido no
-                  calendário acima — navegar para julho não muda o que exige
-                  atenção hoje. Ver `overview-attention.ts`.
-                */}
-                <p className="mb-3 text-[11px] text-muted-foreground">
-                  Independente do mês exibido no calendário
+          <div className="space-y-7">
+            <section aria-label={dayLabel}>
+              <h3 className="mb-1.5 text-sm font-semibold tracking-tight">{dayLabel}</h3>
+              {selectedDay === null ? (
+                <p className="py-4 text-center text-xs text-muted-foreground">
+                  Selecione um dia no calendário.
                 </p>
-                {attentionLoading ? (
-                  <div className="space-y-5 py-1">
-                    {[3, 2].map((count, s) => (
-                      <div key={s} className="space-y-0">
-                        <Skeleton className="mb-2 h-3 w-16" />
-                        {Array.from({ length: count }).map((_, i) => (
-                          <div key={i} className="flex items-center gap-3 py-3">
-                            <Skeleton className="size-7 shrink-0 rounded-lg" />
-                            <div className="flex flex-1 flex-col gap-1.5">
-                              <Skeleton className="h-3.5 w-32" />
-                              <Skeleton className="h-3 w-24" />
-                            </div>
-                            <Skeleton className="h-4 w-20" />
-                          </div>
-                        ))}
+              ) : selectedEvents.length === 0 ? (
+                <p className="py-4 text-center text-xs text-muted-foreground">
+                  {isTodaySelected ? 'Nenhum evento hoje.' : 'Nenhum evento neste dia.'}
+                </p>
+              ) : (
+                <div className="divide-y divide-border/50">
+                  {selectedGroups.visible.map((group) => (
+                    <AgendaSummaryRow key={group.key} group={group} banks={banks} today={today} />
+                  ))}
+                </div>
+              )}
+              {selectedGroups.hiddenItems > 0 && (
+                <p className="pt-2 text-[11px] text-muted-foreground">
+                  + {selectedGroups.hiddenItems} outros eventos
+                </p>
+              )}
+            </section>
+
+            <div className="border-t border-border/60 pt-5">
+              {attentionLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-3 w-24" />
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <div key={index} className="flex items-center gap-3 py-2">
+                      <Skeleton className="size-7 shrink-0 rounded-lg" />
+                      <div className="flex flex-1 flex-col gap-1.5">
+                        <Skeleton className="h-3.5 w-32" />
+                        <Skeleton className="h-3 w-24" />
                       </div>
-                    ))}
-                  </div>
-                ) : attentionError ? (
-                  <WidgetError
-                    message="Não foi possível carregar as pendências"
-                    isFetching={attentionFetching}
-                    onRetry={onRetryAttention}
-                  />
-                ) : attentionAllEmpty ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-center">
-                    <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-receivable/10">
-                      <CheckCircle2 className="size-5 text-receivable" />
+                      <Skeleton className="h-4 w-20" />
                     </div>
-                    <p className="text-sm font-medium">Tudo em dia</p>
-                    <p className="mt-1 max-w-[22ch] text-xs text-muted-foreground">
-                      Nenhum item vence nos próximos {ATTENTION_DAYS_WINDOW} dias.
-                    </p>
-                  </div>
-                ) : (
-                  <AttentionPanel
-                    invoices={attentionInvoices}
-                    banks={banks}
-                    debts={attentionDebts}
-                    debtsTotal={attentionDebtsTotal}
-                    receivables={attentionReceivables}
-                    receivablesTotal={attentionReceivablesTotal}
-                    windowStr={attentionWindowEnd}
-                    today={today}
-                  />
-                )}
-              </TabsContent>
-            </Tabs>
+                  ))}
+                </div>
+              ) : attentionError ? (
+                <WidgetError
+                  message="Não foi possível carregar as pendências"
+                  isFetching={attentionFetching}
+                  onRetry={onRetryAttention}
+                />
+              ) : attentionAllEmpty ? (
+                <section aria-label="Atenção agora">
+                  <h3 className="mb-1.5 text-sm font-semibold tracking-tight">Atenção agora</h3>
+                  <p className="py-4 text-center text-xs text-muted-foreground">
+                    Nenhuma pendência agora.
+                  </p>
+                </section>
+              ) : (
+                <AgendaSection
+                  title="Atenção agora"
+                  groups={attentionGroups.visible}
+                  banks={banks}
+                  today={today}
+                  overflowLabel="outras pendências"
+                  overflowCount={attentionGroups.hiddenItems}
+                />
+              )}
+            </div>
           </div>
+        </div>
       </div>
     </section>
   )
@@ -978,89 +820,6 @@ function CalendarSection({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-/*
-function AttentionNowSection({
-  invoices,
-  banks,
-  debts,
-  debtsTotal,
-  receivables,
-  receivablesTotal,
-  isLoading,
-  isError,
-  isFetching,
-  onRetry,
-  windowStr,
-  today,
-}: {
-  invoices: Invoice[]
-  banks: Bank[]
-  debts: Debt[]
-  debtsTotal: number
-  receivables: Receivable[]
-  receivablesTotal: number
-  isLoading: boolean
-  isError: boolean
-  isFetching: boolean
-  onRetry: () => void
-  windowStr: string
-  today: Date
-}) {
-  const isEmpty = invoices.length === 0 && debts.length === 0 && receivables.length === 0
-
-  return (
-    <section aria-label="Itens que requerem atenção">
-      <h2 className="text-[15px] font-semibold tracking-tight">Atenção agora</h2>
-      <p className="mb-4 mt-0.5 text-[11px] text-muted-foreground">
-        Pendências independentes do mês exibido
-      </p>
-      {isLoading ? (
-        <div className="space-y-5 py-1">
-          {[3, 2].map((count, sectionIndex) => (
-            <div key={sectionIndex} className="space-y-0">
-              <Skeleton className="mb-2 h-3 w-16" />
-              {Array.from({ length: count }).map((_, itemIndex) => (
-                <div key={itemIndex} className="flex items-center gap-3 py-3">
-                  <Skeleton className="size-7 shrink-0 rounded-lg" />
-                  <div className="flex flex-1 flex-col gap-1.5">
-                    <Skeleton className="h-3.5 w-32" />
-                    <Skeleton className="h-3 w-24" />
-                  </div>
-                  <Skeleton className="h-4 w-20" />
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      ) : isError ? (
-        <WidgetError message="Não foi possível carregar as pendências" isFetching={isFetching} onRetry={onRetry} />
-      ) : isEmpty ? (
-        <div className="flex flex-col items-center justify-center py-10 text-center">
-          <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-receivable/10">
-            <CheckCircle2 className="size-5 text-receivable" />
-          </div>
-          <p className="text-sm font-medium">Tudo em dia</p>
-          <p className="mt-1 max-w-[22ch] text-xs text-muted-foreground">
-            Nenhum item vence nos próximos {ATTENTION_DAYS_WINDOW} dias.
-          </p>
-        </div>
-      ) : (
-        <AttentionPanel
-          invoices={invoices}
-          banks={banks}
-          debts={debts}
-          debtsTotal={debtsTotal}
-          receivables={receivables}
-          receivablesTotal={receivablesTotal}
-          windowStr={windowStr}
-          today={today}
-        />
-      )}
-    </section>
-  )
-}
-
-*/
 export default function OverviewPage() {
   // O mês é contexto do app, controlado pela barra superior.
   const { period } = useMonthPeriod()
@@ -1285,15 +1044,12 @@ export default function OverviewPage() {
         isFetching={calendarFetching}
         onRetry={retryCalendar}
         attentionInvoices={attention.invoices}
-        attentionDebts={attention.debts}
-        attentionDebtsTotal={attention.debtsAll.length}
-        attentionReceivables={attention.receivables}
-        attentionReceivablesTotal={attention.receivablesAll.length}
+        attentionDebts={attention.debtsAll}
+        attentionReceivables={attention.receivablesAll}
         attentionLoading={attentionLoading}
         attentionError={attentionError}
         attentionFetching={attentionFetching}
         onRetryAttention={retryAttention}
-        attentionWindowEnd={attention.windowEnd}
       />
 
       {/* Gastos por categoria — segunda superfície nesta rodada (§0/§23/§24). */}

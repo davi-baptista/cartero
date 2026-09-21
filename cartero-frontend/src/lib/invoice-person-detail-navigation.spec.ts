@@ -236,7 +236,9 @@ describe('exclusividade e params vizinhos', () => {
 describe('os deep links existentes continuam valendo', () => {
   it('a Visão Geral ainda linka a fatura por invoiceId', () => {
     const overview = code(ler('../app/(dashboard)/overview/page.tsx'))
-    expect(overview).toContain('invoices?invoiceId=${invoice.id}')
+    const agenda = code(ler('./overview-agenda.ts'))
+    expect(overview).toContain('groupAttention')
+    expect(agenda).toContain('invoices?invoiceId=${invoice.id}')
   })
 
   it('o Orçamento ainda linka a pessoa por personId', () => {

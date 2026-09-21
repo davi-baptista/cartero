@@ -48,6 +48,9 @@ export interface CalEvent {
   settled: boolean
   /** Contexto secundário — hoje, a decomposição da fatura. */
   detail?: string
+  /** Structural identity for contextual agenda grouping; never inferred from text. */
+  personId?: string
+  personName?: string
   /** Para onde a linha navega. */
   href: string
 }
@@ -205,6 +208,8 @@ export function buildCalendarEvents(
       status: DEBT_STATUS[status],
       direction: 'out',
       settled: debt.isPaid,
+      personId: debt.personId,
+      personName: debt.person?.name,
       href: `/debts?highlight=${debt.id}`,
     })
   }
@@ -229,6 +234,8 @@ export function buildCalendarEvents(
       */
       direction: receivable.isPaid ? 'in' : 'neutral',
       settled: receivable.isPaid,
+      personId: receivable.personId,
+      personName: receivable.person?.name,
       href: `/receivables?highlight=${receivable.id}`,
     })
   }

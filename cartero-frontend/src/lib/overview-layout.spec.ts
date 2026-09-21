@@ -6,21 +6,23 @@ const overview = readFileSync(
   resolve(__dirname, '../app/(dashboard)/overview/page.tsx'),
   'utf8',
 )
+const agenda = readFileSync(resolve(__dirname, './overview-agenda.ts'), 'utf8')
 
 describe('overview desktop composition', () => {
   it('keeps calendar, attention, and category surfaces in one responsive layout', () => {
     expect(overview).toContain('lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]')
     expect(overview).toContain('<CalendarSection')
-    expect(overview).toContain('<Tabs value={mode}')
-    expect(overview).toContain('value="attention">Atenção agora</TabsTrigger>')
+    expect(overview).toContain('<AgendaSection')
+    expect(overview).toContain('Atenção agora')
+    expect(overview).not.toContain('<Tabs')
     expect(overview).not.toContain('<AttentionNowSection')
     expect(overview).toContain('<CategoryBreakdown')
   })
 
   it('keeps attention links and existing data sources intact', () => {
-    expect(overview).toContain('href="/banks"')
-    expect(overview).toContain('href={`/debts?endDate=${windowStr}`}')
-    expect(overview).toContain('href={`/receivables?endDate=${windowStr}`}')
+    expect(agenda).toContain('banks/${invoice.bankId}/invoices?invoiceId=${invoice.id}')
+    expect(agenda).toContain('/debts?highlight=${debt.id}')
+    expect(agenda).toContain('/receivables?highlight=${receivable.id}')
     expect(overview).toContain("queryKey: ['transactions', { startDate, endDate, invoicePeriod: true }]")
     expect(overview).toContain("queryKey: ['invoices']")
     expect(overview).toContain("queryKey: ['debts']")
@@ -33,13 +35,14 @@ describe('overview desktop composition', () => {
     expect(overview).toContain('rounded-t-lg border-b border-border/70 px-1 py-1.5')
     expect(overview).not.toContain('rounded-t-lg border-b border-border/70 bg-muted/20')
     expect(overview).toContain('gap-px overflow-hidden rounded-b-lg bg-border/30')
-    expect(overview).toContain('bg-muted/25 ring-1 ring-inset ring-border/40 hover:bg-muted/45')
+    expect(overview).toContain('bg-muted/40 hover:bg-muted/55')
     expect(overview).toContain('focus-visible:ring-2 focus-visible:ring-ring')
   })
 
-  it('keeps the contextual switcher compact and the mobile sections breathable', () => {
-    expect(overview).toContain('h-7 rounded-md border border-border/40 bg-muted/35 p-0.5')
-    expect(overview).toContain('h-6 px-2.5 py-0 text-[11px]')
+  it('keeps both contextual sections visible with breathing room', () => {
+    expect(overview).toContain('selectedGroups.visible.map')
+    expect(overview).toContain('attentionGroups.visible')
+    expect(overview).toContain('Nenhuma pendência agora.')
     expect(overview).toContain('gap-10 lg:gap-8')
     expect(overview).toContain('mt-2 border-t border-border pt-6 sm:mt-0')
   })
