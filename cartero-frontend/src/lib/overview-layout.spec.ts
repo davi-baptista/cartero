@@ -30,12 +30,12 @@ describe('overview desktop composition', () => {
   })
 
   it('keeps the calendar grid structured without an outer nested card', () => {
-    expect(overview).toContain('rounded-xl border border-border/50 bg-card/20 p-3.5 sm:p-4 lg:mt-0')
+    expect(overview).toContain('rounded-xl border border-border/50 bg-card/20 p-3 sm:p-3.5 lg:mt-0')
     expect(overview).toContain('grid w-full min-w-0 items-start gap-10 lg:gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]')
-    expect(overview).toContain('rounded-t-lg border-b border-border/70 px-1 py-1.5')
+    expect(overview).toContain('rounded-t-lg border-b border-border px-1 py-1.5')
     expect(overview).not.toContain('rounded-t-lg border-b border-border/70 bg-muted/20')
     expect(overview).toContain('gap-px overflow-hidden rounded-b-lg bg-border/30')
-    expect(overview).toContain('bg-muted/40 hover:bg-muted/55')
+    expect(overview).toContain('bg-muted/55 hover:bg-muted/65')
     expect(overview).toContain('focus-visible:ring-2 focus-visible:ring-ring')
   })
 
@@ -45,5 +45,7 @@ describe('overview desktop composition', () => {
     expect(overview).toContain('Nenhuma pendência agora.')
     expect(overview).toContain('gap-10 lg:gap-8')
     expect(overview).toContain('mt-2 border-t border-border pt-6 sm:mt-0')
+    expect(overview).toContain('gap-2.5 py-2.5 sm:gap-3 sm:py-3')
+    expect(overview).toContain('text-sm font-semibold tabular-nums tracking-[-0.02em]')
   })
 })

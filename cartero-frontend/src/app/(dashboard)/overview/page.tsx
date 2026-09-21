@@ -47,7 +47,7 @@ import {
   type AgendaGroup,
   type AgendaEntry,
 } from '@/lib/overview-agenda'
-import { FinancialListRow, ROW_AMOUNT_CLASS } from '@/components/ui/financial-list-row'
+import { FinancialListRow } from '@/components/ui/financial-list-row'
 import { Button } from '@/components/ui/button'
 import type { Invoice, Debt, Receivable, Bank, Transaction } from '@/types'
 import { InvoiceStatus } from '@/types'
@@ -339,7 +339,7 @@ function InvoiceBadge({ status }: { status: InvoiceStatus }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
+        'inline-flex items-center rounded-full px-1.5 py-0 text-[9px] font-medium',
         className,
       )}
     >
@@ -354,7 +354,7 @@ function AttentionRowIcon({ icon: Icon, isOverdue }: { icon: LucideIcon; isOverd
   return (
     <div
       className={cn(
-        'flex size-7 shrink-0 items-center justify-center rounded-lg',
+        'flex size-6 shrink-0 items-center justify-center rounded-md',
         isOverdue ? 'bg-destructive/10' : 'bg-muted/40',
       )}
     >
@@ -416,12 +416,13 @@ function AgendaSummaryRow({
       leading={<AttentionRowIcon icon={Icon} isOverdue={isOverdue} />}
       title={title}
       titleAdornment={isInvoice && invoice ? <InvoiceBadge status={invoice.status} /> : undefined}
-      meta={<span className="truncate">{subtitle}</span>}
+      meta={<span className="truncate text-xs">{subtitle}</span>}
       trailing={
-        <span className={cn(ROW_AMOUNT_CLASS, directionClass, isOverdue && 'text-destructive')}>
+        <span className={cn('text-sm font-semibold tabular-nums tracking-[-0.02em]', directionClass, isOverdue && 'text-destructive')}>
           {formatCurrency(total)}
         </span>
       }
+      className="gap-2.5 py-2.5 sm:gap-3 sm:py-3"
     />
   )
 }
@@ -443,7 +444,7 @@ function AgendaSection({
 }) {
   return (
     <section aria-label={title}>
-      <h3 className="mb-1.5 text-[11px] font-semibold text-muted-foreground">{title}</h3>
+      <h3 className="mb-1.5 text-sm font-semibold tracking-tight">{title}</h3>
       {groups.length > 0 && (
         <div className="divide-y divide-border/50">
           {groups.map((group) => (
@@ -452,7 +453,7 @@ function AgendaSection({
         </div>
       )}
       {overflowCount > 0 && (
-        <p className="pt-2 text-[11px] text-muted-foreground">
+        <p className="pt-1.5 text-xs text-muted-foreground">
           + {overflowCount} {overflowLabel}
         </p>
       )}
@@ -663,7 +664,7 @@ function CalendarSection({
           )}
 
           {/* Weekday headers */}
-          <div className="grid grid-cols-7 rounded-t-lg border-b border-border/70 px-1 py-1.5">
+          <div className="grid grid-cols-7 rounded-t-lg border-b border-border px-1 py-1.5">
             {WEEKDAYS.map((d) => (
               <div key={d} className="py-0.5 text-center text-[11px] font-medium text-muted-foreground">
                 {d}
@@ -699,7 +700,7 @@ function CalendarSection({
                     isSelected
                       ? 'bg-muted/80'
                       : hasEvents
-                        ? 'bg-muted/40 hover:bg-muted/55'
+                        ? 'bg-muted/55 hover:bg-muted/65'
                         : 'hover:bg-muted/50',
                     isPast && 'opacity-40',
                   )}
@@ -746,8 +747,8 @@ function CalendarSection({
           </>
         )}
         </div>
-        <div className="rounded-xl border border-border/50 bg-card/20 p-3.5 sm:p-4 lg:mt-0">
-          <div className="space-y-7">
+        <div className="rounded-xl border border-border/50 bg-card/20 p-3 sm:p-3.5 lg:mt-0">
+          <div className="space-y-5">
             <section aria-label={dayLabel}>
               <h3 className="mb-1.5 text-sm font-semibold tracking-tight">{dayLabel}</h3>
               {selectedDay === null ? (
@@ -772,7 +773,7 @@ function CalendarSection({
               )}
             </section>
 
-            <div className="border-t border-border/60 pt-5">
+            <div className="border-t border-border/60 pt-4">
               {attentionLoading ? (
                 <div className="space-y-3">
                   <Skeleton className="h-3 w-24" />
