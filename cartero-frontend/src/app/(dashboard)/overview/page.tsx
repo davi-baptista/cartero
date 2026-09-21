@@ -727,7 +727,7 @@ function CalendarSection({
 
   return (
     <section aria-label="Calendário e itens que requerem atenção">
-      <div className="grid w-full min-w-0 items-start gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+      <div className="grid w-full min-w-0 items-start gap-10 lg:gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
       <div className="min-w-0">
       <h2 className="text-[15px] font-semibold tracking-tight">Calendário</h2>
       <p className="mb-4 mt-0.5 text-[11px] text-muted-foreground">
@@ -815,7 +815,11 @@ function CalendarSection({
                   aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}` : ''}`}
                   className={cn(
                     'flex min-w-0 flex-col items-center gap-1 rounded-md bg-card/80 py-1.5 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring sm:py-2',
-                    isSelected ? 'bg-muted/80' : 'hover:bg-muted/50',
+                    isSelected
+                      ? 'bg-muted/80 ring-1 ring-inset ring-border/70'
+                      : hasEvents
+                        ? 'bg-muted/25 ring-1 ring-inset ring-border/40 hover:bg-muted/45'
+                        : 'hover:bg-muted/50',
                     isPast && 'opacity-40',
                   )}
                 >
@@ -842,7 +846,7 @@ function CalendarSection({
           </div>
 
           {/* Legenda: direção do dinheiro, que é o que as cores codificam. */}
-          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5">
+          <div className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 sm:mt-4">
             {(
               [
                 ['out', 'Saída / vencimento'],
@@ -861,11 +865,11 @@ function CalendarSection({
           </>
         )}
         </div>
-        <div className="rounded-xl border border-border/60 bg-card/30 p-4 sm:p-5 lg:mt-0">
+        <div className="rounded-xl border border-border/50 bg-card/20 p-3.5 sm:p-4 lg:mt-0">
             <Tabs value={mode} onValueChange={(v) => setMode(v as 'day' | 'attention')}>
-              <TabsList>
-                <TabsTrigger value="day">{dayLabel}</TabsTrigger>
-                <TabsTrigger value="attention">Atenção agora</TabsTrigger>
+              <TabsList className="h-7 rounded-md border border-border/40 bg-muted/35 p-0.5">
+                <TabsTrigger className="h-6 px-2.5 py-0 text-[11px]" value="day">{dayLabel}</TabsTrigger>
+                <TabsTrigger className="h-6 px-2.5 py-0 text-[11px]" value="attention">Atenção agora</TabsTrigger>
               </TabsList>
 
               <TabsContent value="day">
@@ -1293,7 +1297,7 @@ export default function OverviewPage() {
       />
 
       {/* Gastos por categoria — segunda superfície nesta rodada (§0/§23/§24). */}
-      <div className="border-t border-border pt-6">
+      <div className="mt-2 border-t border-border pt-6 sm:mt-0">
         <CategoryBreakdown
           rows={categoryRows}
           total={ownExpenseTotal}
