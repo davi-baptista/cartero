@@ -6,7 +6,7 @@ import { useOverviewDetailNavigation, type OverviewDetailParam } from '@/lib/ove
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import type { LucideIcon } from 'lucide-react'
-import { ShoppingBag, CreditCard, HandCoins, Wallet, ExternalLink, TriangleAlert, RotateCcw, Loader2 } from 'lucide-react'
+import { ShoppingBag, CreditCard, HandCoins, Wallet, User, ExternalLink, TriangleAlert, RotateCcw, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useMonthPeriod } from '@/components/month-nav'
 import { getTransactions } from '@/services/transactions.service'
@@ -391,8 +391,10 @@ function AgendaMeta({
   return (
     <span className="flex min-w-0 truncate text-xs">
       <span className="truncate text-muted-foreground">{description}</span>
-      <span className="shrink-0 text-muted-foreground"> · </span>
-      <span className={isSettled ? 'text-paid' : 'text-destructive'}>{status}</span>
+      <span className="ml-1 inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-muted-foreground">
+        <span aria-hidden="true">·</span>
+        <span className={isSettled ? 'text-paid' : 'text-destructive'}>{status}</span>
+      </span>
     </span>
   )
 }
@@ -438,7 +440,13 @@ function AgendaSummaryRow({
           : 'pendentes'
           : dueText ?? entry.status
   const inlineStatus = inlineAgendaStatus(status)
-  const Icon = isInvoice ? CreditCard : group.kind === 'debt' ? HandCoins : Wallet
+  const Icon = group.personId
+    ? User
+    : isInvoice
+      ? CreditCard
+      : group.kind === 'debt'
+        ? HandCoins
+        : Wallet
   const accessible = `${title}, ${description}, ${inlineStatus}, ${formatCurrency(total)}`
   const detailParam: OverviewDetailParam =
     count > 1 && group.personId
@@ -476,14 +484,18 @@ function AgendaSection({
   today,
   overflowLabel,
   overflowCount,
+  expanded,
+  onToggleExpanded,
   onOpenDetail,
 }: {
   title: string
   groups: AgendaGroup[]
   banks: Bank[]
   today: Date
-  overflowLabel: string
+  overflowLabel: { singular: string; plural: string }
   overflowCount: number
+  expanded: boolean
+  onToggleExpanded: () => void
   onOpenDetail: (param: OverviewDetailParam, id: string) => void
 }) {
   return (
@@ -497,9 +509,17 @@ function AgendaSection({
         </div>
       )}
       {overflowCount > 0 && (
-        <p className="pt-1.5 text-xs text-muted-foreground">
-          + {overflowCount} {overflowLabel}
-        </p>
+        <button
+          type="button"
+          onClick={onToggleExpanded}
+          className="mt-1.5 inline-flex min-h-8 items-center gap-1 rounded-md px-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-expanded={expanded}
+        >
+          {expanded
+            ? 'Mostrar menos'
+            : `Ver mais ${overflowCount} ${overflowCount === 1 ? overflowLabel.singular : overflowLabel.plural}`}
+          {expanded ? <ChevronUp className="size-3.5" aria-hidden /> : <ChevronDown className="size-3.5" aria-hidden />}
+        </button>
       )}
     </section>
   )
@@ -618,19 +638,29 @@ function CalendarSection({
       ? 'Hoje'
       : formatRelativeDate(`${year}-${String(month).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`)
 
-  const selectedGroups = limitAgenda(groupSelectedDay(selectedEvents), 4)
+  const [selectedDayExpanded, setSelectedDayExpanded] = useState(false)
+  const [attentionExpanded, setAttentionExpanded] = useState(false)
+  const selectedGroupsAll = groupSelectedDay(selectedEvents)
+  const selectedGroupsLimited = limitAgenda(selectedGroupsAll, 4)
+  const selectedGroups = selectedDayExpanded
+    ? { visible: selectedGroupsAll, hiddenItems: selectedGroupsLimited.hiddenItems }
+    : selectedGroupsLimited
   const selectedIds = new Set(selectedEvents.map((event) => event.id))
-  const attentionGroups = limitAgenda(
-    groupAttention({
+  const attentionGroupsAll = groupAttention({
       invoices: attentionInvoices,
       banks,
       debts: attentionDebts,
       receivables: attentionReceivables,
       hiddenIds: selectedIds,
       today,
-    }),
+    })
+  const attentionGroupsLimited = limitAgenda(
+    attentionGroupsAll,
     4,
   )
+  const attentionGroups = attentionExpanded
+    ? { visible: attentionGroupsAll, hiddenItems: attentionGroupsLimited.hiddenItems }
+    : attentionGroupsLimited
   const attentionAllEmpty = attentionGroups.visible.length === 0
 
   return (
@@ -718,6 +748,7 @@ function CalendarSection({
                   type="button"
                   onClick={() => {
                     setSelectedDay(isSelected ? null : day)
+                    setSelectedDayExpanded(false)
                   }}
                   aria-pressed={isSelected || undefined}
                   aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}: ${eventKinds.map((kind) => CAL_KIND_LABEL[kind]).join(', ')}` : ''}`}
@@ -800,10 +831,18 @@ function CalendarSection({
                   ))}
                 </div>
               )}
-              {selectedGroups.hiddenItems > 0 && (
-                <p className="pt-2 text-[11px] text-muted-foreground">
-                  + {selectedGroups.hiddenItems} outros eventos
-                </p>
+              {selectedGroupsLimited.hiddenItems > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDayExpanded((value) => !value)}
+                  className="mt-2 inline-flex min-h-8 items-center gap-1 rounded-md px-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-expanded={selectedDayExpanded}
+                >
+                  {selectedDayExpanded
+                    ? 'Mostrar menos'
+                    : `Ver mais ${selectedGroupsLimited.hiddenItems} ${selectedGroupsLimited.hiddenItems === 1 ? 'item' : 'itens'}`}
+                  {selectedDayExpanded ? <ChevronUp className="size-3.5" aria-hidden /> : <ChevronDown className="size-3.5" aria-hidden />}
+                </button>
               )}
             </section>
 
@@ -841,9 +880,11 @@ function CalendarSection({
                   groups={attentionGroups.visible}
                   banks={banks}
                   today={today}
-                  overflowLabel="outras pendências"
-                  overflowCount={attentionGroups.hiddenItems}
-                  onOpenDetail={onOpenDetail}
+                   overflowLabel={{ singular: 'pendência', plural: 'pendências' }}
+                   overflowCount={attentionGroups.hiddenItems}
+                   expanded={attentionExpanded}
+                   onToggleExpanded={() => setAttentionExpanded((value) => !value)}
+                   onOpenDetail={onOpenDetail}
                 />
               )}
             </div>

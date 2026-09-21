@@ -61,7 +61,21 @@ describe('overview contextual detail URL contract', () => {
     expect(overview).toContain("'receivableId'")
     expect(overview).toContain("group.kind === 'debt'")
     expect(overview).toContain('inlineAgendaStatus')
+    expect(overview).toContain("group.personId\n    ? User")
     expect(agenda).toContain('entityId: event.entityId')
+  })
+
+  it('uses explicit visual spacing and independent expandable agenda sections', () => {
+    expect(overview).toContain('inline-flex shrink-0 items-center gap-1 whitespace-nowrap')
+    expect(overview).toContain('aria-hidden="true">·</span>')
+    expect(overview).toContain('const [selectedDayExpanded, setSelectedDayExpanded]')
+    expect(overview).toContain('const [attentionExpanded, setAttentionExpanded]')
+    expect(overview).toContain('Ver mais ${overflowCount}')
+    expect(overview).toContain('Mostrar menos')
+    expect(overview).toContain("'item' : 'itens'")
+    expect(overview).toContain("singular: 'pendência'")
+    expect(overview).toContain("plural: 'pendências'")
+    expect(overview).toContain('selectedGroupsLimited.hiddenItems')
   })
 
   it('preserves the canonical calendar source model', () => {
