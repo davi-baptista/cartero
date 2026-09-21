@@ -50,6 +50,7 @@ function entryFromEvent(event: CalEvent): AgendaEntry {
     personName: event.personName,
     entityId: event.entityId,
     bankId: event.bankId,
+    dueDate: event.dueDate,
     settled: event.settled,
   }
 }

@@ -232,6 +232,7 @@ describe('Dívida', () => {
     )[0]
 
     expect(event.status).toBe('Pendente')
+    expect(event.dueDate).toBe('2099-08-05')
   })
 
   it('em atraso depois do vencimento', () => {

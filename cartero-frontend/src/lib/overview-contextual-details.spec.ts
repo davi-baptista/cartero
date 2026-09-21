@@ -62,7 +62,9 @@ describe('overview contextual detail URL contract', () => {
     expect(overview).toContain("group.kind === 'debt'")
     expect(overview).toContain('inlineAgendaStatus')
     expect(overview).toContain("group.personId\n    ? User")
+    expect(overview).toContain('const dueText = entry.dueDate ? formatDueDate(entry.dueDate) : undefined')
     expect(agenda).toContain('entityId: event.entityId')
+    expect(agenda).toContain('dueDate: event.dueDate')
   })
 
   it('uses explicit visual spacing and independent expandable agenda sections', () => {

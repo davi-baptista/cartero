@@ -53,6 +53,8 @@ export interface CalEvent {
   personName?: string
   entityId?: string
   bankId?: string
+  /** Data civil do vencimento, compartilhada com a agenda contextual. */
+  dueDate?: string
   /** Para onde a linha navega. */
   href: string
 }
@@ -202,6 +204,7 @@ export function buildCalendarEvents(
       href: `/banks/${invoice.bankId}/invoices`,
       entityId: invoice.id,
       bankId: invoice.bankId,
+      dueDate: invoice.dueDate,
     })
   }
 
@@ -222,6 +225,7 @@ export function buildCalendarEvents(
       personId: debt.personId,
       personName: debt.person?.name,
       entityId: debt.id,
+      dueDate: debt.dueDate,
       href: `/debts?highlight=${debt.id}`,
     })
   }
@@ -249,6 +253,7 @@ export function buildCalendarEvents(
       personId: receivable.personId,
       personName: receivable.person?.name,
       entityId: receivable.id,
+      dueDate: receivable.dueDate,
       href: `/receivables?highlight=${receivable.id}`,
     })
   }
