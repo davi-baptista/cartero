@@ -187,7 +187,7 @@ const navItems = [
   { href: '/budget', label: 'Orçamento', icon: PiggyBank },
   { href: '/transactions', label: 'Extrato', icon: ArrowDownUp },
   { href: '/subscriptions', label: 'Assinaturas', icon: Repeat },
-  { href: '/commitments', label: 'Compromissos', icon: CalendarClock },
+  { href: '/commitments', label: 'Parcelas', icon: CalendarClock },
   { href: '/banks', label: 'Bancos', icon: Landmark },
   { href: '/categories', label: 'Categorias', icon: Tags },
   { href: '/debts', label: 'Dívidas', icon: HandCoins },
