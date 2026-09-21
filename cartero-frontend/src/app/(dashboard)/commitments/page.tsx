@@ -4,16 +4,20 @@ import { useQuery } from '@tanstack/react-query'
 import { CalendarClock, Layers, Loader2, RotateCcw, TriangleAlert } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
 import { getCommitments, type ActiveInstallment, type ForecastMonth } from '@/services/commitments.service'
 import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
-import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
 
 function monthLabel({ month, year }: { month: number; year: number }) {
   const name = new Date(year, month - 1, 1)
     .toLocaleDateString('pt-BR', { month: 'short' })
     .replace('.', '')
   return `${name}/${String(year).slice(2)}`
+}
+
+function futureLabel(count: number) {
+  return `${count} parcela${count === 1 ? '' : 's'} futura${count === 1 ? '' : 's'}`
 }
 
 function InstallmentSection({
@@ -42,38 +46,49 @@ function InstallmentSection({
         {description && <p className="mt-0.5 text-[11px] text-muted-foreground">{description}</p>}
       </div>
       <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
-        {items.map((item) => (
-          <div key={item.id} className="px-4 py-3.5">
-            <div className="flex items-center gap-3">
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
-                <Layers className="size-4 text-muted-foreground" aria-hidden />
-              </div>
-              <div className="min-w-0 flex-1">
-                <span className="truncate text-[13px] font-medium">{item.title}</span>
-                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                  {showPerson && item.personName && `${item.personName} · `}
-                  {item.totalCount} parcelas no total
-                  {item.bankName && ` · ${item.bankName}`}
-                  {item.endsAt && ` · até ${monthLabel(item.endsAt)}`}
-                </p>
-                {item.nextInstallment && (
-                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">
-                    Próxima parcela: {formatCurrency(item.nextInstallment.amount)} · {monthLabel(item.nextInstallment)}
+        {items.map((item) => {
+          const next = item.nextInstallment
+          const progress = next ? Math.min(100, Math.max(0, ((next.index - 1) / item.totalCount) * 100)) : 0
+          const positionText = next ? `Próxima ${next.index}/${item.totalCount}` : `${item.totalCount} parcelas no total`
+
+          return (
+            <div key={item.id} className="px-4 py-3.5">
+              <div className="flex items-center gap-3">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
+                  <Layers className="size-4 text-muted-foreground" aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="truncate text-[13px] font-medium">{item.title}</span>
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                    {next
+                      ? `${positionText} · ${formatCurrency(next.amount)} · ${monthLabel(next)}`
+                      : positionText}
                   </p>
-                )}
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">
+                    {showPerson && item.personName && `${item.personName} · `}
+                    {item.bankName ?? 'Cartão'}
+                    {item.endsAt && ` · termina ${monthLabel(item.endsAt)}`}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <span className={cn('text-[13px] font-semibold tabular-nums tracking-[-0.01em]', showPerson && 'text-receivable')}>
+                    {formatCurrency(item.remaining)}
+                  </span>
+                  <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">{futureLabel(item.futureCount)}</p>
+                </div>
+                <DisclosureChevron />
               </div>
-              <div className="shrink-0 text-right">
-                <span className={cn('text-[13px] font-semibold tabular-nums tracking-[-0.01em]', showPerson && 'text-receivable')}>
-                  {formatCurrency(item.remaining)}
-                </span>
-                <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
-                  {item.futureCount} parcelas futuras
-                </p>
-              </div>
-              <DisclosureChevron />
+              {next && (
+                <>
+                  <div aria-hidden className="mt-2.5 ml-11 h-1 overflow-hidden rounded-full bg-muted/50">
+                    <div className="h-full rounded-full bg-primary/40" style={{ width: `${progress}%` }} />
+                  </div>
+                  <span className="sr-only">Posição da série: próxima parcela {next.index} de {item.totalCount}</span>
+                </>
+              )}
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -99,9 +114,7 @@ export default function CommitmentsPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Parcelas</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          Acompanhe suas compras parceladas e o que compromete os próximos meses.
-        </p>
+        <p className="mt-0.5 text-sm text-muted-foreground">Acompanhe suas compras parceladas e o que compromete os próximos meses.</p>
       </div>
 
       {isLoading ? (
