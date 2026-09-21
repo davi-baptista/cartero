@@ -35,8 +35,9 @@ import { cn } from '@/lib/utils'
 import {
   buildCalendarEvents,
   eventsForDay,
+  CAL_KIND_DOT_CLASS,
+  CAL_KIND_LABEL,
   type CalEvent,
-  type CalEventDirection,
 } from '@/lib/calendar-events'
 import {
   buildAttentionSelection,
@@ -374,6 +375,10 @@ function agendaKindLabel(kind: AgendaEntry['kind'], count: number): string {
   return labels[kind]
 }
 
+function inlineAgendaStatus(status: string): string {
+  return status.length > 0 ? status.charAt(0).toLowerCase() + status.slice(1) : status
+}
+
 function AgendaMeta({
   description,
   status,
@@ -431,9 +436,10 @@ function AgendaSummaryRow({
         : isSettled
           ? group.kind === 'receivable' ? 'recebidos' : 'pagos'
           : 'pendentes'
-      : dueText ?? entry.status
+          : dueText ?? entry.status
+  const inlineStatus = inlineAgendaStatus(status)
   const Icon = isInvoice ? CreditCard : group.kind === 'debt' ? HandCoins : Wallet
-  const accessible = `${title}, ${description}, ${status}, ${formatCurrency(total)}`
+  const accessible = `${title}, ${description}, ${inlineStatus}, ${formatCurrency(total)}`
   const detailParam: OverviewDetailParam =
     count > 1 && group.personId
       ? 'personId'
@@ -452,7 +458,7 @@ function AgendaSummaryRow({
       leading={<AttentionRowIcon icon={Icon} isSettled={isSettled} />}
       title={title}
       titleAdornment={isInvoice && invoice ? <InvoiceBadge status={invoice.status} /> : undefined}
-      meta={<AgendaMeta description={description} status={status} isSettled={isSettled} />}
+      meta={<AgendaMeta description={description} status={inlineStatus} isSettled={isSettled} />}
       trailing={
         <span className="text-sm font-semibold tabular-nums tracking-[-0.02em] text-foreground">
           {formatCurrency(total)}
@@ -501,21 +507,6 @@ function AgendaSection({
 
 
 // ─── Calendar section ────────────────────────────────────────────────────────
-
-/**
- * Cor do ponto/valor por DIREÇÃO do dinheiro, não por status.
- *
- * São conceitos distintos e a versão anterior os confundia: recebível pendente
- * usava o verde de "recebido", então dinheiro que TALVEZ entre era pintado como
- * dinheiro que entrou. E uma saída já paga continua sendo saída — status
- * concluído não a torna positiva.
- */
-const CAL_DIRECTION_DOT: Record<CalEventDirection, string> = {
-  out: 'bg-destructive',
-  in: 'bg-receivable',
-  // Pendente: atenção, não conclusão.
-  neutral: 'bg-pending',
-}
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 
@@ -716,8 +707,8 @@ function CalendarSection({
                 (event) => !event.settled && event.status === 'Em atraso',
               )
               const isHistoricalResolved = isPast && !hasUnresolvedOverdue
-              const directions = [
-                ...new Set(events.map((e: CalEvent) => e.direction)),
+              const eventKinds = [
+                ...new Set(events.map((event: CalEvent) => event.kind)),
               ]
               const hasEvents = events.length > 0
 
@@ -729,7 +720,7 @@ function CalendarSection({
                     setSelectedDay(isSelected ? null : day)
                   }}
                   aria-pressed={isSelected || undefined}
-                  aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}` : ''}`}
+                  aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}: ${eventKinds.map((kind) => CAL_KIND_LABEL[kind]).join(', ')}` : ''}`}
                   className={cn(
                     'flex min-w-0 flex-col items-center gap-1 rounded-md bg-card/80 py-1.5 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring sm:py-2',
                     isSelected
@@ -757,10 +748,10 @@ function CalendarSection({
                     {day}
                   </span>
                   <div className="flex min-h-[6px] items-center gap-0.5">
-                    {directions.slice(0, 3).map((direction) => (
+                    {eventKinds.slice(0, 3).map((kind) => (
                       <span
-                        key={direction}
-                         className={cn('size-1.5 rounded-full', CAL_DIRECTION_DOT[direction], isHistoricalResolved && !isSelected && 'opacity-60')}
+                        key={kind}
+                        className={cn('size-1.5 rounded-full', CAL_KIND_DOT_CLASS[kind], isHistoricalResolved && !isSelected && 'opacity-60')}
                         aria-hidden
                       />
                     ))}
@@ -770,17 +761,17 @@ function CalendarSection({
             })}
           </div>
 
-          {/* Legenda: direção do dinheiro, que é o que as cores codificam. */}
+          {/* Legenda: tipo de entidade; status continua semântico na agenda. */}
           <div className="mt-5 flex flex-wrap gap-x-4 gap-y-1.5 sm:mt-4">
             {(
               [
-                ['out', 'Saída / vencimento'],
-                ['in', 'Entrada'],
-                ['neutral', 'Pendente'],
-              ] as [CalEventDirection, string][]
-            ).map(([direction, label]) => (
-              <div key={direction} className="flex items-center gap-1.5">
-                <span className={cn('size-2 shrink-0 rounded-full', CAL_DIRECTION_DOT[direction])} aria-hidden />
+                ['invoice-due', 'Fatura'],
+                ['debt', 'Dívida'],
+                ['receivable', 'A Receber'],
+              ] as [CalEvent['kind'], string][]
+            ).map(([kind, label]) => (
+              <div key={kind} className="flex items-center gap-1.5">
+                <span className={cn('size-2 shrink-0 rounded-full', CAL_KIND_DOT_CLASS[kind])} aria-hidden />
                 <span className="text-[11px] text-muted-foreground">{label}</span>
               </div>
             ))}

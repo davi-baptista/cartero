@@ -13,6 +13,11 @@ export const OVERVIEW_DETAIL_PARAMS = [
 
 export type OverviewDetailParam = (typeof OVERVIEW_DETAIL_PARAMS)[number]
 
+export type OverviewDetailIdentity = {
+  param: OverviewDetailParam
+  id: string
+}
+
 export function withOverviewDetailParam(
   current: URLSearchParams | string,
   param: OverviewDetailParam,
@@ -24,23 +29,33 @@ export function withOverviewDetailParam(
   return next
 }
 
+export function overviewDetailIdentity(
+  current: URLSearchParams | string,
+): OverviewDetailIdentity | null {
+  const params = new URLSearchParams(current.toString())
+  const param = OVERVIEW_DETAIL_PARAMS.find((item) => params.get(item))
+  const id = param ? params.get(param) : null
+  return param && id ? { param, id } : null
+}
+
 /** URL state local da Overview: personId não vira semântica global. */
 export function useOverviewDetailNavigation() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const pathname = usePathname()
-  const [dismissed, setDismissed] = useState<{ id: string; generation: number } | null>(null)
-  const [opens, setOpens] = useState(0)
-
-  const activeParam = OVERVIEW_DETAIL_PARAMS.find((param) => searchParams.get(param)) ?? null
-  const activeId = activeParam ? searchParams.get(activeParam) : null
-  const openId = dismissed?.id === `${activeParam}:${activeId}` && opens <= dismissed.generation
-    ? null
-    : activeId
+  const urlIdentity = overviewDetailIdentity(searchParams)
+  const urlKey = urlIdentity ? `${urlIdentity.param}:${urlIdentity.id}` : 'none'
+  const [visualOverride, setVisualOverride] = useState<{
+    urlKey: string
+    identity: OverviewDetailIdentity | null
+  } | null>(null)
+  const override = visualOverride?.urlKey === urlKey
+    ? visualOverride.identity
+    : urlIdentity
 
   function open(param: OverviewDetailParam, id: string) {
     const next = withOverviewDetailParam(searchParams, param, id)
-    setOpens((value) => value + 1)
+    setVisualOverride({ urlKey, identity: { param, id } })
     router.push(detailHref(pathname, next), { scroll: false })
   }
 
@@ -49,8 +64,7 @@ export function useOverviewDetailNavigation() {
     const currentParams = new URLSearchParams(current.search)
     const currentParam = OVERVIEW_DETAIL_PARAMS.find((param) => currentParams.has(param))
     if (!currentParam) return
-    const currentId = currentParams.get(currentParam)
-    if (currentId) setDismissed({ id: `${currentParam}:${currentId}`, generation: opens })
+    setVisualOverride({ urlKey, identity: null })
     for (const detailParam of OVERVIEW_DETAIL_PARAMS) currentParams.delete(detailParam)
     if (typeof window !== 'undefined') {
       window.history.replaceState(window.history.state, '', detailHref(current.path, currentParams))
@@ -60,8 +74,8 @@ export function useOverviewDetailNavigation() {
   }
 
   return {
-    activeParam,
-    activeId: openId,
+    activeParam: override?.param ?? null,
+    activeId: override?.id ?? null,
     open,
     close,
   }

@@ -174,35 +174,46 @@ export function OverviewContextualDetails({
 
   return (
     <>
-      <InvoiceDetailsDrawer
-        invoiceId={invoiceId}
-        bankId={invoices.find((item) => item.id === invoiceId)?.bankId ?? ''}
-        open={activeParam === 'invoiceId' && Boolean(invoiceId)}
-        onOpenChange={(open) => !open && onClose()}
-      />
-      <PersonStatementDrawer
-        key={personId ?? 'none'}
-        person={person ? { id: person.id, name: person.name, phone: person.phone } : null}
-        open={activeParam === 'personId' && Boolean(person)}
-        onClose={onClose}
-        period={period}
-      />
-      <DebtDetailDrawer
-        debt={activeParam === 'debtId' ? debt : null}
-        onOpenChange={(open) => !open && onClose()}
-        onEdit={(item) => setEditDebt(item)}
-        onDelete={(item) => deleteDebtMut.mutate(item.id)}
-        onTogglePaid={(item) => toggleDebtMut.mutate({ id: item.id, isPaid: !item.isPaid })}
-        onEditSettlementDate={(item) => setSettlementDate({ kind: 'debt', item })}
-      />
-      <ReceivableDetailDrawer
-        receivable={activeParam === 'receivableId' ? receivable : null}
-        onOpenChange={(open) => !open && onClose()}
-        onEdit={(item) => setEditReceivable(item)}
-        onDelete={(item) => deleteReceivableMut.mutate(item.id)}
-        onToggleReceived={(item) => toggleReceivableMut.mutate({ id: item.id, isPaid: !item.isPaid })}
-        onEditSettlementDate={(item) => setSettlementDate({ kind: 'receivable', item })}
-      />
+      {activeParam === 'invoiceId' && invoiceId && (
+        <InvoiceDetailsDrawer
+          key={`invoice:${invoiceId}`}
+          invoiceId={invoiceId}
+          bankId={invoices.find((item) => item.id === invoiceId)?.bankId ?? ''}
+          open
+          onOpenChange={(open) => !open && onClose()}
+        />
+      )}
+      {activeParam === 'personId' && personId && (
+        <PersonStatementDrawer
+          key={`person:${personId}`}
+          person={person ? { id: person.id, name: person.name, phone: person.phone } : null}
+          open={Boolean(person)}
+          onClose={onClose}
+          period={period}
+        />
+      )}
+      {activeParam === 'debtId' && debtId && (
+        <DebtDetailDrawer
+          key={`debt:${debtId}`}
+          debt={debt}
+          onOpenChange={(open) => !open && onClose()}
+          onEdit={(item) => setEditDebt(item)}
+          onDelete={(item) => deleteDebtMut.mutate(item.id)}
+          onTogglePaid={(item) => toggleDebtMut.mutate({ id: item.id, isPaid: !item.isPaid })}
+          onEditSettlementDate={(item) => setSettlementDate({ kind: 'debt', item })}
+        />
+      )}
+      {activeParam === 'receivableId' && receivableId && (
+        <ReceivableDetailDrawer
+          key={`receivable:${receivableId}`}
+          receivable={receivable}
+          onOpenChange={(open) => !open && onClose()}
+          onEdit={(item) => setEditReceivable(item)}
+          onDelete={(item) => deleteReceivableMut.mutate(item.id)}
+          onToggleReceived={(item) => toggleReceivableMut.mutate({ id: item.id, isPaid: !item.isPaid })}
+          onEditSettlementDate={(item) => setSettlementDate({ kind: 'receivable', item })}
+        />
+      )}
       <DebtSheet
         open={editDebt !== null}
         onOpenChange={(open) => !open && setEditDebt(null)}

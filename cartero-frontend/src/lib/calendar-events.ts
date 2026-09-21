@@ -61,7 +61,14 @@ export interface CalEvent {
 export const CAL_KIND_LABEL: Record<CalEventKind, string> = {
   'invoice-due': 'Fatura',
   debt: 'Dívida',
-  receivable: 'A receber',
+  receivable: 'A Receber',
+}
+
+/** Cor do ponto por entidade; o status fica reservado à agenda contextual. */
+export const CAL_KIND_DOT_CLASS: Record<CalEventKind, string> = {
+  'invoice-due': 'bg-primary',
+  debt: 'bg-destructive',
+  receivable: 'bg-receivable',
 }
 
 /** Extrai (ano, mês, dia) de uma data ISO sem passar por `Date`. */

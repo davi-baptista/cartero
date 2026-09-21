@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { InvoiceStatus, TransactionType } from '@/types'
 import type { Bank, Debt, Invoice, Receivable, Transaction } from '@/types'
-import { buildCalendarEvents, buildInvoiceBreakdown, eventsForDay } from './calendar-events'
+import {
+  buildCalendarEvents,
+  buildInvoiceBreakdown,
+  CAL_KIND_DOT_CLASS,
+  CAL_KIND_LABEL,
+  eventsForDay,
+} from './calendar-events'
 import { selectAttentionInvoices } from './overview-attention'
 
 /**
@@ -19,6 +25,20 @@ import { selectAttentionInvoices } from './overview-attention'
  */
 
 const BANKS = new Map([['b1', 'Nubank']])
+
+describe('calendar semantic type markers', () => {
+  it('keeps dot type independent from entity status', () => {
+    expect(CAL_KIND_DOT_CLASS['invoice-due']).toBe('bg-primary')
+    expect(CAL_KIND_DOT_CLASS.debt).toBe('bg-destructive')
+    expect(CAL_KIND_DOT_CLASS.receivable).toBe('bg-receivable')
+    expect(CAL_KIND_DOT_CLASS['invoice-due']).toBe(CAL_KIND_DOT_CLASS['invoice-due'])
+    expect(CAL_KIND_LABEL).toMatchObject({
+      'invoice-due': 'Fatura',
+      debt: 'Dívida',
+      receivable: 'A Receber',
+    })
+  })
+})
 
 function invoice(over: Partial<Invoice> & { id: string }): Invoice {
   return {

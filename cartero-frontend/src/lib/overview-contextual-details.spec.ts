@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   OVERVIEW_DETAIL_PARAMS,
+  overviewDetailIdentity,
   withOverviewDetailParam,
 } from './overview-detail-navigation'
 
@@ -30,6 +31,18 @@ describe('overview contextual detail URL contract', () => {
     expect(next.get('year')).toBe('2026')
   })
 
+  it('treats close and direct URL switches as atomic identities', () => {
+    expect(overviewDetailIdentity('month=9&debtId=debt-a')).toEqual({
+      param: 'debtId',
+      id: 'debt-a',
+    })
+    expect(overviewDetailIdentity('month=9')).toBeNull()
+    expect(overviewDetailIdentity('debtId=debt-a&invoiceId=invoice-b')).toEqual({
+      param: 'invoiceId',
+      id: 'invoice-b',
+    })
+  })
+
   it('opens through Overview URL state without domain href navigation', () => {
     expect(overview).toContain('onOpenDetail={detail.open}')
     expect(overview).toContain('onView={detailId ? () => onOpenDetail(detailParam, detailId) : undefined}')
@@ -37,6 +50,8 @@ describe('overview contextual detail URL contract', () => {
     expect(details).toContain('PersonStatementDrawer')
     expect(details).toContain('DebtDetailDrawer')
     expect(details).toContain('ReceivableDetailDrawer')
+    expect(details).toContain('key={`invoice:${invoiceId}`}')
+    expect(details).toContain("activeParam === 'debtId' && debtId")
   })
 
   it('keeps grouped person authority separate from individual entity identity', () => {
@@ -45,6 +60,7 @@ describe('overview contextual detail URL contract', () => {
     expect(overview).toContain("'debtId'")
     expect(overview).toContain("'receivableId'")
     expect(overview).toContain("group.kind === 'debt'")
+    expect(overview).toContain('inlineAgendaStatus')
     expect(agenda).toContain('entityId: event.entityId')
   })
 
@@ -54,5 +70,10 @@ describe('overview contextual detail URL contract', () => {
     expect(agenda).toContain('entityId: receivable.id')
     expect(overview).toContain('selectedGroups.visible.map')
     expect(overview).toContain('attentionGroups.visible')
+    expect(overview).toContain("['invoice-due', 'Fatura']")
+    expect(overview).toContain("['debt', 'Dívida']")
+    expect(overview).toContain("['receivable', 'A Receber']")
+    expect(overview).not.toContain("'Saída / vencimento'")
+    expect(overview).not.toContain("'Entrada'")
   })
 })
