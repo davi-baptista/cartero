@@ -86,9 +86,8 @@ describe('overview contextual detail URL contract', () => {
   it('keeps due-today color on status text and overdue emphasis on historical cells', () => {
     expect(overview).toContain('resolveAgendaPresentation')
     expect(overview).toContain('statusClass={presentation.statusClass}')
-    expect(overview).toContain("'bg-destructive/8 hover:bg-destructive/12'")
+    expect(overview).toContain('calendarDaySurface({')
     expect(overview).toContain("hasUnresolvedOverdue ? ', possui item vencido' : ''")
-    expect(overview).toContain("isSelected\n                          ? 'bg-muted/80'")
     expect(overview).toContain("debt: count === 1 ? 'Dívida' : 'Dívidas'")
   })
 

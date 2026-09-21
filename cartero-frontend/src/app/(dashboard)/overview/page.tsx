@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils'
 import {
   buildCalendarEvents,
   calendarDayState,
+  calendarDaySurface,
   eventsForDay,
   CAL_KIND_DOT_CLASS,
   CAL_KIND_LABEL,
@@ -714,15 +715,12 @@ function CalendarSection({
                   aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}: ${dayState.allKinds.map((kind) => CAL_KIND_LABEL[kind]).join(', ')}` : ''}${isSelected ? ', selecionado' : ''}${dayState.hasUnresolvedOverdue ? ', possui item vencido' : ''}`}
                   className={cn(
                     'flex min-w-0 flex-col items-center gap-1 rounded-md bg-card/80 py-1.5 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring sm:py-2',
-                    dayState.hasUnresolvedOverdue
-                        ? 'bg-destructive/8 hover:bg-destructive/12'
-                        : isSelected
-                          ? 'bg-muted/80'
-                        : hasEvents && !isHistoricalResolved
-                          ? 'bg-muted/55 hover:bg-muted/65'
-                          : hasEvents
-                            ? 'bg-muted/35 hover:bg-muted/45'
-                          : 'hover:bg-muted/50',
+                    calendarDaySurface({
+                      hasUnresolvedOverdue: dayState.hasUnresolvedOverdue,
+                      isSelected,
+                      isPast,
+                      hasEvents,
+                    }),
                     isHistoricalResolved && !isSelected && 'opacity-40',
                   )}
                 >
@@ -774,7 +772,7 @@ function CalendarSection({
           </>
         )}
         </div>
-        <div className="rounded-xl border border-border/50 bg-card/20 p-3 sm:p-3.5 lg:mt-0">
+        <div className="w-full min-w-0 rounded-xl border border-border/50 bg-card/20 p-3 sm:p-3.5 lg:mt-0">
           <div className="space-y-5">
             <section aria-label={dayLabel}>
               <h3 className="mb-1.5 text-sm font-semibold tracking-tight">{dayLabel}</h3>

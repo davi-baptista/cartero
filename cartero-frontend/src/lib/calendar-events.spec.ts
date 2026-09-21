@@ -7,6 +7,7 @@ import {
   CAL_KIND_DOT_CLASS,
   CAL_KIND_LABEL,
   calendarDayState,
+  calendarDaySurface,
   eventsForDay,
 } from './calendar-events'
 import type { CalEvent } from './calendar-events'
@@ -95,6 +96,50 @@ describe('calendar overdue attention mode', () => {
 
     expect(state.hasUnresolvedOverdue).toBe(false)
     expect(state.visibleKinds).toEqual(['invoice-due', 'receivable'])
+  })
+})
+
+describe('calendar day surfaces', () => {
+  it('keeps future event days on the normal base surface', () => {
+    expect(calendarDaySurface({
+      hasUnresolvedOverdue: false,
+      isSelected: false,
+      isPast: false,
+      hasEvents: true,
+    })).toBe('hover:bg-muted/50')
+  })
+
+  it('preserves historical event treatment', () => {
+    expect(calendarDaySurface({
+      hasUnresolvedOverdue: false,
+      isSelected: false,
+      isPast: true,
+      hasEvents: true,
+    })).toBe('bg-muted/35 hover:bg-muted/45')
+  })
+
+  it('keeps overdue attention ahead of selection', () => {
+    expect(calendarDaySurface({
+      hasUnresolvedOverdue: true,
+      isSelected: true,
+      isPast: true,
+      hasEvents: true,
+    })).toBe('bg-destructive/8 hover:bg-destructive/12')
+  })
+
+  it('keeps normal selection and empty days unchanged', () => {
+    expect(calendarDaySurface({
+      hasUnresolvedOverdue: false,
+      isSelected: true,
+      isPast: false,
+      hasEvents: true,
+    })).toBe('bg-muted/80')
+    expect(calendarDaySurface({
+      hasUnresolvedOverdue: false,
+      isSelected: false,
+      isPast: false,
+      hasEvents: false,
+    })).toBe('hover:bg-muted/50')
   })
 })
 

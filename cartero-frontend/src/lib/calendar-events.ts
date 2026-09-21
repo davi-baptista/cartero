@@ -322,6 +322,26 @@ export function calendarDayState(events: readonly CalEvent[]): CalendarDayState 
   }
 }
 
+export type CalendarDaySurfaceInput = {
+  hasUnresolvedOverdue: boolean
+  isSelected: boolean
+  isPast: boolean
+  hasEvents: boolean
+}
+
+/** Cell background precedence; event presence alone is not a future-day surface. */
+export function calendarDaySurface({
+  hasUnresolvedOverdue,
+  isSelected,
+  isPast,
+  hasEvents,
+}: CalendarDaySurfaceInput): string {
+  if (hasUnresolvedOverdue) return 'bg-destructive/8 hover:bg-destructive/12'
+  if (isSelected) return 'bg-muted/80'
+  if (isPast && hasEvents) return 'bg-muted/35 hover:bg-muted/45'
+  return 'hover:bg-muted/50'
+}
+
 const DEBT_STATUS: Record<'paid' | 'overdue' | 'pending', string> = {
   paid: 'Pago',
   overdue: 'Em atraso',
