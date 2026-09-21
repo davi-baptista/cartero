@@ -6,12 +6,24 @@ export interface ActiveInstallment {
   totalCount: number
   futureCount: number
   remaining: number
+  outstandingCount: number
+  outstandingAmount: number
   endsAt: { month: number; year: number } | null
   nextInstallment: {
+    id: string
     month: number
     year: number
     amount: number
     index: number
+    status?: 'OPEN' | 'CLOSED' | 'PAID' | 'OVERDUE'
+  } | null
+  nextOutstanding: {
+    id: string
+    month: number
+    year: number
+    amount: number
+    index: number
+    status?: 'OPEN' | 'CLOSED' | 'PAID' | 'OVERDUE'
   } | null
   bankName: string | null
   categoryName: string | null
@@ -29,7 +41,7 @@ export interface Commitments {
   installments: ActiveInstallment[]
   othersInstallments: ActiveInstallment[]
   totals: {
-    installmentsRemaining: number
+    installmentsOutstanding: number
     othersRemaining: number
   }
   forecast: ForecastMonth[]

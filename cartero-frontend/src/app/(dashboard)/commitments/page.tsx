@@ -20,18 +20,24 @@ function futureLabel(count: number) {
   return `${count} parcela${count === 1 ? '' : 's'} futura${count === 1 ? '' : 's'}`
 }
 
+function outstandingLabel(count: number) {
+  return `${count} parcela${count === 1 ? '' : 's'} a pagar`
+}
+
 function InstallmentSection({
   title,
   description,
   items,
   total,
   showPerson = false,
+  own = false,
 }: {
   title: string
   description?: string
   items: ActiveInstallment[]
   total: number
   showPerson?: boolean
+  own?: boolean
 }) {
   return (
     <div>
@@ -39,7 +45,7 @@ function InstallmentSection({
         <div className="flex items-baseline justify-between gap-2">
           <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
           <span className="shrink-0 text-[11px] text-muted-foreground">
-            {showPerson ? 'a receber ' : 'em parcelas futuras '}
+            {showPerson ? 'no cartão ' : 'em parcelas a pagar '}
             <span className="font-medium text-foreground">{formatCurrency(total)}</span>
           </span>
         </div>
@@ -47,9 +53,12 @@ function InstallmentSection({
       </div>
       <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
         {items.map((item) => {
-          const next = item.nextInstallment
+          const next = own ? item.nextOutstanding : item.nextInstallment
           const progress = next ? Math.min(100, Math.max(0, ((next.index - 1) / item.totalCount) * 100)) : 0
           const positionText = next ? `Próxima ${next.index}/${item.totalCount}` : `${item.totalCount} parcelas no total`
+          const displayPositionText = own && next
+            ? `Próxima a pagar ${next.index}/${item.totalCount}`
+            : positionText
 
           return (
             <div key={item.id} className="px-4 py-3.5">
@@ -61,8 +70,8 @@ function InstallmentSection({
                   <span className="truncate text-[13px] font-medium">{item.title}</span>
                   <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                     {next
-                      ? `${positionText} · ${formatCurrency(next.amount)} · ${monthLabel(next)}`
-                      : positionText}
+                      ? `${displayPositionText} · ${formatCurrency(next.amount)} · ${monthLabel(next)}`
+                      : displayPositionText}
                   </p>
                   <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">
                     {showPerson && item.personName && `${item.personName} · `}
@@ -72,9 +81,9 @@ function InstallmentSection({
                 </div>
                 <div className="shrink-0 text-right">
                   <span className={cn('text-[13px] font-semibold tabular-nums tracking-[-0.01em]', showPerson && 'text-receivable')}>
-                    {formatCurrency(item.remaining)}
+                    {formatCurrency(own ? item.outstandingAmount : item.remaining)}
                   </span>
-                  <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">{futureLabel(item.futureCount)}</p>
+                  <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">{own ? outstandingLabel(item.outstandingCount) : futureLabel(item.futureCount)}</p>
                 </div>
                 <DisclosureChevron />
               </div>
@@ -106,7 +115,7 @@ export default function CommitmentsPage() {
   const installments = data?.installments ?? []
   const othersInstallments = data?.othersInstallments ?? []
   const forecast = data?.forecast ?? []
-  const totals = data?.totals ?? { installmentsRemaining: 0, othersRemaining: 0 }
+  const totals = data?.totals ?? { installmentsOutstanding: 0, othersRemaining: 0 }
   const maxForecast = Math.max(1, ...forecast.map((item) => item.installments))
   const isEmpty = isSuccess && installments.length === 0 && othersInstallments.length === 0
 
@@ -154,8 +163,8 @@ export default function CommitmentsPage() {
               </div>
             </div>
           )}
-          {installments.length > 0 && <InstallmentSection title="Parcelas ativas" description={othersInstallments.length > 0 ? 'Sua parte: o que ainda sai do seu bolso.' : undefined} items={installments} total={totals.installmentsRemaining} />}
-          {othersInstallments.length > 0 && <InstallmentSection title="Parcelas de outras pessoas" description="Passam pelo seu cartão, mas o valor volta para você — não entram na sua parte." items={othersInstallments} total={totals.othersRemaining} showPerson />}
+          {installments.length > 0 && <InstallmentSection title="Parcelas ativas" description={othersInstallments.length > 0 ? 'Sua parte: o que ainda sai do seu bolso.' : undefined} items={installments} total={totals.installmentsOutstanding} own />}
+          {othersInstallments.length > 0 && <InstallmentSection title="Parcelas de outras pessoas" description="Passam pelo seu cartão; o reembolso não é calculado aqui." items={othersInstallments} total={totals.othersRemaining} showPerson />}
         </>
       )}
     </div>

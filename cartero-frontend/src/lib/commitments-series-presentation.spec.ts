@@ -28,6 +28,15 @@ describe('Parcelas — posição estrutural da série', () => {
     expect(page).not.toContain('saldo devedor')
   })
 
+  it('expÃµe true outstanding na summary da prÃ³pria parte', () => {
+    expect(page).toContain('outstandingLabel(item.outstandingCount)')
+    expect(page).toContain('item.outstandingAmount')
+    expect(page).toContain('totals.installmentsOutstanding')
+    expect(page).toContain('Próxima a pagar')
+    expect(page).not.toContain('totals.installmentsRemaining')
+    expect(page).not.toContain('em parcelas futuras ')
+  })
+
   it('calcula barra como posição original anterior à próxima occurrence', () => {
     expect(page).toContain('((next.index - 1) / item.totalCount) * 100')
     expect(page).toContain('aria-hidden')
