@@ -727,10 +727,10 @@ function CalendarSection({
 
   return (
     <section aria-label="Calendário e itens que requerem atenção">
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-      <div className="rounded-xl border border-border/60 bg-card/30 p-4 sm:p-5">
+      <div className="grid w-full min-w-0 items-start gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+      <div className="min-w-0">
       <h2 className="text-[15px] font-semibold tracking-tight">Calendário</h2>
-      <p className="mb-3 mt-0.5 text-[11px] text-muted-foreground">
+      <p className="mb-4 mt-0.5 text-[11px] text-muted-foreground">
         Vencimentos e movimentações com data neste mês
       </p>
 
@@ -781,9 +781,9 @@ function CalendarSection({
           )}
 
           {/* Weekday headers */}
-          <div className="grid grid-cols-7 rounded-t-lg border-b border-border/70 bg-muted/20 px-1 pb-1">
+          <div className="grid grid-cols-7 rounded-t-lg border-b border-border/70 px-1 py-1.5">
             {WEEKDAYS.map((d) => (
-              <div key={d} className="py-1 text-center text-[11px] font-medium text-muted-foreground">
+              <div key={d} className="py-0.5 text-center text-[11px] font-medium text-muted-foreground">
                 {d}
               </div>
             ))}
@@ -1262,7 +1262,6 @@ export default function OverviewPage() {
         seção, reavaliando o estado inicial de `selectedDay` (hoje no mês
         atual, neutro em outro mês) sem um efeito chamando `setState`.
       */}
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
       <CalendarSection
         key={`${year}-${month}`}
         year={year}
@@ -1292,7 +1291,6 @@ export default function OverviewPage() {
         onRetryAttention={retryAttention}
         attentionWindowEnd={attention.windowEnd}
       />
-      </div>
 
       {/* Gastos por categoria — segunda superfície nesta rodada (§0/§23/§24). */}
       <div className="border-t border-border pt-6">
