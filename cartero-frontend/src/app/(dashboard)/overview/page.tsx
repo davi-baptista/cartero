@@ -2,6 +2,7 @@
 
 import { useState, useMemo, memo } from 'react'
 import Link from 'next/link'
+import { useOverviewDetailNavigation, type OverviewDetailParam } from '@/lib/overview-detail-navigation'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import type { LucideIcon } from 'lucide-react'
@@ -48,6 +49,7 @@ import {
   type AgendaEntry,
 } from '@/lib/overview-agenda'
 import { FinancialListRow } from '@/components/ui/financial-list-row'
+import { OverviewContextualDetails } from '@/components/overview-contextual-details'
 import { Button } from '@/components/ui/button'
 import type { Invoice, Debt, Receivable, Bank, Transaction } from '@/types'
 import { InvoiceStatus } from '@/types'
@@ -394,10 +396,12 @@ function AgendaSummaryRow({
   group,
   banks,
   today,
+  onOpenDetail,
 }: {
   group: AgendaGroup
   banks: Bank[]
   today: Date
+  onOpenDetail: (param: OverviewDetailParam, id: string) => void
 }) {
   const entry = group.entries[0]
   const count = group.entries.length
@@ -428,16 +432,22 @@ function AgendaSummaryRow({
           ? group.kind === 'receivable' ? 'recebidos' : 'pagos'
           : 'pendentes'
       : dueText ?? entry.status
-  const href =
-    count > 1 && group.personId
-      ? `/persons?personId=${group.personId}`
-      : entry.href
   const Icon = isInvoice ? CreditCard : group.kind === 'debt' ? HandCoins : Wallet
   const accessible = `${title}, ${description}, ${status}, ${formatCurrency(total)}`
+  const detailParam: OverviewDetailParam =
+    count > 1 && group.personId
+      ? 'personId'
+      : group.kind === 'invoice-due'
+        ? 'invoiceId'
+        : group.kind === 'debt'
+          ? 'debtId'
+          : 'receivableId'
+  const detailId = count > 1 && group.personId ? group.personId : entry.entityId
 
   return (
     <FinancialListRow
-      href={href}
+      onView={detailId ? () => onOpenDetail(detailParam, detailId) : undefined}
+      href={undefined}
       ariaLabel={accessible}
       leading={<AttentionRowIcon icon={Icon} isSettled={isSettled} />}
       title={title}
@@ -460,6 +470,7 @@ function AgendaSection({
   today,
   overflowLabel,
   overflowCount,
+  onOpenDetail,
 }: {
   title: string
   groups: AgendaGroup[]
@@ -467,6 +478,7 @@ function AgendaSection({
   today: Date
   overflowLabel: string
   overflowCount: number
+  onOpenDetail: (param: OverviewDetailParam, id: string) => void
 }) {
   return (
     <section aria-label={title}>
@@ -474,7 +486,7 @@ function AgendaSection({
       {groups.length > 0 && (
         <div className="divide-y divide-border/50">
           {groups.map((group) => (
-            <AgendaSummaryRow key={group.key} group={group} banks={banks} today={today} />
+            <AgendaSummaryRow key={group.key} group={group} banks={banks} today={today} onOpenDetail={onOpenDetail} />
           ))}
         </div>
       )}
@@ -533,6 +545,7 @@ function CalendarSection({
   attentionError,
   attentionFetching,
   onRetryAttention,
+  onOpenDetail,
 }: {
   year: number
   month: number
@@ -554,6 +567,7 @@ function CalendarSection({
   attentionError: boolean
   attentionFetching: boolean
   onRetryAttention: () => void
+  onOpenDetail: (param: OverviewDetailParam, id: string) => void
 }) {
   /*
     "Hoje" (TZ3): conta com `User.timeZone` configurado usa a timezone
@@ -791,7 +805,7 @@ function CalendarSection({
               ) : (
                 <div className="divide-y divide-border/50">
                   {selectedGroups.visible.map((group) => (
-                    <AgendaSummaryRow key={group.key} group={group} banks={banks} today={today} />
+                    <AgendaSummaryRow key={group.key} group={group} banks={banks} today={today} onOpenDetail={onOpenDetail} />
                   ))}
                 </div>
               )}
@@ -838,6 +852,7 @@ function CalendarSection({
                   today={today}
                   overflowLabel="outras pendências"
                   overflowCount={attentionGroups.hiddenItems}
+                  onOpenDetail={onOpenDetail}
                 />
               )}
             </div>
@@ -1033,6 +1048,7 @@ export default function OverviewPage() {
     () => buildAttentionSelection({ invoices, banks, debts, receivables }, attentionToday),
     [invoices, banks, debts, receivables, attentionToday],
   )
+  const detail = useOverviewDetailNavigation()
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
@@ -1080,6 +1096,17 @@ export default function OverviewPage() {
         attentionError={attentionError}
         attentionFetching={attentionFetching}
         onRetryAttention={retryAttention}
+        onOpenDetail={detail.open}
+      />
+
+      <OverviewContextualDetails
+        activeParam={detail.activeParam}
+        activeId={detail.activeId}
+        invoices={invoices}
+        debts={debts}
+        receivables={receivables}
+        onClose={detail.close}
+        period={{ month, year }}
       />
 
       {/* Gastos por categoria — segunda superfície nesta rodada (§0/§23/§24). */}

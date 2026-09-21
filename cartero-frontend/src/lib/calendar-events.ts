@@ -51,6 +51,8 @@ export interface CalEvent {
   /** Structural identity for contextual agenda grouping; never inferred from text. */
   personId?: string
   personName?: string
+  entityId?: string
+  bankId?: string
   /** Para onde a linha navega. */
   href: string
 }
@@ -191,6 +193,8 @@ export function buildCalendarEvents(
           ? `${formatBRL(own)} seus · ${formatBRL(others)} de outras pessoas`
           : undefined,
       href: `/banks/${invoice.bankId}/invoices`,
+      entityId: invoice.id,
+      bankId: invoice.bankId,
     })
   }
 
@@ -210,6 +214,7 @@ export function buildCalendarEvents(
       settled: debt.isPaid,
       personId: debt.personId,
       personName: debt.person?.name,
+      entityId: debt.id,
       href: `/debts?highlight=${debt.id}`,
     })
   }
@@ -236,6 +241,7 @@ export function buildCalendarEvents(
       settled: receivable.isPaid,
       personId: receivable.personId,
       personName: receivable.person?.name,
+      entityId: receivable.id,
       href: `/receivables?highlight=${receivable.id}`,
     })
   }

@@ -14,6 +14,8 @@ export type AgendaEntry = {
   detail?: string
   personId?: string
   personName?: string
+  entityId?: string
+  bankId?: string
   settled?: boolean
   urgency?: AttentionDueUrgency
   dueDate?: string
@@ -46,6 +48,8 @@ function entryFromEvent(event: CalEvent): AgendaEntry {
     detail: event.detail,
     personId: event.personId,
     personName: event.personName,
+    entityId: event.entityId,
+    bankId: event.bankId,
     settled: event.settled,
   }
 }
@@ -130,6 +134,8 @@ function invoiceEntry(invoice: Invoice, banks: readonly Bank[]): AgendaEntry {
     href: `/banks/${invoice.bankId}/invoices?invoiceId=${invoice.id}`,
     invoice,
     bankName,
+    entityId: invoice.id,
+    bankId: invoice.bankId,
     settled: invoice.status === 'PAID',
     dueDate: invoice.dueDate,
   }
@@ -146,6 +152,7 @@ function debtEntry(debt: Debt, today: Date): AgendaEntry {
     href: `/debts?highlight=${debt.id}`,
     personId: debt.personId,
     personName: debt.person?.name,
+    entityId: debt.id,
     urgency: attentionDueUrgency(debt.dueDate, today),
     dueDate: debt.dueDate,
     settled: debt.isPaid,
@@ -163,6 +170,7 @@ function receivableEntry(receivable: Receivable, today: Date): AgendaEntry {
     href: `/receivables?highlight=${receivable.id}`,
     personId: receivable.personId,
     personName: receivable.person?.name,
+    entityId: receivable.id,
     urgency: attentionDueUrgency(receivable.dueDate, today),
     dueDate: receivable.dueDate,
     settled: receivable.isPaid,
