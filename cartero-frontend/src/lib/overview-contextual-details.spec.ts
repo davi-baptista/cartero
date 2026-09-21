@@ -60,8 +60,8 @@ describe('overview contextual detail URL contract', () => {
     expect(overview).toContain("'debtId'")
     expect(overview).toContain("'receivableId'")
     expect(overview).toContain("group.kind === 'debt'")
-    expect(overview).toContain('inlineAgendaStatus')
-    expect(overview).toContain("group.personId\n    ? User")
+    expect(overview).toContain('presentation.statusText')
+    expect(overview).toContain('person: User')
     expect(overview).toContain('const dueText = entry.dueDate ? formatDueDate(entry.dueDate, today).toLowerCase() : undefined')
     expect(overview).toContain('const aggregateTiming = count > 1 ? aggregateOpenTiming(group.entries, today) : null')
     expect(overview).toContain('const timingText = aggregateTiming?.text ?? dueText')
@@ -84,8 +84,8 @@ describe('overview contextual detail URL contract', () => {
   })
 
   it('keeps due-today color on status text and overdue emphasis on historical cells', () => {
-    expect(overview).toContain('isDueToday')
-    expect(overview).toContain("'text-pending'")
+    expect(overview).toContain('resolveAgendaPresentation')
+    expect(overview).toContain('statusClass={presentation.statusClass}')
     expect(overview).toContain("'bg-destructive/8 hover:bg-destructive/12'")
     expect(overview).toContain("hasUnresolvedOverdue ? ', possui item vencido' : ''")
     expect(overview).toContain("isSelected\n                      ? 'bg-muted/80'")

@@ -56,10 +56,11 @@ describe('overview desktop composition', () => {
 
   it('keeps agenda amounts neutral and moves status semantics to copy and icons', () => {
     expect(overview).toContain('text-sm font-semibold tabular-nums tracking-[-0.02em] text-foreground')
-    expect(overview).toContain("isSettled\n    ? 'text-paid'")
-    expect(overview).toContain("isDueToday\n      ? 'text-pending'")
-    expect(overview).toContain("isSettled ? 'bg-receivable/10' : 'bg-destructive/10'")
-    expect(overview).toContain("isSettled ? 'text-receivable' : 'text-destructive'")
+    expect(overview).toContain('resolveAgendaPresentation')
+    expect(overview).toContain('containerClass={presentation.iconContainerClass}')
+    expect(overview).toContain('statusClass={presentation.statusClass}')
+    expect(overview).not.toContain("isSettled ? 'bg-receivable/10' : 'bg-destructive/10'")
+    expect(overview).not.toContain("isSettled ? 'text-receivable' : 'text-destructive'")
     expect(overview).toContain('flex size-8 shrink-0 items-center justify-center rounded-lg')
     expect(overview).toContain("'size-4'")
     expect(overview).not.toContain('CAL_DIRECTION_AMOUNT')

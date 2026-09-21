@@ -46,6 +46,7 @@ import {
   type AgendaGroup,
   type AgendaEntry,
 } from '@/lib/overview-agenda'
+import { resolveAgendaPresentation, type AgendaIconKind } from '@/lib/overview-agenda-presentation'
 import { FinancialListRow } from '@/components/ui/financial-list-row'
 import { OverviewContextualDetails } from '@/components/overview-contextual-details'
 import { Button } from '@/components/ui/button'
@@ -307,16 +308,19 @@ function InvoiceBadge({ status }: { status: InvoiceStatus }) {
 }
 
 
-/** Círculo tonal compartilhado das rows deste painel — vermelho quando overdue. */
-function AttentionRowIcon({ icon: Icon, isSettled }: { icon: LucideIcon; isSettled: boolean }) {
+/** Ícone neutro compartilhado das rows deste painel; o status carrega a semântica. */
+function AttentionRowIcon({
+  icon: Icon,
+  containerClass,
+  iconClass,
+}: {
+  icon: LucideIcon
+  containerClass: string
+  iconClass: string
+}) {
   return (
-    <div
-      className={cn(
-        'flex size-8 shrink-0 items-center justify-center rounded-lg',
-        isSettled ? 'bg-receivable/10' : 'bg-destructive/10',
-      )}
-    >
-      <Icon className={cn('size-4', isSettled ? 'text-receivable' : 'text-destructive')} aria-hidden="true" />
+    <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', containerClass)}>
+      <Icon className={cn('size-4', iconClass)} aria-hidden="true" />
     </div>
   )
 }
@@ -330,27 +334,15 @@ function agendaKindLabel(kind: AgendaEntry['kind'], count: number): string {
   return labels[kind]
 }
 
-function inlineAgendaStatus(status: string): string {
-  return status.length > 0 ? status.charAt(0).toLowerCase() + status.slice(1) : status
-}
-
 function AgendaMeta({
   description,
   status,
-  isSettled,
-  isDueToday,
+  statusClass,
 }: {
   description: string
   status: string
-  isSettled: boolean
-  isDueToday: boolean
+  statusClass: string
 }) {
-  const statusClass = isSettled
-    ? 'text-paid'
-    : isDueToday
-      ? 'text-pending'
-      : 'text-destructive'
-
   return (
     <span className="flex min-w-0 truncate text-xs">
       <span className="truncate text-muted-foreground">{description}</span>
@@ -397,16 +389,19 @@ function AgendaSummaryRow({
       : isSettled
         ? entry.status
         : timingText ?? entry.status
-  const inlineStatus = inlineAgendaStatus(status)
-  const isDueToday = inlineStatus === 'vence hoje'
-  const Icon = group.personId
-    ? User
-    : isInvoice
-      ? CreditCard
-      : group.kind === 'debt'
-        ? HandCoins
-        : Wallet
-  const accessible = `${title}, ${description}, ${inlineStatus}, ${formatCurrency(total)}`
+  const presentation = resolveAgendaPresentation({
+    kind: group.kind,
+    hasPerson: Boolean(group.personId),
+    statusText: status,
+    isSettled,
+  })
+  const Icon = ({
+    invoice: CreditCard,
+    debt: HandCoins,
+    receivable: Wallet,
+    person: User,
+  } satisfies Record<AgendaIconKind, LucideIcon>)[presentation.iconKind]
+  const accessible = `${title}, ${description}, ${presentation.statusText}, ${formatCurrency(total)}`
   const detailParam: OverviewDetailParam =
     count > 1 && group.personId
       ? 'personId'
@@ -422,10 +417,22 @@ function AgendaSummaryRow({
       onView={detailId ? () => onOpenDetail(detailParam, detailId) : undefined}
       href={undefined}
       ariaLabel={accessible}
-      leading={<AttentionRowIcon icon={Icon} isSettled={isSettled} />}
+      leading={
+        <AttentionRowIcon
+          icon={Icon}
+          containerClass={presentation.iconContainerClass}
+          iconClass={presentation.iconClass}
+        />
+      }
       title={title}
       titleAdornment={isInvoice && invoice ? <InvoiceBadge status={invoice.status} /> : undefined}
-      meta={<AgendaMeta description={description} status={inlineStatus} isSettled={isSettled} isDueToday={isDueToday} />}
+      meta={
+        <AgendaMeta
+          description={description}
+          status={presentation.statusText}
+          statusClass={presentation.statusClass}
+        />
+      }
       trailing={
         <span className="text-sm font-semibold tabular-nums tracking-[-0.02em] text-foreground">
           {formatCurrency(total)}
