@@ -65,4 +65,13 @@ describe('Parcelas — posição estrutural da série', () => {
   it('remove o Ã­cone decorativo lateral dos cards', () => {
     expect(page).not.toContain('Layers')
   })
+
+  it('alinha a barra estrutural e remove a affordance falsa', () => {
+    expect(page).toContain('className="mt-2.5 h-1 overflow-hidden rounded-full bg-muted/50"')
+    expect(page).not.toContain('ml-11 h-1')
+    expect(page).not.toContain('DisclosureChevron')
+    expect(page).not.toContain('cursor-pointer')
+    expect(page).not.toContain('role="button"')
+    expect(page).not.toContain('tabIndex')
+  })
 })

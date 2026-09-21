@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query'
 import { CalendarClock, Loader2, RotateCcw, TriangleAlert } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
 import { getCommitments, type ActiveInstallment, type ForecastMonth } from '@/services/commitments.service'
 import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
@@ -82,11 +81,10 @@ function InstallmentSection({
                   </span>
                   <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">{own ? outstandingLabel(item.outstandingCount) : futureLabel(item.futureCount)}</p>
                 </div>
-                <DisclosureChevron />
               </div>
               {next && (
                 <>
-                  <div aria-hidden className="mt-2.5 ml-11 h-1 overflow-hidden rounded-full bg-muted/50">
+                  <div aria-hidden className="mt-2.5 h-1 overflow-hidden rounded-full bg-muted/50">
                     <div className="h-full rounded-full bg-primary/40" style={{ width: `${progress}%` }} />
                   </div>
                   <span className="sr-only">Posição da série: próxima parcela {next.index} de {item.totalCount}</span>

@@ -390,8 +390,13 @@ describe('Chevron unificado', () => {
     // Overview entrou na Fase Overview Agenda V1: Atenção agora e a lista do
     // dia no calendário passaram a compartilhar o mesmo primitive de row.
     const VIA_PRIMITIVE = ['bancos', 'extrato', 'pessoas', 'overview']
+    const INFORMATIVA = ['compromissos']
 
     for (const [nome, fonte] of Object.entries(TELAS)) {
+      if (INFORMATIVA.includes(nome)) {
+        expect(fonte, `${nome} não deveria sugerir navegação`).not.toContain('<DisclosureChevron />')
+        continue
+      }
       const alvo = VIA_PRIMITIVE.includes(nome)
         ? '<FinancialListRow'
         : '<DisclosureChevron />'
