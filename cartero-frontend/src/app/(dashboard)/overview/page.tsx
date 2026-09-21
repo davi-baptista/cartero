@@ -350,15 +350,15 @@ function InvoiceBadge({ status }: { status: InvoiceStatus }) {
 
 
 /** Círculo tonal compartilhado das rows deste painel — vermelho quando overdue. */
-function AttentionRowIcon({ icon: Icon, isOverdue, isSettled }: { icon: LucideIcon; isOverdue: boolean; isSettled: boolean }) {
+function AttentionRowIcon({ icon: Icon, isSettled }: { icon: LucideIcon; isSettled: boolean }) {
   return (
     <div
       className={cn(
-        'flex size-6 shrink-0 items-center justify-center rounded-md',
-        isSettled ? 'bg-muted/30' : isOverdue ? 'bg-destructive/10' : 'bg-muted/40',
+        'flex size-8 shrink-0 items-center justify-center rounded-lg',
+        isSettled ? 'bg-receivable/10' : 'bg-destructive/10',
       )}
     >
-      <Icon className={cn('size-3.5', !isSettled && isOverdue ? 'text-destructive' : 'text-muted-foreground')} aria-hidden="true" />
+      <Icon className={cn('size-4', isSettled ? 'text-receivable' : 'text-destructive')} aria-hidden="true" />
     </div>
   )
 }
@@ -370,6 +370,24 @@ function agendaKindLabel(kind: AgendaEntry['kind'], count: number): string {
     'invoice-due': 'fatura',
   }
   return labels[kind]
+}
+
+function AgendaMeta({
+  description,
+  status,
+  isSettled,
+}: {
+  description: string
+  status: string
+  isSettled: boolean
+}) {
+  return (
+    <span className="flex min-w-0 truncate text-xs">
+      <span className="truncate text-muted-foreground">{description}</span>
+      <span className="shrink-0 text-muted-foreground"> · </span>
+      <span className={isSettled ? 'text-paid' : 'text-destructive'}>{status}</span>
+    </span>
+  )
 }
 
 function AgendaSummaryRow({
@@ -394,32 +412,39 @@ function AgendaSummaryRow({
   const isOverdue = urgency === 'overdue' && !isSettled
   const dueText = entry.dueDate ? formatDueDate(entry.dueDate) : undefined
   const title = group.personName ?? entry.title
-  const subtitle =
+  const description =
     count > 1
-      ? `${count} ${agendaKindLabel(group.kind, count)}${isOverdue ? ' vencidas' : ''}`
+      ? `${count} ${agendaKindLabel(group.kind, count)}`
       : group.personName && !isInvoice
-        ? `${entry.title} · ${dueText ?? entry.status}`
+        ? entry.title
         : isInvoice && invoice
-          ? `Fatura de ${capitalize(formatMonthYear(invoice.month, invoice.year))}${dueText ? ` · ${dueText}` : ''}`
-          : `${agendaKindLabel(group.kind, count)} · ${dueText ?? entry.status}`
+          ? `Fatura de ${capitalize(formatMonthYear(invoice.month, invoice.year))}`
+          : agendaKindLabel(group.kind, count)
+  const status =
+    count > 1
+      ? isOverdue
+        ? 'vencidas'
+        : isSettled
+          ? group.kind === 'receivable' ? 'recebidos' : 'pagos'
+          : 'pendentes'
+      : dueText ?? entry.status
   const href =
     count > 1 && group.personId
       ? `/persons?personId=${group.personId}`
       : entry.href
   const Icon = isInvoice ? CreditCard : group.kind === 'debt' ? HandCoins : Wallet
-  const directionClass = group.kind === 'receivable' ? CAL_DIRECTION_AMOUNT[entry.direction] : ''
-  const accessible = `${title}, ${subtitle}, ${formatCurrency(total)}`
+  const accessible = `${title}, ${description}, ${status}, ${formatCurrency(total)}`
 
   return (
     <FinancialListRow
       href={href}
       ariaLabel={accessible}
-      leading={<AttentionRowIcon icon={Icon} isOverdue={isOverdue} isSettled={isSettled} />}
-      title={<span className={cn(isSettled && 'text-muted-foreground')}>{title}</span>}
+      leading={<AttentionRowIcon icon={Icon} isSettled={isSettled} />}
+      title={title}
       titleAdornment={isInvoice && invoice ? <InvoiceBadge status={invoice.status} /> : undefined}
-      meta={<span className="truncate text-xs">{subtitle}</span>}
+      meta={<AgendaMeta description={description} status={status} isSettled={isSettled} />}
       trailing={
-        <span className={cn('text-sm font-semibold tabular-nums tracking-[-0.02em]', !isSettled && directionClass, isOverdue && 'text-destructive', isSettled && 'text-muted-foreground')}>
+        <span className="text-sm font-semibold tabular-nums tracking-[-0.02em] text-foreground">
           {formatCurrency(total)}
         </span>
       }
@@ -478,12 +503,6 @@ const CAL_DIRECTION_DOT: Record<CalEventDirection, string> = {
   in: 'bg-receivable',
   // Pendente: atenção, não conclusão.
   neutral: 'bg-pending',
-}
-
-const CAL_DIRECTION_AMOUNT: Record<CalEventDirection, string> = {
-  out: 'text-destructive',
-  in: 'text-receivable',
-  neutral: 'text-pending',
 }
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
