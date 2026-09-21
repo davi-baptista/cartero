@@ -32,7 +32,7 @@ describe('Parcelas — posição estrutural da série', () => {
     expect(page).toContain('outstandingLabel(item.outstandingCount)')
     expect(page).toContain('item.outstandingAmount')
     expect(page).toContain('totals.installmentsOutstanding')
-    expect(page).toContain('Próxima a pagar')
+    expect(page).not.toContain('Próxima a pagar')
     expect(page).not.toContain('totals.installmentsRemaining')
     expect(page).not.toContain('em parcelas futuras ')
   })
@@ -60,5 +60,9 @@ describe('Parcelas — posição estrutural da série', () => {
     expect(page).toContain('formatCurrency(next.amount)')
     expect(page).toContain('monthLabel(next)')
     expect(page).not.toContain('truncate text-[11px] text-muted-foreground')
+  })
+
+  it('remove o Ã­cone decorativo lateral dos cards', () => {
+    expect(page).not.toContain('Layers')
   })
 })

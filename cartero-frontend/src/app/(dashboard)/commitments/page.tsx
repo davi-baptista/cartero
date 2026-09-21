@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { CalendarClock, Layers, Loader2, RotateCcw, TriangleAlert } from 'lucide-react'
+import { CalendarClock, Loader2, RotateCcw, TriangleAlert } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
@@ -59,22 +59,16 @@ function InstallmentSection({
           const next = own ? item.nextOutstanding : item.nextInstallment
           const progress = next ? Math.min(100, Math.max(0, ((next.index - 1) / item.totalCount) * 100)) : 0
           const positionText = next ? `Próxima ${next.index}/${item.totalCount}` : `${item.totalCount} parcelas no total`
-          const displayPositionText = own && next
-            ? `Próxima a pagar ${next.index}/${item.totalCount}`
-            : positionText
 
           return (
             <div key={item.id} className="px-4 py-3.5">
               <div className="flex items-center gap-3">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/40">
-                  <Layers className="size-4 text-muted-foreground" aria-hidden />
-                </div>
                 <div className="min-w-0 flex-1">
                   <span className="truncate text-[13px] font-medium">{item.title}</span>
                   <p className="mt-0.5 break-words text-[11px] leading-4 text-muted-foreground md:truncate">
                     {next
-                      ? `${displayPositionText} · ${formatCurrency(next.amount)} · ${monthLabel(next)}`
-                      : displayPositionText}
+                      ? `${positionText} · ${formatCurrency(next.amount)} · ${monthLabel(next)}`
+                      : positionText}
                   </p>
                   <p className="mt-0.5 break-words text-[11px] text-muted-foreground/80">
                     {showPerson && item.personName && `${item.personName} · `}
