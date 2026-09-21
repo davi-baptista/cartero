@@ -22,13 +22,9 @@ import {
 } from '@/lib/money-semantics'
 import { accountToday, accountTodayDate, formatDateValue } from '@/lib/date'
 import { useAuth } from '@/providers/auth-provider'
-import { parseInvoiceDate } from '@/lib/invoice-dates'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { invoiceStatusConfig } from '@/lib/invoice-status'
 import {
-  civilDaysUntil,
-  formatCloseTiming,
-  formatDueTiming,
   formatDueTimingFromISO,
 } from '@/lib/invoice-timing'
 import { cn } from '@/lib/utils'
@@ -45,6 +41,7 @@ import {
 import {
   groupAttention,
   groupSelectedDay,
+  aggregateOpenTiming,
   limitAgenda,
   type AgendaGroup,
   type AgendaEntry,
@@ -75,50 +72,8 @@ function monthRange(year: number, month: number) {
 }
 
 /** Dívidas e recebíveis guardam a data como string ISO. */
-function formatDueDate(dateString: string): string {
-  return formatDueTimingFromISO(dateString)
-}
-
-type InvoiceDueUrgency = 'overdue' | 'urgent' | 'soon' | 'normal'
-
-function computeInvoiceDue(
-  invoice: Invoice,
-  bank: Bank | undefined,
-  today: Date = new Date(),
-): { text: string; urgency: InvoiceDueUrgency; diffDays: number } {
-  if (!bank) return { text: '', urgency: 'normal', diffDays: 999 }
-
-  today = new Date(today)
-  today.setHours(0, 0, 0, 0)
-
-  const isOpen = invoice.status === InvoiceStatus.OPEN
-
-  if (isOpen) {
-    // Data congelada da fatura, não recalculada pelo cartão.
-    const close = parseInvoiceDate(invoice.closeDate)
-    const closeDiff = civilDaysUntil(close, today)
-    if (closeDiff >= 0) {
-      // A urgência aqui é própria deste painel (fechar hoje é tratado como
-      // crítico, porque depois disso a fatura já não aceita ajuste fácil); só
-      // o TEXTO passou a vir do helper compartilhado.
-      return {
-        text: formatCloseTiming(close, today),
-        urgency:
-          closeDiff === 0 ? 'overdue' : closeDiff <= 2 ? 'urgent' : 'soon',
-        diffDays: closeDiff,
-      }
-    }
-    // Fechamento já passou mas o status ainda é OPEN (cron atrasado) — segue
-    // para o vencimento, senão a linha não explicaria por que está ali.
-  }
-
-  const due = parseInvoiceDate(invoice.dueDate)
-  const diffDays = civilDaysUntil(due, today)
-  return {
-    text: formatDueTiming(due, today),
-    urgency: diffDays <= 0 ? 'overdue' : 'urgent',
-    diffDays,
-  }
+function formatDueDate(dateString: string, today: Date): string {
+  return formatDueTimingFromISO(dateString, today)
 }
 
 /**
@@ -409,12 +364,10 @@ function AgendaMeta({
 
 function AgendaSummaryRow({
   group,
-  banks,
   today,
   onOpenDetail,
 }: {
   group: AgendaGroup
-  banks: Bank[]
   today: Date
   onOpenDetail: (param: OverviewDetailParam, id: string) => void
 }) {
@@ -424,13 +377,9 @@ function AgendaSummaryRow({
   const isSettled = group.entries.every((item) => item.settled)
   const isInvoice = entry.kind === 'invoice-due'
   const invoice = entry.invoice
-  const bank = invoice ? banks.find((item) => item.id === invoice.bankId) : undefined
-  const urgency = invoice
-    ? computeInvoiceDue(invoice, bank, today).urgency
-    : entry.urgency
-  const isOverdue = urgency === 'overdue' && !isSettled
-  const dueText = entry.dueDate ? formatDueDate(entry.dueDate) : undefined
-  const isDueToday = dueText === 'vence hoje'
+  const dueText = entry.dueDate ? formatDueDate(entry.dueDate, today).toLowerCase() : undefined
+  const aggregateTiming = count > 1 ? aggregateOpenTiming(group.entries, today) : null
+  const timingText = aggregateTiming?.text ?? dueText
   const title = group.personName ?? entry.title
   const description =
     count > 1
@@ -442,13 +391,14 @@ function AgendaSummaryRow({
           : agendaKindLabel(group.kind, count)
   const status =
     count > 1
-      ? isOverdue
-        ? 'vencidas'
-        : isSettled
-          ? group.kind === 'receivable' ? 'recebidos' : 'pagos'
-          : 'pendentes'
-          : dueText ?? entry.status
+      ? isSettled
+        ? group.kind === 'receivable' ? 'recebidos' : 'pagos'
+        : aggregateTiming?.text ?? 'pendentes'
+      : isSettled
+        ? entry.status
+        : timingText ?? entry.status
   const inlineStatus = inlineAgendaStatus(status)
+  const isDueToday = inlineStatus === 'vence hoje'
   const Icon = group.personId
     ? User
     : isInvoice
@@ -489,7 +439,6 @@ function AgendaSummaryRow({
 function AgendaSection({
   title,
   groups,
-  banks,
   today,
   overflowLabel,
   overflowCount,
@@ -499,7 +448,6 @@ function AgendaSection({
 }: {
   title: string
   groups: AgendaGroup[]
-  banks: Bank[]
   today: Date
   overflowLabel: { singular: string; plural: string }
   overflowCount: number
@@ -513,7 +461,7 @@ function AgendaSection({
       {groups.length > 0 && (
         <div className="divide-y divide-border/50">
           {groups.map((group) => (
-            <AgendaSummaryRow key={group.key} group={group} banks={banks} today={today} onOpenDetail={onOpenDetail} />
+            <AgendaSummaryRow key={group.key} group={group} today={today} onOpenDetail={onOpenDetail} />
           ))}
         </div>
       )}
@@ -838,7 +786,7 @@ function CalendarSection({
               ) : (
                 <div className="divide-y divide-border/50">
                   {selectedGroups.visible.map((group) => (
-                    <AgendaSummaryRow key={group.key} group={group} banks={banks} today={today} onOpenDetail={onOpenDetail} />
+                    <AgendaSummaryRow key={group.key} group={group} today={today} onOpenDetail={onOpenDetail} />
                   ))}
                 </div>
               )}
@@ -889,8 +837,7 @@ function CalendarSection({
                 <AgendaSection
                   title="Pendências"
                   groups={attentionGroups.visible}
-                  banks={banks}
-                  today={today}
+                   today={today}
                    overflowLabel={{ singular: 'pendência', plural: 'pendências' }}
                    overflowCount={attentionGroups.hiddenItems}
                    expanded={attentionExpanded}

@@ -2,6 +2,8 @@ import type { Bank, Debt, Invoice, Receivable } from '@/types'
 import type { AttentionDueUrgency } from '@/lib/overview-attention'
 import { attentionDueUrgency } from '@/lib/overview-attention'
 import type { CalEvent, CalEventKind } from '@/lib/calendar-events'
+import { formatDateValue } from '@/lib/date'
+import { formatDueTimingFromISO } from '@/lib/invoice-timing'
 
 export type AgendaEntry = {
   id: string
@@ -34,6 +36,48 @@ export type AgendaGroup = {
 export type LimitedAgenda = {
   visible: AgendaGroup[]
   hiddenItems: number
+}
+
+export type AggregateAgendaTiming = {
+  kind: 'today' | 'overdue'
+  text: string
+} | null
+
+/**
+ * Expõe timing somente quando todos os itens abertos compartilham a mesma
+ * condição civil. Grupos mistos permanecem no copy agregado genérico.
+ */
+export function aggregateOpenTiming(
+  entries: readonly AgendaEntry[],
+  today: Date,
+): AggregateAgendaTiming {
+  const openDates = entries
+    .filter((entry) => !entry.settled)
+    .map((entry) => entry.dueDate?.slice(0, 10))
+
+  if (openDates.length === 0 || openDates.some((date) => !date)) return null
+
+  const dates = openDates as string[]
+  const todayValue = formatDateValue(today)
+  const allOverdue = dates.every((date) => date < todayValue)
+  const allToday = dates.every((date) => date === todayValue)
+
+  if (allOverdue) {
+    const oldest = [...dates].sort()[0]
+    return {
+      kind: 'overdue',
+      text: formatDueTimingFromISO(oldest, today).toLowerCase(),
+    }
+  }
+
+  if (allToday) {
+    return {
+      kind: 'today',
+      text: formatDueTimingFromISO(dates[0], today).toLowerCase(),
+    }
+  }
+
+  return null
 }
 
 function entryFromEvent(event: CalEvent): AgendaEntry {

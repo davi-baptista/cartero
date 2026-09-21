@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { AgendaEntry } from './overview-agenda'
-import { groupAgendaEntries, groupAttention, limitAgenda } from './overview-agenda'
+import {
+  aggregateOpenTiming,
+  groupAgendaEntries,
+  groupAttention,
+  limitAgenda,
+} from './overview-agenda'
 
 const entry = (overrides: Partial<AgendaEntry> = {}): AgendaEntry => ({
   id: 'debt:1',
@@ -114,5 +119,39 @@ describe('overview contextual agenda grouping', () => {
       'debt:later',
     ])
     expect(limitAgenda(groups, 2).hiddenItems).toBe(1)
+  })
+
+  it('exposes due-today timing only for a uniformly due-today open group', () => {
+    const today = new Date('2026-09-21T12:00:00')
+    const allToday = [
+      entry({ id: 'r1', kind: 'receivable', dueDate: '2026-09-21', settled: false }),
+      entry({ id: 'r2', kind: 'receivable', dueDate: '2026-09-21', settled: false }),
+    ]
+    const mixed = [
+      ...allToday,
+      entry({ id: 'r3', kind: 'receivable', dueDate: '2026-09-23', settled: false }),
+    ]
+
+    expect(aggregateOpenTiming(allToday, today)).toEqual({
+      kind: 'today',
+      text: 'vence hoje',
+    })
+    expect(aggregateOpenTiming(mixed, today)).toBeNull()
+    expect(aggregateOpenTiming([
+      entry({ id: 'd1', kind: 'debt', dueDate: '2026-09-21', settled: false }),
+      entry({ id: 'd2', kind: 'debt', dueDate: '2026-09-21', settled: false }),
+    ], today)).toEqual({ kind: 'today', text: 'vence hoje' })
+  })
+
+  it('uses the oldest due date for an uniformly overdue group', () => {
+    const timing = aggregateOpenTiming([
+      entry({ id: 'd1', dueDate: '2026-09-01', settled: false }),
+      entry({ id: 'd2', dueDate: '2026-09-10', settled: false }),
+    ], new Date('2026-09-21T12:00:00'))
+
+    expect(timing).toEqual({
+      kind: 'overdue',
+      text: 'venceu há 20 dias',
+    })
   })
 })
