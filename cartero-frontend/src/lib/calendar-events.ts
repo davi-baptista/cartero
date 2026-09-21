@@ -288,6 +288,40 @@ export function eventsForDay(
   return eventsByDay.get(day) ?? []
 }
 
+export type CalendarDayState = {
+  allKinds: CalEventKind[]
+  overdueKinds: CalEventKind[]
+  visibleKinds: CalEventKind[]
+  hasUnresolvedOverdue: boolean
+}
+
+/**
+ * Deriva uma vez a representação de atenção de uma célula.
+ *
+ * A superfície vermelha e os dots precisam responder à mesma pergunta:
+ * existe uma obrigação vencida que ainda não foi resolvida? Quando existe,
+ * a célula mostra somente os tipos que ainda exigem atenção; caso contrário,
+ * volta a representar todo o histórico do dia.
+ */
+export function calendarDayState(events: readonly CalEvent[]): CalendarDayState {
+  const allKinds = [...new Set(events.map((event) => event.kind))]
+  const overdueKinds = [
+    ...new Set(
+      events
+        .filter((event) => !event.settled && event.status === 'Em atraso')
+        .map((event) => event.kind),
+    ),
+  ]
+  const hasUnresolvedOverdue = overdueKinds.length > 0
+
+  return {
+    allKinds,
+    overdueKinds,
+    visibleKinds: hasUnresolvedOverdue ? overdueKinds : allKinds,
+    hasUnresolvedOverdue,
+  }
+}
+
 const DEBT_STATUS: Record<'paid' | 'overdue' | 'pending', string> = {
   paid: 'Pago',
   overdue: 'Em atraso',

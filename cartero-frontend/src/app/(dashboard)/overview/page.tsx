@@ -30,6 +30,7 @@ import {
 import { cn } from '@/lib/utils'
 import {
   buildCalendarEvents,
+  calendarDayState,
   eventsForDay,
   CAL_KIND_DOT_CLASS,
   CAL_KIND_LABEL,
@@ -697,13 +698,8 @@ function CalendarSection({
               const isToday = dayIso === todayStr
               const isSelected = day === selectedDay
               const isPast = dayIso < todayStr
-              const hasUnresolvedOverdue = events.some(
-                (event) => !event.settled && event.status === 'Em atraso',
-              )
-              const isHistoricalResolved = isPast && !hasUnresolvedOverdue
-              const eventKinds = [
-                ...new Set(events.map((event: CalEvent) => event.kind)),
-              ]
+              const dayState = calendarDayState(events)
+              const isHistoricalResolved = isPast && !dayState.hasUnresolvedOverdue
               const hasEvents = events.length > 0
 
               return (
@@ -715,13 +711,13 @@ function CalendarSection({
                     setSelectedDayExpanded(false)
                   }}
                   aria-pressed={isSelected || undefined}
-                  aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}: ${eventKinds.map((kind) => CAL_KIND_LABEL[kind]).join(', ')}` : ''}${hasUnresolvedOverdue ? ', possui item vencido' : ''}`}
+                  aria-label={`Dia ${day}${hasEvents ? `, ${events.length} item${events.length > 1 ? 's' : ''}: ${dayState.allKinds.map((kind) => CAL_KIND_LABEL[kind]).join(', ')}` : ''}${isSelected ? ', selecionado' : ''}${dayState.hasUnresolvedOverdue ? ', possui item vencido' : ''}`}
                   className={cn(
                     'flex min-w-0 flex-col items-center gap-1 rounded-md bg-card/80 py-1.5 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring sm:py-2',
-                    isSelected
-                      ? 'bg-muted/80'
-                      : hasUnresolvedOverdue
+                    dayState.hasUnresolvedOverdue
                         ? 'bg-destructive/8 hover:bg-destructive/12'
+                        : isSelected
+                          ? 'bg-muted/80'
                         : hasEvents && !isHistoricalResolved
                           ? 'bg-muted/55 hover:bg-muted/65'
                           : hasEvents
@@ -745,7 +741,7 @@ function CalendarSection({
                     {day}
                   </span>
                   <div className="flex min-h-[6px] items-center gap-0.5">
-                    {eventKinds.slice(0, 3).map((kind) => (
+                    {dayState.visibleKinds.slice(0, 3).map((kind) => (
                       <span
                         key={kind}
                         className={cn('size-1.5 rounded-full', CAL_KIND_DOT_CLASS[kind], isHistoricalResolved && !isSelected && 'opacity-60')}

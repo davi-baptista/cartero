@@ -51,7 +51,7 @@ describe('overview desktop composition', () => {
     expect(overview).toContain('gap-2.5 py-2.5 sm:gap-3 sm:py-3')
     expect(overview).toContain('text-sm font-semibold tabular-nums tracking-[-0.02em]')
     expect(overview).toContain('isHistoricalResolved')
-    expect(overview).toContain("event.status === 'Em atraso'")
+    expect(overview).toContain('calendarDayState(events)')
   })
 
   it('keeps agenda amounts neutral and moves status semantics to copy and icons', () => {

@@ -6,8 +6,10 @@ import {
   buildInvoiceBreakdown,
   CAL_KIND_DOT_CLASS,
   CAL_KIND_LABEL,
+  calendarDayState,
   eventsForDay,
 } from './calendar-events'
+import type { CalEvent } from './calendar-events'
 import { selectAttentionInvoices } from './overview-attention'
 
 /**
@@ -37,6 +39,62 @@ describe('calendar semantic type markers', () => {
       debt: 'Dívida',
       receivable: 'A Receber',
     })
+  })
+})
+
+function calendarEvent(kind: CalEvent['kind'], settled: boolean, status: string): CalEvent {
+  return {
+    id: `${kind}-${status}-${settled}`,
+    kind,
+    title: kind,
+    amount: 100,
+    status,
+    direction: kind === 'receivable' ? 'in' : 'out',
+    settled,
+    href: '#',
+  }
+}
+
+describe('calendar overdue attention mode', () => {
+  it('shows only unresolved overdue types while the day is in attention mode', () => {
+    const state = calendarDayState([
+      calendarEvent('invoice-due', false, 'Em atraso'),
+      calendarEvent('receivable', true, 'Recebido'),
+    ])
+
+    expect(state.hasUnresolvedOverdue).toBe(true)
+    expect(state.visibleKinds).toEqual(['invoice-due'])
+  })
+
+  it('keeps multiple unresolved overdue types and deduplicates each type', () => {
+    const state = calendarDayState([
+      calendarEvent('invoice-due', false, 'Em atraso'),
+      calendarEvent('invoice-due', false, 'Em atraso'),
+      calendarEvent('debt', false, 'Em atraso'),
+      calendarEvent('receivable', true, 'Recebido'),
+    ])
+
+    expect(state.visibleKinds).toEqual(['invoice-due', 'debt'])
+  })
+
+  it('restores all historical type dots after the overdue item is resolved', () => {
+    const state = calendarDayState([
+      calendarEvent('invoice-due', true, 'Paga'),
+      calendarEvent('receivable', true, 'Recebido'),
+    ])
+
+    expect(state.hasUnresolvedOverdue).toBe(false)
+    expect(state.visibleKinds).toEqual(['invoice-due', 'receivable'])
+  })
+
+  it('does not enter attention mode for due-today or future open events', () => {
+    const state = calendarDayState([
+      calendarEvent('invoice-due', false, 'Pendente'),
+      calendarEvent('receivable', false, 'Pendente'),
+    ])
+
+    expect(state.hasUnresolvedOverdue).toBe(false)
+    expect(state.visibleKinds).toEqual(['invoice-due', 'receivable'])
   })
 })
 
