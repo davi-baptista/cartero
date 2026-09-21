@@ -14,6 +14,7 @@ export type AgendaEntry = {
   detail?: string
   personId?: string
   personName?: string
+  settled?: boolean
   urgency?: AttentionDueUrgency
   dueDate?: string
   invoice?: Invoice
@@ -45,15 +46,46 @@ function entryFromEvent(event: CalEvent): AgendaEntry {
     detail: event.detail,
     personId: event.personId,
     personName: event.personName,
+    settled: event.settled,
   }
 }
 
 function groupKey(entry: AgendaEntry, mode: 'selected' | 'attention'): string {
   if (entry.personId && entry.personName) {
-    if (mode === 'selected') return `${entry.kind}:${entry.personId}`
+    if (mode === 'selected') return `${entry.kind}:${entry.personId}:${entry.settled ? 'settled' : 'open'}`
     return `${entry.kind}:${entry.personId}:${entry.urgency ?? 'normal'}`
   }
   return entry.id
+}
+
+function groupOldestDueDate(group: AgendaGroup): string | undefined {
+  const dates = group.entries
+    .map((entry) => entry.dueDate ?? entry.invoice?.dueDate)
+    .filter((date): date is string => Boolean(date))
+    .sort()
+  return dates[0]
+}
+
+function sortAgendaGroups(groups: AgendaGroup[], mode: 'selected' | 'attention'): AgendaGroup[] {
+  if (mode === 'selected') {
+    return groups
+      .map((group, index) => ({ group, index }))
+      .sort((a, b) => {
+        const aOpen = a.group.entries.some((entry) => !entry.settled)
+        const bOpen = b.group.entries.some((entry) => !entry.settled)
+        return Number(bOpen) - Number(aOpen) || a.index - b.index
+      })
+      .map(({ group }) => group)
+  }
+
+  return groups
+    .map((group, index) => ({ group, index }))
+    .sort((a, b) => {
+      const aDate = groupOldestDueDate(a.group) ?? '9999-12-31'
+      const bDate = groupOldestDueDate(b.group) ?? '9999-12-31'
+      return aDate.localeCompare(bDate) || a.index - b.index
+    })
+    .map(({ group }) => group)
 }
 
 export function groupAgendaEntries(
@@ -79,7 +111,7 @@ export function groupAgendaEntries(
     })
   }
 
-  return [...groups.values()]
+  return sortAgendaGroups([...groups.values()], mode)
 }
 
 export function groupSelectedDay(events: readonly CalEvent[]): AgendaGroup[] {
@@ -98,6 +130,8 @@ function invoiceEntry(invoice: Invoice, banks: readonly Bank[]): AgendaEntry {
     href: `/banks/${invoice.bankId}/invoices?invoiceId=${invoice.id}`,
     invoice,
     bankName,
+    settled: invoice.status === 'PAID',
+    dueDate: invoice.dueDate,
   }
 }
 
@@ -114,6 +148,7 @@ function debtEntry(debt: Debt, today: Date): AgendaEntry {
     personName: debt.person?.name,
     urgency: attentionDueUrgency(debt.dueDate, today),
     dueDate: debt.dueDate,
+    settled: debt.isPaid,
   }
 }
 
@@ -130,6 +165,7 @@ function receivableEntry(receivable: Receivable, today: Date): AgendaEntry {
     personName: receivable.person?.name,
     urgency: attentionDueUrgency(receivable.dueDate, today),
     dueDate: receivable.dueDate,
+    settled: receivable.isPaid,
   }
 }
 

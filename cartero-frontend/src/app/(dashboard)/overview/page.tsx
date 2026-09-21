@@ -350,15 +350,15 @@ function InvoiceBadge({ status }: { status: InvoiceStatus }) {
 
 
 /** Círculo tonal compartilhado das rows deste painel — vermelho quando overdue. */
-function AttentionRowIcon({ icon: Icon, isOverdue }: { icon: LucideIcon; isOverdue: boolean }) {
+function AttentionRowIcon({ icon: Icon, isOverdue, isSettled }: { icon: LucideIcon; isOverdue: boolean; isSettled: boolean }) {
   return (
     <div
       className={cn(
         'flex size-6 shrink-0 items-center justify-center rounded-md',
-        isOverdue ? 'bg-destructive/10' : 'bg-muted/40',
+        isSettled ? 'bg-muted/30' : isOverdue ? 'bg-destructive/10' : 'bg-muted/40',
       )}
     >
-      <Icon className={cn('size-3.5', isOverdue ? 'text-destructive' : 'text-muted-foreground')} aria-hidden="true" />
+      <Icon className={cn('size-3.5', !isSettled && isOverdue ? 'text-destructive' : 'text-muted-foreground')} aria-hidden="true" />
     </div>
   )
 }
@@ -384,13 +384,14 @@ function AgendaSummaryRow({
   const entry = group.entries[0]
   const count = group.entries.length
   const total = group.entries.reduce((sum, item) => sum + item.amount, 0)
+  const isSettled = group.entries.every((item) => item.settled)
   const isInvoice = entry.kind === 'invoice-due'
   const invoice = entry.invoice
   const bank = invoice ? banks.find((item) => item.id === invoice.bankId) : undefined
   const urgency = invoice
     ? computeInvoiceDue(invoice, bank, today).urgency
     : entry.urgency
-  const isOverdue = urgency === 'overdue'
+  const isOverdue = urgency === 'overdue' && !isSettled
   const dueText = entry.dueDate ? formatDueDate(entry.dueDate) : undefined
   const title = group.personName ?? entry.title
   const subtitle =
@@ -413,12 +414,12 @@ function AgendaSummaryRow({
     <FinancialListRow
       href={href}
       ariaLabel={accessible}
-      leading={<AttentionRowIcon icon={Icon} isOverdue={isOverdue} />}
-      title={title}
+      leading={<AttentionRowIcon icon={Icon} isOverdue={isOverdue} isSettled={isSettled} />}
+      title={<span className={cn(isSettled && 'text-muted-foreground')}>{title}</span>}
       titleAdornment={isInvoice && invoice ? <InvoiceBadge status={invoice.status} /> : undefined}
       meta={<span className="truncate text-xs">{subtitle}</span>}
       trailing={
-        <span className={cn('text-sm font-semibold tabular-nums tracking-[-0.02em]', directionClass, isOverdue && 'text-destructive')}>
+        <span className={cn('text-sm font-semibold tabular-nums tracking-[-0.02em]', !isSettled && directionClass, isOverdue && 'text-destructive', isSettled && 'text-muted-foreground')}>
           {formatCurrency(total)}
         </span>
       }
@@ -488,9 +489,9 @@ const CAL_DIRECTION_AMOUNT: Record<CalEventDirection, string> = {
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 
 /**
- * Agenda contextual: dia selecionado e Atenção agora, sempre visíveis.
+ * Agenda contextual: dia selecionado e pendências, sempre visíveis.
  *
- * O calendário responde "o que acontece NESTE DIA?" e Atenção agora responde
+ * O calendário responde "o que acontece NESTE DIA?" e pendências respondem
  * "o que ainda exige minha atenção AGORA?". As duas respostas vivem no mesmo
  * painel, sem uma escolha intermediária.
  */
@@ -613,10 +614,6 @@ function CalendarSection({
       <div className="grid w-full min-w-0 items-start gap-10 lg:gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
       <div className="min-w-0">
       <h2 className="text-[15px] font-semibold tracking-tight">Calendário</h2>
-      <p className="mb-4 mt-0.5 text-[11px] text-muted-foreground">
-        Vencimentos e movimentações com data neste mês
-      </p>
-
       {/*
         Enquanto qualquer fonte carrega, o grid fica em skeleton.
 
@@ -678,9 +675,14 @@ function CalendarSection({
               if (day === null) return <div key={`e-${idx}`} />
 
               const events = eventsForDay(eventsByDay, day)
-              const isToday = day === todayDay
+              const dayIso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+              const isToday = dayIso === todayStr
               const isSelected = day === selectedDay
-              const isPast = isCurrentMonth && day < todayDay
+              const isPast = dayIso < todayStr
+              const hasUnresolvedOverdue = events.some(
+                (event) => !event.settled && event.status === 'Em atraso',
+              )
+              const isHistoricalResolved = isPast && !hasUnresolvedOverdue
               const directions = [
                 ...new Set(events.map((e: CalEvent) => e.direction)),
               ]
@@ -699,16 +701,24 @@ function CalendarSection({
                     'flex min-w-0 flex-col items-center gap-1 rounded-md bg-card/80 py-1.5 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring sm:py-2',
                     isSelected
                       ? 'bg-muted/80'
-                      : hasEvents
+                      : hasEvents && !isHistoricalResolved
                         ? 'bg-muted/55 hover:bg-muted/65'
+                        : hasEvents
+                          ? 'bg-muted/35 hover:bg-muted/45'
                         : 'hover:bg-muted/50',
-                    isPast && 'opacity-40',
+                    isHistoricalResolved && !isSelected && 'opacity-40',
                   )}
                 >
                   <span
                     className={cn(
                       'flex size-7 items-center justify-center rounded-full text-[13px] font-medium leading-none',
-                      isToday ? 'bg-primary text-primary-foreground' : 'text-foreground',
+                      isToday
+                        ? 'bg-primary text-primary-foreground'
+                        : isSelected
+                          ? 'bg-foreground text-background'
+                          : isHistoricalResolved
+                            ? 'text-muted-foreground'
+                            : 'text-foreground',
                     )}
                   >
                     {day}
@@ -717,7 +727,7 @@ function CalendarSection({
                     {directions.slice(0, 3).map((direction) => (
                       <span
                         key={direction}
-                        className={cn('size-1.5 rounded-full', CAL_DIRECTION_DOT[direction])}
+                         className={cn('size-1.5 rounded-full', CAL_DIRECTION_DOT[direction], isHistoricalResolved && !isSelected && 'opacity-60')}
                         aria-hidden
                       />
                     ))}
@@ -743,7 +753,7 @@ function CalendarSection({
             ))}
           </div>
 
-          {/* ─── Painel contextual: Hoje/dia selecionado × Atenção agora ─── */}
+          {/* ─── Painel contextual: Hoje/dia selecionado × Pendências ─── */}
           </>
         )}
         </div>
@@ -795,15 +805,15 @@ function CalendarSection({
                   onRetry={onRetryAttention}
                 />
               ) : attentionAllEmpty ? (
-                <section aria-label="Atenção agora">
-                  <h3 className="mb-1.5 text-sm font-semibold tracking-tight">Atenção agora</h3>
+                <section aria-label="Pendências">
+                  <h3 className="mb-1.5 text-sm font-semibold tracking-tight">Pendências</h3>
                   <p className="py-4 text-center text-xs text-muted-foreground">
                     Nenhuma pendência agora.
                   </p>
                 </section>
               ) : (
                 <AgendaSection
-                  title="Atenção agora"
+                  title="Pendências"
                   groups={attentionGroups.visible}
                   banks={banks}
                   today={today}
@@ -996,7 +1006,7 @@ export default function OverviewPage() {
   )
 
   /*
-    Seleção de "Atenção agora" — extraída para `overview-attention.ts`
+    Seleção de pendências — extraída para `overview-attention.ts`
     (Overview Agenda V1). Mesmas regras de antes: current-state, sempre
     relativo a hoje, nunca ao mês navegado no calendário abaixo.
   */
@@ -1021,7 +1031,7 @@ export default function OverviewPage() {
       </div>
 
       {/*
-        Calendário + Atenção agora (Overview Agenda V1) — primeira e
+        Calendário + pendências (Overview Agenda V1) — primeira e
         principal superfície. `key` por competência: trocar de mês remonta a
         seção, reavaliando o estado inicial de `selectedDay` (hoje no mês
         atual, neutro em outro mês) sem um efeito chamando `setState`.

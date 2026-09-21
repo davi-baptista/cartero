@@ -29,6 +29,17 @@ describe('overview contextual agenda grouping', () => {
     expect(sameNameDifferentPeople).toHaveLength(2)
   })
 
+  it('puts open rows before settled rows and splits a mixed person group', () => {
+    const groups = groupAgendaEntries([
+      entry({ id: 'debt:paid', personId: 'p1', personName: 'Mariana', settled: true }),
+      entry({ id: 'debt:open', personId: 'p1', personName: 'Mariana', settled: false }),
+    ], 'selected')
+
+    expect(groups).toHaveLength(2)
+    expect(groups[0].entries[0].settled).toBe(false)
+    expect(groups[1].entries[0].settled).toBe(true)
+  })
+
   it('keeps debt and receivable groups separate for the same person', () => {
     const groups = groupAgendaEntries([
       entry({ id: 'debt:1', personId: 'p1', personName: 'Mariana' }),
@@ -88,5 +99,20 @@ describe('overview contextual agenda grouping', () => {
     const limited = limitAgenda(groups, 4)
     expect(limited.visible).toHaveLength(4)
     expect(limited.hiddenItems).toBe(1)
+  })
+
+  it('sorts pending groups by the oldest underlying due date before limiting', () => {
+    const groups = groupAgendaEntries([
+      entry({ id: 'debt:later', dueDate: '2026-09-30', personId: 'p1', personName: 'Ana' }),
+      entry({ id: 'debt:oldest', dueDate: '2026-09-10', personId: 'p2', personName: 'Bia' }),
+      entry({ id: 'debt:middle', dueDate: '2026-09-20', personId: 'p3', personName: 'Caio' }),
+    ], 'attention')
+
+    expect(groups.map((group) => group.entries[0].id)).toEqual([
+      'debt:oldest',
+      'debt:middle',
+      'debt:later',
+    ])
+    expect(limitAgenda(groups, 2).hiddenItems).toBe(1)
   })
 })
