@@ -4,10 +4,12 @@ import { currentCycle } from 'src/common/helpers/subscription.helper';
 import { getInstallmentMetadata } from 'src/common/helpers/installment.helper';
 
 export interface InstallmentCompetence {
+  id: string;
   month: number;
   year: number;
   amount: number;
   index: number;
+  status?: 'OPEN' | 'CLOSED' | 'PAID' | 'OVERDUE';
 }
 
 /** A series with at least one existing future installment row. */
@@ -17,8 +19,11 @@ export interface ActiveInstallment {
   totalCount: number;
   futureCount: number;
   remaining: number;
+  outstandingCount: number;
+  outstandingAmount: number;
   endsAt: { month: number; year: number } | null;
   nextInstallment: InstallmentCompetence | null;
+  nextOutstanding: InstallmentCompetence | null;
   bankName: string | null;
   categoryName: string | null;
   personId: string | null;
@@ -53,8 +58,8 @@ export class CommitmentsService {
       installments: own,
       othersInstallments: others,
       totals: {
-        installmentsRemaining: own.reduce(
-          (sum, item) => sum + item.remaining,
+        installmentsOutstanding: own.reduce(
+          (sum, item) => sum + item.outstandingAmount,
           0,
         ),
         othersRemaining: others.reduce((sum, item) => sum + item.remaining, 0),
@@ -74,7 +79,7 @@ export class CommitmentsService {
         installmentCount: { not: null },
       },
       include: {
-        invoice: { select: { month: true, year: true } },
+        invoice: { select: { month: true, year: true, status: true } },
         bank: { select: { name: true } },
         category: { select: { name: true } },
         person: { select: { id: true, name: true } },
@@ -107,8 +112,11 @@ export class CommitmentsService {
         totalCount: metadata.count,
         futureCount: 0,
         remaining: 0,
+        outstandingCount: 0,
+        outstandingAmount: 0,
         endsAt: null,
         nextInstallment: null,
+        nextOutstanding: null,
         bankName: tx.bank?.name ?? null,
         categoryName: tx.category?.name ?? null,
         personId: tx.person?.id ?? null,
@@ -122,10 +130,37 @@ export class CommitmentsService {
         if (competenceKey < entry.nextKey) {
           entry.nextKey = competenceKey;
           entry.nextInstallment = {
+            id: tx.id,
             month,
             year,
             amount,
             index: metadata.index,
+          };
+        }
+      }
+      if (tx.invoice.status !== 'PAID') {
+        entry.outstandingCount += 1;
+        entry.outstandingAmount += amount;
+        const current = entry.nextOutstanding;
+        const candidateIsEarlier =
+          !current ||
+          year < current.year ||
+          (year === current.year && month < current.month) ||
+          (year === current.year &&
+            month === current.month &&
+            metadata.index < current.index) ||
+          (year === current.year &&
+            month === current.month &&
+            metadata.index === current.index &&
+            tx.id.localeCompare(current.id) < 0);
+        if (candidateIsEarlier) {
+          entry.nextOutstanding = {
+            id: tx.id,
+            month,
+            year,
+            amount,
+            index: metadata.index,
+            status: tx.invoice.status,
           };
         }
       }
@@ -134,16 +169,45 @@ export class CommitmentsService {
     }
 
     return [...groups.values()]
-      .filter((entry) => entry.futureCount > 0)
-      .sort((a, b) => a.nextKey - b.nextKey || a.id.localeCompare(b.id))
+      .filter((entry) =>
+        entry.personId ? entry.futureCount > 0 : entry.outstandingCount > 0,
+      )
+      .sort((a, b) => {
+        const aKey = a.personId
+          ? [a.nextKey, a.id]
+          : a.nextOutstanding
+            ? [
+                a.nextOutstanding.year * 100 + a.nextOutstanding.month,
+                a.nextOutstanding.index,
+                a.nextOutstanding.id,
+              ]
+            : [Number.MAX_SAFE_INTEGER, 0, a.id];
+        const bKey = b.personId
+          ? [b.nextKey, b.id]
+          : b.nextOutstanding
+            ? [
+                b.nextOutstanding.year * 100 + b.nextOutstanding.month,
+                b.nextOutstanding.index,
+                b.nextOutstanding.id,
+              ]
+            : [Number.MAX_SAFE_INTEGER, 0, b.id];
+        for (let i = 0; i < aKey.length; i += 1) {
+          if (aKey[i] === bKey[i]) continue;
+          return aKey[i] < bKey[i] ? -1 : 1;
+        }
+        return 0;
+      })
       .map((entry) => ({
         id: entry.id,
         title: entry.title,
         totalCount: entry.totalCount,
         futureCount: entry.futureCount,
         remaining: entry.remaining,
+        outstandingCount: entry.outstandingCount,
+        outstandingAmount: entry.outstandingAmount,
         endsAt: entry.endsAt,
         nextInstallment: entry.nextInstallment,
+        nextOutstanding: entry.nextOutstanding,
         bankName: entry.bankName,
         categoryName: entry.categoryName,
         personId: entry.personId,

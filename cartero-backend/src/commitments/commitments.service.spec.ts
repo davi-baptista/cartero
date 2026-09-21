@@ -22,6 +22,7 @@ function row(options: {
   index: number;
   count: number;
   isRefund?: boolean;
+  status?: 'OPEN' | 'CLOSED' | 'PAID' | 'OVERDUE';
   person?: { id: string; name: string } | null;
 }) {
   return {
@@ -34,7 +35,11 @@ function row(options: {
       installmentCount: options.count,
       isRefund: options.isRefund ?? false,
     }),
-    invoice: { month: options.month, year: options.year },
+    invoice: {
+      month: options.month,
+      year: options.year,
+      status: options.status ?? 'OPEN',
+    },
     bank: { name: 'Cartão Teste' },
     category: { name: 'Compras' },
     person: options.person ?? null,
@@ -126,7 +131,11 @@ describe('CommitmentsService — Parcelas', () => {
         }),
       ]),
     ).getCommitments(USER_ID);
-    expect(result.installments).toEqual([]);
+    expect(result.installments[0]).toMatchObject({
+      outstandingCount: 2,
+      outstandingAmount: 200,
+      nextOutstanding: { index: 1, status: 'OPEN' },
+    });
   });
 
   it('conta somente rows futuras sobreviventes, sem renumerar a série', async () => {
@@ -254,7 +263,7 @@ describe('CommitmentsService — Parcelas', () => {
       personName: 'Eva',
     });
     expect(result.totals).toEqual({
-      installmentsRemaining: 300,
+      installmentsOutstanding: 300,
       othersRemaining: 200,
     });
   });
@@ -472,6 +481,119 @@ describe('CommitmentsService — Parcelas', () => {
     ).getCommitments(USER_ID);
     expect(result.forecast[0].installments).toBe(219.75);
     expect(result.forecast[1].installments).toBe(219.66);
+  });
+
+  it.each(['OPEN', 'CLOSED', 'OVERDUE'] as const)(
+    'trata invoice %s como outstanding, inclusive sem occurrence futura',
+    async (status) => {
+      const result = await new CommitmentsService(
+        prisma([
+          row({
+            id: 'overdue',
+            title: 'Compra 10/10',
+            amount: '123.45',
+            index: 10,
+            count: 10,
+            month: 1,
+            year: 2020,
+            status,
+          }),
+        ]),
+      ).getCommitments(USER_ID);
+
+      expect(result.installments[0]).toMatchObject({
+        outstandingCount: 1,
+        outstandingAmount: 123.45,
+        nextOutstanding: {
+          index: 10,
+          amount: 123.45,
+          status,
+        },
+      });
+    },
+  );
+
+  it('exclui PAID da contagem, soma e nextOutstanding', async () => {
+    const result = await new CommitmentsService(
+      prisma([
+        row({
+          id: 'paid',
+          title: 'Compra 7/10',
+          amount: '70',
+          index: 7,
+          count: 10,
+          month: 7,
+          year: 2026,
+          status: 'PAID',
+        }),
+        row({
+          id: 'open',
+          parentId: 'paid',
+          title: 'Compra 8/10',
+          amount: '80.12',
+          index: 8,
+          count: 10,
+          month: 8,
+          year: 2026,
+          status: 'OPEN',
+        }),
+      ]),
+    ).getCommitments(USER_ID);
+
+    expect(result.installments[0]).toMatchObject({
+      outstandingCount: 1,
+      outstandingAmount: 80.12,
+      nextOutstanding: { index: 8, amount: 80.12 },
+    });
+  });
+
+  it('faz sÃ©rie settled reaparecer quando uma invoice Ã© reaberta', async () => {
+    const paid = row({
+      id: 'reopened',
+      title: 'Compra 4/4',
+      amount: '99.99',
+      index: 4,
+      count: 4,
+      month: 4,
+      year: 2026,
+      status: 'PAID',
+    });
+    const db = prisma([paid]);
+    const hidden = await new CommitmentsService(db).getCommitments(USER_ID);
+    expect(hidden.installments).toEqual([]);
+
+    paid.invoice.status = 'CLOSED';
+    const visible = await new CommitmentsService(prisma([paid])).getCommitments(
+      USER_ID,
+    );
+    expect(visible.installments[0]).toMatchObject({
+      outstandingCount: 1,
+      outstandingAmount: 99.99,
+      nextOutstanding: { index: 4, status: 'CLOSED' },
+    });
+    expect(paid.installmentIndex).toBe(4);
+    expect(paid.installmentCount).toBe(4);
+  });
+
+  it('ignora occurrence estrutural sem invoice sem classificÃ¡-la', async () => {
+    const result = await new CommitmentsService(
+      prisma([
+        {
+          ...row({
+            id: 'orphan',
+            title: 'Sem fatura 1/1',
+            amount: '50',
+            index: 1,
+            count: 1,
+            ...FUTURE,
+          }),
+          invoice: null,
+        },
+      ]),
+    ).getCommitments(USER_ID);
+
+    expect(result.installments).toEqual([]);
+    expect(result.totals.installmentsOutstanding).toBe(0);
   });
 
   it('reconhece metadata estrutural sem suffix no título e ignora N/M isolado', async () => {
