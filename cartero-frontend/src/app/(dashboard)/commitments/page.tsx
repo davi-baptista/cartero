@@ -45,8 +45,11 @@ function InstallmentSection({
         <div className="flex items-baseline justify-between gap-2">
           <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
           <span className="shrink-0 text-[11px] text-muted-foreground">
-            {showPerson ? 'no cartão ' : 'em parcelas a pagar '}
-            <span className="font-medium text-foreground">{formatCurrency(total)}</span>
+            {showPerson ? (
+              <>no cartão <span className="font-medium text-foreground">{formatCurrency(total)}</span></>
+            ) : (
+              <span className="font-medium text-foreground">{formatCurrency(total)} em aberto</span>
+            )}
           </span>
         </div>
         {description && <p className="mt-0.5 text-[11px] text-muted-foreground">{description}</p>}
@@ -68,12 +71,12 @@ function InstallmentSection({
                 </div>
                 <div className="min-w-0 flex-1">
                   <span className="truncate text-[13px] font-medium">{item.title}</span>
-                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                  <p className="mt-0.5 break-words text-[11px] leading-4 text-muted-foreground md:truncate">
                     {next
                       ? `${displayPositionText} · ${formatCurrency(next.amount)} · ${monthLabel(next)}`
                       : displayPositionText}
                   </p>
-                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">
+                  <p className="mt-0.5 break-words text-[11px] text-muted-foreground/80">
                     {showPerson && item.personName && `${item.personName} · `}
                     {item.bankName ?? 'Cartão'}
                     {item.endsAt && ` · termina ${monthLabel(item.endsAt)}`}
@@ -123,7 +126,7 @@ export default function CommitmentsPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Parcelas</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">Acompanhe suas compras parceladas e o que compromete os próximos meses.</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">Acompanhe suas compras parceladas, o que ainda falta pagar e o impacto nos próximos meses.</p>
       </div>
 
       {isLoading ? (
@@ -163,7 +166,7 @@ export default function CommitmentsPage() {
               </div>
             </div>
           )}
-          {installments.length > 0 && <InstallmentSection title="Parcelas ativas" description={othersInstallments.length > 0 ? 'Sua parte: o que ainda sai do seu bolso.' : undefined} items={installments} total={totals.installmentsOutstanding} own />}
+          {installments.length > 0 && <InstallmentSection title="Parcelas em aberto" description={othersInstallments.length > 0 ? 'Sua parte: o que ainda sai do seu bolso.' : undefined} items={installments} total={totals.installmentsOutstanding} own />}
           {othersInstallments.length > 0 && <InstallmentSection title="Parcelas de outras pessoas" description="Passam pelo seu cartão; o reembolso não é calculado aqui." items={othersInstallments} total={totals.othersRemaining} showPerson />}
         </>
       )}
