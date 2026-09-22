@@ -12,6 +12,7 @@ import {
 import { parseDateOnly } from './date-only.helper';
 import { financialCivilDay } from './financial-timezone.helper';
 import { requireAccountTimeZone } from './timezone.helper';
+import { assertNotActivePersonSettlementMember } from './person-settlement.guard';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -365,6 +366,8 @@ export async function correctSettlementDate(
       code: 'SETTLEMENT_NOT_RESOLVED',
     });
   }
+
+  await assertNotActivePersonSettlementMember(tx, kind, id, userId);
 
   if (kind === 'debt') {
     await tx.debt.update({ where: { id }, data: { paidAt } });

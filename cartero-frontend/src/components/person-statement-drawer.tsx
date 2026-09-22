@@ -60,7 +60,7 @@ import {
 } from '@/app/(dashboard)/receivables/receivable-sheet'
 import { SettlePersonDialog } from '@/app/(dashboard)/persons/settle-person-dialog'
 import { settlementStatus } from '@/lib/settlement-status'
-import { apiErrorMessage } from '@/lib/api-error'
+import { apiErrorDetail, apiErrorMessage, isApiErrorCode } from '@/lib/api-error'
 import {
   Sheet,
   SheetContent,
@@ -96,7 +96,7 @@ import {
   deleteReceivable,
   updateReceivableSettlementDate,
 } from '@/services/receivables.service'
-import { getPersonStatement, settlePerson } from '@/services/persons.service'
+import { getPersonStatement, settlePerson, undoPersonSettlement } from '@/services/persons.service'
 import {
   competenceCard,
   competenceCardSign,
@@ -381,6 +381,7 @@ export function PersonStatementDrawer({
     { kind: 'debt'; debt: Debt } | { kind: 'receivable'; receivable: Receivable } | null
   >(null)
   const [settleOpen, setSettleOpen] = useState(false)
+  const [groupUndoId, setGroupUndoId] = useState<string | null>(null)
 
   const [sheetKind, setSheetKind] = useState<'debt' | 'receivable' | null>(null)
   const [editDebt, setEditDebt] = useState<Debt | null>(null)
@@ -598,10 +599,11 @@ export function PersonStatementDrawer({
       */
       paymentDate?: string
     }) => updateDebt(id, { isPaid, paymentBankId, paymentType, paymentDate }),
-    onSuccess: async () => {
-      await invalidateStatement()
+    onSuccess: async () => { await invalidateStatement() },
+    onError: (error) => {
+      if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
+      else toast.error(apiErrorMessage(error, 'Erro ao atualizar'))
     },
-    onError: () => toast.error('Erro ao atualizar — tente novamente'),
   })
 
   const toggleReceivableMut = useMutation({
@@ -610,10 +612,11 @@ export function PersonStatementDrawer({
       isPaid: boolean
       paymentDate?: string
     }) => updateReceivable(id, { isPaid, paymentDate }),
-    onSuccess: async () => {
-      await invalidateStatement()
+    onSuccess: async () => { await invalidateStatement() },
+    onError: (error) => {
+      if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
+      else toast.error(apiErrorMessage(error, 'Erro ao atualizar'))
     },
-    onError: () => toast.error('Erro ao atualizar — tente novamente'),
   })
 
   const settleMut = useMutation({
@@ -663,6 +666,12 @@ export function PersonStatementDrawer({
     },
     onError: (error) =>
       toast.error(apiErrorMessage(error, 'Não foi possível quitar as pendências')),
+  })
+
+  const groupUndoMut = useMutation({
+    mutationFn: undoPersonSettlement,
+    onSuccess: async () => { setGroupUndoId(null); await invalidateStatement(); toast.success('Acerto desfeito') },
+    onError: (error) => toast.error(apiErrorMessage(error, 'Não foi possível desfazer o acerto')),
   })
 
   function handleDebtToggle(debt: Debt) {
@@ -1550,6 +1559,16 @@ export function PersonStatementDrawer({
         onConfirm={handleUnmarkPaidConfirm}
         onCancel={() => setUnmarkPaidTarget(null)}
       />
+      <ConfirmDialog
+        open={groupUndoId !== null}
+        title="Desfazer acerto inteiro?"
+        description="Este item foi quitado junto com outros valores. Desfazer irá reabrir todo o acerto."
+        confirmLabel="Desfazer acerto"
+        variant="default"
+        isPending={groupUndoMut.isPending}
+        onCancel={() => setGroupUndoId(null)}
+        onConfirm={() => groupUndoId && groupUndoMut.mutate(groupUndoId)}
+      />
       {settlementDateItem && (
         <SettlementDateDialog
           open
@@ -1588,8 +1607,8 @@ export function PersonStatementDrawer({
         }
         hasPendingDebts={monthDebts.length > 0}
         hasPendingReceivables={monthReceivables.length > 0}
-        createIncome={user?.createIncomeOnReceivablePaid ?? false}
-        createExpense={user?.createExpenseOnDebtPaid ?? false}
+        receivableTotal={monthReceivables.reduce((sum, item) => sum + Number(item.amount), 0)}
+        debtTotal={monthDebts.reduce((sum, item) => sum + Number(item.amount), 0)}
         notYetDueCount={notYetDueCount}
         isPending={settleMut.isPending}
         onConfirm={(payload) => settleMut.mutate(payload)}

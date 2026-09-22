@@ -62,6 +62,14 @@ export class PersonsController {
     return this.PersonsService.settle(id, user.id, dto);
   }
 
+  @Post('settlements/:settlementId/undo')
+  undoSettlement(
+    @Param('settlementId') settlementId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.PersonsService.undoSettlement(settlementId, user.id);
+  }
+
   /*
     ANTES de `@Get(':id')`, obrigatoriamente.
 

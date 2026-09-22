@@ -20,6 +20,7 @@ import {
 } from 'src/common/constants/system-categories';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { assertDebtNotPaid } from 'src/common/helpers/settlement.guard';
+import { assertNotActivePersonSettlementMember } from 'src/common/helpers/person-settlement.guard';
 import { CreateDebtDto } from 'src/debts/dto/create-debt.dto';
 import { UpdateDebtDto } from 'src/debts/dto/update-debt.dto';
 import { FindDebtsDto } from './dto/find-debts.dto';
@@ -205,6 +206,12 @@ export class DebtsService {
           normalizedScope,
         );
 
+        if (dto.isPaid === false && existing.isPaid) {
+          for (const debt of debtsToUpdate) {
+            await assertNotActivePersonSettlementMember(tx, 'debt', debt.id, userId);
+          }
+        }
+
         // occurredAt representa a mesma ocorrência parcelada — propaga para toda a
         // cadeia (o pai e todas as parcelas filhas) independente do scope escolhido
         // para os demais campos, mas só quando o valor de fato mudou.
@@ -331,6 +338,10 @@ export class DebtsService {
           userId,
           normalizedScope,
         );
+
+        for (const debt of debtsToDelete) {
+          if (debt.isPaid) await assertNotActivePersonSettlementMember(tx, 'debt', debt.id, userId);
+        }
 
         for (const debt of debtsToDelete) {
           await tx.debt.delete({

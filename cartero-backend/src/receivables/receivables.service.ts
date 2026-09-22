@@ -28,6 +28,7 @@ import {
   assertNotAutomaticReceivable,
   assertReceivableNotReceived,
 } from 'src/common/helpers/settlement.guard';
+import { assertNotActivePersonSettlementMember } from 'src/common/helpers/person-settlement.guard';
 import { CreateReceivableDto } from './dto/create-receivable.dto';
 import { UpdateReceivableDto } from './dto/update-receivable.dto';
 import { FindReceivablesDto } from './dto/find-receivables.dto';
@@ -208,6 +209,12 @@ export class ReceivablesService {
           normalizedScope,
         );
 
+        if (dto.isPaid === false && existing.isPaid) {
+          for (const receivable of receivablesToUpdate) {
+            await assertNotActivePersonSettlementMember(tx, 'receivable', receivable.id, userId);
+          }
+        }
+
         // occurredAt representa a mesma ocorrência parcelada — propaga para toda a
         // cadeia (o pai e todas as parcelas filhas) independente do scope escolhido
         // para os demais campos, mas só quando o valor de fato mudou.
@@ -353,6 +360,10 @@ export class ReceivablesService {
           userId,
           normalizedScope,
         );
+
+        for (const receivable of receivablesToDelete) {
+          if (receivable.isPaid) await assertNotActivePersonSettlementMember(tx, 'receivable', receivable.id, userId);
+        }
 
         for (const receivable of receivablesToDelete) {
           await tx.receivable.delete({

@@ -47,6 +47,7 @@ model User {
   notificationOccurrences NotificationOccurrence[]
   subscriptions     Subscription[]
   salaryHistory     SalaryHistory[]
+  personSettlementGroups PersonSettlementGroup[]
 }
 
 /// Renda mensal recorrente ao longo do tempo.
@@ -171,6 +172,7 @@ model Bank {
   invoices      Invoice[]
   subscriptions Subscription[]
   invoiceSettlements InvoiceSettlement[]
+  personSettlementGroups PersonSettlementGroup[]
 }
 
 model Category {
@@ -351,6 +353,7 @@ model Debt {
   user               User         @relation(fields: [userId], references: [id])
   person             Person?      @relation(fields: [personId], references: [id])
   paymentTransaction Transaction? @relation("DebtPaymentLink", fields: [paymentTransactionId], references: [id])
+  settlementMembership PersonSettlementDebt[]
 }
 
 model Receivable {
@@ -375,6 +378,7 @@ model Receivable {
   person             Person?      @relation(fields: [personId], references: [id])
   transaction        Transaction? @relation("ReimbursableLink", fields: [transactionId], references: [id])
   paymentTransaction Transaction? @relation("ReceivablePaymentLink", fields: [paymentTransactionId], references: [id])
+  settlementMembership PersonSettlementReceivable[]
 }
 
 model Person {
@@ -389,6 +393,69 @@ model Person {
   debts        Debt[]
   receivables  Receivable[]
   transactions Transaction[]
+  settlementGroups PersonSettlementGroup[]
+}
+
+enum PersonSettlementDirection {
+  INFLOW
+  OUTFLOW
+  NONE
+}
+
+enum PersonSettlementStatus {
+  ACTIVE
+  REVERSED
+}
+
+/// Structural authority for a net settlement between a user and a person.
+/// It is deliberately not a Transaction: a group settlement has no payment
+/// method and must not manufacture per-item cash movements.
+model PersonSettlementGroup {
+  id        String                  @id @default(uuid())
+  userId    String
+  personId  String
+  settledAt DateTime
+  direction PersonSettlementDirection
+  netAmount Decimal
+  bankId    String?
+  status    PersonSettlementStatus   @default(ACTIVE)
+  createdAt DateTime                 @default(now())
+  updatedAt DateTime                 @updatedAt
+
+  user       User    @relation(fields: [userId], references: [id])
+  person     Person  @relation(fields: [personId], references: [id])
+  bank       Bank?   @relation(fields: [bankId], references: [id])
+  debts      PersonSettlementDebt[]
+  receivables PersonSettlementReceivable[]
+
+  @@index([userId, personId, status])
+  @@index([bankId])
+}
+
+model PersonSettlementDebt {
+  groupId    String
+  debtId     String
+  amount     Decimal
+  createdAt  DateTime @default(now())
+
+  group PersonSettlementGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  debt  Debt                  @relation(fields: [debtId], references: [id])
+
+  @@id([groupId, debtId])
+  @@index([groupId])
+}
+
+model PersonSettlementReceivable {
+  groupId      String
+  receivableId String
+  amount       Decimal
+  createdAt    DateTime @default(now())
+
+  group      PersonSettlementGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  receivable Receivable             @relation(fields: [receivableId], references: [id])
+
+  @@id([groupId, receivableId])
+  @@index([groupId])
 }
 
 enum TransactionType {

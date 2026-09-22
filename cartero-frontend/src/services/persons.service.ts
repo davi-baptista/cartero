@@ -4,7 +4,6 @@ import type {
   Person,
   PersonStatement,
   PersonSummary,
-  TransactionType,
 } from '@/types'
 
 export async function getPersons(): Promise<Person[]> {
@@ -134,7 +133,6 @@ export async function settlePerson(
     month?: number
     paymentDate?: string
     paymentBankId?: string
-    paymentType?: TransactionType
   } = {},
 ): Promise<{
   summary: PersonSummary
@@ -143,7 +141,17 @@ export async function settlePerson(
   /** Quantos lançamentos foram de fato criados (respeita as preferências). */
   createdExpenses: number
   createdIncomes: number
+  group: {
+    id: string
+    direction: 'INFLOW' | 'OUTFLOW' | 'NONE'
+    netAmount: string | number
+  } | null
 }> {
   const { data } = await api.post(`/persons/${id}/settle`, payload)
+  return data
+}
+
+export async function undoPersonSettlement(settlementId: string) {
+  const { data } = await api.post(`/persons/settlements/${settlementId}/undo`)
   return data
 }

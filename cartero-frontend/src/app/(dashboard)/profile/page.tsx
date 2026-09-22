@@ -615,7 +615,7 @@ export default function ProfilePage() {
         </SectionCard>
 
         {/* Preferências financeiras */}
-        <SectionCard
+        {false && <SectionCard
           title="Preferências financeiras"
           description="Controlam apenas o legado ‘Quitar tudo’ nas pessoas; pagamentos individuais sempre registram o movimento."
           footer={
@@ -652,7 +652,7 @@ export default function ProfilePage() {
               <span className="text-xs text-muted-foreground">Não altera pagamentos individuais, que são sempre registrados.</span>
             </span>
           </label>
-        </SectionCard>
+        </SectionCard>}
 
         {/* Notificações */}
         <SectionCard

@@ -1,13 +1,8 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { Prisma, TransactionType } from '@prisma/client';
+import { Prisma, PersonSettlementDirection, PersonSettlementStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { findOrCreateSystemReceivableBank } from 'src/common/helpers/invoice.helper';
-import {
-  assertDebtPaymentDetails,
-  createDebtPaymentTransaction,
-  createReceivablePaymentTransaction,
-  resolveSettlementDate,
-} from 'src/common/helpers/settlement.core';
+import { resolveSettlementDate } from 'src/common/helpers/settlement.core';
 import { resolveSourceDeleteBlockReason } from 'src/common/helpers/receivable-source-capability';
 import {
   buildPersonSummary,
@@ -26,13 +21,6 @@ import {
   type SettleableItem,
   type SettlementCompetence,
 } from 'src/common/helpers/person-settlement-month';
-import {
-  DEBT_PAID_CATEGORY_COLOR,
-  DEBT_PAID_CATEGORY_NAME,
-  RECEIVABLE_RECEIVED_CATEGORY_COLOR,
-  RECEIVABLE_RECEIVED_CATEGORY_NAME,
-  SYSTEM_CATEGORY_ICON,
-} from 'src/common/constants/system-categories';
 import { CreatePersonDto } from './dto/create-person.dto';
 import { UpdatePersonDto } from './dto/update-person.dto';
 import { EntityValidationService } from 'src/common/entity-validation.service';
@@ -334,9 +322,6 @@ export class PersonsService {
         tx.user.findUniqueOrThrow({
           where: { id: userId },
           select: {
-            createIncomeOnReceivablePaid: true,
-            createExpenseOnDebtPaid: true,
-            // TZ2: já é a mesma consulta — sem query adicional.
             timeZone: true,
           },
         }),
@@ -367,132 +352,104 @@ export class PersonsService {
         : allReceivables;
 
       const summary = buildPersonSummary(receivables, debts);
-      /*
-        Uma data para o LOTE inteiro: "acertamos tudo nesta data". Itens
-        pagos em datas diferentes se corrigem individualmente depois.
-      */
+      if (debts.length === 0 && receivables.length === 0) {
+        return {
+          person,
+          summary,
+          group: null,
+          settledDebts: 0,
+          settledReceivables: 0,
+          createdExpenses: 0,
+          createdIncomes: 0,
+        };
+      }
       const paidAt = resolveSettlementDate(
         dto.paymentDate,
         new Date(),
         user.timeZone,
       );
 
-      const createsExpense = debts.length > 0 && user.createExpenseOnDebtPaid;
-      const createsIncome =
-        receivables.length > 0 && user.createIncomeOnReceivablePaid;
-
-      /*
-        Validação antes de qualquer escrita.
-
-        A mesma função que o caminho individual usa — a mensagem e a regra não
-        podem divergir só porque a operação é em lote.
-      */
-      if (createsExpense) {
-        assertDebtPaymentDetails(dto.paymentBankId, dto.paymentType);
+      const totalReceivable = receivables.reduce(
+        (sum, item) => sum.add(item.amount),
+        new Prisma.Decimal(0),
+      );
+      const totalDebt = debts.reduce(
+        (sum, item) => sum.add(item.amount),
+        new Prisma.Decimal(0),
+      );
+      const net = totalReceivable.sub(totalDebt);
+      const direction = net.isZero()
+        ? PersonSettlementDirection.NONE
+        : net.isPositive()
+          ? PersonSettlementDirection.INFLOW
+          : PersonSettlementDirection.OUTFLOW;
+      const movementBank = net.isZero()
+        ? null
+        : dto.paymentBankId
+          ? await tx.bank.findFirst({ where: { id: dto.paymentBankId, userId } })
+          : await findOrCreateSystemReceivableBank(tx, userId);
+      if (!net.isZero() && dto.paymentBankId && !movementBank) {
+        throw new ConflictException('Banco não encontrado');
       }
 
-      let settledDebts = 0;
-      let settledReceivables = 0;
+      const group = await tx.personSettlementGroup.create({
+        data: {
+          userId,
+          personId: person.id,
+          settledAt: paidAt,
+          direction,
+          netAmount: net.abs(),
+          bankId: movementBank?.id ?? null,
+          debts: {
+            create: debts.map((debt) => ({ debtId: debt.id, amount: debt.amount })),
+          },
+          receivables: {
+            create: receivables.map((item) => ({ receivableId: item.id, amount: item.amount })),
+          },
+        },
+      });
 
-      if (debts.length > 0) {
-        const debtCategory = createsExpense
-          ? await this.entityValidationService.findOrCreateSystemCategory(
-              tx,
-              userId,
-              DEBT_PAID_CATEGORY_NAME,
-              SYSTEM_CATEGORY_ICON,
-              DEBT_PAID_CATEGORY_COLOR,
-            )
-          : null;
-        const paymentBank = createsExpense
-          ? await this.entityValidationService.validateBank(
-              dto.paymentBankId as string,
-              userId,
-            )
-          : null;
-
-        for (const debt of debts) {
-          /*
-            `createExpenseOnDebtPaid` desligado: a dívida é quitada SEM
-            despesa. Não é registro órfão — é a preferência do usuário, e
-            inventar um lançamento aqui poluiria o extrato dele.
-          */
-          const paymentTransactionId =
-            createsExpense && debtCategory && paymentBank
-              ? await createDebtPaymentTransaction(tx, {
-                  userId,
-                  debt,
-                  paidAt,
-                  bank: paymentBank,
-                  paymentType: dto.paymentType as TransactionType,
-                  category: debtCategory,
-                  timeZone: user.timeZone,
-                })
-              : null;
-
-          await tx.debt.update({
-            where: { id: debt.id, userId },
-            data: { isPaid: true, paidAt, paymentTransactionId },
-          });
-          settledDebts += 1;
-        }
-      }
-
-      if (receivables.length > 0) {
-        const receivableCategory = createsIncome
-          ? await this.entityValidationService.findOrCreateSystemCategory(
-              tx,
-              userId,
-              RECEIVABLE_RECEIVED_CATEGORY_NAME,
-              SYSTEM_CATEGORY_ICON,
-              RECEIVABLE_RECEIVED_CATEGORY_COLOR,
-            )
-          : null;
-        /*
-          Recebimento não exige banco do usuário: quando ele não escolhe um, a
-          receita entra no banco de sistema. Ele existe para ancorar esses
-          lançamentos e nunca aparece nos seletores.
-        */
-        const receivableBank = createsIncome
-          ? await findOrCreateSystemReceivableBank(tx, userId)
-          : null;
-
-        for (const receivable of receivables) {
-          /*
-            Cobrança automática é recebida normalmente. A proteção da Fase 8A
-            é contra editar/excluir a compra de origem pela cobrança —
-            receber é operação legítima e não toca na compra.
-          */
-          const paymentTransactionId =
-            createsIncome && receivableCategory && receivableBank
-              ? await createReceivablePaymentTransaction(tx, {
-                  userId,
-                  receivable,
-                  paidAt,
-                  bank: receivableBank,
-                  paymentType: null,
-                  category: receivableCategory,
-                  timeZone: user.timeZone,
-                })
-              : null;
-
-          await tx.receivable.update({
-            where: { id: receivable.id, userId },
-            data: { isPaid: true, paidAt, paymentTransactionId },
-          });
-          settledReceivables += 1;
-        }
-      }
+      await tx.debt.updateMany({
+        where: { userId, id: { in: debts.map((item) => item.id) }, isPaid: false },
+        data: { isPaid: true, paidAt, paymentTransactionId: null },
+      });
+      await tx.receivable.updateMany({
+        where: { userId, id: { in: receivables.map((item) => item.id) }, isPaid: false },
+        data: { isPaid: true, paidAt, paymentTransactionId: null },
+      });
 
       return {
         person,
         summary,
-        settledDebts,
-        settledReceivables,
-        /** Quantos lançamentos a operação de fato criou. */
-        createdExpenses: createsExpense ? settledDebts : 0,
-        createdIncomes: createsIncome ? settledReceivables : 0,
+        group,
+        settledDebts: debts.length,
+        settledReceivables: receivables.length,
+        createdExpenses: 0,
+        createdIncomes: 0,
       };
+    });
+  }
+
+  async undoSettlement(groupId: string, userId: string) {
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const group = await tx.personSettlementGroup.findFirst({
+        where: { id: groupId, userId, status: PersonSettlementStatus.ACTIVE },
+        include: { debts: true, receivables: true },
+      });
+      if (!group) throw new ConflictException('Acerto não encontrado ou já desfeito');
+
+      await tx.debt.updateMany({
+        where: { userId, id: { in: group.debts.map((item) => item.debtId) } },
+        data: { isPaid: false, paidAt: null, paymentTransactionId: null },
+      });
+      await tx.receivable.updateMany({
+        where: { userId, id: { in: group.receivables.map((item) => item.receivableId) } },
+        data: { isPaid: false, paidAt: null, paymentTransactionId: null },
+      });
+      return tx.personSettlementGroup.update({
+        where: { id: group.id },
+        data: { status: PersonSettlementStatus.REVERSED },
+      });
     });
   }
 
