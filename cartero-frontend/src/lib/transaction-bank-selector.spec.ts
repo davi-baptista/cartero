@@ -23,6 +23,7 @@ describe('transaction bank selector — optional bank UX', () => {
 
   it('shows bank creation only after the bank section exists', () => {
     expect(SHEET).toContain('onClick={handleOpenBankCreate}')
+    expect(SHEET).toContain('{showBankSelector && (showBankCreate ? (')
     expect(SHEET).toContain('Novo banco')
   })
 

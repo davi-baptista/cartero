@@ -41,4 +41,17 @@ describe('optional bank progressive disclosure', () => {
     expect(SETTLE).toContain("direction === 'outflow'")
     expect(SETTLE).toContain("direction = net > 0 ? 'inflow' : net < 0 ? 'outflow' : 'none'")
   })
+
+  it('reveals outflow details only after a payment method is chosen', () => {
+    expect(SETTLE).toContain("(direction !== 'outflow' || paymentType)")
+    expect(SETTLE).toContain("direction === 'outflow' && paymentType && paymentType !== TransactionType.CREDIT_CARD")
+    expect(SETTLE).toContain('handlePaymentTypeChange')
+    expect(SETTLE).toContain("setShowOptionalBank(Boolean(bankId))")
+  })
+
+  it('keeps credit required and clears an ineligible optional bank', () => {
+    expect(SETTLE).toContain("if (value === TransactionType.CREDIT_CARD)")
+    expect(SETTLE).toContain('!isSelectableBank(selectedBank)')
+    expect(SETTLE).toContain('setBankId(undefined)')
+  })
 })

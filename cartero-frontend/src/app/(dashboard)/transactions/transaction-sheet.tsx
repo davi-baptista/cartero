@@ -827,7 +827,7 @@ export function TransactionSheet({
                 </button>
               )}
 
-              {showBankCreate ? (
+              {showBankSelector && (showBankCreate ? (
                 <div className="space-y-1.5">
                   <Input
                     ref={bankNameRef}
@@ -893,7 +893,7 @@ export function TransactionSheet({
                   <Plus className="size-3" />
                   Novo banco
                 </button>
-              )}
+              ))}
             </div>
             {errors.bankId && <p className="text-xs text-destructive">{errors.bankId.message}</p>}
           </div>

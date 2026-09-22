@@ -31,7 +31,7 @@ export function SettlePersonDialog({ open, personName, debtsCount, receivablesCo
   const net = receivableTotal - debtTotal
   const direction = net > 0 ? 'inflow' : net < 0 ? 'outflow' : 'none'
   const isCredit = paymentType === TransactionType.CREDIT_CARD
-  const needsBankSelector = Boolean(bankId) || (direction === 'inflow' && showOptionalBank) || (direction === 'outflow' && (showOptionalBank || isCredit))
+  const needsBankSelector = Boolean(bankId) || (direction === 'inflow' && showOptionalBank) || (direction === 'outflow' && Boolean(paymentType) && (showOptionalBank || isCredit))
   const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: () => getBanks(), enabled: open && needsBankSelector })
   const selectedBank = banks.find((bank) => bank.id === bankId)
 
@@ -47,6 +47,16 @@ export function SettlePersonDialog({ open, personName, debtsCount, receivablesCo
 
   const canConfirm = Boolean(paymentDate) && (direction !== 'outflow' || Boolean(paymentType)) && (!isCredit || Boolean(bankId))
 
+  const handlePaymentTypeChange = (value: TransactionType) => {
+    setPaymentType(value)
+    if (value === TransactionType.CREDIT_CARD) {
+      setShowOptionalBank(false)
+      if (!selectedBank || !isSelectableBank(selectedBank)) setBankId(undefined)
+    } else {
+      setShowOptionalBank(Boolean(bankId))
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onCancel()}>
       <DialogContent className={DIALOG_COMPACT_CLASS}>
@@ -59,7 +69,7 @@ export function SettlePersonDialog({ open, personName, debtsCount, receivablesCo
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3 py-1">
-          <div className="flex flex-col gap-1.5"><Label>Data do acerto</Label><DatePicker value={paymentDate} onChange={setPaymentDate} /></div>
+          {(direction !== 'outflow' || paymentType) && <div className={direction === 'outflow' ? 'order-2 flex flex-col gap-1.5' : 'flex flex-col gap-1.5'}><Label>Data do acerto</Label><DatePicker value={paymentDate} onChange={setPaymentDate} /></div>}
           {direction === 'outflow' && <div className="flex flex-col gap-1.5">
             <Label>Como você pagou?</Label>
             <div className="grid grid-cols-2 gap-2">
@@ -69,17 +79,17 @@ export function SettlePersonDialog({ open, personName, debtsCount, receivablesCo
                 [TransactionType.PIX, 'PIX'],
                 [TransactionType.BOLETO, 'Boleto'],
               ].map(([value, label]) => (
-                <button key={value} type="button" aria-pressed={paymentType === value} onClick={() => { setPaymentType(value as TransactionType); if (value === TransactionType.CREDIT_CARD) setShowOptionalBank(false) }} className={paymentType === value ? 'rounded-lg border border-primary bg-primary/10 px-3 py-2 text-sm font-medium' : 'rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground'}>{label}</button>
+                <button key={value} type="button" aria-pressed={paymentType === value} onClick={() => handlePaymentTypeChange(value as TransactionType)} className={paymentType === value ? 'rounded-lg border border-primary bg-primary/10 px-3 py-2 text-sm font-medium' : 'rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground'}>{label}</button>
               ))}
             </div>
           </div>}
           {direction === 'inflow' && !showOptionalBank && (
             <button type="button" onClick={() => setShowOptionalBank(true)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">+ Adicionar banco (opcional)</button>
           )}
-          {direction === 'outflow' && paymentType !== TransactionType.CREDIT_CARD && !showOptionalBank && (
-            <button type="button" onClick={() => setShowOptionalBank(true)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">+ Adicionar banco (opcional)</button>
+          {direction === 'outflow' && paymentType && paymentType !== TransactionType.CREDIT_CARD && !showOptionalBank && (
+            <button type="button" onClick={() => setShowOptionalBank(true)} className="order-3 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">+ Adicionar banco (opcional)</button>
           )}
-          {needsBankSelector && <div className="flex flex-col gap-1.5">
+          {needsBankSelector && <div className={direction === 'outflow' ? 'order-3 flex flex-col gap-1.5' : 'flex flex-col gap-1.5'}>
             <Label>Banco</Label>
             <Select value={bankId ?? ''} onValueChange={(value) => setBankId(value || undefined)}>
               <SelectTrigger><SelectValue placeholder={isCredit ? 'Selecione o cartão' : 'Selecione um banco'}>{selectedBank ? bankDisplayName(selectedBank) : undefined}</SelectValue></SelectTrigger>
