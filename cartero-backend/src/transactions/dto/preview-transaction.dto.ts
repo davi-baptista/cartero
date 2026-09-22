@@ -26,7 +26,8 @@ import {
  */
 export class PreviewTransactionDto {
   @IsUUID()
-  bankId: string;
+  @IsOptional()
+  bankId?: string;
 
   @IsString()
   title: string;

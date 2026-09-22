@@ -62,7 +62,7 @@ export interface TransactionPreview {
 }
 
 export interface PreviewTransactionPayload {
-  bankId: string
+  bankId?: string
   title: string
   type: TransactionType
   /** VALOR TOTAL da compra — o servidor divide entre as parcelas. */
@@ -154,7 +154,7 @@ export async function getTransaction(id: string): Promise<Transaction> {
 }
 
 export async function createTransaction(payload: {
-  bankId: string
+  bankId?: string
   categoryId: string
   type: TransactionType
   title: string
@@ -172,7 +172,7 @@ export async function createTransaction(payload: {
 export async function updateTransaction(
   id: string,
   payload: Partial<{
-    bankId: string
+    bankId?: string | null
     categoryId: string
     type: TransactionType
     title: string

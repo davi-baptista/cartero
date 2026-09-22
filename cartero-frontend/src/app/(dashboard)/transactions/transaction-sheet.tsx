@@ -65,7 +65,7 @@ const transactionTypeValues = [
 
 const schema = z
   .object({
-    bankId: z.string().min(1, 'Selecione um banco'),
+    bankId: z.string().optional(),
     categoryId: z.string().min(1, 'Selecione uma categoria'),
     type: z.enum(transactionTypeValues),
     title: z.string().min(1, 'Título obrigatório'),
@@ -91,6 +91,11 @@ const schema = z
   .refine(
     (d) => d.type !== TransactionType.CREDIT_CARD || !d.installments || d.installments >= 2,
     { message: 'Mínimo 2 parcelas', path: ['installments'] },
+  )
+
+  .refine(
+    (d) => d.type !== TransactionType.CREDIT_CARD || Boolean(d.bankId),
+    { message: 'Selecione um banco', path: ['bankId'] },
   )
 
 export type TransactionFormData = z.infer<typeof schema>
@@ -482,7 +487,7 @@ export function TransactionSheet({
       setForOtherPerson(Boolean(editTarget?.personId))
       if (editTarget) {
         reset({
-          bankId: editTarget.bankId,
+          bankId: editTarget.bank?.isSystem ? '' : editTarget.bankId,
           categoryId: editTarget.categoryId,
           type: editTarget.type,
           title: editTarget.title,
@@ -538,6 +543,7 @@ export function TransactionSheet({
       await onSubmit({
         ...normalized,
         ...clearIncompatibleFields(normalized, normalized.type),
+        bankId: normalized.bankId || undefined,
       })
       // On success: keep ref=true — sheet will close, ref resets on next open
     } catch (err) {
@@ -734,7 +740,7 @@ export function TransactionSheet({
 
           {/* Bank */}
           <div className="space-y-1.5">
-            <Label>Banco</Label>
+            <Label>Banco{selectedType !== TransactionType.CREDIT_CARD ? ' (opcional)' : ''}</Label>
             <div className="space-y-2">
               <Controller
                 control={control}
@@ -772,6 +778,16 @@ export function TransactionSheet({
                   </Select>
                 )}
               />
+
+              {selectedBankId && selectedType !== TransactionType.CREDIT_CARD && (
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() => setValue('bankId', '', { shouldValidate: true })}
+                >
+                  Remover banco
+                </button>
+              )}
 
               {showBankCreate ? (
                 <div className="space-y-1.5">

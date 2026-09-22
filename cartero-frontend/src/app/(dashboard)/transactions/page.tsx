@@ -1090,6 +1090,7 @@ export default function TransactionsPage() {
     const payload = belongsToInstallmentSeries(tx) ? rest : { ...rest, title }
     return {
       ...payload,
+      bankId: data.bankId || null,
       personId: data.type === TransactionType.CREDIT_CARD ? (personId ?? null) : null,
     }
   }

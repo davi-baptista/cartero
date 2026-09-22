@@ -21,6 +21,7 @@ import {
   getInvoiceDueDateForPeriod,
   getInvoicePeriodForDate,
   offsetInvoicePeriod,
+  findOrCreateSystemReceivableBank,
 } from 'src/common/helpers/invoice.helper';
 import { planTransaction } from './transaction-plan.helper';
 import {
@@ -73,10 +74,19 @@ export class TransactionsService {
     dto: CreateTransactionDto,
     timeZone: string | null | undefined = undefined,
   ) {
-    const bank = await this.entityValidationService.validateBank(
-      dto.bankId,
-      userId,
-    );
+    if (!dto.bankId && dto.type === 'CREDIT_CARD') {
+      throw new BadRequestException(
+        'Compras no crédito exigem um banco/cartão',
+      );
+    }
+    const requestedBank = dto.bankId
+      ? await this.entityValidationService.validateBank(dto.bankId, userId)
+      : null;
+    if (requestedBank?.isSystem) {
+      throw new BadRequestException(
+        'O banco sistêmico não pode ser informado pela API',
+      );
+    }
     await this.entityValidationService.validateCategory(dto.categoryId, userId);
 
     if (dto.personId && dto.type !== 'CREDIT_CARD') {
@@ -103,6 +113,9 @@ export class TransactionsService {
 
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
+        const bank =
+          requestedBank ?? (await findOrCreateSystemReceivableBank(tx, userId));
+        const bankId = bank.id;
         const originalDate = parseDateOnly(dto.date);
 
         // Mesmo plano que a prévia usa: quantidade de parcelas, rateio do
@@ -143,7 +156,7 @@ export class TransactionsService {
               invoice = await findOrCreateInvoice(
                 tx,
                 userId,
-                dto.bankId,
+                bankId,
                 bank.invoiceDueDate,
                 bank.invoiceDueDaysAfterClose,
                 originalDate,
@@ -162,7 +175,7 @@ export class TransactionsService {
               invoice = await findOrCreateInvoiceForPeriod(
                 tx,
                 userId,
-                dto.bankId,
+                bankId,
                 {
                   invoiceDueDate: bank.invoiceDueDate,
                   invoiceDueDaysAfterClose: bank.invoiceDueDaysAfterClose,
@@ -198,7 +211,7 @@ export class TransactionsService {
               installmentIndex: installments > 1 ? i + 1 : null,
               installmentCount: installments > 1 ? installments : null,
               personId: dto.personId,
-              bankId: dto.bankId,
+              bankId,
               categoryId: dto.categoryId,
               title,
               type: dto.type,
@@ -267,10 +280,19 @@ export class TransactionsService {
     userId: string,
     dto: PreviewTransactionDto,
   ): Promise<TransactionPreview> {
-    const bank = await this.entityValidationService.validateBank(
-      dto.bankId,
-      userId,
-    );
+    if (!dto.bankId && dto.type === 'CREDIT_CARD') {
+      throw new BadRequestException(
+        'A prévia de crédito exige um banco/cartão',
+      );
+    }
+    const bank = dto.bankId
+      ? await this.entityValidationService.validateBank(dto.bankId, userId)
+      : ({ invoiceDueDate: 31, invoiceDueDaysAfterClose: 7 } as Bank);
+    if (bank.isSystem) {
+      throw new BadRequestException(
+        'Compras no crédito exigem um banco/cartão real',
+      );
+    }
 
     if (dto.personId && dto.type !== 'CREDIT_CARD') {
       throw new BadRequestException(
@@ -510,7 +532,7 @@ export class TransactionsService {
      * condição é a troca, não o estado atual: uma transação que já mora num
      * banco arquivado continua editável.
      */
-    if (bankChanged) {
+    if (bankChanged && dto.bankId !== null) {
       const target = await this.prisma.bank.findUnique({
         where: { id: dto.bankId as string, userId },
         select: { name: true, isArchived: true },
@@ -567,7 +589,9 @@ export class TransactionsService {
     // Competência/vencimento: só quando banco ou data mudam.
     if (
       (bankChanged || editingInstallmentDate) &&
-      existing.type === 'CREDIT_CARD'
+      existing.type === 'CREDIT_CARD' &&
+      (dto.type ?? existing.type) === 'CREDIT_CARD' &&
+      dto.bankId !== null
     ) {
       // Banco arquivado como DESTINO já saiu como `blocked` acima; aqui a
       // transação pode simplesmente já pertencer a um banco arquivado.
@@ -928,6 +952,25 @@ export class TransactionsService {
       dto.title = undefined;
     }
 
+    const effectiveType = dto.type ?? existingTransaction.type;
+    if (dto.bankId === null && effectiveType === 'CREDIT_CARD') {
+      throw new BadRequestException(
+        'Compras no crédito exigem um banco/cartão',
+      );
+    }
+    if (effectiveType === 'CREDIT_CARD') {
+      const creditBank = await this.entityValidationService.validateBank(
+        dto.bankId ?? existingTransaction.bankId,
+        userId,
+        { allowArchived: true },
+      );
+      if (creditBank.isSystem) {
+        throw new BadRequestException(
+          'Compras no crédito exigem um banco/cartão real',
+        );
+      }
+    }
+
     // Lançamento gerado por assinatura tem categoria fixa: ela identifica a
     // origem no extrato e é a mesma para toda a série. Ignorar o campo em vez
     // de recusar a edição deixa os demais (valor, data, descrição) passarem.
@@ -971,7 +1014,15 @@ export class TransactionsService {
     delete dto.confirmReopenClosedInvoice;
 
     if (dto.bankId && dto.bankId !== existingTransaction.bankId) {
-      await this.entityValidationService.validateBank(dto.bankId, userId);
+      const requestedBank = await this.entityValidationService.validateBank(
+        dto.bankId,
+        userId,
+      );
+      if (requestedBank.isSystem) {
+        throw new BadRequestException(
+          'O banco sistêmico não pode ser informado pela API',
+        );
+      }
     }
 
     if (dto.categoryId && dto.categoryId !== existingTransaction.categoryId) {
@@ -981,7 +1032,6 @@ export class TransactionsService {
       );
     }
 
-    const effectiveType = dto.type ?? existingTransaction.type;
     const personIdProvided = dto.personId !== undefined;
 
     if (
@@ -1035,6 +1085,7 @@ export class TransactionsService {
         );
         const updatedTransactions: Transaction[] = [];
         let bank: Bank | null = null;
+        let optionalBank: Bank | null = null;
         let installmentBaseDate: Date | null = null;
 
         if (editingInstallmentDate) {
@@ -1060,10 +1111,15 @@ export class TransactionsService {
             userId,
             { allowArchived: true },
           );
+        } else if (dto.bankId === null) {
+          optionalBank = await findOrCreateSystemReceivableBank(tx, userId);
         }
 
         for (const transaction of transactionsToUpdate) {
-          const bankId = dto.bankId ?? transaction.bankId;
+          const bankId =
+            dto.bankId === null
+              ? optionalBank!.id
+              : (dto.bankId ?? transaction.bankId);
           const type = dto.type ?? transaction.type;
           const amount = dto.amount ?? Number(transaction.amount);
           const isRefund = dto.isRefund ?? transaction.isRefund;
@@ -1194,7 +1250,7 @@ export class TransactionsService {
           const updatedTransaction = await tx.transaction.update({
             where: { id: transaction.id, userId },
             data: {
-              bankId: dto.bankId,
+              bankId,
               categoryId: dto.categoryId,
               title: dto.title,
               type: dto.type,

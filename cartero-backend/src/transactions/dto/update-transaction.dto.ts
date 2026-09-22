@@ -14,7 +14,7 @@ import {
 export class UpdateTransactionDto {
   @IsOptional()
   @IsUUID()
-  bankId?: string;
+  bankId?: string | null;
 
   @IsOptional()
   @IsUUID()

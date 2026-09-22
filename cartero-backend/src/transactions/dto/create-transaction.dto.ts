@@ -17,8 +17,9 @@ import {
 } from 'src/common/constants/installments';
 
 export class CreateTransactionDto {
+  @IsOptional()
   @IsUUID()
-  bankId: string;
+  bankId?: string;
 
   @IsUUID()
   categoryId: string;

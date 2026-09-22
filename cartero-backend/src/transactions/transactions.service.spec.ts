@@ -63,6 +63,20 @@ function buildHarness(state: DbState) {
     ) ?? null;
 
   const client = {
+    bank: {
+      findFirst: vi.fn(async ({ where }: any) =>
+        where.isSystem && where.name === '__system_receivables__'
+          ? makeBank({
+              id: 'no-bank',
+              name: '__system_receivables__',
+              isSystem: true,
+            })
+          : null,
+      ),
+      create: vi.fn(async ({ data }: any) =>
+        makeBank({ id: 'no-bank', ...data }),
+      ),
+    },
     invoice: {
       findFirst: vi.fn(async ({ where }: any) => {
         if (where.id?.in) {
@@ -279,6 +293,37 @@ function buildHarness(state: DbState) {
     prisma,
   };
 }
+
+describe('optional bank for direct transactions', () => {
+  it.each(['PIX', 'DEBIT_CARD', 'BOLETO', 'INCOME'] as const)(
+    'accepts %s without bank and resolves canonical NO_BANK',
+    async (type) => {
+      const harness = buildHarness(baseState());
+      await harness.service.create(USER_ID, {
+        categoryId: 'cat-1',
+        title: 'Movimento direto',
+        type,
+        amount: 100,
+        date: '2026-08-01',
+      } as any);
+      expect(harness.created.transactions[0].bankId).toBe('no-bank');
+      expect(harness.state.invoices).toHaveLength(0);
+    },
+  );
+
+  it('rejects credit without bank', async () => {
+    const harness = buildHarness(baseState());
+    await expect(
+      harness.service.create(USER_ID, {
+        categoryId: 'cat-1',
+        title: 'Compra',
+        type: 'CREDIT_CARD',
+        amount: 100,
+        date: '2026-08-01',
+      } as any),
+    ).rejects.toThrow(/exigem um banco/);
+  });
+});
 
 function baseState(overrides: Partial<DbState> = {}): DbState {
   return {
