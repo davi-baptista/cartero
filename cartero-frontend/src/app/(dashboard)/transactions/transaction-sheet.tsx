@@ -63,6 +63,8 @@ const transactionTypeValues = [
   TransactionType.BOLETO,
 ] as const
 
+const NO_BANK_OPTION = '__no_bank__'
+
 const schema = z
   .object({
     bankId: z.string().optional(),
@@ -746,7 +748,10 @@ export function TransactionSheet({
                 control={control}
                 name="bankId"
                 render={({ field }) => (
-                  <Select value={field.value ?? ''} onValueChange={field.onChange}>
+                  <Select
+                    value={field.value || ''}
+                    onValueChange={(value) => field.onChange(value === NO_BANK_OPTION ? '' : value)}
+                  >
                     <SelectTrigger className="w-full" aria-invalid={!!errors.bankId}>
                       <span data-slot="select-value" className="flex flex-1 items-center gap-1.5 text-left text-sm">
                         {selectedBank ? (
@@ -759,11 +764,16 @@ export function TransactionSheet({
                             )}
                           </>
                         ) : (
-                          <span className="text-muted-foreground">Selecione o banco</span>
+                          <span className="text-muted-foreground">
+                            {selectedType !== TransactionType.CREDIT_CARD ? 'Sem banco' : 'Selecione o banco'}
+                          </span>
                         )}
                       </span>
                     </SelectTrigger>
                     <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      {selectedType !== TransactionType.CREDIT_CARD && (
+                        <SelectItem value={NO_BANK_OPTION}>Sem banco</SelectItem>
+                      )}
                       {bankOptions.map((b) => (
                         <SelectItem key={b.id} value={b.id}>
                           {bankDisplayName(b)}
@@ -778,16 +788,6 @@ export function TransactionSheet({
                   </Select>
                 )}
               />
-
-              {selectedBankId && selectedType !== TransactionType.CREDIT_CARD && (
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-                  onClick={() => setValue('bankId', '', { shouldValidate: true })}
-                >
-                  Remover banco
-                </button>
-              )}
 
               {showBankCreate ? (
                 <div className="space-y-1.5">
