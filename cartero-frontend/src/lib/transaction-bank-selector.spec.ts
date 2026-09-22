@@ -11,6 +11,7 @@ describe('transaction bank selector — optional bank UX', () => {
   it('collapses optional bank into one quiet action', () => {
     expect(SHEET).toContain('Adicionar banco (opcional)')
     expect(SHEET).toContain('{showBankSelector && <Label>Banco</Label>}')
+    expect(SHEET).toContain("!bankIsRequired && 'order-last'")
     expect(SHEET).not.toContain('Sem banco')
   })
 

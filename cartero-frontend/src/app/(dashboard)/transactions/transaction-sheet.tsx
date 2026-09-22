@@ -162,7 +162,6 @@ export function TransactionSheet({
       setValue('bankId', bank.id)
       setShowBankCreate(false)
       setShowOptionalBank(Boolean(editTarget?.bankId && !editTarget.bank?.isSystem) || Boolean(createDefaults?.bankId))
-      setShowOptionalBank(Boolean(editTarget?.bankId && !editTarget.bank?.isSystem) || Boolean(createDefaults?.bankId))
       setNewBank({ name: '', dueDate: '', daysAfterClose: '7' })
     },
     onError: () => toast.error('Não foi possível criar o banco.'),
@@ -493,6 +492,7 @@ export function TransactionSheet({
       submittingRef.current = false
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowBankCreate(false)
+      setShowOptionalBank(Boolean(editTarget?.bankId && !editTarget.bank?.isSystem) || Boolean(createDefaults?.bankId))
       setShowCategoryCreate(false)
       setShowPersonCreate(false)
       setNewBank({ name: '', dueDate: '', daysAfterClose: '7' })
@@ -766,7 +766,7 @@ export function TransactionSheet({
           </div>
 
           {/* Bank */}
-          <div className="space-y-1.5">
+          <div className={cn('space-y-1.5', !bankIsRequired && 'order-last')}>
             {showBankSelector && <Label>Banco</Label>}
             <div className="space-y-2">
               {!showBankSelector && (
