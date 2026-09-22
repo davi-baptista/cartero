@@ -140,6 +140,7 @@ export function TransactionSheet({
   /** Gerado por assinatura: a categoria é da regra, não deste lançamento. */
   const isFromSubscription = Boolean(editTarget?.subscriptionId)
   const submittingRef = useRef(false)
+  const [entryIntent, setEntryIntent] = useState<TransactionKind | null>(null)
   const qc = useQueryClient()
 
   // ── Queries ──
@@ -332,7 +333,7 @@ export function TransactionSheet({
   const installmentCount =
     toInstallmentsPayload(selectedInstallments, isParcelado) ?? 1
 
-  const selectedKind = selectedType ? kindOf(selectedType) : undefined
+  const selectedKind = entryIntent ?? undefined
   const selectedDate = useWatch({ control, name: 'date' })
 
   /**
@@ -406,6 +407,7 @@ export function TransactionSheet({
 
   function handleKindChange(kind: TransactionKind) {
     // Gasto abre a escolha de forma sem presumir crédito ou outro método.
+    setEntryIntent(kind)
     if (kind === 'income') {
       applyType(TransactionType.INCOME)
       return
@@ -420,6 +422,7 @@ export function TransactionSheet({
   }
 
   function handleMethodChange(method: PaymentMethod) {
+    setEntryIntent('expense')
     applyType(method)
   }
 
@@ -491,6 +494,13 @@ export function TransactionSheet({
       setNewBank({ name: '', dueDate: '', daysAfterClose: '7' })
       setNewCategoryName('')
       setNewPersonName('')
+      setEntryIntent(
+        editTarget
+          ? kindOf(editTarget.type)
+          : createDefaults?.type
+            ? kindOf(createDefaults.type)
+            : null,
+      )
       // O toggle de "compra para outra pessoa" acompanha o estado real da
       // transação ao abrir para edição.
       setForOtherPerson(Boolean(editTarget?.personId))

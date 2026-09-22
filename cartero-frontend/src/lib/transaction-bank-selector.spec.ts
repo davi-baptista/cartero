@@ -46,4 +46,12 @@ describe('transaction bank selector — optional bank UX', () => {
     expect(SHEET).toContain('applyType(TransactionType.INCOME)')
     expect(SHEET).not.toContain("TransactionType.EXPENSE")
   })
+
+  it('keeps expense intent independent from canonical payment type', () => {
+    expect(SHEET).toContain("useState<TransactionKind | null>(null)")
+    expect(SHEET).toContain('const selectedKind = entryIntent ?? undefined')
+    expect(SHEET).toContain("setEntryIntent(kind)")
+    expect(SHEET).toContain("setEntryIntent('expense')")
+    expect(SHEET).toContain("{selectedKind === 'expense' && (")
+  })
 })
