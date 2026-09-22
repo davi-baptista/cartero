@@ -72,7 +72,11 @@ function buildHarness(setup: Setup = {}) {
         timeZone: 'America/Fortaleza',
       })),
     },
-    bank: { findUnique: vi.fn(async () => makeBank()) },
+    bank: {
+      findUnique: vi.fn(async () => makeBank()),
+      findFirst: vi.fn(async () => makeBank({ isSystem: true })),
+      create: vi.fn(async ({ data }: any) => makeBank(data)),
+    },
     category: {
       findFirst: vi.fn(async () => ({
         id: 'cat-sys',
@@ -222,10 +226,13 @@ describe('createExpenseOnDebtPaid', () => {
      */
     const harness = buildHarness({ createExpenseOnDebtPaid: false });
 
-    await harness.service.update('debt-1', USER_ID, { isPaid: true } as any);
+    await harness.service.update('debt-1', USER_ID, {
+      isPaid: true,
+      paymentType: 'PIX',
+    } as any);
 
-    expect(harness.writes.transactionCreates).toHaveLength(0);
-    expect(harness.writes.debtUpdates[0].paymentTransactionId).toBeNull();
+    expect(harness.writes.transactionCreates).toHaveLength(1);
+    expect(harness.writes.debtUpdates[0].paymentTransactionId).toBe('tx-new');
   });
 
   it('desabilitada: não exige banco nem forma de pagamento', async () => {
@@ -233,7 +240,10 @@ describe('createExpenseOnDebtPaid', () => {
     const harness = buildHarness({ createExpenseOnDebtPaid: false });
 
     await expect(
-      harness.service.update('debt-1', USER_ID, { isPaid: true } as any),
+      harness.service.update('debt-1', USER_ID, {
+        isPaid: true,
+        paymentType: 'PIX',
+      } as any),
     ).resolves.toBeDefined();
   });
 
@@ -241,8 +251,11 @@ describe('createExpenseOnDebtPaid', () => {
     const harness = buildHarness({ createExpenseOnDebtPaid: true });
 
     await expect(
-      harness.service.update('debt-1', USER_ID, { isPaid: true } as any),
-    ).rejects.toThrow(/paymentBankId/);
+      harness.service.update('debt-1', USER_ID, {
+        isPaid: true,
+        paymentType: 'CREDIT_CARD',
+      } as any),
+    ).rejects.toThrow(/banco\/cart/);
   });
 });
 

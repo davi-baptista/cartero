@@ -67,7 +67,7 @@ import {
 import { apiErrorMessage } from '@/lib/api-error'
 import { accountToday } from '@/lib/date'
 import { cn } from '@/lib/utils'
-import type { Receivable } from '@/types'
+import type { Receivable, TransactionType } from '@/types'
 import { InstallmentScope } from '@/types'
 import { useAuth } from '@/providers/auth-provider'
 
@@ -433,6 +433,7 @@ export default function ReceivablesPage() {
   useEffect(() => {
     if (!highlightId || !receivables) return
     const target = receivables.find((r) => r.id === highlightId)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (target?.isPaid) setTab('received')
   }, [highlightId, receivables])
 
@@ -603,11 +604,7 @@ export default function ReceivablesPage() {
   function handleToggleReceived(receivable: Receivable) {
     taskAnchor.beginFromDetail()
     if (!receivable.isPaid) {
-      if (user?.createIncomeOnReceivablePaid === false) {
-        updateMut.mutate({ id: receivable.id, payload: { isPaid: true } })
-      } else {
-        setMarkPaidTarget(receivable)
-      }
+      setMarkPaidTarget(receivable)
     } else if (receivable.paymentTransactionId) {
       setUnmarkPaidTarget(receivable)
     } else {
@@ -615,7 +612,7 @@ export default function ReceivablesPage() {
     }
   }
 
-  function handleMarkPaidConfirm(payload: { paymentDate?: string }) {
+  function handleMarkPaidConfirm(payload: { paymentDate?: string; paymentBankId?: string; paymentType?: TransactionType }) {
     if (!markPaidTarget) return
     updateMut.mutate({
       id: markPaidTarget.id,
@@ -937,7 +934,7 @@ export default function ReceivablesPage() {
       <MarkAsPaidDialog
         open={markPaidTarget !== null}
         kind="receivable"
-        createTransaction={user?.createIncomeOnReceivablePaid ?? false}
+        createTransaction
         isPending={updateMut.isPending}
         onConfirm={handleMarkPaidConfirm}
         onCancel={() => setMarkPaidTarget(null)}

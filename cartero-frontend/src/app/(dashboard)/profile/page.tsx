@@ -215,6 +215,7 @@ export default function ProfilePage() {
   // Sync form when user changes (e.g. on mount if context hydrates after render)
   useEffect(() => {
     if (user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setName(user.name)
 
       setCreateIncomeOnReceivablePaid(user.createIncomeOnReceivablePaid ?? false)
@@ -616,7 +617,7 @@ export default function ProfilePage() {
         {/* Preferências financeiras */}
         <SectionCard
           title="Preferências financeiras"
-          description="Escolha se o sistema deve criar uma transação ao marcar um valor como pago ou recebido"
+          description="Controlam apenas o legado ‘Quitar tudo’ nas pessoas; pagamentos individuais sempre registram o movimento."
           footer={
             <Button
               size="sm"
@@ -635,8 +636,8 @@ export default function ProfilePage() {
               className="mt-0.5 size-4 accent-primary"
             />
             <span className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium">Criar receita ao marcar “A Receber” como recebido</span>
-              <span className="text-xs text-muted-foreground">Gera uma receita vinculada ao recebimento.</span>
+              <span className="text-sm font-medium">Criar receita no ‘Quitar tudo’ de pessoas</span>
+              <span className="text-xs text-muted-foreground">Não altera recebimentos individuais, que são sempre registrados.</span>
             </span>
           </label>
           <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border/70 p-3 transition-colors hover:bg-muted/40">
@@ -647,8 +648,8 @@ export default function ProfilePage() {
               className="mt-0.5 size-4 accent-primary"
             />
             <span className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium">Criar gasto ao marcar “Dívidas” como paga</span>
-              <span className="text-xs text-muted-foreground">Gera um gasto no banco e na forma de pagamento escolhidos.</span>
+              <span className="text-sm font-medium">Criar gasto no ‘Quitar tudo’ de pessoas</span>
+              <span className="text-xs text-muted-foreground">Não altera pagamentos individuais, que são sempre registrados.</span>
             </span>
           </label>
         </SectionCard>

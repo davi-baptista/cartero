@@ -55,6 +55,7 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPendi
 
   useEffect(() => {
     if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBankId('')
       setType('')
       setPaymentDate(todayDateValue())
@@ -64,8 +65,9 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPendi
   const canConfirm = !createTransaction
     ? true
     : kind === 'receivable'
-    ? Boolean(paymentDate)
-    : Boolean(type) && Boolean(bankId)
+      ? Boolean(paymentDate)
+      : Boolean(paymentDate) && Boolean(type) &&
+        (type !== TransactionType.CREDIT_CARD || Boolean(bankId))
   const selectedBank = banks.find((b) => b.id === bankId)
 
   return (
@@ -89,11 +91,11 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPendi
         </DialogHeader>
 
         <div className="flex flex-col gap-3 py-1">
-          {kind === 'debt' && createTransaction && <div className="flex flex-col gap-1.5">
+          {createTransaction && <div className="flex flex-col gap-1.5">
             <Label>Banco</Label>
             <Select value={bankId} onValueChange={(v) => setBankId(v ?? '')}>
               <SelectTrigger aria-label="Banco">
-                <SelectValue placeholder="Selecione um banco">
+                <SelectValue placeholder="Nenhum banco (opcional)">
                   {selectedBank?.name}
                 </SelectValue>
               </SelectTrigger>
@@ -105,12 +107,14 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPendi
             </Select>
           </div>}
 
-          {kind === 'receivable' && createTransaction ? (
+          {createTransaction ? (
             <div className="flex flex-col gap-1.5">
-              <Label>Data do recebimento</Label>
+              <Label>{kind === 'debt' ? 'Data do pagamento' : 'Data do recebimento'}</Label>
               <DatePicker value={paymentDate} onChange={setPaymentDate} />
             </div>
-          ) : createTransaction ? (
+          ) : null}
+
+          {kind === 'debt' && createTransaction ? (
             <div className="flex flex-col gap-1.5">
               <Label>Forma de pagamento</Label>
               <Select<PaymentType> value={type || null} onValueChange={(v) => setType(v ?? '')}>
@@ -138,11 +142,11 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPendi
             onClick={() => canConfirm && !isPending && onConfirm(
               !createTransaction
                 ? {}
-                : kind === 'receivable'
-                ? { paymentDate }
-                : createTransaction
-                ? { paymentBankId: bankId, paymentType: type as TransactionType }
-                : {},
+                : {
+                    paymentDate,
+                    paymentBankId: bankId || undefined,
+                    paymentType: type as TransactionType,
+                  },
             )}
           >
             {isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}

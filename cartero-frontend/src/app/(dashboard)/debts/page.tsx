@@ -416,6 +416,7 @@ export default function DebtsPage() {
   useEffect(() => {
     if (!highlightId || !debts) return
     const target = debts.find((d) => d.id === highlightId)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (target?.isPaid) setTab('paid')
   }, [highlightId, debts])
 
@@ -549,11 +550,7 @@ export default function DebtsPage() {
   function handleTogglePaid(debt: Debt) {
     taskAnchor.beginFromDetail()
     if (!debt.isPaid) {
-      if (user?.createExpenseOnDebtPaid === false) {
-        updateMut.mutate({ id: debt.id, payload: { isPaid: true } })
-      } else {
-        setMarkPaidTarget(debt)
-      }
+      setMarkPaidTarget(debt)
     } else if (debt.paymentTransactionId) {
       setUnmarkPaidTarget(debt)
     } else {
@@ -572,7 +569,7 @@ export default function DebtsPage() {
     paymentDate?: string
   }) {
     if (!markPaidTarget) return
-    if (!payload.paymentBankId || !payload.paymentType) return
+    if (!payload.paymentType) return
     // `payload` já inclui `paymentDate` — o spread a repassa.
     updateMut.mutate({
       id: markPaidTarget.id,
@@ -845,7 +842,7 @@ export default function DebtsPage() {
       <MarkAsPaidDialog
         open={markPaidTarget !== null}
         kind="debt"
-        createTransaction={user?.createExpenseOnDebtPaid ?? false}
+        createTransaction
         isPending={updateMut.isPending}
         onConfirm={handleMarkPaidConfirm}
         onCancel={() => setMarkPaidTarget(null)}

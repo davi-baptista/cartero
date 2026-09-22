@@ -1,5 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { deleteInvoiceIfEmpty } from 'src/common/helpers/invoice.helper';
+import {
+  deleteInvoiceIfEmpty,
+  findOrCreateSystemReceivableBank,
+} from 'src/common/helpers/invoice.helper';
 import { Prisma, Debt, TransactionType } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
@@ -144,27 +147,31 @@ export class DebtsService {
     */
     const userPreferences = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { createExpenseOnDebtPaid: true, timeZone: true },
+      select: { timeZone: true },
     });
-    const shouldCreatePaymentTransaction =
-      markingAsPaid && userPreferences.createExpenseOnDebtPaid;
-
-    if (shouldCreatePaymentTransaction) {
-      if (!dto.paymentBankId || !dto.paymentType) {
-        throw new BadRequestException(
-          'Informe paymentBankId e paymentType para marcar a dívida como paga',
-        );
-      }
-      if (dto.paymentType === TransactionType.INCOME) {
-        throw new BadRequestException(
-          'paymentType inválido para pagamento de dívida',
-        );
-      }
+    if (markingAsPaid && !dto.paymentType) {
+      throw new BadRequestException(
+        'Informe paymentType para marcar a dívida como paga',
+      );
+    }
+    if (markingAsPaid && dto.paymentType === TransactionType.INCOME) {
+      throw new BadRequestException(
+        'paymentType inválido para pagamento de dívida',
+      );
+    }
+    if (
+      markingAsPaid &&
+      dto.paymentType === TransactionType.CREDIT_CARD &&
+      !dto.paymentBankId
+    ) {
+      throw new BadRequestException(
+        'Informe um banco/cartão para pagamento de dívida no crédito',
+      );
     }
 
-    const paymentBank = shouldCreatePaymentTransaction
+    const selectedPaymentBank = markingAsPaid && dto.paymentBankId
       ? await this.entityValidationService.validateBank(
-          dto.paymentBankId as string,
+          dto.paymentBankId,
           userId,
         )
       : null;
@@ -238,12 +245,7 @@ export class DebtsService {
 
           let paymentTransactionId = debt.paymentTransactionId;
 
-          if (
-            shouldCreatePaymentTransaction &&
-            paidAt !== undefined &&
-            paidAt !== null &&
-            !debt.paymentTransactionId
-          ) {
+          if (markingAsPaid && paidAt && !debt.paymentTransactionId) {
             const category =
               await this.entityValidationService.findOrCreateSystemCategory(
                 tx,
@@ -253,13 +255,15 @@ export class DebtsService {
                 DEBT_PAID_CATEGORY_COLOR,
               );
 
-            // Mesmo núcleo que o settle de Pessoa usa: o lote não pode ter
-            // regra financeira diferente só por ser em lote.
+            const paymentBank =
+              selectedPaymentBank ??
+              (await findOrCreateSystemReceivableBank(tx, userId));
+
             paymentTransactionId = await createDebtPaymentTransaction(tx, {
               userId,
               debt,
               paidAt,
-              bank: paymentBank!,
+              bank: paymentBank,
               paymentType: paymentType as TransactionType,
               category,
               timeZone: userPreferences.timeZone,

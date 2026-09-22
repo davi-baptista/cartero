@@ -181,12 +181,10 @@ export class ReceivablesService {
     */
     const userPreferences = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { createIncomeOnReceivablePaid: true, timeZone: true },
+      select: { timeZone: true },
     });
-    const shouldCreatePaymentTransaction =
-      markingAsReceived && userPreferences.createIncomeOnReceivablePaid;
 
-    const paymentBank = shouldCreatePaymentTransaction && dto.paymentBankId
+    const selectedPaymentBank = markingAsReceived && dto.paymentBankId
       ? await this.entityValidationService.validateBank(
           dto.paymentBankId,
           userId,
@@ -228,7 +226,7 @@ export class ReceivablesService {
 
         const updatedReceivables: Receivable[] = [];
         const receivableBank = markingAsReceived
-          ? paymentBank ?? (await findOrCreateSystemReceivableBank(tx, userId))
+          ? selectedPaymentBank ?? (await findOrCreateSystemReceivableBank(tx, userId))
           : null;
 
         for (const receivable of receivablesToUpdate) {
@@ -246,7 +244,7 @@ export class ReceivablesService {
           let paymentTransactionId = receivable.paymentTransactionId;
 
           if (
-            shouldCreatePaymentTransaction &&
+            markingAsReceived &&
             paidAt !== undefined &&
             paidAt !== null &&
             !receivable.paymentTransactionId
@@ -275,7 +273,7 @@ export class ReceivablesService {
                 receivable,
                 paidAt,
                 bank: receivableBank!,
-                paymentType: paymentBank ? (paymentType ?? null) : null,
+                paymentType: selectedPaymentBank ? (paymentType ?? null) : null,
                 category,
                 timeZone: userPreferences.timeZone,
               },
