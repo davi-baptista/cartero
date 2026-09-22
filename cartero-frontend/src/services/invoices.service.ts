@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { Invoice, InvoiceStatus } from '@/types'
+import type { Invoice } from '@/types'
 
 /**
  * Converte os campos monetários para número.
@@ -47,9 +47,10 @@ export async function getInvoice(id: string): Promise<Invoice> {
   return normalizeInvoice(data)
 }
 
-export async function updateInvoiceStatus(id: string, status: InvoiceStatus): Promise<Invoice> {
-  const { data } = await api.patch<Invoice>(`/invoices/${id}`, { status })
-  return normalizeInvoice(data)
+export interface MarkInvoicesPaidPayload {
+  ids: string[]
+  paymentDate: string
+  bankId?: string
 }
 
 /** Desfaz o pagamento — o status volta a ser o que as datas determinam. */
@@ -67,7 +68,10 @@ export async function reopenAllPaidInvoices(): Promise<{ ids: string[]; count: n
 }
 
 /** Remarca como pagas as faturas indicadas. Ignora as que já estão pagas. */
-export async function markManyInvoicesPaid(ids: string[]): Promise<{ count: number }> {
-  const { data } = await api.post<{ count: number }>('/invoices/mark-many-paid', { ids })
+export async function markManyInvoicesPaid(payload: MarkInvoicesPaidPayload | string[]): Promise<{ count: number }> {
+  const request = Array.isArray(payload)
+    ? { ids: payload, paymentDate: new Date().toISOString().slice(0, 10) }
+    : payload
+  const { data } = await api.post<{ count: number }>('/invoices/mark-many-paid', request)
   return data
 }

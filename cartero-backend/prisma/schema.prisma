@@ -170,6 +170,7 @@ model Bank {
   transactions  Transaction[]
   invoices      Invoice[]
   subscriptions Subscription[]
+  invoiceSettlements InvoiceSettlement[]
 }
 
 model Category {
@@ -311,6 +312,22 @@ model Invoice {
   user         User          @relation(fields: [userId], references: [id])
   bank         Bank          @relation(fields: [bankId], references: [id])
   transactions Transaction[]
+  settlement   InvoiceSettlement?
+}
+
+model InvoiceSettlement {
+  id        String   @id @default(uuid())
+  invoiceId String   @unique
+  amount    Decimal
+  paidAt    DateTime
+  bankId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  bank    Bank    @relation(fields: [bankId], references: [id])
+
+  @@index([bankId, paidAt])
 }
 
 model Debt {

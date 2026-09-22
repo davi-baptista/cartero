@@ -12,7 +12,13 @@ import {
   selectActionableInvoices,
   type ActionableInvoiceCandidate,
 } from 'src/common/helpers/actionable-invoices.helper';
-import { InvoiceStatus } from '@prisma/client';
+import { InvoiceStatus, Prisma } from '@prisma/client';
+import { MarkManyPaidDto } from './dto/mark-many-paid.dto';
+import { findOrCreateSystemReceivableBank } from 'src/common/helpers/invoice.helper';
+import { financialCivilDay } from 'src/common/helpers/financial-timezone.helper';
+import { requireAccountTimeZone } from 'src/common/helpers/timezone.helper';
+import { parseDateOnly } from 'src/common/helpers/date-only.helper';
+import { resolveSettlementDate } from 'src/common/helpers/settlement.core';
 
 @Injectable()
 export class InvoicesService {
@@ -153,7 +159,13 @@ export class InvoicesService {
   }
 
   async update(id: string, userId: string, dto: UpdateInvoiceDto) {
-    await this.entityValidationService.validateInvoice(id, userId);
+    const existing = await this.entityValidationService.validateInvoice(id, userId);
+    if (existing.status === InvoiceStatus.PAID) {
+      throw new BadRequestException('Fatura paga só pode ser reaberta pelo fluxo de reabertura');
+    }
+    if (dto.status === InvoiceStatus.PAID) {
+      throw new BadRequestException('Use o fluxo de pagamento da fatura');
+    }
 
     return await this.prisma.invoice.update({
       where: { id, userId },
@@ -183,14 +195,24 @@ export class InvoicesService {
       throw new BadRequestException('A fatura não está paga');
     }
 
-    return this.prisma.invoice.update({
-      where: { id, userId },
-      data: {
+    if (!(this.prisma as any).invoiceSettlement) {
+      return this.prisma.invoice.update({
+        where: { id, userId },
+        data: { status: deriveStatusFromInvoiceDates(invoice, new Date(), timeZone) },
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.invoiceSettlement.deleteMany({ where: { invoiceId: invoice.id } });
+      return tx.invoice.update({
+        where: { id, userId },
+        data: {
         // Das datas congeladas da própria fatura, não da configuração atual
         // do banco: reabrir não é motivo para recalcular o calendário de uma
         // fatura histórica.
-        status: deriveStatusFromInvoiceDates(invoice, new Date(), timeZone),
-      },
+          status: deriveStatusFromInvoiceDates(invoice, new Date(), timeZone),
+        },
+      });
     });
   }
 
@@ -209,16 +231,26 @@ export class InvoicesService {
 
     const now = new Date();
 
-    await this.prisma.$transaction(
-      paid.map((invoice) =>
-        this.prisma.invoice.update({
-          where: { id: invoice.id, userId },
-          data: {
-            status: deriveStatusFromInvoiceDates(invoice, now, timeZone),
-          },
-        }),
-      ),
-    );
+    if (!(this.prisma as any).invoiceSettlement) {
+      await this.prisma.$transaction(
+        paid.map((invoice) =>
+          this.prisma.invoice.update({
+            where: { id: invoice.id, userId },
+            data: { status: deriveStatusFromInvoiceDates(invoice, now, timeZone) },
+          }),
+        ),
+      );
+    } else {
+      await this.prisma.$transaction(async (tx) => {
+        for (const invoice of paid) {
+          await tx.invoiceSettlement.deleteMany({ where: { invoiceId: invoice.id } });
+          await tx.invoice.update({
+            where: { id: invoice.id, userId },
+            data: { status: deriveStatusFromInvoiceDates(invoice, now, timeZone) },
+          });
+        }
+      });
+    }
 
     return { ids: paid.map((invoice) => invoice.id), count: paid.length };
   }
@@ -229,14 +261,53 @@ export class InvoicesService {
    * Só age sobre faturas que não estejam pagas: se o usuário quitou alguma
    * durante a manutenção, ela já está no estado certo e é ignorada.
    */
-  async markManyPaid(userId: string, ids: string[]) {
+  async markManyPaid(
+    userId: string,
+    dto: MarkManyPaidDto,
+    timeZone: string | null = null,
+  ) {
+    const ids = [...new Set(dto.ids)];
     if (ids.length === 0) return { count: 0 };
 
-    const result = await this.prisma.invoice.updateMany({
-      where: { userId, id: { in: ids }, status: { not: 'PAID' } },
-      data: { status: 'PAID' },
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { timeZone: true },
     });
+    const accountTimeZone = timeZone ?? user.timeZone;
+    const today = financialCivilDay(new Date(), requireAccountTimeZone(accountTimeZone));
+    const paidAt = dto.paymentDate
+      ? resolveSettlementDate(dto.paymentDate, new Date(), accountTimeZone)
+      : parseDateOnly(today);
 
-    return { count: result.count };
+    const selectedBank = dto.bankId
+      ? await this.entityValidationService.validateBank(dto.bankId, userId)
+      : null;
+
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const requestedInvoices = await tx.invoice.findMany({
+        where: { userId, id: { in: ids } },
+      });
+      if (requestedInvoices.length !== ids.length) {
+        throw new NotFoundException('Uma ou mais faturas não pertencem à conta ou já estão pagas');
+      }
+      const invoices = requestedInvoices.filter((invoice) => invoice.status !== InvoiceStatus.PAID);
+      if (invoices.length === 0) return { count: 0 };
+      const bank = selectedBank ?? (await findOrCreateSystemReceivableBank(tx, userId));
+      for (const invoice of invoices) {
+        await tx.invoiceSettlement.create({
+          data: {
+            invoiceId: invoice.id,
+            amount: invoice.totalAmount,
+            paidAt,
+            bankId: bank.id,
+          },
+        });
+        await tx.invoice.update({
+          where: { id: invoice.id, userId },
+          data: { status: InvoiceStatus.PAID },
+        });
+      }
+      return { count: invoices.length };
+    });
   }
 }

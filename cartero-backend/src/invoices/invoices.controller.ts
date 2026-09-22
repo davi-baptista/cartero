@@ -39,7 +39,7 @@ export class InvoicesController {
 
   @Post('mark-many-paid')
   markManyPaid(@CurrentUser() user: AuthenticatedUser, @Body() dto: MarkManyPaidDto) {
-    return this.invoicesService.markManyPaid(user.id, dto.ids);
+    return this.invoicesService.markManyPaid(user.id, dto, user.timeZone);
   }
 
   @Post(':id/reopen')

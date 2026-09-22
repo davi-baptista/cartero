@@ -53,9 +53,11 @@ import {
 import { isAxiosError } from 'axios'
 import {
   getInvoice,
-  updateInvoiceStatus,
   reopenInvoice,
+  markManyInvoicesPaid,
 } from '@/services/invoices.service'
+import { getBanks } from '@/services/banks.service'
+import type { Bank } from '@/types'
 import {
   formatCurrency,
   formatMonthYear,
@@ -66,7 +68,10 @@ import {
   invoiceBreakdown,
   invoiceComposition,
 } from '@/lib/invoice-composition'
-import { parseDateOnly, formatDateValue } from '@/lib/date'
+import { parseDateOnly, formatDateValue, todayDateValue } from '@/lib/date'
+import { DatePicker } from '@/components/ui/date-picker'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAuth } from '@/providers/auth-provider'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import {
@@ -390,6 +395,10 @@ export function InvoiceDetailsDrawer({
   const qc = useQueryClient()
   const { user } = useAuth()
   const [reopenConfirm, setReopenConfirm] = useState(false)
+  const [paymentConfirm, setPaymentConfirm] = useState(false)
+  const [paymentDate, setPaymentDate] = useState(todayDateValue())
+  const [paymentBankId, setPaymentBankId] = useState('')
+  const { data: paymentBanks = [] } = useQuery({ queryKey: ['banks'], queryFn: () => getBanks() })
   const [txSheetOpen, setTxSheetOpen] = useState(false)
   const [editTx, setEditTx] = useState<Transaction | null>(null)
   const [scopeDialog, setScopeDialog] = useState<{
@@ -432,7 +441,7 @@ export function InvoiceDetailsDrawer({
   })
 
   const markPaidMut = useMutation({
-    mutationFn: () => updateInvoiceStatus(invoiceId!, InvoiceStatus.PAID),
+    mutationFn: () => markManyInvoicesPaid({ ids: [invoiceId!], paymentDate, ...(paymentBankId ? { bankId: paymentBankId } : {}) }),
     onSuccess: () => {
       /*
         Pagar muda `Invoice.status`, e disso dependem o orçamento e a
@@ -440,6 +449,7 @@ export function InvoiceDetailsDrawer({
         A lista era menor aqui do que em reabrir — as duas mexem no mesmo fato.
       */
       invalidateInvoiceDependents(qc, { invoiceId, bankId })
+      setPaymentConfirm(false)
       toast.success('Fatura marcada como paga')
     },
     onError: () => toast.error('Erro ao atualizar fatura'),
@@ -800,7 +810,7 @@ export function InvoiceDetailsDrawer({
               </div>
               {canMarkPaid && (
                 <Button
-                  onClick={() => markPaidMut.mutate()}
+                  onClick={() => { setPaymentDate(todayDateValue()); setPaymentBankId(''); setPaymentConfirm(true) }}
                   disabled={markPaidMut.isPending}
                 >
                   {markPaidMut.isPending ? (
@@ -930,6 +940,34 @@ export function InvoiceDetailsDrawer({
             <Button onClick={() => reopenMut.mutate()} disabled={reopenMut.isPending}>
               {reopenMut.isPending && <Loader2 className="size-3.5 animate-spin" />}
               Reabrir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={paymentConfirm} onOpenChange={(open) => !markPaidMut.isPending && setPaymentConfirm(open)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Registrar pagamento da fatura</DialogTitle>
+            <DialogDescription>Informe a data efetiva. O banco é opcional.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 py-1">
+            <div className="flex flex-col gap-1.5">
+              <Label>Data do pagamento</Label>
+              <DatePicker value={paymentDate} onChange={setPaymentDate} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Banco/conta (opcional)</Label>
+              <Select value={paymentBankId || null} onValueChange={(v) => setPaymentBankId(v ?? '')}>
+                <SelectTrigger aria-label="Banco/conta"><SelectValue placeholder="Não informado" /></SelectTrigger>
+                <SelectContent>{paymentBanks.map((bank: Bank) => <SelectItem key={bank.id} value={bank.id}>{bank.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaymentConfirm(false)} disabled={markPaidMut.isPending}>Cancelar</Button>
+            <Button onClick={() => markPaidMut.mutate()} disabled={!paymentDate || markPaidMut.isPending}>
+              {markPaidMut.isPending && <Loader2 className="size-3.5 animate-spin" />} Confirmar pagamento
             </Button>
           </DialogFooter>
         </DialogContent>
