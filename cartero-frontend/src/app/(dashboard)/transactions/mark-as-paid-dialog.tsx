@@ -50,8 +50,11 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPendi
   const [bankId, setBankId] = useState<string>('')
   const [type, setType] = useState<PaymentType | ''>('')
   const [paymentDate, setPaymentDate] = useState(todayDateValue())
+  const [showOptionalBank, setShowOptionalBank] = useState(false)
 
-  const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: () => getBanks() })
+  const bankRequired = createTransaction && kind === 'debt' && type === TransactionType.CREDIT_CARD
+  const canShowOptionalBank = createTransaction && !bankRequired && (kind === 'receivable' || Boolean(type))
+  const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: () => getBanks(), enabled: open && (bankRequired || showOptionalBank) })
 
   useEffect(() => {
     if (!open) {
@@ -59,6 +62,7 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPendi
       setBankId('')
       setType('')
       setPaymentDate(todayDateValue())
+      setShowOptionalBank(false)
     }
   }, [open])
 
@@ -91,15 +95,19 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPendi
         </DialogHeader>
 
         <div className="flex flex-col gap-3 py-1">
-          {createTransaction && <div className="flex flex-col gap-1.5">
-            <Label>Banco</Label>
+          {canShowOptionalBank && !showOptionalBank && (
+            <button type="button" onClick={() => setShowOptionalBank(true)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">+ Adicionar banco</button>
+          )}
+          {createTransaction && (bankRequired || showOptionalBank) && <div className="flex flex-col gap-1.5">
+            <Label>Banco{bankRequired ? '' : ' (opcional)'}</Label>
             <Select value={bankId} onValueChange={(v) => setBankId(v ?? '')}>
               <SelectTrigger aria-label="Banco">
-                <SelectValue placeholder="Nenhum banco (opcional)">
+                <SelectValue placeholder={bankRequired ? 'Selecione o cartão' : 'Sem banco'}>
                   {selectedBank?.name}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false}>
+                {!bankRequired && <SelectItem value="none">Sem banco</SelectItem>}
                 {banks.map((b) => (
                   <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
                 ))}
@@ -144,7 +152,7 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPendi
                 ? {}
                 : {
                     paymentDate,
-                    paymentBankId: bankId || undefined,
+                    paymentBankId: bankId && bankId !== 'none' ? bankId : undefined,
                     paymentType: type as TransactionType,
                   },
             )}

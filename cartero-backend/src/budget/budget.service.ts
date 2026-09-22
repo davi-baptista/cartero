@@ -226,7 +226,12 @@ export class BudgetService {
       Pendência anterior aberta acompanha o PRESENTE, não cada snapshot.
       Fora do mês corrente a consulta nem é feita.
     */
-    const isCurrentMonth = isCurrentCompetence(year, month, new Date(), timeZone);
+    const isCurrentMonth = isCurrentCompetence(
+      year,
+      month,
+      new Date(),
+      timeZone,
+    );
 
     /*
       Limite das pendências ANTERIORES em aberto de "Acertos com pessoas".
@@ -335,9 +340,11 @@ export class BudgetService {
           */
           Promise.resolve(
             [] as Awaited<
-              ReturnType<typeof this.prisma.invoice.findMany<{
-                include: { bank: true };
-              }>>
+              ReturnType<
+                typeof this.prisma.invoice.findMany<{
+                  include: { bank: true };
+                }>
+              >
             >,
           ),
       this.prisma.transaction.findMany({
@@ -601,11 +608,6 @@ export class BudgetService {
       }),
     ]);
 
-    const totalInvoices = invoices.reduce(
-      (sum, inv) => sum + Number(inv.totalAmount),
-      0,
-    );
-
     /*
       As faturas carregadas entram no MESMO agrupamento de terceiros.
 
@@ -642,6 +644,44 @@ export class BudgetService {
       reimbursablePerInvoice.set(row.invoiceId, Number(row._sum.amount ?? 0));
     }
 
+    /*
+      A group CREDIT transaction already contributes through the group's net
+      settlement in Budget V1. It remains in Invoice.totalAmount for the card
+      lifecycle, but must not become a second independent budget amount.
+    */
+    const settlementCreditRows =
+      invoiceIds.length > 0
+        ? await this.prisma.transaction.findMany({
+            where: {
+              userId,
+              invoiceId: { in: invoiceIds },
+              personSettlementGroupId: { not: null },
+              type: 'CREDIT_CARD',
+            },
+            select: { invoiceId: true, amount: true },
+          })
+        : [];
+    const settlementCreditPerInvoice = new Map<string, number>();
+    for (const row of settlementCreditRows) {
+      if (!row.invoiceId) continue;
+      settlementCreditPerInvoice.set(
+        row.invoiceId,
+        (settlementCreditPerInvoice.get(row.invoiceId) ?? 0) +
+          Number(row.amount),
+      );
+    }
+    const effectiveInvoiceAmount = (invoice: {
+      id: string;
+      totalAmount: unknown;
+    }) =>
+      Number(invoice.totalAmount) -
+      (settlementCreditPerInvoice.get(invoice.id) ?? 0);
+
+    const totalInvoices = invoices.reduce(
+      (sum, inv) => sum + effectiveInvoiceAmount(inv),
+      0,
+    );
+
     const totalReimbursable = [...reimbursablePerInvoice.values()].reduce(
       (sum, value) => sum + value,
       0,
@@ -671,7 +711,7 @@ export class BudgetService {
     const overdueInvoicesOwnTotal = overdueInvoicesFromPast.reduce(
       (sum, inv) =>
         sum +
-        Number(inv.totalAmount) -
+        effectiveInvoiceAmount(inv) -
         (reimbursablePerInvoice.get(inv.id) ?? 0),
       0,
     );
@@ -683,7 +723,7 @@ export class BudgetService {
       return {
         ...invoice,
         reimbursable,
-        ownAmount: Number(invoice.totalAmount) - reimbursable,
+        ownAmount: effectiveInvoiceAmount(invoice) - reimbursable,
       };
     });
 
@@ -717,9 +757,7 @@ export class BudgetService {
       ...openDueInMonth,
       ...currentOpenPrior,
       ...paidInCompetence,
-    ].filter(
-      (debt) => classifyDebtForBudget(debt, selectedPeriod) !== 'prior',
-    );
+    ].filter((debt) => classifyDebtForBudget(debt, selectedPeriod) !== 'prior');
     const debtBreakdown = this.buildDebtBreakdown(allDebtRows);
 
     const sumAmount = (rows: readonly { amount: unknown }[]) =>
@@ -1106,7 +1144,8 @@ export class BudgetService {
       entry.openReceivableInMonth += amount;
       entry.budgetReceivableAmount += amount;
       entry.openItemCount += 1;
-      if (isOverdueToday(receivable.dueDate, new Date(), timeZone)) entry.openHasOverdue = true;
+      if (isOverdueToday(receivable.dueDate, new Date(), timeZone))
+        entry.openHasOverdue = true;
       entry.openNextReceivableDue = menorData(
         entry.openNextReceivableDue,
         receivable.dueDate,
@@ -1122,7 +1161,8 @@ export class BudgetService {
       );
       entry.openDebtInMonth += Number(debt.amount);
       entry.openItemCount += 1;
-      if (isOverdueToday(debt.dueDate, new Date(), timeZone)) entry.openHasOverdue = true;
+      if (isOverdueToday(debt.dueDate, new Date(), timeZone))
+        entry.openHasOverdue = true;
       entry.openNextDebtDue = menorData(entry.openNextDebtDue, debt.dueDate);
     }
 
@@ -1136,7 +1176,8 @@ export class BudgetService {
       entry.openPriorReceivable += amount;
       entry.budgetReceivableAmount += amount;
       entry.openItemCount += 1;
-      if (isOverdueToday(receivable.dueDate, new Date(), timeZone)) entry.openHasOverdue = true;
+      if (isOverdueToday(receivable.dueDate, new Date(), timeZone))
+        entry.openHasOverdue = true;
       /*
         Pendência anterior entra no MESMO mínimo: a regra do Budget já carrega
         o atraso de meses passados, e um item vencido em agosto é o evento mais
@@ -1157,7 +1198,8 @@ export class BudgetService {
       );
       entry.openPriorDebt += Number(debt.amount);
       entry.openItemCount += 1;
-      if (isOverdueToday(debt.dueDate, new Date(), timeZone)) entry.openHasOverdue = true;
+      if (isOverdueToday(debt.dueDate, new Date(), timeZone))
+        entry.openHasOverdue = true;
       entry.openNextDebtDue = menorData(entry.openNextDebtDue, debt.dueDate);
     }
 
@@ -1263,10 +1305,7 @@ export class BudgetService {
       paga, sai da consulta e o total deste mês diminui.
     */
     const totalToPay =
-      netAmount +
-      totalDirectPayments +
-      totalDebts +
-      overdueInvoicesOwnTotal;
+      netAmount + totalDirectPayments + totalDebts + overdueInvoicesOwnTotal;
 
     const peopleSettlements = [...settlementByPerson.values()]
       /*
@@ -1397,9 +1436,7 @@ export class BudgetService {
           */
           settled: {
             /** `YYYY-MM-DD` civil, ou `null` quando não há data defensável. */
-            settledAt: entry.settledAtMax
-              ? civilDay(entry.settledAtMax)
-              : null,
+            settledAt: entry.settledAtMax ? civilDay(entry.settledAtMax) : null,
             /** Quantos itens da competência estão resolvidos. */
             itemCount: entry.settledCount,
           },
@@ -1619,7 +1656,7 @@ export class BudgetService {
           ...invoice,
           reimbursable,
           /** O que sai do bolso do usuário — o valor que soma no total. */
-          ownAmount: Number(invoice.totalAmount) - reimbursable,
+          ownAmount: effectiveInvoiceAmount(invoice) - reimbursable,
         };
       }),
       /** Σ da sua parte das faturas carregadas — entra em `totalToPay`. */
@@ -1782,8 +1819,7 @@ export class BudgetService {
           isPaid: debt.isPaid,
           status: statusOf(debt),
           dueDate: debt.isPaid ? null : civilDay(debt.dueDate),
-          settledAt:
-            debt.isPaid && debt.paidAt ? civilDay(debt.paidAt) : null,
+          settledAt: debt.isPaid && debt.paidAt ? civilDay(debt.paidAt) : null,
         });
       }
     }

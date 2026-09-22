@@ -34,6 +34,8 @@ const receivable = (id: string, amount: number) => ({
 
 function harness(debts: any[], receivables: any[]) {
   const groups: any[] = [];
+  const transactions: any[] = [];
+  const invoices: any[] = [];
   const prisma: any = {
     person: {
       findUnique: vi.fn(async () => ({
@@ -72,11 +74,73 @@ function harness(debts: any[], receivables: any[]) {
       }),
     },
     bank: {
+      findUnique: vi.fn(async ({ where }: any) =>
+        where.id === 'bank-1'
+          ? {
+              id: 'bank-1',
+              userId: USER_ID,
+              isSystem: false,
+              invoiceDueDate: 8,
+              invoiceDueDaysAfterClose: 7,
+            }
+          : null,
+      ),
       findFirst: vi.fn(async () => ({
         id: 'no-bank',
         userId: USER_ID,
         isSystem: true,
       })),
+    },
+    category: {
+      findFirst: vi.fn(async () => null),
+      create: vi.fn(async ({ data }: any) => ({
+        id: 'cat-settlement',
+        ...data,
+      })),
+    },
+    invoice: {
+      findFirst: vi.fn(async () => invoices[0] ?? null),
+      create: vi.fn(async ({ data }: any) => {
+        const invoice = {
+          id: `invoice-${invoices.length + 1}`,
+          totalAmount: 0,
+          status: 'OPEN',
+          ...data,
+        };
+        invoices.push(invoice);
+        return invoice;
+      }),
+      update: vi.fn(async ({ where, data }: any) => {
+        const invoice = invoices.find((item) => item.id === where.id);
+        if (data.totalAmount?.increment)
+          invoice.totalAmount += Number(data.totalAmount.increment);
+        if (data.totalAmount?.decrement)
+          invoice.totalAmount -= Number(data.totalAmount.decrement);
+        return invoice;
+      }),
+      findUnique: vi.fn(
+        async ({ where }: any) =>
+          invoices.find((item) => item.id === where.id) ?? null,
+      ),
+      delete: vi.fn(async ({ where }: any) => {
+        const index = invoices.findIndex((item) => item.id === where.id);
+        if (index >= 0) invoices.splice(index, 1);
+      }),
+    },
+    transaction: {
+      create: vi.fn(async ({ data }: any) => {
+        const transaction = { id: `tx-${transactions.length + 1}`, ...data };
+        transactions.push(transaction);
+        return transaction;
+      }),
+      findUnique: vi.fn(
+        async ({ where }: any) =>
+          transactions.find((item) => item.id === where.id) ?? null,
+      ),
+      delete: vi.fn(async ({ where }: any) => {
+        const index = transactions.findIndex((item) => item.id === where.id);
+        if (index >= 0) transactions.splice(index, 1);
+      }),
     },
     personSettlementGroup: {
       create: vi.fn(async ({ data }: any) => {
@@ -98,6 +162,10 @@ function harness(debts: any[], receivables: any[]) {
         return group
           ? {
               ...group,
+              creditTransaction:
+                transactions.find(
+                  (item) => item.personSettlementGroupId === group.id,
+                ) ?? null,
               debts: group.debts.create.map((item: any) => ({
                 debtId: item.debtId,
               })),
@@ -119,7 +187,15 @@ function harness(debts: any[], receivables: any[]) {
     prisma as PrismaService,
     new EntityValidationService(prisma as PrismaService),
   );
-  return { service, prisma, groups, debts, receivables };
+  return {
+    service,
+    prisma,
+    groups,
+    debts,
+    receivables,
+    transactions,
+    invoices,
+  };
 }
 
 describe('CM1C person settlement groups', () => {
@@ -136,9 +212,10 @@ describe('CM1C person settlement groups', () => {
       );
       const result = await h.service.settle('person-1', USER_ID, {
         paymentDate: '2026-08-10',
+        ...(direction === 'OUTFLOW' ? { paymentType: 'PIX' } : {}),
       } as any);
-      expect(result.group.direction).toBe(direction);
-      expect(Number(result.group.netAmount)).toBe(net);
+      expect(result.group!.direction).toBe(direction);
+      expect(Number(result.group!.netAmount)).toBe(net);
       expect(h.groups[0].debts.create).toHaveLength(1);
       expect(h.debts[0].isPaid).toBe(true);
       expect(h.receivables[0].isPaid).toBe(true);
@@ -166,10 +243,71 @@ describe('CM1C person settlement groups', () => {
   it('undoes the whole group and permits re-settlement', async () => {
     const h = harness([debt('d1', 100)], [receivable('r1', 200)]);
     const first = await h.service.settle('person-1', USER_ID, {} as any);
-    await h.service.undoSettlement(first.group.id, USER_ID);
+    await h.service.undoSettlement(first.group!.id, USER_ID);
     expect(h.debts[0].isPaid).toBe(false);
     expect(h.receivables[0].isPaid).toBe(false);
     const second = await h.service.settle('person-1', USER_ID, {} as any);
-    expect(second.group.id).not.toBe(first.group.id);
+    expect(second.group!.id).not.toBe(first.group!.id);
+  });
+
+  it('requires a valid method for net outflow', async () => {
+    const h = harness([debt('d1', 100)], [receivable('r1', 50)]);
+    await expect(
+      h.service.settle('person-1', USER_ID, {} as any),
+    ).rejects.toThrow(/forma de pagamento/);
+    await expect(
+      h.service.settle('person-1', USER_ID, { paymentType: 'INCOME' } as any),
+    ).rejects.toThrow(/forma de pagamento/);
+  });
+
+  it('creates one net credit artifact linked to the group', async () => {
+    const h = harness([debt('d1', 100)], [receivable('r1', 50)]);
+    const result = await h.service.settle('person-1', USER_ID, {
+      paymentDate: '2026-08-10',
+      paymentType: 'CREDIT_CARD',
+      paymentBankId: 'bank-1',
+    } as any);
+
+    expect(result.group!.direction).toBe('OUTFLOW');
+    expect(result.group!.paymentType).toBe('CREDIT_CARD');
+    expect(h.transactions).toHaveLength(1);
+    expect(h.transactions[0]).toMatchObject({
+      type: 'CREDIT_CARD',
+      bankId: 'bank-1',
+      personSettlementGroupId: result.group!.id,
+      categoryId: 'cat-settlement',
+    });
+    expect(Number(h.transactions[0].amount)).toBe(50);
+    expect(h.transactions[0].personId).toBeUndefined();
+    expect(h.invoices[0].totalAmount).toBe(50);
+  });
+
+  it('removes the exact credit artifact on group undo', async () => {
+    const h = harness([debt('d1', 100)], [receivable('r1', 50)]);
+    const result = await h.service.settle('person-1', USER_ID, {
+      paymentType: 'CREDIT_CARD',
+      paymentBankId: 'bank-1',
+    } as any);
+
+    await h.service.undoSettlement(result.group!.id, USER_ID);
+
+    expect(h.transactions).toHaveLength(0);
+    expect(h.invoices[0]?.totalAmount ?? 0).toBe(0);
+    expect(h.groups[0].status).toBe('REVERSED');
+  });
+
+  it('blocks credit group undo while its Invoice is paid', async () => {
+    const h = harness([debt('d1', 100)], [receivable('r1', 50)]);
+    const result = await h.service.settle('person-1', USER_ID, {
+      paymentType: 'CREDIT_CARD',
+      paymentBankId: 'bank-1',
+    } as any);
+    h.invoices[0].status = 'PAID';
+
+    await expect(
+      h.service.undoSettlement(result.group!.id, USER_ID),
+    ).rejects.toThrow(/fatura já paga/);
+    expect(h.transactions).toHaveLength(1);
+    expect(h.groups[0].status).toBe('ACTIVE');
   });
 });

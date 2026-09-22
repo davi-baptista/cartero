@@ -1,8 +1,21 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { Prisma, PersonSettlementDirection, PersonSettlementStatus } from '@prisma/client';
+import {
+  Prisma,
+  PersonSettlementDirection,
+  PersonSettlementStatus,
+  TransactionType,
+} from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { findOrCreateSystemReceivableBank } from 'src/common/helpers/invoice.helper';
-import { resolveSettlementDate } from 'src/common/helpers/settlement.core';
+import {
+  createPersonSettlementCreditTransaction,
+  removeSettlementTransaction,
+  resolveSettlementDate,
+} from 'src/common/helpers/settlement.core';
+import {
+  PERSON_SETTLEMENT_CATEGORY_COLOR,
+  PERSON_SETTLEMENT_CATEGORY_NAME,
+  SYSTEM_CATEGORY_ICON,
+} from 'src/common/constants/system-categories';
 import { resolveSourceDeleteBlockReason } from 'src/common/helpers/receivable-source-capability';
 import {
   buildPersonSummary,
@@ -168,7 +181,8 @@ export class PersonsService {
       const bucket = porPessoa.get(debt.personId!);
       if (!bucket) continue;
 
-      if (belongsToCompetence(debt, competence, new Date(), timeZone)) bucket.debts.push(debt);
+      if (belongsToCompetence(debt, competence, new Date(), timeZone))
+        bucket.debts.push(debt);
       else if (belongsToHistoryCompetence(debt, competence)) {
         bucket.settledDebts.push(debt);
       }
@@ -383,13 +397,45 @@ export class PersonsService {
         : net.isPositive()
           ? PersonSettlementDirection.INFLOW
           : PersonSettlementDirection.OUTFLOW;
-      const movementBank = net.isZero()
-        ? null
-        : dto.paymentBankId
-          ? await tx.bank.findFirst({ where: { id: dto.paymentBankId, userId } })
-          : await findOrCreateSystemReceivableBank(tx, userId);
-      if (!net.isZero() && dto.paymentBankId && !movementBank) {
-        throw new ConflictException('Banco não encontrado');
+
+      if (
+        direction === PersonSettlementDirection.NONE ||
+        direction === PersonSettlementDirection.INFLOW
+      ) {
+        if (dto.paymentType) {
+          throw new ConflictException(
+            'Forma de pagamento só é válida para acerto com saída',
+          );
+        }
+      } else {
+        if (!dto.paymentType || dto.paymentType === TransactionType.INCOME) {
+          throw new ConflictException(
+            'Informe uma forma de pagamento válida para o acerto com saída',
+          );
+        }
+        if (
+          dto.paymentType === TransactionType.CREDIT_CARD &&
+          !dto.paymentBankId
+        ) {
+          throw new ConflictException(
+            'Informe um banco/cartão para acerto no crédito',
+          );
+        }
+      }
+
+      const movementBank =
+        direction === PersonSettlementDirection.NONE
+          ? null
+          : dto.paymentBankId
+            ? await this.entityValidationService.validateBank(
+                dto.paymentBankId,
+                userId,
+              )
+            : null;
+      if (movementBank?.isSystem) {
+        throw new ConflictException(
+          'O banco sistêmico não pode ser informado pela API',
+        );
       }
 
       const group = await tx.personSettlementGroup.create({
@@ -400,21 +446,63 @@ export class PersonsService {
           direction,
           netAmount: net.abs(),
           bankId: movementBank?.id ?? null,
+          paymentType:
+            direction === PersonSettlementDirection.OUTFLOW
+              ? dto.paymentType
+              : null,
           debts: {
-            create: debts.map((debt) => ({ debtId: debt.id, amount: debt.amount })),
+            create: debts.map((debt) => ({
+              debtId: debt.id,
+              amount: debt.amount,
+            })),
           },
           receivables: {
-            create: receivables.map((item) => ({ receivableId: item.id, amount: item.amount })),
+            create: receivables.map((item) => ({
+              receivableId: item.id,
+              amount: item.amount,
+            })),
           },
         },
       });
 
+      if (
+        direction === PersonSettlementDirection.OUTFLOW &&
+        dto.paymentType === TransactionType.CREDIT_CARD
+      ) {
+        const category =
+          await this.entityValidationService.findOrCreateSystemCategory(
+            tx,
+            userId,
+            PERSON_SETTLEMENT_CATEGORY_NAME,
+            SYSTEM_CATEGORY_ICON,
+            PERSON_SETTLEMENT_CATEGORY_COLOR,
+          );
+        await createPersonSettlementCreditTransaction(tx, {
+          userId,
+          groupId: group.id,
+          personName: person.name,
+          amount: net.abs(),
+          settledAt: paidAt,
+          bank: movementBank!,
+          category,
+          timeZone: user.timeZone,
+        });
+      }
+
       await tx.debt.updateMany({
-        where: { userId, id: { in: debts.map((item) => item.id) }, isPaid: false },
+        where: {
+          userId,
+          id: { in: debts.map((item) => item.id) },
+          isPaid: false,
+        },
         data: { isPaid: true, paidAt, paymentTransactionId: null },
       });
       await tx.receivable.updateMany({
-        where: { userId, id: { in: receivables.map((item) => item.id) }, isPaid: false },
+        where: {
+          userId,
+          id: { in: receivables.map((item) => item.id) },
+          isPaid: false,
+        },
         data: { isPaid: true, paidAt, paymentTransactionId: null },
       });
 
@@ -434,16 +522,28 @@ export class PersonsService {
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const group = await tx.personSettlementGroup.findFirst({
         where: { id: groupId, userId, status: PersonSettlementStatus.ACTIVE },
-        include: { debts: true, receivables: true },
+        include: { debts: true, receivables: true, creditTransaction: true },
       });
-      if (!group) throw new ConflictException('Acerto não encontrado ou já desfeito');
+      if (!group)
+        throw new ConflictException('Acerto não encontrado ou já desfeito');
+
+      if (group.creditTransaction) {
+        await removeSettlementTransaction(
+          tx,
+          userId,
+          group.creditTransaction.id,
+        );
+      }
 
       await tx.debt.updateMany({
         where: { userId, id: { in: group.debts.map((item) => item.debtId) } },
         data: { isPaid: false, paidAt: null, paymentTransactionId: null },
       });
       await tx.receivable.updateMany({
-        where: { userId, id: { in: group.receivables.map((item) => item.receivableId) } },
+        where: {
+          userId,
+          id: { in: group.receivables.map((item) => item.receivableId) },
+        },
         data: { isPaid: false, paidAt: null, paymentTransactionId: null },
       });
       return tx.personSettlementGroup.update({
@@ -508,14 +608,14 @@ export class PersonsService {
       historyReceivables,
       { timeZone },
     ] = await Promise.all([
-        this.prisma.debt.findMany({
-          where: pendingWhere,
-          orderBy: PENDING_ORDER,
-        }),
-        this.prisma.receivable.findMany({
-          where: pendingWhere,
-          orderBy: PENDING_ORDER,
-          /*
+      this.prisma.debt.findMany({
+        where: pendingWhere,
+        orderBy: PENDING_ORDER,
+      }),
+      this.prisma.receivable.findMany({
+        where: pendingWhere,
+        orderBy: PENDING_ORDER,
+        /*
             A compra de origem define a COMPETÊNCIA do recebível automático:
             um jantar de 16/08 que vence com a fatura em 10/09 pertence ao
             acerto de agosto. Um `include` em lote — nunca um fetch por item.
@@ -525,32 +625,32 @@ export class PersonsService {
             recusar. Só as PENDÊNCIAS precisam dele — o histórico já está
             resolvido e não tem essa ação.
           */
-          include: {
-            transaction: {
-              select: { date: true, invoice: { select: { status: true } } },
-            },
+        include: {
+          transaction: {
+            select: { date: true, invoice: { select: { status: true } } },
           },
-        }),
-        this.prisma.debt.findMany({
-          where: historyWhere,
-          orderBy: HISTORY_ORDER,
-        }),
-        this.prisma.receivable.findMany({
-          where: historyWhere,
-          orderBy: HISTORY_ORDER,
-          /*
+        },
+      }),
+      this.prisma.debt.findMany({
+        where: historyWhere,
+        orderBy: HISTORY_ORDER,
+      }),
+      this.prisma.receivable.findMany({
+        where: historyWhere,
+        orderBy: HISTORY_ORDER,
+        /*
             A relação é obrigatória aqui pelo mesmo motivo das pendências: sem
             ela `referenceMonthOf` cairia no vencimento e arquivaria todo
             recebível automático no mês errado, em silêncio.
           */
-          include: { transaction: { select: { date: true } } },
-        }),
-        // TZ2: única leitura pontual de timeZone, paralela às demais.
-        this.prisma.user.findUniqueOrThrow({
-          where: { id: userId },
-          select: { timeZone: true },
-        }),
-      ]);
+        include: { transaction: { select: { date: true } } },
+      }),
+      // TZ2: única leitura pontual de timeZone, paralela às demais.
+      this.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { timeZone: true },
+      }),
+    ]);
 
     const summary = buildPersonSummary(pendingReceivables, pendingDebts);
 

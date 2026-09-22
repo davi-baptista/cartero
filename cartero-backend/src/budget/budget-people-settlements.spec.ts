@@ -71,6 +71,8 @@ interface Setup {
   monthDebts?: FixtureItem[];
   priorDebts?: FixtureItem[];
   priorReceivables?: FixtureItem[];
+  /** Crédito sintético de acerto já refletido no total da fatura. */
+  settlementCreditAmount?: number;
 }
 
 /**
@@ -128,27 +130,41 @@ function isPriorWindow(where: any): boolean {
 function buildService(setup: Setup) {
   const prisma: any = {
     salaryHistory: { findFirst: vi.fn(async () => null) },
-    user: { findUnique: vi.fn(async () => ({})), findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Fortaleza' })), update: vi.fn() },
+    user: {
+      findUnique: vi.fn(async () => ({})),
+      findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Fortaleza' })),
+      update: vi.fn(),
+    },
     invoice: {
       /* Honra o `where`: competência exibida vs. fila viva de atrasadas. */
       findMany: vi.fn(async ({ where }: any) =>
-        routeInvoiceQuery(where,
-        setup.invoiceTotal
-          ? [
-              {
-                ...makeInvoice({
-                  id: 'inv-1',
-                  totalAmount: money(setup.invoiceTotal),
-                }),
-                bank: makeBank(),
-              },
-            ]
-          : [],
+        routeInvoiceQuery(
+          where,
+          setup.invoiceTotal
+            ? [
+                {
+                  ...makeInvoice({
+                    id: 'inv-1',
+                    totalAmount: money(setup.invoiceTotal),
+                  }),
+                  bank: makeBank(),
+                },
+              ]
+            : [],
         ),
       ),
     },
     transaction: {
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async ({ where }: any = {}) =>
+        where?.personSettlementGroupId && setup.settlementCreditAmount
+          ? [
+              {
+                invoiceId: 'inv-1',
+                amount: money(setup.settlementCreditAmount),
+              },
+            ]
+          : [],
+      ),
       groupBy: vi.fn(async () =>
         setup.thirdPartyAmount
           ? [
@@ -290,6 +306,18 @@ describe('Cenário principal', () => {
 
     // Derivado de `transactionId`, nunca da Invoice.
     expect(budget.peopleSettlements[0].budget.automaticReceivable).toBe(240);
+  });
+});
+
+describe('crédito de acerto no Orçamento V1', () => {
+  it('não duplica o crédito do acerto já incluído na fatura', async () => {
+    const budget = await buildService({
+      invoiceTotal: 50,
+      settlementCreditAmount: 50,
+    }).getBudget(USER_ID, 9, 2026);
+
+    expect(budget.totalInvoices).toBe(0);
+    expect(budget.totalToPay).toBe(0);
   });
 });
 
@@ -887,7 +915,13 @@ describe('Em aberto: os dois universos não se contaminam', () => {
     */
     const prisma: any = {
       salaryHistory: { findFirst: vi.fn(async () => null) },
-      user: { findUnique: vi.fn(async () => ({})), findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Fortaleza' })), update: vi.fn() },
+      user: {
+        findUnique: vi.fn(async () => ({})),
+        findUniqueOrThrow: vi.fn(async () => ({
+          timeZone: 'America/Fortaleza',
+        })),
+        update: vi.fn(),
+      },
       invoice: { findMany: vi.fn(async () => []) },
       transaction: {
         findMany: vi.fn(async () => []),

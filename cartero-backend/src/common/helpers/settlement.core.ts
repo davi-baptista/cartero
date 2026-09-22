@@ -1,14 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, TransactionType } from '@prisma/client';
 import type { Bank, Debt, Receivable } from '@prisma/client';
-import {
-  deleteInvoiceIfEmpty,
-  findOrCreateInvoice,
-} from './invoice.helper';
+import { deleteInvoiceIfEmpty, findOrCreateInvoice } from './invoice.helper';
 import { parseDateOnly } from './date-only.helper';
 import { financialCivilDay } from './financial-timezone.helper';
 import { requireAccountTimeZone } from './timezone.helper';
@@ -70,6 +68,58 @@ export interface ReceivablePaymentInput {
   paymentType: TransactionType | null;
   category: SettlementCategory;
   timeZone?: string | null;
+}
+
+export interface PersonSettlementCreditInput {
+  userId: string;
+  groupId: string;
+  personName: string;
+  amount: Prisma.Decimal;
+  settledAt: Date;
+  bank: Pick<Bank, 'id' | 'invoiceDueDate' | 'invoiceDueDaysAfterClose'>;
+  category: SettlementCategory;
+  timeZone?: string | null;
+}
+
+/** Creates the single net card charge owned by a person settlement group. */
+export async function createPersonSettlementCreditTransaction(
+  tx: Prisma.TransactionClient,
+  input: PersonSettlementCreditInput,
+): Promise<string> {
+  const invoice = await findOrCreateInvoice(
+    tx,
+    input.userId,
+    input.bank.id,
+    input.bank.invoiceDueDate,
+    input.bank.invoiceDueDaysAfterClose,
+    input.settledAt,
+    input.timeZone,
+  );
+
+  if (invoice.status === 'PAID') {
+    throw new ForbiddenException('Não é possível lançar em uma fatura já paga');
+  }
+
+  const transaction = await tx.transaction.create({
+    data: {
+      userId: input.userId,
+      bankId: input.bank.id,
+      categoryId: input.category.id,
+      invoiceId: invoice.id,
+      personSettlementGroupId: input.groupId,
+      title: `Acerto com ${input.personName}`,
+      type: TransactionType.CREDIT_CARD,
+      amount: input.amount,
+      date: input.settledAt,
+    },
+  });
+
+  await tx.invoice.update({
+    where: { id: invoice.id, userId: input.userId },
+    data: { totalAmount: { increment: input.amount } },
+  });
+
+  return transaction.id;
 }
 
 /**
@@ -221,6 +271,18 @@ export async function removeSettlementTransaction(
   });
 
   if (!paymentTransaction) return;
+
+  if (paymentTransaction.invoiceId) {
+    const invoice = await tx.invoice.findUnique({
+      where: { id: paymentTransaction.invoiceId, userId },
+      select: { status: true },
+    });
+    if (invoice?.status === 'PAID') {
+      throw new ForbiddenException(
+        'Não é possível desfazer: a transação pertence a uma fatura já paga',
+      );
+    }
+  }
 
   await tx.transaction.delete({
     where: { id: paymentTransaction.id, userId },

@@ -24,6 +24,8 @@ interface Setup {
   /** Preferência do usuário: gerar despesa ao pagar. */
   createExpenseOnDebtPaid?: boolean;
   failDebtUpdate?: boolean;
+  invoiceId?: string | null;
+  invoiceStatus?: string;
 }
 
 function buildHarness(setup: Setup = {}) {
@@ -91,7 +93,7 @@ function buildHarness(setup: Setup = {}) {
         id: 'tx-pay',
         userId: USER_ID,
         amount: money(1500),
-        invoiceId: null,
+        invoiceId: setup.invoiceId ?? null,
       })),
       create: vi.fn(async ({ data }: any) => {
         writes.transactionCreates.push(data);
@@ -104,6 +106,9 @@ function buildHarness(setup: Setup = {}) {
     },
     invoice: {
       findFirst: vi.fn(async () => null),
+      findUnique: vi.fn(async () =>
+        setup.invoiceId ? { status: setup.invoiceStatus ?? 'OPEN' } : null,
+      ),
       create: vi.fn(),
       update: vi.fn(async () => ({ totalAmount: money(0) })),
       delete: vi.fn(),
@@ -326,6 +331,19 @@ describe('Desfazer pagamento', () => {
     const update = harness.writes.debtUpdates.at(-1);
     expect(update.paidAt).toBeNull();
     expect(update.paymentTransactionId).toBeNull();
+  });
+
+  it('bloqueia reabertura quando o comprovante está em fatura paga', async () => {
+    const harness = buildHarness({
+      debt: paidDebt(),
+      invoiceId: 'invoice-paid',
+      invoiceStatus: 'PAID',
+    });
+
+    await expect(
+      harness.service.update('debt-1', USER_ID, { isPaid: false } as any),
+    ).rejects.toThrow(/fatura já paga/);
+    expect(harness.writes.transactionDeletes).toHaveLength(0);
   });
 
   it('dívida paga SEM transação apenas volta a pendente', async () => {

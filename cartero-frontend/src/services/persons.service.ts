@@ -4,6 +4,7 @@ import type {
   Person,
   PersonStatement,
   PersonSummary,
+  TransactionType,
 } from '@/types'
 
 export async function getPersons(): Promise<Person[]> {
@@ -133,6 +134,7 @@ export async function settlePerson(
     month?: number
     paymentDate?: string
     paymentBankId?: string
+    paymentType?: TransactionType
   } = {},
 ): Promise<{
   summary: PersonSummary
@@ -145,6 +147,7 @@ export async function settlePerson(
     id: string
     direction: 'INFLOW' | 'OUTFLOW' | 'NONE'
     netAmount: string | number
+    paymentType: TransactionType | null
   } | null
 }> {
   const { data } = await api.post(`/persons/${id}/settle`, payload)

@@ -1,5 +1,6 @@
 'use client'
 
+/* eslint-disable react-hooks/refs */
 import { useEffect, useRef, useState } from 'react'
 import { useForm, useWatch, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -150,6 +151,7 @@ export function TransactionSheet({
 
   // ── Inline bank create ──
   const [showBankCreate, setShowBankCreate] = useState(false)
+  const [showOptionalBank, setShowOptionalBank] = useState(false)
   const [newBank, setNewBank] = useState({ name: '', dueDate: '', daysAfterClose: '7' })
   const bankNameRef = useRef<HTMLInputElement>(null)
 
@@ -160,6 +162,7 @@ export function TransactionSheet({
       qc.invalidateQueries({ queryKey: ['banks'] })
       setValue('bankId', bank.id)
       setShowBankCreate(false)
+      setShowOptionalBank(Boolean(editTarget?.bankId && !editTarget.bank?.isSystem) || Boolean(createDefaults?.bankId))
       setNewBank({ name: '', dueDate: '', daysAfterClose: '7' })
     },
     onError: () => toast.error('Não foi possível criar o banco.'),
@@ -488,6 +491,7 @@ export function TransactionSheet({
   useEffect(() => {
     if (open) {
       submittingRef.current = false
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowBankCreate(false)
       setShowCategoryCreate(false)
       setShowPersonCreate(false)
@@ -600,6 +604,8 @@ export function TransactionSheet({
   })()
 
   const selectedBank = bankOptions.find((b) => b.id === selectedBankId)
+  const bankIsRequired = selectedType === TransactionType.CREDIT_CARD
+  const showBankSelector = bankIsRequired || showOptionalBank || Boolean(selectedBankId)
   const selectedCategory = categories.find((c) => c.id === selectedCategoryId)
   const selectedPerson = persons.find((p) => p.id === selectedPersonId)
   const selectableCategories = categories.filter((c) => !c.isSystem)
@@ -763,7 +769,17 @@ export function TransactionSheet({
           <div className="space-y-1.5">
             <Label>Banco{selectedType !== TransactionType.CREDIT_CARD ? ' (opcional)' : ''}</Label>
             <div className="space-y-2">
-              <Controller
+              {!showBankSelector && (
+                <button
+                  type="button"
+                  onClick={() => setShowOptionalBank(true)}
+                  className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Plus className="size-3" />
+                  Adicionar banco
+                </button>
+              )}
+              {showBankSelector && <Controller
                 control={control}
                 name="bankId"
                 render={({ field }) => (
@@ -806,7 +822,7 @@ export function TransactionSheet({
                     </SelectContent>
                   </Select>
                 )}
-              />
+              />}
 
               {showBankCreate ? (
                 <div className="space-y-1.5">
