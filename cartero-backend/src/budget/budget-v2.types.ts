@@ -30,20 +30,17 @@ export interface BudgetV2OpenComposition {
   receivables: string;
 }
 
-/** Future response contract; B2.1A intentionally does not expose totals. */
+export interface BudgetV2Realized {
+  inflow: string;
+  outflow: string;
+  balance: string;
+}
+
+/** Current public response; open/future sections are added in later slices. */
 export interface BudgetV2ResponseContract {
   period: BudgetV2Period;
-  realized: {
-    inflow: string;
-    outflow: string;
-    balance: string;
-    composition: BudgetV2RealizedComposition;
-  };
-  open: {
-    inflow: string;
-    outflow: string;
-    net: string;
-    overdue: { inflow: string; outflow: string };
-    composition: BudgetV2OpenComposition;
+  realized: BudgetV2Realized;
+  composition: {
+    realized: BudgetV2RealizedComposition;
   };
 }

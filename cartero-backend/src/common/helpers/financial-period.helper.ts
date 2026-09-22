@@ -40,11 +40,17 @@ export interface FinancialPeriodNow {
   now?: Date;
 }
 
-export function deriveBudgetV2Period(
+export interface BudgetV2PeriodBounds {
+  period: BudgetV2Period;
+  startInclusive: Date | null;
+  endExclusive: Date;
+}
+
+export function deriveBudgetV2PeriodBounds(
   preset: BudgetV2PeriodPreset,
   accountTimeZone: string | null | undefined,
   { now = new Date() }: FinancialPeriodNow = {},
-): BudgetV2Period {
+): BudgetV2PeriodBounds {
   const timeZone = requireAccountTimeZone(
     accountTimeZone,
     'budget v2 account timezone',
@@ -80,10 +86,22 @@ export function deriveBudgetV2Period(
       break;
   }
 
-  // Evaluate the boundaries here so invalid dates/timezone states fail before
-  // a later aggregate query is added. The returned contract remains civil.
-  firstInstantOfFinancialDay(endDate, timeZone);
-  if (startDate) firstInstantOfFinancialDay(startDate, timeZone);
+  const endExclusive = firstInstantOfFinancialDay(endDate, timeZone);
+  const startInclusive = startDate
+    ? firstInstantOfFinancialDay(startDate, timeZone)
+    : null;
 
-  return { preset, startDate, endDate, timeZone };
+  return {
+    period: { preset, startDate, endDate, timeZone },
+    startInclusive,
+    endExclusive,
+  };
+}
+
+export function deriveBudgetV2Period(
+  preset: BudgetV2PeriodPreset,
+  accountTimeZone: string | null | undefined,
+  options: FinancialPeriodNow = {},
+): BudgetV2Period {
+  return deriveBudgetV2PeriodBounds(preset, accountTimeZone, options).period;
 }

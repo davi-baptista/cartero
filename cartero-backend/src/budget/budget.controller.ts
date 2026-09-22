@@ -20,7 +20,7 @@ export class BudgetController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() filters: GetBudgetV2Dto,
   ) {
-    return this.budgetV2Service.getPeriod(user.id, filters.preset);
+    return this.budgetV2Service.getBudget(user.id, filters.preset);
   }
 
   /** Declarado antes de `@Get()` para não ser capturado por ele. */
