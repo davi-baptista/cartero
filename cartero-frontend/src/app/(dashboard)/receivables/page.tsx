@@ -410,8 +410,10 @@ export default function ReceivablesPage() {
       toast.success('Data atualizada')
     },
     // O diálogo permanece aberto no erro: fechar sugeriria sucesso.
-    onError: (error) =>
-      toast.error(apiErrorMessage(error, 'Não foi possível atualizar a data')),
+    onError: (error) => {
+      if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
+      else toast.error(apiErrorMessage(error, 'Não foi possível atualizar a data'))
+    },
   })
 
   const deleteMut = useMutation({
