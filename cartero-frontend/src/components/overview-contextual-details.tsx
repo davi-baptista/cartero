@@ -7,12 +7,15 @@ import { DebtDetailDrawer } from '@/app/(dashboard)/debts/debt-detail-drawer'
 import { DebtSheet, type DebtFormData } from '@/app/(dashboard)/debts/debt-sheet'
 import { ReceivableDetailDrawer } from '@/app/(dashboard)/receivables/receivable-detail-drawer'
 import { ReceivableSheet, type ReceivableFormData } from '@/app/(dashboard)/receivables/receivable-sheet'
+import { MarkAsPaidDialog } from '@/app/(dashboard)/transactions/mark-as-paid-dialog'
 import { SettlementDateDialog } from '@/app/(dashboard)/transactions/settlement-date-dialog'
 import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
 import { PersonStatementDrawer } from '@/components/person-statement-drawer'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { getDebt, updateDebt, deleteDebt, updateDebtSettlementDate } from '@/services/debts.service'
 import { getReceivable, updateReceivable, deleteReceivable, updateReceivableSettlementDate } from '@/services/receivables.service'
-import { getPerson } from '@/services/persons.service'
+import { getPerson, undoPersonSettlement } from '@/services/persons.service'
+import { apiErrorDetail, apiErrorMessage, isApiErrorCode } from '@/lib/api-error'
 import { useDetailEntity } from '@/lib/use-detail-entity'
 import type { Debt, Invoice, Receivable } from '@/types'
 import { InstallmentScope } from '@/types'
@@ -74,6 +77,9 @@ export function OverviewContextualDetails({
 
   const [editDebt, setEditDebt] = useState<Debt | null>(null)
   const [editReceivable, setEditReceivable] = useState<Receivable | null>(null)
+  const [markPaidDebt, setMarkPaidDebt] = useState<Debt | null>(null)
+  const [markReceivedReceivable, setMarkReceivedReceivable] = useState<Receivable | null>(null)
+  const [groupUndoId, setGroupUndoId] = useState<string | null>(null)
   const [settlementDate, setSettlementDate] = useState<{
     kind: 'debt' | 'receivable'
     item: Debt | Receivable
@@ -111,9 +117,15 @@ export function OverviewContextualDetails({
     onError: () => toast.error('Erro ao excluir dívida'),
   })
   const toggleDebtMut = useMutation({
-    mutationFn: ({ id, isPaid }: { id: string; isPaid: boolean }) => updateDebt(id, { isPaid }),
+    mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof updateDebt>[1] }) => updateDebt(id, payload),
     onSuccess: invalidateDebt,
-    onError: () => toast.error('Erro ao atualizar dívida'),
+    onError: (error) => {
+      if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) {
+        setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
+      } else {
+        toast.error(apiErrorMessage(error, 'Erro ao atualizar dívida'))
+      }
+    },
   })
   const debtDateMut = useMutation({
     mutationFn: ({ id, paidAt }: { id: string; paidAt: string }) => updateDebtSettlementDate(id, paidAt),
@@ -121,7 +133,13 @@ export function OverviewContextualDetails({
       invalidateDebt()
       setSettlementDate(null)
     },
-    onError: () => toast.error('Erro ao atualizar a data'),
+    onError: (error) => {
+      if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) {
+        setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
+      } else {
+        toast.error(apiErrorMessage(error, 'Erro ao atualizar a data'))
+      }
+    },
   })
 
   async function handleDebtSubmit(data: DebtFormData, scope: InstallmentScope | null) {
@@ -151,9 +169,15 @@ export function OverviewContextualDetails({
     onError: () => toast.error('Erro ao excluir cobrança'),
   })
   const toggleReceivableMut = useMutation({
-    mutationFn: ({ id, isPaid }: { id: string; isPaid: boolean }) => updateReceivable(id, { isPaid }),
+    mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof updateReceivable>[1] }) => updateReceivable(id, payload),
     onSuccess: invalidateDebt,
-    onError: () => toast.error('Erro ao atualizar cobrança'),
+    onError: (error) => {
+      if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) {
+        setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
+      } else {
+        toast.error(apiErrorMessage(error, 'Erro ao atualizar cobrança'))
+      }
+    },
   })
   const receivableDateMut = useMutation({
     mutationFn: ({ id, paidAt }: { id: string; paidAt: string }) => updateReceivableSettlementDate(id, paidAt),
@@ -161,7 +185,23 @@ export function OverviewContextualDetails({
       invalidateDebt()
       setSettlementDate(null)
     },
-    onError: () => toast.error('Erro ao atualizar a data'),
+    onError: (error) => {
+      if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) {
+        setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
+      } else {
+        toast.error(apiErrorMessage(error, 'Erro ao atualizar a data'))
+      }
+    },
+  })
+
+  const groupUndoMut = useMutation({
+    mutationFn: undoPersonSettlement,
+    onSuccess: async () => {
+      setGroupUndoId(null)
+      invalidateDebt()
+      toast.success('Acerto desfeito')
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, 'Não foi possível desfazer o acerto')),
   })
 
   async function handleReceivableSubmit(data: ReceivableFormData, scope: InstallmentScope | null) {
@@ -199,7 +239,9 @@ export function OverviewContextualDetails({
           onOpenChange={(open) => !open && onClose()}
           onEdit={(item) => setEditDebt(item)}
           onDelete={(item) => deleteDebtMut.mutate(item.id)}
-          onTogglePaid={(item) => toggleDebtMut.mutate({ id: item.id, isPaid: !item.isPaid })}
+          onTogglePaid={(item) => item.isPaid
+            ? toggleDebtMut.mutate({ id: item.id, payload: { isPaid: false } })
+            : setMarkPaidDebt(item)}
           onEditSettlementDate={(item) => setSettlementDate({ kind: 'debt', item })}
         />
       )}
@@ -210,7 +252,9 @@ export function OverviewContextualDetails({
           onOpenChange={(open) => !open && onClose()}
           onEdit={(item) => setEditReceivable(item)}
           onDelete={(item) => deleteReceivableMut.mutate(item.id)}
-          onToggleReceived={(item) => toggleReceivableMut.mutate({ id: item.id, isPaid: !item.isPaid })}
+          onToggleReceived={(item) => item.isPaid
+            ? toggleReceivableMut.mutate({ id: item.id, payload: { isPaid: false } })
+            : setMarkReceivedReceivable(item)}
           onEditSettlementDate={(item) => setSettlementDate({ kind: 'receivable', item })}
         />
       )}
@@ -229,6 +273,40 @@ export function OverviewContextualDetails({
         editScope={null}
         timeZone={user?.timeZone}
         onSubmit={handleReceivableSubmit}
+      />
+      <MarkAsPaidDialog
+        open={markPaidDebt !== null}
+        kind="debt"
+        createTransaction
+        isPending={toggleDebtMut.isPending}
+        onConfirm={(payload) => {
+          if (!markPaidDebt || !payload.paymentType) return
+          toggleDebtMut.mutate({ id: markPaidDebt.id, payload: { isPaid: true, ...payload } })
+          setMarkPaidDebt(null)
+        }}
+        onCancel={() => setMarkPaidDebt(null)}
+      />
+      <MarkAsPaidDialog
+        open={markReceivedReceivable !== null}
+        kind="receivable"
+        createTransaction
+        isPending={toggleReceivableMut.isPending}
+        onConfirm={(payload) => {
+          if (!markReceivedReceivable || !payload.paymentDate) return
+          toggleReceivableMut.mutate({ id: markReceivedReceivable.id, payload: { isPaid: true, ...payload } })
+          setMarkReceivedReceivable(null)
+        }}
+        onCancel={() => setMarkReceivedReceivable(null)}
+      />
+      <ConfirmDialog
+        open={groupUndoId !== null}
+        title="Desfazer acerto inteiro?"
+        description="Este item foi quitado junto com outros valores. Desfazer irá reabrir todo o acerto."
+        confirmLabel="Desfazer acerto"
+        variant="default"
+        isPending={groupUndoMut.isPending}
+        onCancel={() => setGroupUndoId(null)}
+        onConfirm={() => groupUndoId && groupUndoMut.mutate(groupUndoId)}
       />
       {settlementDate && (
         <SettlementDateDialog

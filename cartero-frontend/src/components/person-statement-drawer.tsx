@@ -607,11 +607,13 @@ export function PersonStatementDrawer({
   })
 
   const toggleReceivableMut = useMutation({
-    mutationFn: ({ id, isPaid, paymentDate }: {
+    mutationFn: ({ id, isPaid, paymentDate, paymentBankId, paymentType }: {
       id: string
       isPaid: boolean
       paymentDate?: string
-    }) => updateReceivable(id, { isPaid, paymentDate }),
+      paymentBankId?: string
+      paymentType?: TransactionType
+    }) => updateReceivable(id, { isPaid, paymentDate, paymentBankId, paymentType }),
     onSuccess: async () => { await invalidateStatement() },
     onError: (error) => {
       if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
@@ -681,8 +683,6 @@ export function PersonStatementDrawer({
       } else {
         toggleDebtMut.mutate({ id: debt.id, isPaid: false })
       }
-    } else if (user?.createExpenseOnDebtPaid === false) {
-      toggleDebtMut.mutate({ id: debt.id, isPaid: true })
     } else {
       setMarkPaidDebt(debt)
     }
@@ -695,8 +695,6 @@ export function PersonStatementDrawer({
       } else {
         toggleReceivableMut.mutate({ id: receivable.id, isPaid: false })
       }
-    } else if (user?.createIncomeOnReceivablePaid === false) {
-      toggleReceivableMut.mutate({ id: receivable.id, isPaid: true })
     } else {
       setMarkReceivedReceivable(receivable)
     }
@@ -1524,9 +1522,10 @@ export function PersonStatementDrawer({
       <MarkAsPaidDialog
         open={markPaidDebt !== null}
         kind="debt"
-        createTransaction={user?.createExpenseOnDebtPaid ?? false}
+        createTransaction
+        isPending={toggleDebtMut.isPending}
         onConfirm={(payload) => {
-          if (!markPaidDebt || !payload.paymentBankId || !payload.paymentType) return
+          if (!markPaidDebt || !payload.paymentType) return
           toggleDebtMut.mutate({
             id: markPaidDebt.id,
             isPaid: true,
@@ -1541,13 +1540,16 @@ export function PersonStatementDrawer({
       <MarkAsPaidDialog
         open={markReceivedReceivable !== null}
         kind="receivable"
-        createTransaction={user?.createIncomeOnReceivablePaid ?? false}
+        createTransaction
+        isPending={toggleReceivableMut.isPending}
         onConfirm={(payload) => {
           if (!markReceivedReceivable || !payload.paymentDate) return
           toggleReceivableMut.mutate({
             id: markReceivedReceivable.id,
             isPaid: true,
             paymentDate: payload.paymentDate,
+            paymentBankId: payload.paymentBankId,
+            paymentType: payload.paymentType,
           })
           setMarkReceivedReceivable(null)
         }}
