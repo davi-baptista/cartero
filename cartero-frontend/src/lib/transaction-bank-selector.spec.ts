@@ -21,4 +21,16 @@ describe('transaction bank selector — optional bank UX', () => {
   it('does not retain the old removal action', () => {
     expect(SHEET).not.toContain('Remover banco')
   })
+
+  it('starts a manual create without a default nature or payment method', () => {
+    expect(SHEET).toContain('type: undefined as unknown as TransactionType')
+    expect(SHEET).not.toContain('createDefaults?.type ?? TransactionType.PIX')
+    expect(SHEET).toContain("setValue('type', undefined as unknown as TransactionType")
+  })
+
+  it('progressively reveals expense methods and details', () => {
+    expect(SHEET).toContain("{selectedKind === 'expense' && (")
+    expect(SHEET).toContain('{selectedType && (<>')
+    expect(SHEET).toContain("disabled={isSubmitting || (!isEditing && !selectedType)}")
+  })
 })

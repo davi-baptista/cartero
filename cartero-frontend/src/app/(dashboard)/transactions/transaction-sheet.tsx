@@ -32,7 +32,6 @@ import {
   PAYMENT_METHODS,
   clearIncompatibleFields,
   kindOf,
-  methodOf,
   type PaymentMethod,
   type TransactionKind,
 } from '@/lib/transaction-kind'
@@ -286,7 +285,7 @@ export function TransactionSheet({
     defaultValues: {
       bankId: '',
       categoryId: '',
-      type: TransactionType.PIX,
+      type: undefined as unknown as TransactionType,
       title: '',
       amount: 0,
       isRefund: false,
@@ -330,7 +329,7 @@ export function TransactionSheet({
   const installmentCount =
     toInstallmentsPayload(selectedInstallments, isParcelado) ?? 1
 
-  const selectedKind = kindOf(selectedType ?? TransactionType.PIX)
+  const selectedKind = selectedType ? kindOf(selectedType) : undefined
   const selectedDate = useWatch({ control, name: 'date' })
 
   /**
@@ -403,13 +402,18 @@ export function TransactionSheet({
   }
 
   function handleKindChange(kind: TransactionKind) {
-    // Voltando para gasto, retoma a última forma escolhida; a primeira vez
-    // cai em crédito, que é o caminho mais comum no Cartero.
-    applyType(
-      kind === 'income'
-        ? TransactionType.INCOME
-        : (methodOf(selectedType) ?? TransactionType.CREDIT_CARD),
-    )
+    // Gasto abre a escolha de forma sem presumir crédito ou outro método.
+    if (kind === 'income') {
+      applyType(TransactionType.INCOME)
+      return
+    }
+
+    setValue('type', undefined as unknown as TransactionType, { shouldValidate: true })
+    setValue('installments', undefined)
+    setValue('personId', undefined)
+    setValue('isRefund', false)
+    setForOtherPerson(false)
+    setShowPersonCreate(false)
   }
 
   function handleMethodChange(method: PaymentMethod) {
@@ -503,7 +507,7 @@ export function TransactionSheet({
         reset({
           bankId: createDefaults?.bankId ?? '',
           categoryId: '',
-          type: createDefaults?.type ?? TransactionType.PIX,
+          type: createDefaults?.type ?? (undefined as unknown as TransactionType),
           title: '',
           amount: 0,
           isRefund: false,
@@ -653,6 +657,7 @@ export function TransactionSheet({
           )}
 
           {/* Estorno — só no crédito. Reduz a fatura em vez de somar. */}
+          {selectedType && (<>
           {selectedType === TransactionType.CREDIT_CARD && (
             <div className="space-y-1.5">
               <Controller
@@ -1135,6 +1140,7 @@ export function TransactionSheet({
             isLoading={previewEnabled && previewLoading}
             isError={previewEnabled && previewFailed}
           />
+          </>)}
         </form>
 
         <SheetFooter className="px-6 pb-6 pt-0">
@@ -1144,7 +1150,7 @@ export function TransactionSheet({
           <Button
             type="submit"
             form="transaction-form"
-            disabled={isSubmitting}
+            disabled={isSubmitting || (!isEditing && !selectedType)}
             onClick={(e) => { if (submittingRef.current) e.preventDefault() }}
           >
             {isSubmitting && <Loader2 className="size-4 animate-spin" />}
