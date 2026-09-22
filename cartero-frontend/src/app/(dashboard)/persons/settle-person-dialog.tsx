@@ -25,13 +25,13 @@ interface Props {
 
 export function SettlePersonDialog({ open, personName, debtsCount, receivablesCount, receivableTotal, debtTotal, notYetDueCount = 0, carriedCount = 0, isPending = false, onConfirm, onCancel }: Props) {
   const [paymentDate, setPaymentDate] = useState(todayDateValue())
-  const [bankId, setBankId] = useState('none')
+  const [bankId, setBankId] = useState<string | undefined>()
   const [paymentType, setPaymentType] = useState<TransactionType | ''>('')
   const [showOptionalBank, setShowOptionalBank] = useState(false)
   const net = receivableTotal - debtTotal
   const direction = net > 0 ? 'inflow' : net < 0 ? 'outflow' : 'none'
   const isCredit = paymentType === TransactionType.CREDIT_CARD
-  const needsBankSelector = (direction === 'inflow' && showOptionalBank) || (direction === 'outflow' && (showOptionalBank || isCredit))
+  const needsBankSelector = Boolean(bankId) || (direction === 'inflow' && showOptionalBank) || (direction === 'outflow' && (showOptionalBank || isCredit))
   const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: () => getBanks(), enabled: open && needsBankSelector })
   const selectedBank = banks.find((bank) => bank.id === bankId)
 
@@ -39,13 +39,13 @@ export function SettlePersonDialog({ open, personName, debtsCount, receivablesCo
     if (!open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPaymentDate(todayDateValue())
-      setBankId('none')
+      setBankId(undefined)
       setPaymentType('')
       setShowOptionalBank(false)
     }
   }, [open])
 
-  const canConfirm = Boolean(paymentDate) && (direction !== 'outflow' || Boolean(paymentType)) && (!isCredit || bankId !== 'none')
+  const canConfirm = Boolean(paymentDate) && (direction !== 'outflow' || Boolean(paymentType)) && (!isCredit || Boolean(bankId))
 
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onCancel()}>
@@ -74,22 +74,23 @@ export function SettlePersonDialog({ open, personName, debtsCount, receivablesCo
             </div>
           </div>}
           {direction === 'inflow' && !showOptionalBank && (
-            <button type="button" onClick={() => setShowOptionalBank(true)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">+ Adicionar banco</button>
+            <button type="button" onClick={() => setShowOptionalBank(true)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">+ Adicionar banco (opcional)</button>
           )}
           {direction === 'outflow' && paymentType !== TransactionType.CREDIT_CARD && !showOptionalBank && (
-            <button type="button" onClick={() => setShowOptionalBank(true)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">+ Adicionar banco</button>
+            <button type="button" onClick={() => setShowOptionalBank(true)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">+ Adicionar banco (opcional)</button>
           )}
           {needsBankSelector && <div className="flex flex-col gap-1.5">
-            <Label>Banco{isCredit ? '' : ' (opcional)'}</Label>
-            <Select value={bankId} onValueChange={(value) => setBankId(value ?? 'none')}>
-              <SelectTrigger><SelectValue placeholder={isCredit ? 'Selecione o cartão' : 'Sem banco'}>{selectedBank ? bankDisplayName(selectedBank) : 'Sem banco'}</SelectValue></SelectTrigger>
-              <SelectContent alignItemWithTrigger={false}>{!isCredit && <SelectItem value="none">Sem banco</SelectItem>}{banks.filter(isSelectableBank).map((bank) => <SelectItem key={bank.id} value={bank.id}>{bankDisplayName(bank)}</SelectItem>)}</SelectContent>
+            <Label>Banco</Label>
+            <Select value={bankId ?? ''} onValueChange={(value) => setBankId(value || undefined)}>
+              <SelectTrigger><SelectValue placeholder={isCredit ? 'Selecione o cartão' : 'Selecione um banco'}>{selectedBank ? bankDisplayName(selectedBank) : undefined}</SelectValue></SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>{banks.filter(isSelectableBank).map((bank) => <SelectItem key={bank.id} value={bank.id}>{bankDisplayName(bank)}</SelectItem>)}</SelectContent>
             </Select>
+            {!isCredit && <button type="button" onClick={() => { setBankId(undefined); setShowOptionalBank(false) }} className="self-start text-xs text-muted-foreground hover:text-foreground">Remover banco</button>}
           </div>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onCancel} disabled={isPending}>Cancelar</Button>
-          <Button disabled={!canConfirm || isPending} onClick={() => onConfirm({ paymentDate, ...(bankId !== 'none' ? { paymentBankId: bankId } : {}), ...(paymentType ? { paymentType } : {}) })}>{isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />} Confirmar acerto</Button>
+          <Button disabled={!canConfirm || isPending} onClick={() => onConfirm({ paymentDate, ...(bankId ? { paymentBankId: bankId } : {}), ...(paymentType ? { paymentType } : {}) })}>{isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />} Confirmar acerto</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

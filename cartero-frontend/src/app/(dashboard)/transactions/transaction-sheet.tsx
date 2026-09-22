@@ -63,7 +63,6 @@ const transactionTypeValues = [
   TransactionType.BOLETO,
 ] as const
 
-const NO_BANK_OPTION = '__no_bank__'
 
 const schema = z
   .object({
@@ -162,6 +161,7 @@ export function TransactionSheet({
       qc.invalidateQueries({ queryKey: ['banks'] })
       setValue('bankId', bank.id)
       setShowBankCreate(false)
+      setShowOptionalBank(Boolean(editTarget?.bankId && !editTarget.bank?.isSystem) || Boolean(createDefaults?.bankId))
       setShowOptionalBank(Boolean(editTarget?.bankId && !editTarget.bank?.isSystem) || Boolean(createDefaults?.bankId))
       setNewBank({ name: '', dueDate: '', daysAfterClose: '7' })
     },
@@ -767,7 +767,7 @@ export function TransactionSheet({
 
           {/* Bank */}
           <div className="space-y-1.5">
-            <Label>Banco{selectedType !== TransactionType.CREDIT_CARD ? ' (opcional)' : ''}</Label>
+            {showBankSelector && <Label>Banco</Label>}
             <div className="space-y-2">
               {!showBankSelector && (
                 <button
@@ -776,7 +776,7 @@ export function TransactionSheet({
                   className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                 >
                   <Plus className="size-3" />
-                  Adicionar banco
+                  Adicionar banco (opcional)
                 </button>
               )}
               {showBankSelector && <Controller
@@ -785,7 +785,7 @@ export function TransactionSheet({
                 render={({ field }) => (
                   <Select
                     value={field.value || ''}
-                    onValueChange={(value) => field.onChange(value === NO_BANK_OPTION ? '' : value)}
+                    onValueChange={(value) => field.onChange(value)}
                   >
                     <SelectTrigger className="w-full" aria-invalid={!!errors.bankId}>
                       <span data-slot="select-value" className="flex flex-1 items-center gap-1.5 text-left text-sm">
@@ -798,17 +798,10 @@ export function TransactionSheet({
                               </span>
                             )}
                           </>
-                        ) : (
-                          <span className="text-muted-foreground">
-                            {selectedType !== TransactionType.CREDIT_CARD ? 'Sem banco' : 'Selecione o banco'}
-                          </span>
-                        )}
+                        ) : <span className="text-muted-foreground">{selectedType === TransactionType.CREDIT_CARD ? 'Selecione o banco' : 'Selecione um banco'}</span>}
                       </span>
                     </SelectTrigger>
                     <SelectContent side="bottom" alignItemWithTrigger={false}>
-                      {selectedType !== TransactionType.CREDIT_CARD && (
-                        <SelectItem value={NO_BANK_OPTION}>Sem banco</SelectItem>
-                      )}
                       {bankOptions.map((b) => (
                         <SelectItem key={b.id} value={b.id}>
                           {bankDisplayName(b)}
@@ -823,6 +816,16 @@ export function TransactionSheet({
                   </Select>
                 )}
               />}
+
+              {showBankSelector && !bankIsRequired && (
+                <button
+                  type="button"
+                  onClick={() => { setValue('bankId', undefined, { shouldDirty: true }); setShowOptionalBank(false); setShowBankCreate(false) }}
+                  className="self-start text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Remover banco
+                </button>
+              )}
 
               {showBankCreate ? (
                 <div className="space-y-1.5">

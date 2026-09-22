@@ -74,17 +74,18 @@ function harness(debts: any[], receivables: any[]) {
       }),
     },
     bank: {
-      findUnique: vi.fn(async ({ where }: any) =>
-        where.id === 'bank-1'
-          ? {
-              id: 'bank-1',
-              userId: USER_ID,
-              isSystem: false,
-              invoiceDueDate: 8,
-              invoiceDueDaysAfterClose: 7,
-            }
-          : null,
-      ),
+      findUnique: vi.fn(async ({ where }: any) => {
+        if (!['bank-1', 'bank-system', 'bank-archived'].includes(where.id))
+          return null;
+        return {
+          id: where.id,
+          userId: USER_ID,
+          isSystem: where.id === 'bank-system',
+          isArchived: where.id === 'bank-archived',
+          invoiceDueDate: 8,
+          invoiceDueDaysAfterClose: 7,
+        };
+      }),
       findFirst: vi.fn(async () => ({
         id: 'no-bank',
         userId: USER_ID,
@@ -254,10 +255,10 @@ describe('CM1C person settlement groups', () => {
     const h = harness([debt('d1', 100)], [receivable('r1', 50)]);
     await expect(
       h.service.settle('person-1', USER_ID, {} as any),
-    ).rejects.toThrow(/forma de pagamento/);
+    ).rejects.toThrow(/pagamento/);
     await expect(
       h.service.settle('person-1', USER_ID, { paymentType: 'INCOME' } as any),
-    ).rejects.toThrow(/forma de pagamento/);
+    ).rejects.toThrow(/pagamento/);
   });
 
   it('creates one net credit artifact linked to the group', async () => {
@@ -282,6 +283,49 @@ describe('CM1C person settlement groups', () => {
     expect(h.invoices[0].totalAmount).toBe(50);
   });
 
+  it.each(['DEBIT_CARD', 'BOLETO'] as const)(
+    'accepts direct group outflow with %s without a transaction artifact',
+    async (paymentType) => {
+      const h = harness([debt('d1', 100)], [receivable('r1', 50)]);
+      const result = await h.service.settle('person-1', USER_ID, {
+        paymentType,
+        paymentDate: '2026-08-10',
+      } as any);
+
+      expect(result.group!.paymentType).toBe(paymentType);
+      expect(result.group!.direction).toBe('OUTFLOW');
+      expect(h.transactions).toHaveLength(0);
+    },
+  );
+
+  it('rejects payment type on inflow and zero-net groups', async () => {
+    const inflow = harness([debt('d1', 100)], [receivable('r1', 200)]);
+    await expect(
+      inflow.service.settle('person-1', USER_ID, { paymentType: 'PIX' } as any),
+    ).rejects.toThrow(/pagamento/);
+
+    const none = harness([debt('d1', 100)], [receivable('r1', 100)]);
+    await expect(
+      none.service.settle('person-1', USER_ID, { paymentType: 'PIX' } as any),
+    ).rejects.toThrow(/pagamento/);
+  });
+
+  it.each([
+    ['missing bank', undefined],
+    ['system bank', 'bank-system'],
+    ['archived bank', 'bank-archived'],
+  ])('rejects credit group outflow with %s', async (_case, paymentBankId) => {
+    const h = harness([debt('d1', 100)], [receivable('r1', 50)]);
+    await expect(
+      h.service.settle('person-1', USER_ID, {
+        paymentType: 'CREDIT_CARD',
+        ...(paymentBankId ? { paymentBankId } : {}),
+      } as any),
+    ).rejects.toThrow(/banco/);
+    expect(h.groups).toHaveLength(0);
+    expect(h.transactions).toHaveLength(0);
+  });
+
   it('removes the exact credit artifact on group undo', async () => {
     const h = harness([debt('d1', 100)], [receivable('r1', 50)]);
     const result = await h.service.settle('person-1', USER_ID, {
@@ -294,6 +338,33 @@ describe('CM1C person settlement groups', () => {
     expect(h.transactions).toHaveLength(0);
     expect(h.invoices[0]?.totalAmount ?? 0).toBe(0);
     expect(h.groups[0].status).toBe('REVERSED');
+  });
+
+  it('re-settles credit after undo without a stale relation or ghost invoice amount', async () => {
+    const h = harness([debt('d1', 100)], [receivable('r1', 50)]);
+    const first = await h.service.settle('person-1', USER_ID, {
+      paymentType: 'CREDIT_CARD',
+      paymentBankId: 'bank-1',
+    } as any);
+    expect(h.transactions).toHaveLength(1);
+    expect(h.invoices[0].totalAmount).toBe(50);
+
+    await h.service.undoSettlement(first.group!.id, USER_ID);
+    expect(h.transactions).toHaveLength(0);
+    expect(h.invoices).toHaveLength(0);
+    expect(h.groups[0].status).toBe('REVERSED');
+    expect(h.debts[0].isPaid).toBe(false);
+    expect(h.receivables[0].isPaid).toBe(false);
+
+    const second = await h.service.settle('person-1', USER_ID, {
+      paymentType: 'CREDIT_CARD',
+      paymentBankId: 'bank-1',
+    } as any);
+    expect(second.group!.status).toBe('ACTIVE');
+    expect(second.group!.id).not.toBe(first.group!.id);
+    expect(h.transactions).toHaveLength(1);
+    expect(h.transactions[0].personSettlementGroupId).toBe(second.group!.id);
+    expect(h.invoices[0].totalAmount).toBe(50);
   });
 
   it('blocks credit group undo while its Invoice is paid', async () => {

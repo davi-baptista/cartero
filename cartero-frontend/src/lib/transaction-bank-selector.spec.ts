@@ -8,18 +8,25 @@ const SHEET = readFileSync(
 )
 
 describe('transaction bank selector — optional bank UX', () => {
-  it('offers Sem banco only for non-credit transactions', () => {
-    expect(SHEET).toContain("selectedType !== TransactionType.CREDIT_CARD && (")
-    expect(SHEET).toContain('<SelectItem value={NO_BANK_OPTION}>Sem banco</SelectItem>')
+  it('collapses optional bank into one quiet action', () => {
+    expect(SHEET).toContain('Adicionar banco (opcional)')
+    expect(SHEET).toContain('{showBankSelector && <Label>Banco</Label>}')
+    expect(SHEET).not.toContain('Sem banco')
   })
 
-  it('maps Sem banco to an empty bank field and never exposes the system id', () => {
-    expect(SHEET).toContain("value === NO_BANK_OPTION ? '' : value")
+  it('removes optional bank without exposing a technical sentinel', () => {
+    expect(SHEET).toContain("setValue('bankId', undefined, { shouldDirty: true })")
     expect(SHEET).toContain('bankId: normalized.bankId || undefined')
+    expect(SHEET).toContain('Remover banco')
   })
 
-  it('does not retain the old removal action', () => {
-    expect(SHEET).not.toContain('Remover banco')
+  it('shows bank creation only after the bank section exists', () => {
+    expect(SHEET).toContain('onClick={handleOpenBankCreate}')
+    expect(SHEET).toContain('Novo banco')
+  })
+
+  it('does not hide an existing real bank in edit mode', () => {
+    expect(SHEET).toContain('setShowOptionalBank(Boolean(editTarget?.bankId && !editTarget.bank?.isSystem)')
   })
 
   it('starts a manual create without a default nature or payment method', () => {
@@ -48,9 +55,9 @@ describe('transaction bank selector — optional bank UX', () => {
   })
 
   it('keeps expense intent independent from canonical payment type', () => {
-    expect(SHEET).toContain("useState<TransactionKind | null>(null)")
+    expect(SHEET).toContain('useState<TransactionKind | null>(null)')
     expect(SHEET).toContain('const selectedKind = entryIntent ?? undefined')
-    expect(SHEET).toContain("setEntryIntent(kind)")
+    expect(SHEET).toContain('setEntryIntent(kind)')
     expect(SHEET).toContain("setEntryIntent('expense')")
     expect(SHEET).toContain("{selectedKind === 'expense' && (")
   })

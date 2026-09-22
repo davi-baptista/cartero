@@ -26,6 +26,7 @@ import { getBanks } from '@/services/banks.service'
 import { TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
 import { todayDateValue } from '@/lib/date'
 import { TransactionType } from '@/types'
+import { isSelectableBank, bankDisplayName } from '@/lib/bank-display'
 
 const PAYMENT_TYPE_OPTIONS = [
   TransactionType.PIX,
@@ -96,23 +97,21 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPendi
 
         <div className="flex flex-col gap-3 py-1">
           {canShowOptionalBank && !showOptionalBank && (
-            <button type="button" onClick={() => setShowOptionalBank(true)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">+ Adicionar banco</button>
+            <button type="button" onClick={() => setShowOptionalBank(true)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">+ Adicionar banco (opcional)</button>
           )}
           {createTransaction && (bankRequired || showOptionalBank) && <div className="flex flex-col gap-1.5">
-            <Label>Banco{bankRequired ? '' : ' (opcional)'}</Label>
+            <Label>Banco</Label>
             <Select value={bankId} onValueChange={(v) => setBankId(v ?? '')}>
               <SelectTrigger aria-label="Banco">
-                <SelectValue placeholder={bankRequired ? 'Selecione o cartão' : 'Sem banco'}>
-                  {selectedBank?.name}
-                </SelectValue>
+                <SelectValue placeholder={bankRequired ? 'Selecione o cartão' : 'Selecione um banco'}>{selectedBank ? bankDisplayName(selectedBank) : undefined}</SelectValue>
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false}>
-                {!bankRequired && <SelectItem value="none">Sem banco</SelectItem>}
-                {banks.map((b) => (
-                  <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                {banks.filter(isSelectableBank).map((b) => (
+                  <SelectItem key={b.id} value={b.id}>{bankDisplayName(b)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {!bankRequired && <button type="button" onClick={() => { setBankId(''); setShowOptionalBank(false) }} className="self-start text-xs text-muted-foreground hover:text-foreground">Remover banco</button>}
           </div>}
 
           {createTransaction ? (
