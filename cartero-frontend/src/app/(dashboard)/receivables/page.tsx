@@ -56,7 +56,7 @@ import {
   updateReceivableSettlementDate,
 } from '@/services/receivables.service'
 import { useSearchParams } from 'next/navigation'
-import { getPersons } from '@/services/persons.service'
+import { getPersons, undoPersonSettlement } from '@/services/persons.service'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import {
   isOverdue,
@@ -64,7 +64,7 @@ import {
   RECEIVABLE_STATUS_LABEL,
   settlementStatus,
 } from '@/lib/settlement-status'
-import { apiErrorMessage } from '@/lib/api-error'
+import { apiErrorDetail, apiErrorMessage, isApiErrorCode } from '@/lib/api-error'
 import { accountToday } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type { Receivable, TransactionType } from '@/types'
@@ -296,6 +296,7 @@ export default function ReceivablesPage() {
   })
   const [markPaidTarget, setMarkPaidTarget] = useState<Receivable | null>(null)
   const [unmarkPaidTarget, setUnmarkPaidTarget] = useState<Receivable | null>(null)
+  const [groupUndoId, setGroupUndoId] = useState<string | null>(null)
 
   const { data: persons = [] } = useQuery({
     queryKey: ['persons'],
@@ -379,7 +380,10 @@ export default function ReceivablesPage() {
       setEditScope(null)
       toast.success('Cobrança atualizada')
     },
-    onError: () => toast.error('Erro ao salvar — verifique sua conexão e tente novamente'),
+    onError: (error) => {
+      if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
+      else toast.error(apiErrorMessage(error, 'Erro ao salvar'))
+    },
   })
 
   /**
@@ -427,7 +431,25 @@ export default function ReceivablesPage() {
       detail.close()
       toast.success('Cobrança excluída')
     },
-    onError: () => toast.error('Erro ao excluir cobrança — tente novamente'),
+    onError: (error) => {
+      if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
+      else toast.error(apiErrorMessage(error, 'Erro ao excluir cobrança'))
+    },
+  })
+
+  const groupUndoMut = useMutation({
+    mutationFn: undoPersonSettlement,
+    onSuccess: async () => {
+      setGroupUndoId(null)
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['debts'] }),
+        qc.invalidateQueries({ queryKey: ['receivables'] }),
+        qc.invalidateQueries({ queryKey: ['persons'] }),
+        qc.invalidateQueries({ queryKey: ['person-statement'] }),
+      ])
+      toast.success('Acerto desfeito')
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, 'Não foi possível desfazer o acerto')),
   })
 
   useEffect(() => {
@@ -947,6 +969,16 @@ export default function ReceivablesPage() {
         isPending={updateMut.isPending}
         onConfirm={handleUnmarkPaidConfirm}
         onCancel={() => setUnmarkPaidTarget(null)}
+      />
+      <ConfirmDialog
+        open={groupUndoId !== null}
+        title="Desfazer acerto inteiro?"
+        description="Este item foi quitado junto com outros valores. Para reabri-lo, é necessário desfazer o acerto inteiro."
+        confirmLabel="Desfazer acerto"
+        variant="default"
+        isPending={groupUndoMut.isPending}
+        onConfirm={() => groupUndoId && groupUndoMut.mutate(groupUndoId)}
+        onCancel={() => setGroupUndoId(null)}
       />
 
       {/* Delete confirm — non-parcelado */}
