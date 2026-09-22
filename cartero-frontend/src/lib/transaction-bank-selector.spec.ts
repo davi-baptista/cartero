@@ -33,4 +33,17 @@ describe('transaction bank selector — optional bank UX', () => {
     expect(SHEET).toContain('{selectedType && (<>')
     expect(SHEET).toContain("disabled={isSubmitting || (!isEditing && !selectedType)}")
   })
+
+  it('allows the incomplete expense state without validating a fake domain type', () => {
+    expect(SHEET).toContain('type: z.enum(transactionTypeValues).optional()')
+    expect(SHEET).toContain("setValue('type', undefined as unknown as TransactionType")
+    expect(SHEET).toContain('if (!data.type) return')
+  })
+
+  it('maps only concrete methods to canonical transaction types', () => {
+    expect(SHEET).toContain('function handleMethodChange(method: PaymentMethod)')
+    expect(SHEET).toContain('applyType(method)')
+    expect(SHEET).toContain('applyType(TransactionType.INCOME)')
+    expect(SHEET).not.toContain("TransactionType.EXPENSE")
+  })
 })

@@ -68,7 +68,7 @@ const schema = z
   .object({
     bankId: z.string().optional(),
     categoryId: z.string().min(1, 'Selecione uma categoria'),
-    type: z.enum(transactionTypeValues),
+    type: z.enum(transactionTypeValues).optional(),
     title: z.string().min(1, 'Título obrigatório'),
     amount: z.number({ message: 'Valor inválido' }).positive('Valor deve ser positivo'),
     isRefund: z.boolean().optional(),
@@ -99,7 +99,10 @@ const schema = z
     { message: 'Selecione um banco', path: ['bankId'] },
   )
 
-export type TransactionFormData = z.infer<typeof schema>
+type TransactionFormSchemaData = z.infer<typeof schema>
+export type TransactionFormData = Omit<TransactionFormSchemaData, 'type'> & {
+  type: TransactionType
+}
 
 interface TransactionSheetProps {
   open: boolean
@@ -532,6 +535,7 @@ export function TransactionSheet({
   ])
 
   async function handleFormSubmit(data: TransactionFormData) {
+    if (!data.type) return
     if (submittingRef.current) return
     submittingRef.current = true
     try {
