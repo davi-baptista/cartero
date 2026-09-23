@@ -67,6 +67,7 @@ describe('Budget V2 contract and movement', () => {
     expect(page).toContain('sm:text-base')
     expect(page).toContain('left-1/2 top-[calc(50%-0.5rem)]')
     expect(page).toContain('text-base font-medium text-muted-foreground min-[375px]:block sm:hidden')
+    expect(page).toContain('sm:hidden mt-1')
     expect(page).toContain('−')
     expect(page).toContain('=')
     expect(page).not.toContain('Diferença em aberto')
