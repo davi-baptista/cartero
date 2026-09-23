@@ -64,7 +64,7 @@ function SummaryCard({
           {formatBudgetMoney(value)}
         </p>
          <p className="mt-1 text-center text-xs text-muted-foreground">{secondary}</p>
-         <div className="mt-2 w-[88%] rounded-full border-b-[3px] border-muted-foreground/40 sm:w-3/4" aria-hidden="true" />
+         <div className="mt-2 w-[72%] rounded-full border-b-[4px] border-muted-foreground/40 sm:w-[58%]" aria-hidden="true" />
     </div>
   )
 }
@@ -281,12 +281,13 @@ function BudgetContent({
           <SummaryCard
             label="Balanço registrado"
             value={budget.realized.balance}
-            secondary={`Diferença em aberto: ${formatBudgetMoney(budget.open.net)}`}
+            secondary={`Resultado em aberto: ${formatBudgetMoney(budget.open.net)}`}
             tone={balanceTone}
           />
         </div>
       </section>
 
+      <div className="hidden border-t border-border/60 sm:block" aria-hidden="true" />
       <Composition budget={budget} />
       <Overdue budget={budget} />
     </div>

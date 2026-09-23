@@ -37,7 +37,7 @@ describe('Budget V2 contract and movement', () => {
     expect(page).toContain('flex flex-wrap items-center justify-between gap-3')
     expect(page).toContain('w-auto min-w-40 shrink-0')
     expect(page).not.toContain('w-full sm:w-44')
-    expect(page).toContain('w-[88%] rounded-full border-b-[3px] border-muted-foreground/40 sm:w-3/4')
+    expect(page).toContain('w-[72%] rounded-full border-b-[4px] border-muted-foreground/40 sm:w-[58%]')
     expect(page).not.toContain('<Card')
     for (const preset of Object.values(BudgetV2PeriodPreset)) expect(page).toContain(preset)
     expect(layout).not.toContain("  '/budget',")
@@ -48,7 +48,8 @@ describe('Budget V2 contract and movement', () => {
     expect(page).toContain('budget.open.outflow')
     expect(page).toContain('budget.open.net')
     expect(page).toContain('em aberto')
-    expect(page).toContain('Diferença em aberto')
+    expect(page).toContain('Resultado em aberto')
+    expect(page).not.toContain('Diferença em aberto')
     expect(page).not.toContain('budget.realized.inflow +')
     expect(page).not.toContain('budget.realized.outflow +')
     expect(page).not.toContain('budget.realized.balance +')
@@ -65,6 +66,11 @@ describe('Budget V2 unified composition', () => {
     expect(page).not.toContain('aria-expanded')
     expect(page).not.toContain('EyeOff')
     expect(page).not.toContain('ChevronDown')
+  })
+
+  it('separates Movement from Composition only on desktop', () => {
+    expect(page).toContain('hidden border-t border-border/60 sm:block')
+    expect(page).toContain('<Composition budget={budget} />')
   })
 
   it('separates registered and open groups in both columns', () => {
