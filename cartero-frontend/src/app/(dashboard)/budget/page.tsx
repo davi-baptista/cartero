@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { CircleAlert } from 'lucide-react'
+import { ChevronRight, CircleAlert } from 'lucide-react'
 import { BudgetDrilldownDrawer } from '@/components/budget-drilldown-drawer'
 import { QueryError } from '@/components/ui/query-error'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -95,12 +95,15 @@ function DetailRows({
     <div className="divide-y divide-border/60 rounded-lg border border-border/70">
       {rows.map(([value, label, bucket]) => (
         <button
-          className="group flex w-full items-center justify-between gap-4 px-3 py-2.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="group flex w-full cursor-pointer items-center justify-between gap-4 px-3 py-2.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50"
           key={label}
           onClick={() => onRowClick(bucket)}
           type="button"
         >
-          <span className="text-sm text-muted-foreground group-hover:text-foreground">{label}</span>
+          <span className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground group-hover:text-foreground">
+            <span className="truncate">{label}</span>
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden="true" />
+          </span>
           <span className="shrink-0 text-sm font-medium tabular-nums">{value}</span>
         </button>
       ))}

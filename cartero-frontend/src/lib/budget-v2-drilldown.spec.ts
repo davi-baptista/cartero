@@ -57,6 +57,8 @@ describe('Budget V2 drilldown contract', () => {
   it('maps only non-zero composition and overdue rows to drawer buckets', () => {
     expect(page).toContain('BudgetDrilldownDrawer')
     expect(page).toContain('onRowClick={onRowClick}')
+    expect(page).toContain('cursor-pointer')
+    expect(page).toContain('<ChevronRight')
     expect(page).toContain('type="button"')
     for (const bucket of buckets) expect(page).toContain(bucket)
     expect(page).not.toContain('onClick={onClick}')
@@ -82,5 +84,7 @@ describe('Budget V2 drilldown contract', () => {
     expect(drawer).not.toContain(' - ')
     expect(item).not.toContain('.sort(')
     expect(item).not.toContain('.reduce(')
+    expect(item).toContain("!part.includes('__')")
+    expect(item).not.toContain('ChevronRight')
   })
 })

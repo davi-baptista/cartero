@@ -1,4 +1,3 @@
-import { ChevronRight } from 'lucide-react'
 import { formatCurrency, formatDate, formatMonthOfYear } from '@/lib/formatters'
 import { accountCivilDayOf } from '@/lib/date'
 import { cn } from '@/lib/utils'
@@ -20,7 +19,9 @@ function dueDateLabel(value: string, overdue: boolean): string {
 }
 
 function metadata(parts: Array<string | null | undefined>): string | null {
-  const values = parts.filter((part): part is string => Boolean(part))
+  const values = parts.filter(
+    (part): part is string => typeof part === 'string' && part.length > 0 && !part.includes('__'),
+  )
   return values.length > 0 ? values.join(' · ') : null
 }
 
@@ -128,7 +129,6 @@ export function BudgetDrilldownItemRow({
     >
       <ItemText primary={primary} secondary={secondary} />
       <Amount value={item.amount} />
-      <ChevronRight className="size-4 shrink-0 text-muted-foreground/50" aria-hidden="true" />
     </div>
   )
 }
