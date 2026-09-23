@@ -8,6 +8,99 @@ import { BudgetV2PeriodPreset } from './budget-v2.types';
 const money = (value: string) => new Prisma.Decimal(value);
 const date = (value: string) => new Date(`${value}T12:00:00.000Z`);
 
+function equalValue(actual: unknown, expected: unknown): boolean {
+  if (actual instanceof Date && expected instanceof Date) {
+    return actual.getTime() === expected.getTime();
+  }
+  if (actual instanceof Prisma.Decimal || expected instanceof Prisma.Decimal) {
+    return new Prisma.Decimal(String(actual)).eq(
+      new Prisma.Decimal(String(expected)),
+    );
+  }
+  return actual === expected;
+}
+
+function matchesValue(actual: any, condition: any): boolean {
+  if (
+    condition === null ||
+    typeof condition !== 'object' ||
+    condition instanceof Date
+  ) {
+    return equalValue(actual, condition);
+  }
+  if (condition.in)
+    return condition.in.some((item: unknown) => equalValue(actual, item));
+  if (condition.notIn)
+    return !condition.notIn.some((item: unknown) => equalValue(actual, item));
+  if (condition.gte && !(actual >= condition.gte)) return false;
+  if (condition.gt && !(actual > condition.gt)) return false;
+  if (condition.lte && !(actual <= condition.lte)) return false;
+  if (condition.lt && !(actual < condition.lt)) return false;
+  if ('not' in condition) return !matchesValue(actual, condition.not);
+  if ('is' in condition)
+    return actual !== null && matchesWhere(actual, condition.is);
+  if ('isNot' in condition)
+    return actual === null || !matchesWhere(actual, condition.isNot);
+  if (
+    ['in', 'notIn', 'gte', 'gt', 'lte', 'lt'].some((key) => key in condition)
+  ) {
+    return true;
+  }
+  return Object.entries(condition).every(([key, value]) =>
+    matchesValue(actual?.[key], value),
+  );
+}
+
+function matchesWhere(row: any, where: any): boolean {
+  if (!where) return true;
+  if (where.AND && !where.AND.every((part: any) => matchesWhere(row, part)))
+    return false;
+  if (where.OR && !where.OR.some((part: any) => matchesWhere(row, part)))
+    return false;
+  return Object.entries(where)
+    .filter(([key]) => key !== 'AND' && key !== 'OR')
+    .every(([key, condition]) => matchesValue(row[key], condition));
+}
+
+function sortRows(rows: any[], orderBy: any[] = []) {
+  return [...rows].sort((left, right) => {
+    for (const order of orderBy) {
+      const [field, direction] = Object.entries(order)[0] as [string, string];
+      const a =
+        left[field] instanceof Date ? left[field].getTime() : left[field];
+      const b =
+        right[field] instanceof Date ? right[field].getTime() : right[field];
+      if (a < b) return direction === 'asc' ? -1 : 1;
+      if (a > b) return direction === 'asc' ? 1 : -1;
+    }
+    return 0;
+  });
+}
+
+function model(rows: any[]) {
+  const findMany = vi.fn(async (args: any = {}) =>
+    sortRows(
+      rows.filter((row) => matchesWhere(row, args.where)),
+      args.orderBy,
+    ).slice(0, args.take ?? rows.length),
+  );
+  const aggregate = vi.fn(async (args: any = {}) => {
+    const matching = rows.filter((row) => matchesWhere(row, args.where));
+    const field = Object.keys(args._sum ?? {})[0];
+    return {
+      _sum: {
+        [field]: matching.length
+          ? matching.reduce(
+              (sum, row) => sum.add(new Prisma.Decimal(row[field])),
+              money('0'),
+            )
+          : null,
+      },
+    };
+  });
+  return { findMany, aggregate };
+}
+
 function createPrisma() {
   const transactions = [
     {
@@ -185,6 +278,17 @@ function createPrisma() {
       person: { name: 'Carlos' },
     },
     {
+      id: 'debt-overdue-same-date',
+      userId: 'user-a',
+      amount: money('115.00'),
+      dueDate: date('2026-09-09'),
+      title: 'Outra dívida atrasada',
+      description: null,
+      creditorName: 'Elisa',
+      isPaid: false,
+      person: { name: 'Elisa' },
+    },
+    {
       id: 'debt-upcoming',
       userId: 'user-a',
       amount: money('120.00'),
@@ -291,44 +395,12 @@ function createPrisma() {
     user: {
       findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Sao_Paulo' })),
     },
-    transaction: {
-      findMany: vi.fn(async () => transactions),
-    },
-    personSettlementGroup: {
-      findMany: vi.fn(async (args: any) =>
-        groups.filter(
-          (group) =>
-            args.where.status === group.status &&
-            (!args.where.direction || args.where.direction === group.direction),
-        ),
-      ),
-    },
-    invoiceSettlement: {
-      findMany: vi.fn(async () => settlements),
-    },
-    receivable: {
-      findMany: vi.fn(async (args: any) =>
-        args.where.isPaid === false
-          ? receivables.filter((item) => !item.isPaid)
-          : receivables,
-      ),
-    },
-    debt: {
-      findMany: vi.fn(async (args: any) =>
-        args.where.isPaid === false
-          ? debts.filter((item) => !item.isPaid)
-          : debts,
-      ),
-    },
-    invoice: {
-      findMany: vi.fn(async (args: any) =>
-        args.where.status?.in
-          ? invoices.filter((item) =>
-              args.where.status.in.includes(item.status),
-            )
-          : invoices,
-      ),
-    },
+    transaction: model(transactions),
+    personSettlementGroup: model(groups),
+    invoiceSettlement: model(settlements),
+    receivable: model(receivables),
+    debt: model(debts),
+    invoice: model(invoices),
   } as any;
 }
 
@@ -459,18 +531,145 @@ describe('BudgetV2DrilldownService', () => {
       } as any,
       date('2026-09-10'),
     );
+    const fourth = await service.getDrilldown(
+      'user-a',
+      {
+        bucket: BudgetV2Bucket.OVERDUE_OUTFLOWS,
+        limit: 1,
+        cursor: third.pageInfo.nextCursor!,
+      } as any,
+      date('2026-09-10'),
+    );
 
     expect(first.items.map((item) => item.id)).toEqual([
       'invoice-overdue-open',
     ]);
     expect(second.items.map((item) => item.id)).toEqual(['debt-overdue']);
     expect(third.items.map((item) => item.id)).toEqual([
+      'debt-overdue-same-date',
+    ]);
+    expect(fourth.items.map((item) => item.id)).toEqual([
       'invoice-overdue-closed',
     ]);
-    expect(first.total).toBe('380.00');
-    expect(second.total).toBe('380.00');
-    expect(third.total).toBe('380.00');
-    expect(third.pageInfo.nextCursor).toBeNull();
+    expect(first.total).toBe('495.00');
+    expect(second.total).toBe('495.00');
+    expect(third.total).toBe('495.00');
+    expect(fourth.total).toBe('495.00');
+    expect(fourth.pageInfo.nextCursor).toBeNull();
+  });
+
+  it('reconciles every bucket while traversing one-item pages', async () => {
+    const prisma = createPrisma();
+    const summary = await new BudgetV2Service(prisma).getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.LAST_30_DAYS,
+      date('2026-09-10'),
+    );
+    const service = new BudgetV2DrilldownService(prisma);
+    const realized = new Set([
+      BudgetV2Bucket.MANUAL_INCOME,
+      BudgetV2Bucket.RECEIVABLE_RECEIPTS,
+      BudgetV2Bucket.PERSON_SETTLEMENT_INFLOW,
+      BudgetV2Bucket.DIRECT_EXPENSES,
+      BudgetV2Bucket.DEBT_DIRECT_SETTLEMENTS,
+      BudgetV2Bucket.INVOICE_SETTLEMENTS,
+      BudgetV2Bucket.PERSON_SETTLEMENT_DIRECT_OUTFLOW,
+    ]);
+    const buckets = Object.values(BudgetV2Bucket);
+    for (const bucket of buckets) {
+      const items: string[] = [];
+      let cursor: string | undefined;
+      let response;
+      do {
+        response = await service.getDrilldown(
+          'user-a',
+          {
+            bucket,
+            limit: 1,
+            ...(realized.has(bucket)
+              ? { preset: BudgetV2PeriodPreset.LAST_30_DAYS }
+              : {}),
+            ...(cursor ? { cursor } : {}),
+          } as any,
+          date('2026-09-10'),
+        );
+        items.push(...response.items.map((item) => item.id));
+        cursor = response.pageInfo.nextCursor ?? undefined;
+      } while (response.pageInfo.hasMore);
+
+      expect(new Set(items).size, bucket).toBe(items.length);
+      expect(response.total, bucket).toBe(
+        bucket === BudgetV2Bucket.MANUAL_INCOME
+          ? summary.composition.realized.manualIncome
+          : bucket === BudgetV2Bucket.RECEIVABLE_RECEIPTS
+            ? summary.composition.realized.receivableReceipts
+            : bucket === BudgetV2Bucket.PERSON_SETTLEMENT_INFLOW
+              ? summary.composition.realized.personSettlementInflows
+              : bucket === BudgetV2Bucket.DIRECT_EXPENSES
+                ? summary.composition.realized.manualDirectTransactions
+                : bucket === BudgetV2Bucket.DEBT_DIRECT_SETTLEMENTS
+                  ? summary.composition.realized.debtDirectSettlements
+                  : bucket === BudgetV2Bucket.INVOICE_SETTLEMENTS
+                    ? summary.composition.realized.invoiceSettlements
+                    : bucket === BudgetV2Bucket.PERSON_SETTLEMENT_DIRECT_OUTFLOW
+                      ? summary.composition.realized
+                          .personSettlementDirectOutflows
+                      : bucket === BudgetV2Bucket.UPCOMING_RECEIVABLES
+                        ? summary.composition.upcoming.receivables
+                        : bucket === BudgetV2Bucket.UPCOMING_INVOICES
+                          ? summary.composition.upcoming.invoices
+                          : bucket === BudgetV2Bucket.UPCOMING_DEBTS
+                            ? summary.composition.upcoming.debts
+                            : bucket === BudgetV2Bucket.OVERDUE_RECEIVABLES
+                              ? summary.pending.overdue.inflow
+                              : summary.pending.overdue.outflow,
+      );
+    }
+  });
+
+  it('uses bounded page queries and scoped aggregates for every bucket', async () => {
+    const prisma = createPrisma();
+    const service = new BudgetV2DrilldownService(prisma);
+    const realized = new Set([
+      BudgetV2Bucket.MANUAL_INCOME,
+      BudgetV2Bucket.RECEIVABLE_RECEIPTS,
+      BudgetV2Bucket.PERSON_SETTLEMENT_INFLOW,
+      BudgetV2Bucket.DIRECT_EXPENSES,
+      BudgetV2Bucket.DEBT_DIRECT_SETTLEMENTS,
+      BudgetV2Bucket.INVOICE_SETTLEMENTS,
+      BudgetV2Bucket.PERSON_SETTLEMENT_DIRECT_OUTFLOW,
+    ]);
+
+    for (const bucket of Object.values(BudgetV2Bucket)) {
+      await service.getDrilldown(
+        'user-a',
+        {
+          bucket,
+          limit: 1,
+          ...(realized.has(bucket)
+            ? { preset: BudgetV2PeriodPreset.LAST_30_DAYS }
+            : {}),
+        } as any,
+        date('2026-09-10'),
+      );
+    }
+
+    for (const modelName of [
+      'transaction',
+      'personSettlementGroup',
+      'invoiceSettlement',
+      'receivable',
+      'debt',
+      'invoice',
+    ] as const) {
+      const model = prisma[modelName];
+      for (const call of model.findMany.mock.calls) {
+        expect(call[0].take).toBe(2);
+        expect(call[0].orderBy).toBeDefined();
+        expect(call[0].where).toBeDefined();
+      }
+      expect(model.aggregate).toHaveBeenCalled();
+    }
   });
 
   it('rejects invalid period scope and incompatible cursors', async () => {

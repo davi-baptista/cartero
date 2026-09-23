@@ -6,14 +6,15 @@ import {
   shiftCivilDate,
 } from 'src/common/helpers/financial-period.helper';
 import { financialCivilDay } from 'src/common/helpers/financial-timezone.helper';
+import { BudgetV2Bucket } from './budget-v2-classification.helper';
 import {
-  BudgetV2Bucket,
-  classifyBudgetV2Debt,
-  classifyBudgetV2Invoice,
-  classifyBudgetV2PersonSettlement,
-  classifyBudgetV2Receivable,
-  classifyBudgetV2Transaction,
-} from './budget-v2-classification.helper';
+  debtBucketWhere,
+  invoiceBucketWhere,
+  invoiceSettlementWhere,
+  receivableBucketWhere,
+  settlementBucketWhere,
+  transactionBucketWhere,
+} from './budget-v2-predicates.helper';
 import type { BudgetV2PeriodPreset } from './budget-v2.types';
 import type { GetBudgetV2DrilldownDto } from './dto/get-budget-v2-drilldown.dto';
 import type {
@@ -22,14 +23,7 @@ import type {
 } from './budget-v2-drilldown.types';
 
 const ZERO = new Prisma.Decimal(0);
-
-type SortableItem = {
-  item: BudgetV2DrilldownItem;
-  amount: Prisma.Decimal;
-  date: string;
-  kind: string;
-  id: string;
-};
+const OVERDUE_KIND_RANK = { DEBT: 0, INVOICE: 1 } as const;
 
 type CursorPayload = {
   version: 1;
@@ -42,12 +36,24 @@ type CursorPayload = {
   id: string;
 };
 
+type SortableItem = {
+  item: BudgetV2DrilldownItem;
+  amount: Prisma.Decimal;
+  date: string;
+  kind: string;
+  id: string;
+};
+
+type PageResult = {
+  rows: SortableItem[];
+  total: Prisma.Decimal;
+};
+
 const transactionSelect = {
   id: true,
   amount: true,
   date: true,
   type: true,
-  isRefund: true,
   title: true,
   description: true,
   bank: { select: { name: true } },
@@ -74,16 +80,66 @@ const transactionSelect = {
   },
 } as const;
 
-function sumDecimal(values: readonly Prisma.Decimal[]): Prisma.Decimal {
-  return values.reduce((sum, value) => sum.add(value), ZERO);
+const settlementSelect = {
+  id: true,
+  netAmount: true,
+  settledAt: true,
+  direction: true,
+  paymentType: true,
+  person: { select: { name: true } },
+  bank: { select: { name: true } },
+} as const;
+
+const invoiceSettlementSelect = {
+  id: true,
+  invoiceId: true,
+  amount: true,
+  paidAt: true,
+  invoice: {
+    select: {
+      dueDate: true,
+      month: true,
+      year: true,
+      bank: { select: { name: true } },
+    },
+  },
+} as const;
+
+const receivableSelect = {
+  id: true,
+  amount: true,
+  dueDate: true,
+  title: true,
+  description: true,
+  debtorName: true,
+  person: { select: { name: true } },
+} as const;
+
+const debtSelect = {
+  id: true,
+  amount: true,
+  dueDate: true,
+  title: true,
+  description: true,
+  creditorName: true,
+  person: { select: { name: true } },
+} as const;
+
+const invoiceSelect = {
+  id: true,
+  totalAmount: true,
+  dueDate: true,
+  month: true,
+  year: true,
+  bank: { select: { name: true } },
+} as const;
+
+function serializeMoney(value: Prisma.Decimal | null | undefined): string {
+  return (value ?? ZERO).toFixed(2);
 }
 
-function serializeMoney(value: Prisma.Decimal): string {
-  return value.toFixed(2);
-}
-
-function iso(date: Date): string {
-  return date.toISOString();
+function iso(value: Date): string {
+  return value.toISOString();
 }
 
 function encodeCursor(payload: CursorPayload): string {
@@ -112,6 +168,13 @@ function decodeCursor(
       throw new Error('incompatible cursor');
     }
 
+    if (
+      expected.bucket === BudgetV2Bucket.OVERDUE_OUTFLOWS &&
+      !(parsed.kind in OVERDUE_KIND_RANK)
+    ) {
+      throw new Error('incompatible overdue cursor');
+    }
+
     return parsed as CursorPayload;
   } catch {
     throw new BadRequestException('Invalid budget drilldown cursor');
@@ -134,30 +197,67 @@ function isDescending(bucket: BudgetV2Bucket): boolean {
   return isRealizedBucket(bucket);
 }
 
-function compareSortable(
-  a: SortableItem,
-  b: SortableItem,
+function dateIdCursorWhere(
+  cursor: CursorPayload | null,
   descending: boolean,
-): number {
-  const dateOrder = a.date.localeCompare(b.date);
-  if (dateOrder !== 0) return descending ? -dateOrder : dateOrder;
-
-  const kindOrder = a.kind.localeCompare(b.kind);
-  if (kindOrder !== 0) return kindOrder;
-  return a.id.localeCompare(b.id);
+  field: 'date' | 'settledAt' | 'paidAt',
+): Record<string, unknown> | null {
+  if (!cursor) return null;
+  const date = new Date(cursor.date);
+  return {
+    OR: descending
+      ? [{ [field]: { lt: date } }, { [field]: date, id: { gt: cursor.id } }]
+      : [{ [field]: { gt: date } }, { [field]: date, id: { gt: cursor.id } }],
+  };
 }
 
-function isAfterCursor(
-  row: SortableItem,
-  cursor: CursorPayload,
-  descending: boolean,
-): boolean {
-  const dateOrder = row.date.localeCompare(cursor.date);
-  if (dateOrder !== 0) return descending ? dateOrder < 0 : dateOrder > 0;
+function dueDateIdCursorWhere(
+  cursor: CursorPayload | null,
+): Record<string, unknown> | null {
+  if (!cursor) return null;
+  const date = new Date(cursor.date);
+  return {
+    OR: [{ dueDate: { gt: date } }, { dueDate: date, id: { gt: cursor.id } }],
+  };
+}
 
-  const kindOrder = row.kind.localeCompare(cursor.kind);
-  if (kindOrder !== 0) return kindOrder > 0;
-  return row.id.localeCompare(cursor.id) > 0;
+function overdueStreamCursorWhere(
+  cursor: CursorPayload | null,
+  sourceKind: keyof typeof OVERDUE_KIND_RANK,
+): Record<string, unknown> | null {
+  if (!cursor) return null;
+
+  const cursorRank =
+    OVERDUE_KIND_RANK[cursor.kind as keyof typeof OVERDUE_KIND_RANK];
+  const sourceRank = OVERDUE_KIND_RANK[sourceKind];
+  const date = new Date(cursor.date);
+  const sameDate =
+    sourceRank > cursorRank
+      ? { dueDate: date }
+      : sourceRank === cursorRank
+        ? { dueDate: date, id: { gt: cursor.id } }
+        : null;
+
+  return {
+    OR: [{ dueDate: { gt: date } }, ...(sameDate ? [sameDate] : [])],
+  };
+}
+
+function withContinuation<T>(
+  base: T,
+  continuation: Record<string, unknown> | null,
+): T | { AND: [T, Record<string, unknown>] } {
+  return continuation ? { AND: [base, continuation] } : base;
+}
+
+function compareOverdue(a: SortableItem, b: SortableItem): number {
+  const dates = a.date.localeCompare(b.date);
+  if (dates !== 0) return dates;
+  const kinds =
+    OVERDUE_KIND_RANK[a.kind as keyof typeof OVERDUE_KIND_RANK] -
+    OVERDUE_KIND_RANK[b.kind as keyof typeof OVERDUE_KIND_RANK];
+  if (kinds !== 0) return kinds;
+  return a.id.localeCompare(b.id);
 }
 
 @Injectable()
@@ -195,38 +295,31 @@ export class BudgetV2DrilldownService {
     const scope = realized
       ? `${periodBounds!.period.startDate ?? ''}|${periodBounds!.period.endDate}`
       : `${today}|${horizonExclusive}`;
-    const expectedCursorScope = {
+    const cursorScope = {
       version: 1 as const,
       bucket,
       preset: dto.preset ?? null,
       timeZone: user.timeZone,
       scope,
     };
-    const cursor = dto.cursor
-      ? decodeCursor(dto.cursor, expectedCursorScope)
-      : null;
+    const cursor = dto.cursor ? decodeCursor(dto.cursor, cursorScope) : null;
 
-    const rows = await this.loadRows(
+    const result = await this.loadPageAndTotal(
       userId,
       bucket,
       periodBounds,
       today,
       horizonExclusive,
+      cursor,
+      dto.limit,
     );
-    rows.sort((a, b) => compareSortable(a, b, isDescending(bucket)));
-
-    const total = sumDecimal(rows.map((row) => row.amount));
-    const afterCursor = cursor
-      ? rows.filter((row) => isAfterCursor(row, cursor, isDescending(bucket)))
-      : rows;
-    const page = afterCursor.slice(0, dto.limit + 1);
-    const hasMore = page.length > dto.limit;
-    const items = page.slice(0, dto.limit);
+    const items = result.rows.slice(0, dto.limit);
+    const hasMore = result.rows.length > dto.limit;
     const last = items[items.length - 1];
 
     return {
       bucket,
-      total: serializeMoney(total),
+      total: serializeMoney(result.total),
       context: {
         timeZone: user.timeZone,
         ...(periodBounds
@@ -243,7 +336,7 @@ export class BudgetV2DrilldownService {
         hasMore,
         nextCursor: hasMore
           ? encodeCursor({
-              ...expectedCursorScope,
+              ...cursorScope,
               date: last.date,
               kind: last.kind,
               id: last.id,
@@ -253,164 +346,199 @@ export class BudgetV2DrilldownService {
     };
   }
 
-  private async loadRows(
+  private async loadPageAndTotal(
     userId: string,
     bucket: BudgetV2Bucket,
     periodBounds: ReturnType<typeof deriveBudgetV2PeriodBounds> | null,
     today: string,
     horizonExclusive: string,
-  ): Promise<SortableItem[]> {
+    cursor: CursorPayload | null,
+    limit: number,
+  ): Promise<PageResult> {
+    if (bucket === BudgetV2Bucket.OVERDUE_OUTFLOWS) {
+      return this.loadOverdueOutflows(userId, today, cursor, limit);
+    }
+
+    const date = periodBounds
+      ? periodBounds.startInclusive
+        ? { gte: periodBounds.startInclusive, lt: periodBounds.endExclusive }
+        : { lt: periodBounds.endExclusive }
+      : bucket === BudgetV2Bucket.UPCOMING_RECEIVABLES ||
+          bucket === BudgetV2Bucket.UPCOMING_DEBTS ||
+          bucket === BudgetV2Bucket.UPCOMING_INVOICES
+        ? {
+            gte: new Date(`${today}T00:00:00.000Z`),
+            lt: new Date(`${horizonExclusive}T00:00:00.000Z`),
+          }
+        : { lt: new Date(`${today}T00:00:00.000Z`) };
+
     switch (bucket) {
       case BudgetV2Bucket.MANUAL_INCOME:
       case BudgetV2Bucket.RECEIVABLE_RECEIPTS:
       case BudgetV2Bucket.DIRECT_EXPENSES:
       case BudgetV2Bucket.DEBT_DIRECT_SETTLEMENTS:
-        return this.loadTransactionRows(userId, bucket, periodBounds!);
+        return this.loadTransactionPageAndTotal(
+          userId,
+          bucket,
+          date,
+          cursor,
+          limit,
+        );
       case BudgetV2Bucket.PERSON_SETTLEMENT_INFLOW:
       case BudgetV2Bucket.PERSON_SETTLEMENT_DIRECT_OUTFLOW:
-        return this.loadSettlementRows(userId, bucket, periodBounds!);
+        return this.loadSettlementPageAndTotal(
+          userId,
+          bucket,
+          date,
+          cursor,
+          limit,
+        );
       case BudgetV2Bucket.INVOICE_SETTLEMENTS:
-        return this.loadInvoiceSettlementRows(userId, periodBounds!);
+        return this.loadInvoiceSettlementPageAndTotal(
+          userId,
+          date,
+          cursor,
+          limit,
+        );
       case BudgetV2Bucket.UPCOMING_RECEIVABLES:
       case BudgetV2Bucket.OVERDUE_RECEIVABLES:
-        return this.loadReceivableRows(userId, bucket, today, horizonExclusive);
+        return this.loadReceivablePageAndTotal(userId, date, cursor, limit);
       case BudgetV2Bucket.UPCOMING_DEBTS:
-        return this.loadDebtRows(userId, bucket, today, horizonExclusive);
+        return this.loadDebtPageAndTotal(userId, date, cursor, limit);
       case BudgetV2Bucket.UPCOMING_INVOICES:
-        return this.loadInvoiceRows(userId, bucket, today, horizonExclusive);
-      case BudgetV2Bucket.OVERDUE_OUTFLOWS: {
-        const [invoices, debts] = await Promise.all([
-          this.loadInvoiceRows(userId, bucket, today, horizonExclusive),
-          this.loadDebtRows(userId, bucket, today, horizonExclusive),
-        ]);
-        return [...invoices, ...debts];
-      }
+        return this.loadInvoicePageAndTotal(userId, date, cursor, limit);
+      default:
+        throw new Error(`Unsupported drilldown bucket: ${bucket}`);
     }
   }
 
-  private async loadTransactionRows(
+  private async loadTransactionPageAndTotal(
     userId: string,
     bucket: BudgetV2Bucket,
-    periodBounds: ReturnType<typeof deriveBudgetV2PeriodBounds>,
-  ): Promise<SortableItem[]> {
-    const date = periodBounds.startInclusive
-      ? { gte: periodBounds.startInclusive, lt: periodBounds.endExclusive }
-      : { lt: periodBounds.endExclusive };
-    const transactions = await this.prisma.transaction.findMany({
-      where: { userId, date },
-      select: transactionSelect,
-    });
+    date: Prisma.DateTimeFilter,
+    cursor: CursorPayload | null,
+    limit: number,
+  ): Promise<PageResult> {
+    const where = transactionBucketWhere(bucket, userId, date);
+    const pageWhere = withContinuation(
+      where,
+      dateIdCursorWhere(cursor, true, 'date'),
+    );
+    const [transactions, aggregate] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where: pageWhere,
+        select: transactionSelect,
+        orderBy: [{ date: 'desc' }, { id: 'asc' }],
+        take: limit + 1,
+      }),
+      this.prisma.transaction.aggregate({ where, _sum: { amount: true } }),
+    ]);
 
-    return transactions.flatMap((transaction) => {
-      if (classifyBudgetV2Transaction(transaction, userId) !== bucket) {
-        return [];
-      }
-
-      const eventDate = iso(transaction.date);
-      if (bucket === BudgetV2Bucket.RECEIVABLE_RECEIPTS) {
-        if (!transaction.paymentReceivable) return [];
-        return [
-          {
-            amount: transaction.amount,
-            date: eventDate,
-            kind: 'RECEIVABLE_RECEIPT',
-            id: transaction.id,
-            item: {
-              kind: 'RECEIVABLE_RECEIPT',
-              id: transaction.id,
-              sourceId: transaction.paymentReceivable.id,
-              amount: serializeMoney(transaction.amount),
-              eventDate,
-              title: transaction.paymentReceivable.title,
-              description: transaction.paymentReceivable.description,
-              counterparty:
-                transaction.paymentReceivable.person?.name ??
-                transaction.paymentReceivable.debtorName,
-              bankName: transaction.bank.name,
-              paymentType: transaction.type,
-            },
-          } as SortableItem,
-        ];
-      }
-
-      if (bucket === BudgetV2Bucket.DEBT_DIRECT_SETTLEMENTS) {
-        if (!transaction.paymentDebt) return [];
-        return [
-          {
-            amount: transaction.amount,
-            date: eventDate,
-            kind: 'DEBT_SETTLEMENT',
-            id: transaction.id,
-            item: {
-              kind: 'DEBT_SETTLEMENT',
-              id: transaction.id,
-              sourceId: transaction.paymentDebt.id,
-              amount: serializeMoney(transaction.amount),
-              eventDate,
-              title: transaction.paymentDebt.title,
-              description: transaction.paymentDebt.description,
-              counterparty:
-                transaction.paymentDebt.person?.name ??
-                transaction.paymentDebt.creditorName,
-              bankName: transaction.bank.name,
-              paymentType: transaction.type,
-            },
-          } as SortableItem,
-        ];
-      }
-
-      return [
-        {
-          amount: transaction.amount,
-          date: eventDate,
-          kind: 'TRANSACTION',
-          id: transaction.id,
-          item: {
-            kind: 'TRANSACTION',
-            id: transaction.id,
-            amount: serializeMoney(transaction.amount),
-            eventDate,
-            title: transaction.title,
-            description: transaction.description,
-            categoryName: transaction.category.name,
-            bankName: transaction.bank.name,
-            paymentType: transaction.type,
-          },
-        } as SortableItem,
-      ];
-    });
+    return {
+      rows: transactions.map((transaction) =>
+        this.transactionRow(transaction, bucket),
+      ),
+      total: aggregate._sum.amount ?? ZERO,
+    };
   }
 
-  private async loadSettlementRows(
+  private transactionRow(
+    transaction: Prisma.TransactionGetPayload<{
+      select: typeof transactionSelect;
+    }>,
+    bucket: BudgetV2Bucket,
+  ): SortableItem {
+    const eventDate = iso(transaction.date);
+    if (bucket === BudgetV2Bucket.RECEIVABLE_RECEIPTS) {
+      const source = transaction.paymentReceivable!;
+      return {
+        amount: transaction.amount,
+        date: eventDate,
+        kind: 'RECEIVABLE_RECEIPT',
+        id: transaction.id,
+        item: {
+          kind: 'RECEIVABLE_RECEIPT',
+          id: transaction.id,
+          sourceId: source.id,
+          amount: serializeMoney(transaction.amount),
+          eventDate,
+          title: source.title,
+          description: source.description,
+          counterparty: source.person?.name ?? source.debtorName,
+          bankName: transaction.bank.name,
+          paymentType: transaction.type,
+        },
+      };
+    }
+    if (bucket === BudgetV2Bucket.DEBT_DIRECT_SETTLEMENTS) {
+      const source = transaction.paymentDebt!;
+      return {
+        amount: transaction.amount,
+        date: eventDate,
+        kind: 'DEBT_SETTLEMENT',
+        id: transaction.id,
+        item: {
+          kind: 'DEBT_SETTLEMENT',
+          id: transaction.id,
+          sourceId: source.id,
+          amount: serializeMoney(transaction.amount),
+          eventDate,
+          title: source.title,
+          description: source.description,
+          counterparty: source.person?.name ?? source.creditorName,
+          bankName: transaction.bank.name,
+          paymentType: transaction.type,
+        },
+      };
+    }
+    return {
+      amount: transaction.amount,
+      date: eventDate,
+      kind: 'TRANSACTION',
+      id: transaction.id,
+      item: {
+        kind: 'TRANSACTION',
+        id: transaction.id,
+        amount: serializeMoney(transaction.amount),
+        eventDate,
+        title: transaction.title,
+        description: transaction.description,
+        categoryName: transaction.category.name,
+        bankName: transaction.bank.name,
+        paymentType: transaction.type,
+      },
+    };
+  }
+
+  private async loadSettlementPageAndTotal(
     userId: string,
     bucket: BudgetV2Bucket,
-    periodBounds: ReturnType<typeof deriveBudgetV2PeriodBounds>,
-  ): Promise<SortableItem[]> {
-    const date = periodBounds.startInclusive
-      ? { gte: periodBounds.startInclusive, lt: periodBounds.endExclusive }
-      : { lt: periodBounds.endExclusive };
-    const groups = await this.prisma.personSettlementGroup.findMany({
-      where: {
-        userId,
-        status: 'ACTIVE',
-        settledAt: date,
-      },
-      select: {
-        id: true,
-        netAmount: true,
-        settledAt: true,
-        direction: true,
-        paymentType: true,
-        person: { select: { name: true } },
-        bank: { select: { name: true } },
-      },
-    });
+    settledAt: Prisma.DateTimeFilter,
+    cursor: CursorPayload | null,
+    limit: number,
+  ): Promise<PageResult> {
+    const where = settlementBucketWhere(bucket, userId, settledAt);
+    const pageWhere = withContinuation(
+      where,
+      dateIdCursorWhere(cursor, true, 'settledAt'),
+    );
+    const [groups, aggregate] = await Promise.all([
+      this.prisma.personSettlementGroup.findMany({
+        where: pageWhere,
+        select: settlementSelect,
+        orderBy: [{ settledAt: 'desc' }, { id: 'asc' }],
+        take: limit + 1,
+      }),
+      this.prisma.personSettlementGroup.aggregate({
+        where,
+        _sum: { netAmount: true },
+      }),
+    ]);
 
-    return groups.flatMap((group) => {
-      if (classifyBudgetV2PersonSettlement(group) !== bucket) return [];
-      const eventDate = iso(group.settledAt);
-      return [
-        {
+    return {
+      rows: groups.map((group) => {
+        const eventDate = iso(group.settledAt);
+        return {
           amount: group.netAmount,
           date: eventDate,
           kind: 'PERSON_SETTLEMENT',
@@ -421,217 +549,254 @@ export class BudgetV2DrilldownService {
             amount: serializeMoney(group.netAmount),
             eventDate,
             personName: group.person.name,
-            direction: group.direction,
+            direction: group.direction as 'INFLOW' | 'OUTFLOW',
             paymentType: group.paymentType,
             bankName: group.bank?.name ?? null,
           },
-        } as SortableItem,
-      ];
-    });
+        };
+      }),
+      total: aggregate._sum.netAmount ?? ZERO,
+    };
   }
 
-  private async loadInvoiceSettlementRows(
+  private async loadInvoiceSettlementPageAndTotal(
     userId: string,
-    periodBounds: ReturnType<typeof deriveBudgetV2PeriodBounds>,
-  ): Promise<SortableItem[]> {
-    const date = periodBounds.startInclusive
-      ? { gte: periodBounds.startInclusive, lt: periodBounds.endExclusive }
-      : { lt: periodBounds.endExclusive };
-    const settlements = await this.prisma.invoiceSettlement.findMany({
-      where: { invoice: { userId }, paidAt: date },
-      select: {
-        id: true,
-        invoiceId: true,
-        amount: true,
-        paidAt: true,
-        invoice: {
-          select: {
-            dueDate: true,
-            month: true,
-            year: true,
-            bank: { select: { name: true } },
-          },
-        },
-      },
-    });
+    paidAt: Prisma.DateTimeFilter,
+    cursor: CursorPayload | null,
+    limit: number,
+  ): Promise<PageResult> {
+    const where = invoiceSettlementWhere(userId, paidAt);
+    const pageWhere = withContinuation(
+      where,
+      dateIdCursorWhere(cursor, true, 'paidAt'),
+    );
+    const [settlements, aggregate] = await Promise.all([
+      this.prisma.invoiceSettlement.findMany({
+        where: pageWhere,
+        select: invoiceSettlementSelect,
+        orderBy: [{ paidAt: 'desc' }, { id: 'asc' }],
+        take: limit + 1,
+      }),
+      this.prisma.invoiceSettlement.aggregate({
+        where,
+        _sum: { amount: true },
+      }),
+    ]);
 
-    return settlements.map((settlement) => {
-      const eventDate = iso(settlement.paidAt);
-      return {
-        amount: settlement.amount,
-        date: eventDate,
-        kind: 'INVOICE_SETTLEMENT',
-        id: settlement.id,
-        item: {
+    return {
+      rows: settlements.map((settlement) => {
+        const eventDate = iso(settlement.paidAt);
+        return {
+          amount: settlement.amount,
+          date: eventDate,
           kind: 'INVOICE_SETTLEMENT',
           id: settlement.id,
-          sourceId: settlement.invoiceId,
-          amount: serializeMoney(settlement.amount),
-          eventDate,
-          dueDate: iso(settlement.invoice.dueDate),
-          month: settlement.invoice.month,
-          year: settlement.invoice.year,
-          bankName: settlement.invoice.bank.name,
-        },
-      } as SortableItem;
-    });
+          item: {
+            kind: 'INVOICE_SETTLEMENT',
+            id: settlement.id,
+            sourceId: settlement.invoiceId,
+            amount: serializeMoney(settlement.amount),
+            eventDate,
+            dueDate: iso(settlement.invoice.dueDate),
+            month: settlement.invoice.month,
+            year: settlement.invoice.year,
+            bankName: settlement.invoice.bank.name,
+          },
+        };
+      }),
+      total: aggregate._sum.amount ?? ZERO,
+    };
   }
 
-  private async loadReceivableRows(
+  private async loadReceivablePageAndTotal(
     userId: string,
-    bucket: BudgetV2Bucket,
-    today: string,
-    horizonExclusive: string,
-  ): Promise<SortableItem[]> {
-    const receivables = await this.prisma.receivable.findMany({
-      where: { userId, isPaid: false },
-      select: {
-        id: true,
-        amount: true,
-        dueDate: true,
-        title: true,
-        description: true,
-        debtorName: true,
-        isPaid: true,
-        person: { select: { name: true } },
-      },
-    });
+    dueDate: Prisma.DateTimeFilter,
+    cursor: CursorPayload | null,
+    limit: number,
+  ): Promise<PageResult> {
+    const where = receivableBucketWhere(userId, dueDate);
+    const pageWhere = withContinuation(where, dueDateIdCursorWhere(cursor));
+    const [receivables, aggregate] = await Promise.all([
+      this.prisma.receivable.findMany({
+        where: pageWhere,
+        select: receivableSelect,
+        orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+        take: limit + 1,
+      }),
+      this.prisma.receivable.aggregate({ where, _sum: { amount: true } }),
+    ]);
 
-    return receivables.flatMap((receivable) => {
-      if (
-        classifyBudgetV2Receivable(
-          receivable.isPaid,
-          receivable.dueDate,
-          today,
-          horizonExclusive,
-        ) !== bucket
-      ) {
-        return [];
-      }
-      const dueDate = iso(receivable.dueDate);
-      return [
-        {
-          amount: receivable.amount,
-          date: dueDate,
+    return {
+      rows: receivables.map((receivable) => ({
+        amount: receivable.amount,
+        date: iso(receivable.dueDate),
+        kind: 'RECEIVABLE',
+        id: receivable.id,
+        item: {
           kind: 'RECEIVABLE',
           id: receivable.id,
-          item: {
-            kind: 'RECEIVABLE',
-            id: receivable.id,
-            amount: serializeMoney(receivable.amount),
-            dueDate,
-            title: receivable.title,
-            description: receivable.description,
-            counterparty: receivable.person?.name ?? receivable.debtorName,
-          },
-        } as SortableItem,
-      ];
-    });
+          amount: serializeMoney(receivable.amount),
+          dueDate: iso(receivable.dueDate),
+          title: receivable.title,
+          description: receivable.description,
+          counterparty: receivable.person?.name ?? receivable.debtorName,
+        },
+      })),
+      total: aggregate._sum.amount ?? ZERO,
+    };
   }
 
-  private async loadDebtRows(
+  private async loadDebtPageAndTotal(
     userId: string,
-    bucket: BudgetV2Bucket,
-    today: string,
-    horizonExclusive: string,
-  ): Promise<SortableItem[]> {
-    const debts = await this.prisma.debt.findMany({
-      where: { userId, isPaid: false },
-      select: {
-        id: true,
-        amount: true,
-        dueDate: true,
-        title: true,
-        description: true,
-        creditorName: true,
-        isPaid: true,
-        person: { select: { name: true } },
-      },
-    });
+    dueDate: Prisma.DateTimeFilter,
+    cursor: CursorPayload | null,
+    limit: number,
+  ): Promise<PageResult> {
+    const where = debtBucketWhere(userId, dueDate);
+    const pageWhere = withContinuation(where, dueDateIdCursorWhere(cursor));
+    const [debts, aggregate] = await Promise.all([
+      this.prisma.debt.findMany({
+        where: pageWhere,
+        select: debtSelect,
+        orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+        take: limit + 1,
+      }),
+      this.prisma.debt.aggregate({ where, _sum: { amount: true } }),
+    ]);
 
-    return debts.flatMap((debt) => {
-      if (
-        classifyBudgetV2Debt(
-          debt.isPaid,
-          debt.dueDate,
-          today,
-          horizonExclusive,
-        ) !== bucket
-      ) {
-        return [];
-      }
-      const dueDate = iso(debt.dueDate);
-      return [
-        {
-          amount: debt.amount,
-          date: dueDate,
+    return {
+      rows: debts.map((debt) => ({
+        amount: debt.amount,
+        date: iso(debt.dueDate),
+        kind: 'DEBT',
+        id: debt.id,
+        item: {
           kind: 'DEBT',
           id: debt.id,
-          item: {
-            kind: 'DEBT',
-            id: debt.id,
-            amount: serializeMoney(debt.amount),
-            dueDate,
-            title: debt.title,
-            description: debt.description,
-            counterparty: debt.person?.name ?? debt.creditorName,
-          },
-        } as SortableItem,
-      ];
-    });
+          amount: serializeMoney(debt.amount),
+          dueDate: iso(debt.dueDate),
+          title: debt.title,
+          description: debt.description,
+          counterparty: debt.person?.name ?? debt.creditorName,
+        },
+      })),
+      total: aggregate._sum.amount ?? ZERO,
+    };
   }
 
-  private async loadInvoiceRows(
+  private async loadInvoicePageAndTotal(
     userId: string,
-    bucket: BudgetV2Bucket,
-    today: string,
-    horizonExclusive: string,
-  ): Promise<SortableItem[]> {
-    const invoices = await this.prisma.invoice.findMany({
-      where: {
-        userId,
-        status: { in: ['OPEN', 'CLOSED', 'OVERDUE'] },
-      },
-      select: {
-        id: true,
-        totalAmount: true,
-        dueDate: true,
-        month: true,
-        year: true,
-        status: true,
-        bank: { select: { name: true } },
-      },
-    });
+    dueDate: Prisma.DateTimeFilter,
+    cursor: CursorPayload | null,
+    limit: number,
+  ): Promise<PageResult> {
+    const where = invoiceBucketWhere(userId, dueDate);
+    const pageWhere = withContinuation(where, dueDateIdCursorWhere(cursor));
+    const [invoices, aggregate] = await Promise.all([
+      this.prisma.invoice.findMany({
+        where: pageWhere,
+        select: invoiceSelect,
+        orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+        take: limit + 1,
+      }),
+      this.prisma.invoice.aggregate({ where, _sum: { totalAmount: true } }),
+    ]);
 
-    return invoices.flatMap((invoice) => {
-      if (
-        classifyBudgetV2Invoice(
-          invoice.status,
-          invoice.dueDate,
-          today,
-          horizonExclusive,
-        ) !== bucket
-      ) {
-        return [];
-      }
-      const dueDate = iso(invoice.dueDate);
-      return [
-        {
-          amount: invoice.totalAmount,
-          date: dueDate,
+    return {
+      rows: invoices.map((invoice) => ({
+        amount: invoice.totalAmount,
+        date: iso(invoice.dueDate),
+        kind: 'INVOICE',
+        id: invoice.id,
+        item: {
           kind: 'INVOICE',
           id: invoice.id,
-          item: {
-            kind: 'INVOICE',
-            id: invoice.id,
-            amount: serializeMoney(invoice.totalAmount),
-            dueDate,
-            month: invoice.month,
-            year: invoice.year,
-            bankName: invoice.bank.name,
-          },
-        } as SortableItem,
-      ];
-    });
+          amount: serializeMoney(invoice.totalAmount),
+          dueDate: iso(invoice.dueDate),
+          month: invoice.month,
+          year: invoice.year,
+          bankName: invoice.bank.name,
+        },
+      })),
+      total: aggregate._sum.totalAmount ?? ZERO,
+    };
+  }
+
+  private async loadOverdueOutflows(
+    userId: string,
+    today: string,
+    cursor: CursorPayload | null,
+    limit: number,
+  ): Promise<PageResult> {
+    const dueDate = { lt: new Date(`${today}T00:00:00.000Z`) };
+    const invoiceWhere = invoiceBucketWhere(userId, dueDate);
+    const debtWhere = debtBucketWhere(userId, dueDate);
+    const [invoices, debts, invoiceAggregate, debtAggregate] =
+      await Promise.all([
+        this.prisma.invoice.findMany({
+          where: withContinuation(
+            invoiceWhere,
+            overdueStreamCursorWhere(cursor, 'INVOICE'),
+          ),
+          select: invoiceSelect,
+          orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+          take: limit + 1,
+        }),
+        this.prisma.debt.findMany({
+          where: withContinuation(
+            debtWhere,
+            overdueStreamCursorWhere(cursor, 'DEBT'),
+          ),
+          select: debtSelect,
+          orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+          take: limit + 1,
+        }),
+        this.prisma.invoice.aggregate({
+          where: invoiceWhere,
+          _sum: { totalAmount: true },
+        }),
+        this.prisma.debt.aggregate({
+          where: debtWhere,
+          _sum: { amount: true },
+        }),
+      ]);
+
+    const invoiceRows = invoices.map((invoice) => ({
+      amount: invoice.totalAmount,
+      date: iso(invoice.dueDate),
+      kind: 'INVOICE',
+      id: invoice.id,
+      item: {
+        kind: 'INVOICE' as const,
+        id: invoice.id,
+        amount: serializeMoney(invoice.totalAmount),
+        dueDate: iso(invoice.dueDate),
+        month: invoice.month,
+        year: invoice.year,
+        bankName: invoice.bank.name,
+      },
+    }));
+    const debtRows = debts.map((debt) => ({
+      amount: debt.amount,
+      date: iso(debt.dueDate),
+      kind: 'DEBT',
+      id: debt.id,
+      item: {
+        kind: 'DEBT' as const,
+        id: debt.id,
+        amount: serializeMoney(debt.amount),
+        dueDate: iso(debt.dueDate),
+        title: debt.title,
+        description: debt.description,
+        counterparty: debt.person?.name ?? debt.creditorName,
+      },
+    }));
+
+    return {
+      rows: [...invoiceRows, ...debtRows].sort(compareOverdue),
+      total: (invoiceAggregate._sum.totalAmount ?? ZERO).add(
+        debtAggregate._sum.amount ?? ZERO,
+      ),
+    };
   }
 }
