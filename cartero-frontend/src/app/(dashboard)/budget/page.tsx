@@ -45,14 +45,16 @@ function SummaryCard({
   value,
   secondary,
   tone = 'neutral',
+  className,
 }: {
   label: string
   value: string
   secondary: string
   tone?: 'neutral' | 'positive' | 'negative'
+  className?: string
 }) {
   return (
-    <div className="flex min-w-0 flex-col items-center pb-3">
+    <div className={cn('flex min-w-0 flex-col items-center pb-3', className)}>
         <p className="text-center text-xs font-medium text-muted-foreground">{label}</p>
          <p
            className={cn(
@@ -197,10 +199,10 @@ function PeriodSelector({
     <div className="flex items-center gap-2">
       <label className="sr-only" htmlFor="budget-period">Período da movimentação</label>
       <Select value={value} onValueChange={(next) => next && onChange(next as BudgetV2PeriodPreset)}>
-      <SelectTrigger id="budget-period" size="sm" aria-label="Período da movimentação" className="h-9 w-auto min-w-40 shrink-0 px-3">
+      <SelectTrigger id="budget-period" size="default" aria-label="Período da movimentação" className="h-10 w-auto min-w-40 shrink-0 px-3">
           <SelectValue>{selected.label}</SelectValue>
         </SelectTrigger>
-        <SelectContent align="end" sideOffset={4} className="min-w-40 p-1">
+        <SelectContent side="bottom" align="end" sideOffset={4} alignItemWithTrigger={false} className="min-w-40 p-1">
           {PERIOD_OPTIONS.map((option) => <SelectItem className="min-h-8 px-2 py-1.5" key={option.value} value={option.value}>{option.label}</SelectItem>)}
         </SelectContent>
       </Select>
@@ -264,7 +266,7 @@ function BudgetContent({
           </div>
           <PeriodSelector value={preset} onChange={onPresetChange} />
         </div>
-        <div className="grid gap-3 pt-1 sm:grid-cols-3 sm:pt-0">
+        <div className="grid grid-cols-1 gap-x-3 gap-y-4 pt-1 min-[375px]:grid-cols-2 sm:grid-cols-3 sm:gap-3 sm:pt-2">
           <SummaryCard
             label="Entradas registradas"
             value={budget.realized.inflow}
@@ -282,6 +284,7 @@ function BudgetContent({
             value={budget.realized.balance}
             secondary={`Resultado em aberto: ${formatBudgetMoney(budget.open.net)}`}
             tone={balanceTone}
+            className="min-[375px]:col-span-2 sm:col-span-1"
           />
         </div>
       </section>

@@ -35,8 +35,10 @@ describe('Budget V2 contract and movement', () => {
       expect(page).toContain(field)
     }
     expect(page).toContain('flex flex-wrap items-center justify-between gap-3')
-    expect(page).toContain('h-9 w-auto min-w-40 shrink-0 px-3')
-    expect(page).toContain('align="end" sideOffset={4} className="min-w-40 p-1"')
+    expect(page).toContain('size="default"')
+    expect(page).toContain('h-10 w-auto min-w-40 shrink-0 px-3')
+    expect(page).toContain('side="bottom" align="end" sideOffset={4} alignItemWithTrigger={false}')
+    expect(page).toContain('className="min-w-40 p-1"')
     expect(page).toContain('className="min-h-8 px-2 py-1.5"')
     expect(page).not.toContain('w-full sm:w-44')
     expect(page).not.toContain('w-[72%]')
@@ -45,6 +47,11 @@ describe('Budget V2 contract and movement', () => {
     expect(page).not.toContain('<Card')
     for (const preset of Object.values(BudgetV2PeriodPreset)) expect(page).toContain(preset)
     expect(layout).not.toContain("  '/budget',")
+  })
+
+  it('uses the compact 2-plus-1 metric grid with a narrow-screen fallback', () => {
+    expect(page).toContain('grid grid-cols-1 gap-x-3 gap-y-4 pt-1 min-[375px]:grid-cols-2 sm:grid-cols-3 sm:gap-3 sm:pt-2')
+    expect(page).toContain('min-[375px]:col-span-2 sm:col-span-1')
   })
 
   it('shows open values as secondary information without client financial arithmetic', () => {
