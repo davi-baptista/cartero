@@ -15,7 +15,8 @@ describe('Budget V2 contract and movement', () => {
     expect(page).toContain("queryKey: ['budget-v2', preset]")
     expect(types).toContain('period: BudgetV2Period')
     expect(types).toContain('realized: BudgetV2Realized')
-    expect(types).toContain('open: BudgetV2Open')
+    expect(types).toContain('pending: BudgetV2Pending')
+    expect(types).toContain('resultAfterPending: string')
     expect(types).toContain('composition:')
     expect(types).not.toContain('future')
     expect(types).not.toContain('estimatedBalance')
@@ -54,17 +55,17 @@ describe('Budget V2 contract and movement', () => {
     expect(page).toContain('min-[375px]:col-span-2 sm:col-span-1')
   })
 
-  it('shows open values as secondary information without client financial arithmetic', () => {
-    expect(page).toContain('budget.open.inflow')
-    expect(page).toContain('budget.open.outflow')
-    expect(page).toContain('budget.open.net')
-    expect(page).toContain('em aberto')
-    expect(page).toContain('Resultado em aberto')
+  it('shows pending values as secondary information without client financial arithmetic', () => {
+    expect(page).toContain('budget.pending.inflow')
+    expect(page).toContain('budget.pending.outflow')
+    expect(page).toContain('budget.resultAfterPending')
+    expect(page).toContain('pendentes')
+    expect(page).toContain('Resultado após pendências')
     expect(page).not.toContain('Diferença em aberto')
     expect(page).not.toContain('budget.realized.inflow +')
     expect(page).not.toContain('budget.realized.outflow +')
     expect(page).not.toContain('budget.realized.balance +')
-    expect(page).not.toContain('budget.open.inflow -')
+    expect(page).not.toContain('budget.pending.inflow -')
   })
 })
 
@@ -85,9 +86,9 @@ describe('Budget V2 unified composition', () => {
     expect(page).toContain('<Composition budget={budget} />')
   })
 
-  it('separates registered and open groups in both columns', () => {
+  it('separates registered and upcoming groups in both columns', () => {
     expect(page).toContain('REGISTRADO NO PERÍODO')
-    expect(page).toContain('EM ABERTO')
+    expect(page).toContain('A VENCER · PRÓXIMOS 30 DIAS')
     for (const field of [
       'manualIncome',
       'receivableReceipts',
@@ -96,9 +97,7 @@ describe('Budget V2 unified composition', () => {
       'debtDirectSettlements',
       'invoiceSettlements',
       'personSettlementDirectOutflows',
-      'open.receivables',
-      'open.invoices',
-      'open.debts',
+      'budget.composition.upcoming',
     ]) {
       expect(page).toContain(field)
     }
@@ -108,7 +107,7 @@ describe('Budget V2 unified composition', () => {
     expect(page).toContain('filter(([key]) => !isZero(realized[key]))')
     expect(page).toContain('Nenhuma entrada registrada no período.')
     expect(page).toContain('Nenhuma saída registrada no período.')
-    expect(page).toContain('Nenhum valor em aberto.')
+    expect(page).toContain('Nenhum valor a vencer.')
     expect(page).toContain('formatBudgetMoney(value)')
   })
 })
@@ -119,8 +118,8 @@ describe('Budget V2 overdue block and state UX', () => {
     expect(page).toContain('sm:w-1/2')
     expect(page).toContain('CircleAlert')
     expect(page).toContain('aria-hidden="true"')
-    expect(page).toContain('budget.open.overdue.inflow')
-    expect(page).toContain('budget.open.overdue.outflow')
+    expect(page).toContain('budget.pending.overdue.inflow')
+    expect(page).toContain('budget.pending.overdue.outflow')
     expect(page).toContain('A receber vencido')
     expect(page).toContain('A pagar vencido')
     expect(page).not.toContain('Parte dos valores em aberto.')

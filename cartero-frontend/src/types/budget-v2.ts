@@ -18,7 +18,7 @@ export interface BudgetV2Realized {
   balance: string
 }
 
-export interface BudgetV2Open {
+export interface BudgetV2Pending {
   inflow: string
   outflow: string
   net: string
@@ -38,7 +38,7 @@ export interface BudgetV2RealizedComposition {
   personSettlementDirectOutflows: string
 }
 
-export interface BudgetV2OpenComposition {
+export interface BudgetV2UpcomingComposition {
   invoices: string
   debts: string
   receivables: string
@@ -47,9 +47,10 @@ export interface BudgetV2OpenComposition {
 export interface BudgetV2Response {
   period: BudgetV2Period
   realized: BudgetV2Realized
-  open: BudgetV2Open
+  pending: BudgetV2Pending
+  resultAfterPending: string
   composition: {
     realized: BudgetV2RealizedComposition
-    open: BudgetV2OpenComposition
+    upcoming: BudgetV2UpcomingComposition
   }
 }

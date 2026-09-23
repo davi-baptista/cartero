@@ -129,14 +129,14 @@ function CompositionColumn({
         rows={registeredRows}
         empty={registeredEmpty}
       />
-      <CompositionGroup label="EM ABERTO" rows={openRows} empty="Nenhum valor em aberto." />
+      <CompositionGroup label="A VENCER · PRÓXIMOS 30 DIAS" rows={openRows} empty="Nenhum valor a vencer." />
     </div>
   )
 }
 
 function Composition({ budget }: { budget: BudgetV2Response }) {
   const realized = budget.composition.realized
-  const open = budget.composition.open
+  const upcoming = budget.composition.upcoming
   const realizedInflowRows = REALIZED_INFLOW_ROWS.filter(([key]) => !isZero(realized[key]))
     .map(([key, label]) => [formatBudgetMoney(realized[key]), label] as const)
   const realizedOutflowRows = REALIZED_OUTFLOW_ROWS.filter(([key]) => !isZero(realized[key]))
@@ -151,15 +151,15 @@ function Composition({ budget }: { budget: BudgetV2Response }) {
         <CompositionColumn
           title="Entradas"
           registeredRows={realizedInflowRows}
-          openRows={isZero(open.receivables) ? [] : [[formatBudgetMoney(open.receivables), 'Recebíveis']]}
+          openRows={isZero(upcoming.receivables) ? [] : [[formatBudgetMoney(upcoming.receivables), 'Recebíveis']]}
           registeredEmpty="Nenhuma entrada registrada no período."
         />
         <CompositionColumn
           title="Saídas"
           registeredRows={realizedOutflowRows}
           openRows={[
-            ...(!isZero(open.invoices) ? [[formatBudgetMoney(open.invoices), 'Faturas'] as const] : []),
-            ...(!isZero(open.debts) ? [[formatBudgetMoney(open.debts), 'Dívidas'] as const] : []),
+            ...(!isZero(upcoming.invoices) ? [[formatBudgetMoney(upcoming.invoices), 'Faturas'] as const] : []),
+            ...(!isZero(upcoming.debts) ? [[formatBudgetMoney(upcoming.debts), 'Dívidas'] as const] : []),
           ]}
           registeredEmpty="Nenhuma saída registrada no período."
         />
@@ -211,10 +211,10 @@ function PeriodSelector({
 }
 
 function Overdue({ budget }: { budget: BudgetV2Response }) {
-  const hasOverdue = !isZero(budget.open.overdue.inflow) || !isZero(budget.open.overdue.outflow)
+  const hasOverdue = !isZero(budget.pending.overdue.inflow) || !isZero(budget.pending.overdue.outflow)
   const rows = [
-    [budget.open.overdue.inflow, 'A receber vencido'],
-    [budget.open.overdue.outflow, 'A pagar vencido'],
+    [budget.pending.overdue.inflow, 'A receber vencido'],
+    [budget.pending.overdue.outflow, 'A pagar vencido'],
   ] as const
 
   return (
@@ -270,19 +270,19 @@ function BudgetContent({
           <SummaryCard
             label="Entradas registradas"
             value={budget.realized.inflow}
-            secondary={`+ ${formatBudgetMoney(budget.open.inflow)} em aberto`}
+            secondary={`+ ${formatBudgetMoney(budget.pending.inflow)} pendentes`}
             tone="positive"
           />
           <SummaryCard
             label="Saídas registradas"
             value={budget.realized.outflow}
-            secondary={`+ ${formatBudgetMoney(budget.open.outflow)} em aberto`}
+            secondary={`+ ${formatBudgetMoney(budget.pending.outflow)} pendentes`}
             tone="negative"
           />
           <SummaryCard
             label="Balanço registrado"
             value={budget.realized.balance}
-            secondary={`Resultado em aberto: ${formatBudgetMoney(budget.open.net)}`}
+            secondary={`Resultado após pendências: ${formatBudgetMoney(budget.resultAfterPending)}`}
             tone={balanceTone}
             className="min-[375px]:col-span-2 sm:col-span-1"
           />
