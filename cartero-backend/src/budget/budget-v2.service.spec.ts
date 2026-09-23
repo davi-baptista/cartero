@@ -120,6 +120,9 @@ describe('BudgetV2Service', () => {
           ];
         }),
       },
+      receivable: { findMany: vi.fn(async () => []) },
+      debt: { findMany: vi.fn(async () => []) },
+      invoice: { findMany: vi.fn(async () => []) },
     } as any;
 
     const result = await new BudgetV2Service(prisma).getBudget(
@@ -183,16 +186,9 @@ describe('BudgetV2Service', () => {
       transaction: { findMany: vi.fn(async () => []) },
       invoiceSettlement: { findMany: vi.fn(async () => []) },
       personSettlementGroup: { findMany: vi.fn(async () => []) },
-      debt: {
-        findMany: vi.fn(async () => [
-          { amount: money('500.00'), isPaid: true, paidAt: new Date() },
-        ]),
-      },
-      receivable: {
-        findMany: vi.fn(async () => [
-          { amount: money('200.00'), isPaid: true, paidAt: new Date() },
-        ]),
-      },
+      debt: { findMany: vi.fn(async () => []) },
+      receivable: { findMany: vi.fn(async () => []) },
+      invoice: { findMany: vi.fn(async () => []) },
     } as any;
 
     const result = await new BudgetV2Service(prisma).getBudget(
@@ -205,6 +201,12 @@ describe('BudgetV2Service', () => {
       inflow: '0.00',
       outflow: '0.00',
       balance: '0.00',
+    });
+    expect(result.open).toEqual({
+      inflow: '0.00',
+      outflow: '0.00',
+      net: '0.00',
+      overdue: { inflow: '0.00', outflow: '0.00' },
     });
   });
 
@@ -238,6 +240,9 @@ describe('BudgetV2Service', () => {
           return [];
         }),
       },
+      receivable: { findMany: vi.fn(async () => []) },
+      debt: { findMany: vi.fn(async () => []) },
+      invoice: { findMany: vi.fn(async () => []) },
     } as any;
 
     const result = await new BudgetV2Service(prisma).getBudget(
@@ -250,5 +255,147 @@ describe('BudgetV2Service', () => {
       manualIncome: '10.00',
       receivableReceipts: '0.00',
     });
+  });
+
+  it('aggregates open authorities and overdue as a subset using financial today', async () => {
+    const prisma = {
+      user: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          timeZone: 'America/Sao_Paulo',
+        })),
+      },
+      transaction: { findMany: vi.fn(async () => []) },
+      invoiceSettlement: { findMany: vi.fn(async () => []) },
+      personSettlementGroup: { findMany: vi.fn(async () => []) },
+      receivable: {
+        findMany: vi.fn(async ({ where }: any) => {
+          expect(where.userId).toBe('user-a');
+          return [
+            {
+              amount: money('0.10'),
+              dueDate: new Date('2026-09-16T12:00:00.000Z'),
+            },
+            {
+              amount: money('0.20'),
+              dueDate: new Date('2026-09-15T12:00:00.000Z'),
+            },
+            {
+              amount: money('99.00'),
+              dueDate: new Date('2026-09-15T12:00:00.000Z'),
+            },
+          ];
+        }),
+      },
+      debt: {
+        findMany: vi.fn(async ({ where }: any) => {
+          expect(where.userId).toBe('user-a');
+          return [
+            {
+              amount: money('0.20'),
+              dueDate: new Date('2026-09-16T12:00:00.000Z'),
+            },
+            {
+              amount: money('0.10'),
+              dueDate: new Date('2026-09-15T12:00:00.000Z'),
+            },
+          ];
+        }),
+      },
+      invoice: {
+        findMany: vi.fn(async ({ where }: any) => {
+          expect(where.userId).toBe('user-a');
+          return [
+            { totalAmount: money('0.20'), status: 'OPEN' },
+            { totalAmount: money('0.30'), status: 'CLOSED' },
+            { totalAmount: money('0.40'), status: 'OVERDUE' },
+          ];
+        }),
+      },
+    } as any;
+
+    const result = await new BudgetV2Service(prisma).getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.ALL_TIME,
+      new Date('2026-09-16T12:00:00.000Z'),
+    );
+
+    expect(result.open).toEqual({
+      inflow: '99.30',
+      outflow: '1.20',
+      net: '98.10',
+      overdue: { inflow: '99.20', outflow: '0.50' },
+    });
+    expect(result.composition.open).toEqual({
+      receivables: '99.30',
+      debts: '0.30',
+      invoices: '0.90',
+    });
+  });
+
+  it('keeps current open and overdue state identical across realized presets', async () => {
+    const openRows = {
+      receivables: [
+        {
+          amount: money('200.00'),
+          dueDate: new Date('2026-09-15T12:00:00.000Z'),
+        },
+      ],
+      debts: [
+        {
+          amount: money('100.00'),
+          dueDate: new Date('2026-09-20T12:00:00.000Z'),
+        },
+      ],
+      invoices: [{ totalAmount: money('500.00'), status: 'OPEN' }],
+    };
+    const prisma = {
+      user: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          timeZone: 'America/Sao_Paulo',
+        })),
+      },
+      transaction: { findMany: vi.fn(async () => []) },
+      invoiceSettlement: { findMany: vi.fn(async () => []) },
+      personSettlementGroup: { findMany: vi.fn(async () => []) },
+      receivable: {
+        findMany: vi.fn(async ({ where }: any) => {
+          expect(where.userId).toBe('user-a');
+          return openRows.receivables;
+        }),
+      },
+      debt: {
+        findMany: vi.fn(async ({ where }: any) => {
+          expect(where.userId).toBe('user-a');
+          return openRows.debts;
+        }),
+      },
+      invoice: {
+        findMany: vi.fn(async ({ where }: any) => {
+          expect(where.userId).toBe('user-a');
+          return openRows.invoices;
+        }),
+      },
+    } as any;
+    const service = new BudgetV2Service(prisma);
+    const presets = [
+      BudgetV2PeriodPreset.LAST_30_DAYS,
+      BudgetV2PeriodPreset.THIS_MONTH,
+      BudgetV2PeriodPreset.LAST_MONTH,
+      BudgetV2PeriodPreset.ALL_TIME,
+    ];
+    const results = await Promise.all(
+      presets.map((preset) =>
+        service.getBudget(
+          'user-a',
+          preset,
+          new Date('2026-09-16T12:00:00.000Z'),
+        ),
+      ),
+    );
+
+    for (const result of results.slice(1)) {
+      expect(result.open).toEqual(results[0].open);
+      expect(result.composition.open).toEqual(results[0].composition.open);
+    }
   });
 });

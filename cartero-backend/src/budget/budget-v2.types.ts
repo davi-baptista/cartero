@@ -36,11 +36,23 @@ export interface BudgetV2Realized {
   balance: string;
 }
 
+export interface BudgetV2Open {
+  inflow: string;
+  outflow: string;
+  net: string;
+  overdue: {
+    inflow: string;
+    outflow: string;
+  };
+}
+
 /** Current public response; open/future sections are added in later slices. */
 export interface BudgetV2ResponseContract {
   period: BudgetV2Period;
   realized: BudgetV2Realized;
+  open: BudgetV2Open;
   composition: {
     realized: BudgetV2RealizedComposition;
+    open: BudgetV2OpenComposition;
   };
 }

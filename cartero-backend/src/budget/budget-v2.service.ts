@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, TransactionType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { parseDateOnly } from 'src/common/helpers/date-only.helper';
 import { deriveBudgetV2PeriodBounds } from 'src/common/helpers/financial-period.helper';
+import { financialCivilDay } from 'src/common/helpers/financial-timezone.helper';
 import {
   BudgetV2PeriodPreset,
   type BudgetV2Period,
@@ -52,30 +54,47 @@ export class BudgetV2Service {
       select: { timeZone: true },
     });
     const bounds = deriveBudgetV2PeriodBounds(preset, user.timeZone, { now });
+    const today = parseDateOnly(financialCivilDay(now, user.timeZone));
     const date = bounds.startInclusive
       ? { gte: bounds.startInclusive, lt: bounds.endExclusive }
       : { lt: bounds.endExclusive };
 
-    const [transactions, settlements, groups] = await Promise.all([
-      this.prisma.transaction.findMany({
-        where: { userId, date },
-        select: {
-          type: true,
-          amount: true,
-          isRefund: true,
-          paymentDebt: { select: { userId: true } },
-          paymentReceivable: { select: { userId: true } },
-        },
-      }),
-      this.prisma.invoiceSettlement.findMany({
-        where: { invoice: { userId }, paidAt: date },
-        select: { amount: true },
-      }),
-      this.prisma.personSettlementGroup.findMany({
-        where: { userId, status: 'ACTIVE', settledAt: date },
-        select: { direction: true, paymentType: true, netAmount: true },
-      }),
-    ]);
+    const [transactions, settlements, groups, receivables, debts, invoices] =
+      await Promise.all([
+        this.prisma.transaction.findMany({
+          where: { userId, date },
+          select: {
+            type: true,
+            amount: true,
+            isRefund: true,
+            paymentDebt: { select: { userId: true } },
+            paymentReceivable: { select: { userId: true } },
+          },
+        }),
+        this.prisma.invoiceSettlement.findMany({
+          where: { invoice: { userId }, paidAt: date },
+          select: { amount: true },
+        }),
+        this.prisma.personSettlementGroup.findMany({
+          where: { userId, status: 'ACTIVE', settledAt: date },
+          select: { direction: true, paymentType: true, netAmount: true },
+        }),
+        this.prisma.receivable.findMany({
+          where: { userId, isPaid: false },
+          select: { amount: true, dueDate: true },
+        }),
+        this.prisma.debt.findMany({
+          where: { userId, isPaid: false },
+          select: { amount: true, dueDate: true },
+        }),
+        this.prisma.invoice.findMany({
+          where: {
+            userId,
+            status: { in: ['OPEN', 'CLOSED', 'OVERDUE'] },
+          },
+          select: { totalAmount: true, status: true },
+        }),
+      ]);
 
     const composition: Record<
       keyof BudgetV2RealizedComposition,
@@ -146,12 +165,43 @@ export class BudgetV2Service {
       composition.personSettlementDirectOutflows,
     ]);
 
+    const openReceivables = sumDecimal(
+      receivables.map((receivable) => receivable.amount),
+    );
+    const openDebts = sumDecimal(debts.map((debt) => debt.amount));
+    const openInvoices = sumDecimal(
+      invoices.map((invoice) => invoice.totalAmount),
+    );
+    const overdueReceivables = sumDecimal(
+      receivables
+        .filter((receivable) => receivable.dueDate < today)
+        .map((receivable) => receivable.amount),
+    );
+    const overdueDebts = sumDecimal(
+      debts.filter((debt) => debt.dueDate < today).map((debt) => debt.amount),
+    );
+    const overdueInvoices = sumDecimal(
+      invoices
+        .filter((invoice) => invoice.status === 'OVERDUE')
+        .map((invoice) => invoice.totalAmount),
+    );
+    const openOutflow = openInvoices.add(openDebts);
+
     return {
       period: bounds.period,
       realized: {
         inflow: serializeMoney(inflow),
         outflow: serializeMoney(outflow),
         balance: serializeMoney(inflow.sub(outflow)),
+      },
+      open: {
+        inflow: serializeMoney(openReceivables),
+        outflow: serializeMoney(openOutflow),
+        net: serializeMoney(openReceivables.sub(openOutflow)),
+        overdue: {
+          inflow: serializeMoney(overdueReceivables),
+          outflow: serializeMoney(overdueDebts.add(overdueInvoices)),
+        },
       },
       composition: {
         realized: {
@@ -170,6 +220,11 @@ export class BudgetV2Service {
           personSettlementDirectOutflows: serializeMoney(
             composition.personSettlementDirectOutflows,
           ),
+        },
+        open: {
+          invoices: serializeMoney(openInvoices),
+          debts: serializeMoney(openDebts),
+          receivables: serializeMoney(openReceivables),
         },
       },
     };
