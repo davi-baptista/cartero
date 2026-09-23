@@ -64,6 +64,8 @@ describe('Budget V2 contract and movement', () => {
     expect(page).toContain('pendentes')
     expect(page).toContain('Resultado após pendências')
     expect(page).toContain('aria-hidden="true"')
+    expect(page).toContain('sm:text-base')
+    expect(page).toContain('left-[calc(50%-4rem)]')
     expect(page).toContain('−')
     expect(page).toContain('=')
     expect(page).not.toContain('Diferença em aberto')

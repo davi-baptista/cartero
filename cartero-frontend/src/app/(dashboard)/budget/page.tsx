@@ -293,19 +293,19 @@ function BudgetContent({
             −
           </span>
           <span
-            className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground min-[375px]:block sm:hidden"
+            className="pointer-events-none absolute left-[calc(50%-4rem)] top-1/2 hidden -translate-x-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground min-[375px]:block sm:hidden"
             aria-hidden="true"
           >
             =
           </span>
           <span
-            className="pointer-events-none absolute left-1/3 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground sm:block"
+            className="pointer-events-none absolute left-1/3 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground sm:block sm:text-base"
             aria-hidden="true"
           >
             −
           </span>
           <span
-            className="pointer-events-none absolute left-2/3 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground sm:block"
+            className="pointer-events-none absolute left-2/3 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground sm:block sm:text-base"
             aria-hidden="true"
           >
             =
