@@ -293,7 +293,7 @@ function BudgetContent({
             −
           </span>
           <span
-            className="pointer-events-none absolute left-[calc(50%-4rem)] top-1/2 hidden -translate-x-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground min-[375px]:block sm:hidden"
+            className="pointer-events-none absolute left-1/2 top-[calc(50%-0.5rem)] hidden -translate-x-1/2 -translate-y-1/2 text-base font-medium text-muted-foreground min-[375px]:block sm:hidden"
             aria-hidden="true"
           >
             =
