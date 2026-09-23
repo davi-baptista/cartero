@@ -34,7 +34,10 @@ describe('Budget V2 contract and movement', () => {
     for (const field of ['budget.realized.inflow', 'budget.realized.outflow', 'budget.realized.balance']) {
       expect(page).toContain(field)
     }
-    expect(page).toContain('border-b-2 border-muted-foreground/40')
+    expect(page).toContain('flex flex-wrap items-center justify-between gap-3')
+    expect(page).toContain('w-auto min-w-40 shrink-0')
+    expect(page).not.toContain('w-full sm:w-44')
+    expect(page).toContain('w-[88%] rounded-full border-b-[3px] border-muted-foreground/40 sm:w-3/4')
     expect(page).not.toContain('<Card')
     for (const preset of Object.values(BudgetV2PeriodPreset)) expect(page).toContain(preset)
     expect(layout).not.toContain("  '/budget',")

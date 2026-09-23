@@ -52,18 +52,19 @@ function SummaryCard({
   tone?: 'neutral' | 'positive' | 'negative'
 }) {
   return (
-    <div className="min-w-0 border-b-2 border-muted-foreground/40 pb-3">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <p
-          className={cn(
-            'mt-1.5 truncate text-[22px] font-semibold tabular-nums tracking-[-0.02em]',
+    <div className="flex min-w-0 flex-col items-center pb-3">
+        <p className="text-center text-xs font-medium text-muted-foreground">{label}</p>
+         <p
+           className={cn(
+             'mt-1.5 truncate text-center text-[22px] font-semibold tabular-nums tracking-[-0.02em]',
             tone === 'positive' && 'text-receivable',
             tone === 'negative' && 'text-destructive',
           )}
         >
           {formatBudgetMoney(value)}
         </p>
-        <p className="mt-1 text-xs text-muted-foreground">{secondary}</p>
+         <p className="mt-1 text-center text-xs text-muted-foreground">{secondary}</p>
+         <div className="mt-2 w-[88%] rounded-full border-b-[3px] border-muted-foreground/40 sm:w-3/4" aria-hidden="true" />
     </div>
   )
 }
@@ -197,7 +198,7 @@ function PeriodSelector({
     <div className="flex items-center gap-2">
       <label className="sr-only" htmlFor="budget-period">Período da movimentação</label>
       <Select value={value} onValueChange={(next) => next && onChange(next as BudgetV2PeriodPreset)}>
-        <SelectTrigger id="budget-period" size="sm" aria-label="Período da movimentação" className="w-full sm:w-44">
+      <SelectTrigger id="budget-period" size="sm" aria-label="Período da movimentação" className="w-auto min-w-40 shrink-0">
           <SelectValue>{selected.label}</SelectValue>
         </SelectTrigger>
         <SelectContent>
@@ -258,7 +259,7 @@ function BudgetContent({
       </header>
 
       <section aria-labelledby="movement-title" className="space-y-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold" id="movement-title">Movimentação</h2>
           </div>
