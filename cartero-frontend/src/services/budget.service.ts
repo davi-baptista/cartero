@@ -5,6 +5,12 @@ import {
   BudgetV2PeriodPreset,
   type BudgetV2Response,
 } from '@/types/budget-v2'
+import {
+  BudgetV2DrilldownBucket,
+  type BudgetV2DrilldownRequest,
+  type BudgetV2DrilldownResponse,
+} from '@/types/budget-v2-drilldown'
+import { isRealizedDrilldownBucket } from '@/lib/budget-drilldown-config'
 
 /**
  * Fatura do orçamento: o servidor sempre resolve `reimbursable` e `ownAmount`
@@ -311,6 +317,28 @@ export async function getBudgetV2(
   const { data } = await api.get<BudgetV2Response>('/budget/v2', {
     params: { preset },
   })
+  return data
+}
+
+export async function getBudgetV2Drilldown(
+  request: BudgetV2DrilldownRequest,
+): Promise<BudgetV2DrilldownResponse> {
+  const params: {
+    bucket: BudgetV2DrilldownBucket
+    preset?: BudgetV2PeriodPreset
+    cursor?: string
+    limit?: number
+  } = {
+    bucket: request.bucket,
+    ...(request.cursor ? { cursor: request.cursor } : {}),
+    ...(request.limit ? { limit: request.limit } : {}),
+  }
+
+  if (isRealizedDrilldownBucket(request.bucket) && request.preset) {
+    params.preset = request.preset
+  }
+
+  const { data } = await api.get<BudgetV2DrilldownResponse>('/budget/v2/drilldown', { params })
   return data
 }
 

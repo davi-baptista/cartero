@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { CircleAlert } from 'lucide-react'
+import { BudgetDrilldownDrawer } from '@/components/budget-drilldown-drawer'
 import { QueryError } from '@/components/ui/query-error'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -10,6 +11,7 @@ import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 import { getBudgetV2 } from '@/services/budget.service'
 import { BudgetV2PeriodPreset, type BudgetV2Response } from '@/types/budget-v2'
+import { BudgetV2DrilldownBucket } from '@/types/budget-v2-drilldown'
 
 const PERIOD_OPTIONS = [
   { value: BudgetV2PeriodPreset.LAST_30_DAYS, label: 'Últimos 30 dias' },
@@ -30,6 +32,16 @@ const REALIZED_OUTFLOW_ROWS = [
   ['invoiceSettlements', 'Faturas pagas'],
   ['personSettlementDirectOutflows', 'Acertos pagos'],
 ] as const
+
+const BUCKET_BY_ROW_KEY: Record<string, BudgetV2DrilldownBucket> = {
+  manualIncome: BudgetV2DrilldownBucket.MANUAL_INCOME,
+  receivableReceipts: BudgetV2DrilldownBucket.RECEIVABLE_RECEIPTS,
+  personSettlementInflows: BudgetV2DrilldownBucket.PERSON_SETTLEMENT_INFLOW,
+  manualDirectTransactions: BudgetV2DrilldownBucket.DIRECT_EXPENSES,
+  debtDirectSettlements: BudgetV2DrilldownBucket.DEBT_DIRECT_SETTLEMENTS,
+  invoiceSettlements: BudgetV2DrilldownBucket.INVOICE_SETTLEMENTS,
+  personSettlementDirectOutflows: BudgetV2DrilldownBucket.PERSON_SETTLEMENT_DIRECT_OUTFLOW,
+}
 
 function formatBudgetMoney(value: string) {
   // Conversão exclusivamente para apresentação; nenhum valor é recalculado.
@@ -73,17 +85,24 @@ function SummaryCard({
 function DetailRows({
   rows,
   empty,
+  onRowClick,
 }: {
-  rows: readonly (readonly [string, string])[]
+  rows: readonly (readonly [string, string, BudgetV2DrilldownBucket])[]
   empty: string
+  onRowClick: (bucket: BudgetV2DrilldownBucket) => void
 }) {
   return rows.length > 0 ? (
     <div className="divide-y divide-border/60 rounded-lg border border-border/70">
-      {rows.map(([value, label]) => (
-        <div className="flex items-center justify-between gap-4 px-3 py-2.5" key={label}>
-          <span className="text-sm text-muted-foreground">{label}</span>
+      {rows.map(([value, label, bucket]) => (
+        <button
+          className="group flex w-full items-center justify-between gap-4 px-3 py-2.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50"
+          key={label}
+          onClick={() => onRowClick(bucket)}
+          type="button"
+        >
+          <span className="text-sm text-muted-foreground group-hover:text-foreground">{label}</span>
           <span className="shrink-0 text-sm font-medium tabular-nums">{value}</span>
-        </div>
+        </button>
       ))}
     </div>
   ) : (
@@ -97,15 +116,17 @@ function CompositionGroup({
   label,
   rows,
   empty,
+  onRowClick,
 }: {
   label: string
-  rows: readonly (readonly [string, string])[]
+  rows: readonly (readonly [string, string, BudgetV2DrilldownBucket])[]
   empty: string
+  onRowClick: (bucket: BudgetV2DrilldownBucket) => void
 }) {
   return (
     <div className="space-y-2">
       <h3 className="text-xs font-medium uppercase tracking-[0.01em] text-muted-foreground">{label}</h3>
-      <DetailRows rows={rows} empty={empty} />
+      <DetailRows rows={rows} empty={empty} onRowClick={onRowClick} />
     </div>
   )
 }
@@ -115,11 +136,13 @@ function CompositionColumn({
   registeredRows,
   openRows,
   registeredEmpty,
+  onRowClick,
 }: {
   title: string
-  registeredRows: readonly (readonly [string, string])[]
-  openRows: readonly (readonly [string, string])[]
+  registeredRows: readonly (readonly [string, string, BudgetV2DrilldownBucket])[]
+  openRows: readonly (readonly [string, string, BudgetV2DrilldownBucket])[]
   registeredEmpty: string
+  onRowClick: (bucket: BudgetV2DrilldownBucket) => void
 }) {
   return (
     <div className="space-y-4">
@@ -128,19 +151,26 @@ function CompositionColumn({
         label="REGISTRADO NO PERÍODO"
         rows={registeredRows}
         empty={registeredEmpty}
+        onRowClick={onRowClick}
       />
-      <CompositionGroup label="A VENCER · PRÓXIMOS 30 DIAS" rows={openRows} empty="Nenhum valor a vencer." />
+      <CompositionGroup label="A VENCER · PRÓXIMOS 30 DIAS" rows={openRows} empty="Nenhum valor a vencer." onRowClick={onRowClick} />
     </div>
   )
 }
 
-function Composition({ budget }: { budget: BudgetV2Response }) {
+function Composition({
+  budget,
+  onRowClick,
+}: {
+  budget: BudgetV2Response
+  onRowClick: (bucket: BudgetV2DrilldownBucket) => void
+}) {
   const realized = budget.composition.realized
   const upcoming = budget.composition.upcoming
   const realizedInflowRows = REALIZED_INFLOW_ROWS.filter(([key]) => !isZero(realized[key]))
-    .map(([key, label]) => [formatBudgetMoney(realized[key]), label] as const)
+    .map(([key, label]) => [formatBudgetMoney(realized[key]), label, BUCKET_BY_ROW_KEY[key]] as const)
   const realizedOutflowRows = REALIZED_OUTFLOW_ROWS.filter(([key]) => !isZero(realized[key]))
-    .map(([key, label]) => [formatBudgetMoney(realized[key]), label] as const)
+    .map(([key, label]) => [formatBudgetMoney(realized[key]), label, BUCKET_BY_ROW_KEY[key]] as const)
 
   return (
     <section aria-labelledby="composition-title" className="space-y-3">
@@ -151,17 +181,25 @@ function Composition({ budget }: { budget: BudgetV2Response }) {
         <CompositionColumn
           title="Entradas"
           registeredRows={realizedInflowRows}
-          openRows={isZero(upcoming.receivables) ? [] : [[formatBudgetMoney(upcoming.receivables), 'Recebíveis']]}
+          openRows={isZero(upcoming.receivables)
+            ? []
+            : [[formatBudgetMoney(upcoming.receivables), 'Recebíveis', BudgetV2DrilldownBucket.UPCOMING_RECEIVABLES]]}
           registeredEmpty="Nenhuma entrada registrada no período."
+          onRowClick={onRowClick}
         />
         <CompositionColumn
           title="Saídas"
           registeredRows={realizedOutflowRows}
           openRows={[
-            ...(!isZero(upcoming.invoices) ? [[formatBudgetMoney(upcoming.invoices), 'Faturas'] as const] : []),
-            ...(!isZero(upcoming.debts) ? [[formatBudgetMoney(upcoming.debts), 'Dívidas'] as const] : []),
+            ...(!isZero(upcoming.invoices)
+              ? [[formatBudgetMoney(upcoming.invoices), 'Faturas', BudgetV2DrilldownBucket.UPCOMING_INVOICES] as const]
+              : []),
+            ...(!isZero(upcoming.debts)
+              ? [[formatBudgetMoney(upcoming.debts), 'Dívidas', BudgetV2DrilldownBucket.UPCOMING_DEBTS] as const]
+              : []),
           ]}
           registeredEmpty="Nenhuma saída registrada no período."
+          onRowClick={onRowClick}
         />
       </div>
     </section>
@@ -210,11 +248,17 @@ function PeriodSelector({
   )
 }
 
-function Overdue({ budget }: { budget: BudgetV2Response }) {
+function Overdue({
+  budget,
+  onRowClick,
+}: {
+  budget: BudgetV2Response
+  onRowClick: (bucket: BudgetV2DrilldownBucket) => void
+}) {
   const hasOverdue = !isZero(budget.pending.overdue.inflow) || !isZero(budget.pending.overdue.outflow)
   const rows = [
-    [budget.pending.overdue.inflow, 'A receber vencido'],
-    [budget.pending.overdue.outflow, 'A pagar vencido'],
+    [budget.pending.overdue.inflow, 'A receber vencido', BudgetV2DrilldownBucket.OVERDUE_RECEIVABLES],
+    [budget.pending.overdue.outflow, 'A pagar vencido', BudgetV2DrilldownBucket.OVERDUE_OUTFLOWS],
   ] as const
 
   return (
@@ -227,8 +271,9 @@ function Overdue({ budget }: { budget: BudgetV2Response }) {
       </div>
       {hasOverdue ? (
         <DetailRows
-          rows={rows.filter(([value]) => !isZero(value)).map(([value, label]) => [formatBudgetMoney(value), label] as const)}
+          rows={rows.filter(([value]) => !isZero(value)).map(([value, label, bucket]) => [formatBudgetMoney(value), label, bucket] as const)}
           empty="Nenhum valor vencido."
+          onRowClick={onRowClick}
         />
       ) : (
         <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
@@ -243,10 +288,12 @@ function BudgetContent({
   budget,
   preset,
   onPresetChange,
+  onRowClick,
 }: {
   budget: BudgetV2Response
   preset: BudgetV2PeriodPreset
   onPresetChange: (value: BudgetV2PeriodPreset) => void
+  onRowClick: (bucket: BudgetV2DrilldownBucket) => void
 }) {
   const balanceTone = budget.realized.balance.startsWith('-')
     ? 'negative'
@@ -314,14 +361,15 @@ function BudgetContent({
       </section>
 
       <div className="border-t border-border/60" aria-hidden="true" />
-      <Composition budget={budget} />
-      <Overdue budget={budget} />
+      <Composition budget={budget} onRowClick={onRowClick} />
+      <Overdue budget={budget} onRowClick={onRowClick} />
     </div>
   )
 }
 
 export default function BudgetPage() {
   const [preset, setPreset] = useState(BudgetV2PeriodPreset.LAST_30_DAYS)
+  const [drilldownBucket, setDrilldownBucket] = useState<BudgetV2DrilldownBucket | null>(null)
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['budget-v2', preset],
     queryFn: () => getBudgetV2(preset),
@@ -334,5 +382,23 @@ export default function BudgetPage() {
   }
   if (!data) return null
 
-  return <BudgetContent budget={data} preset={preset} onPresetChange={setPreset} />
+  return (
+    <>
+      <BudgetContent
+        budget={data}
+        preset={preset}
+        onPresetChange={(nextPreset) => {
+          setDrilldownBucket(null)
+          setPreset(nextPreset)
+        }}
+        onRowClick={setDrilldownBucket}
+      />
+      <BudgetDrilldownDrawer
+        bucket={drilldownBucket}
+        preset={preset}
+        open={drilldownBucket !== null}
+        onClose={() => setDrilldownBucket(null)}
+      />
+    </>
+  )
 }

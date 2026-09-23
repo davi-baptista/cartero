@@ -80,7 +80,7 @@ describe('Budget V2 contract and movement', () => {
 
 describe('Budget V2 unified composition', () => {
   it('is always visible and has no disclosure or eye toggle', () => {
-    expect(page).toContain('<Composition budget={budget} />')
+    expect(page).toContain('<Composition budget={budget} onRowClick={onRowClick} />')
     expect(page).toContain('aria-labelledby="composition-title"')
     expect(page).not.toContain('Registrado no perÃ­odo e valores ainda em aberto.')
     expect(page).not.toContain('Ver composição')
@@ -92,7 +92,7 @@ describe('Budget V2 unified composition', () => {
   it('separates Movement from Composition on every viewport', () => {
     expect(page).toContain('border-t border-border/60')
     expect(page).not.toContain('hidden border-t border-border/60 sm:block')
-    expect(page).toContain('<Composition budget={budget} />')
+    expect(page).toContain('<Composition budget={budget} onRowClick={onRowClick} />')
   })
 
   it('separates registered and upcoming groups in both columns', () => {
@@ -123,7 +123,7 @@ describe('Budget V2 unified composition', () => {
 
 describe('Budget V2 overdue block and state UX', () => {
   it('renders overdue as a full-width block using only the backend overdue fields', () => {
-    expect(page).toContain('<Overdue budget={budget} />')
+    expect(page).toContain('<Overdue budget={budget} onRowClick={onRowClick} />')
     expect(page).toContain('sm:w-1/2')
     expect(page).toContain('CircleAlert')
     expect(page).toContain('aria-hidden="true"')
