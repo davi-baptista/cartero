@@ -1,0 +1,247 @@
+import { readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+import { addMonths, currentPeriod, periodFromDate } from '@/components/month-nav'
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * Quem decide o mês que o usuário está vendo
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Duas perguntas diferentes, que estavam se misturando:
+ *
+ *   A) COMPETÊNCIA SELECIONADA — "qual mês eu estou olhando?"
+ *   B) MEMBERSHIP FINANCEIRO   — "quais itens pertencem a este mês?"
+ *
+ * (B) nunca pode responder (A). O Orçamento consultava `GET /budget/focus`
+ * para descobrir o mês "mais relevante" e aplicava a resposta ao filtro: o
+ * conteúdo financeiro escolhia a competência, e o usuário via a tela trocar
+ * de mês sozinha depois que os dados chegavam.
+ *
+ * A suíte não tem DOM, então parte destes testes olha a COMPOSIÇÃO dos
+ * arquivos — o mesmo recurso de `statement-scope.spec.ts`.
+ */
+
+const BUDGET = readFileSync(
+  new URL('../app/(dashboard)/budget/page.tsx', import.meta.url),
+  'utf-8',
+)
+
+const BUDGET_SERVICE = readFileSync(
+  new URL('../services/budget.service.ts', import.meta.url),
+  'utf-8',
+)
+
+const BANKS = readFileSync(
+  new URL('../app/(dashboard)/banks/page.tsx', import.meta.url),
+  'utf-8',
+)
+
+const MONTH_NAV = readFileSync(
+  new URL('../components/month-nav.tsx', import.meta.url),
+  'utf-8',
+)
+
+/** Remove comentários: a intenção é vigiar CÓDIGO, não a prosa que o explica. */
+function code(source: string) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
+}
+
+const BUDGET_CODE = code(BUDGET)
+
+describe('itens 13, 14 e 36: o Orçamento não escolhe o mês', () => {
+  it('a query de foco não existe mais', () => {
+    /*
+      Era ela que trazia a resposta "este outro mês é mais relevante".
+      Sem consumidor, não há o que aplicar ao filtro.
+    */
+    expect(BUDGET_CODE).not.toContain('getBudgetFocus')
+    expect(BUDGET_CODE).not.toContain("'focus'")
+    expect(BUDGET_CODE).not.toContain('/budget/focus')
+  })
+
+  it('o cliente não expõe mais o endpoint de foco', () => {
+    // O endpoint segue vivo no backend; o que saiu foi a porta de entrada
+    // no frontend, para ninguém religar o salto por engano.
+    expect(code(BUDGET_SERVICE)).not.toContain('getBudgetFocus')
+  })
+
+  it('itens 17 e 22: não há effect capaz de dar snap-back', () => {
+    /*
+      O salto antigo saía de um `useEffect` com `setTimeout(..., 0)` — o
+      atraso o fazia acontecer já com a tela montada, que é justamente o que
+      o usuário percebia como troca silenciosa.
+    */
+    expect(BUDGET_CODE).not.toContain('useEffect')
+    expect(BUDGET_CODE).not.toContain('setTimeout')
+    expect(BUDGET_CODE).not.toContain('focusApplied')
+  })
+
+  it('itens 15 e 26: o fallback NÃO é duplicado nesta página', () => {
+    /*
+      O Provider já inicializa em `currentPeriod()`, uma vez, no mount.
+      Repetir a inicialização aqui recriaria o auto-reset por outro caminho:
+      todo render que reavaliasse o fallback poderia devolver o usuário para
+      o mês civil depois de ele ter navegado.
+    */
+    expect(BUDGET_CODE).not.toContain('currentPeriod')
+    /*
+      `initialPeriod={{ month, year }}` continua existindo como PROP de
+      drawer: ele recebe a competência já selecionada, que é o contrário de
+      escolher uma. O que não pode voltar é o state local homônimo
+      (`const [initialPeriod] = useState(currentPeriod)`), usado como
+      referência para decidir se o salto era permitido.
+    */
+    expect(BUDGET_CODE).not.toContain('useState(currentPeriod)')
+  })
+
+})
+
+describe('itens 16, 18 e 24: a fonte canônica da competência', () => {
+  it('é o contexto global, compartilhado entre as telas', () => {
+    // Um único estado; o Orçamento não mantém cópia paralela (item 47).
+    expect(code(MONTH_NAV)).toContain('MonthPeriodContext')
+    expect(code(MONTH_NAV)).toContain('useState<MonthPeriod>(() =>')
+    expect(code(MONTH_NAV)).toContain('currentPeriod(user?.timeZone ?? null)')
+  })
+
+  it('item 29: o fallback resolve o mês civil, não UTC cru', () => {
+    /*
+      `currentPeriod` usa getMonth/getFullYear — componentes do calendário
+      LOCAL. `getUTCMonth` viraria o mês cedo demais em fuso negativo: às
+      21h de 31/08 em Fortaleza o UTC já é 01/09, e o Orçamento abriria em
+      setembro enquanto o usuário ainda vive agosto.
+    */
+    const fn = code(MONTH_NAV).slice(
+      code(MONTH_NAV).indexOf('export function currentPeriod'),
+      code(MONTH_NAV).indexOf('export function periodFromDate'),
+    )
+    expect(fn).toContain('getMonth()')
+    expect(fn).toContain('getFullYear()')
+    expect(fn).not.toContain('getUTC')
+    expect(fn).not.toContain('toISOString')
+  })
+
+  it('o mês civil resolvido bate com o relógio local', () => {
+    const agora = new Date()
+    expect(currentPeriod('America/Fortaleza')).toEqual({
+      month: agora.getMonth() + 1,
+      year: agora.getFullYear(),
+    })
+  })
+})
+
+describe('item 23: navegação manual atravessa a virada de ano', () => {
+  it('avança de dezembro para janeiro', () => {
+    expect(addMonths({ month: 12, year: 2026 }, 1)).toEqual({
+      month: 1,
+      year: 2027,
+    })
+  })
+
+  it('volta de janeiro para dezembro', () => {
+    expect(addMonths({ month: 1, year: 2026 }, -1)).toEqual({
+      month: 12,
+      year: 2025,
+    })
+  })
+
+  it('a competência de uma data vem da string, sem passar por Date', () => {
+    /*
+      `periodFromDate` fatia a ISO. Construir um `Date` a partir dela
+      interpretaria como UTC e, em fuso negativo, devolveria o mês anterior
+      para todo dia 1º.
+    */
+    expect(periodFromDate('2026-09-01T00:00:00.000Z')).toEqual({
+      month: 9,
+      year: 2026,
+    })
+  })
+})
+
+describe('a fatura aberta pertence ao mês exibido', () => {
+  it('a row abre a fatura DA COMPETÊNCIA, sem página intermediária', () => {
+    /*
+      Isto INVERTE a regra anterior, deliberadamente.
+
+      Antes o click ia para `/banks/:id/invoices` e o `?invoiceId=` era
+      proibido: com "fatura atual" fixa, abrir uma fatura que o usuário não
+      pediu era decidir por ele. Com o seletor de mês no topo, a competência
+      passou a ser escolha explícita — a fatura já está determinada quando a
+      row é clicada, e a página do meio não tem mais o que decidir.
+    */
+    const banksCode = code(BANKS)
+    expect(banksCode).toContain('onOpenInvoice(invoice.id)')
+    expect(banksCode).toContain("useDetailNavigation('invoiceId')")
+  })
+
+  it('a fatura é resolvida por month/year, nunca por uma data', () => {
+    /*
+      A competência é persistida em `month`/`year` pelo mês de FECHAMENTO.
+      Derivar de `dueDate` deslocaria todo cartão que vence no mês seguinte:
+      uma fatura que fecha em 28/09 e vence em 10/10 pertence a setembro.
+    */
+    const selecao = code(
+      readFileSync(new URL('./bank-invoice-selection.ts', import.meta.url), 'utf-8'),
+    )
+    const porPeriodo = selecao.slice(
+      selecao.indexOf('export function invoiceForPeriod'),
+      selecao.indexOf('export interface BankMonthRow'),
+    )
+
+    expect(porPeriodo).toContain('invoice.month === period.month')
+    expect(porPeriodo).toContain('invoice.year === period.year')
+    /*
+      Nenhuma data participa da decisão. `selectBankInvoice`, logo acima,
+      continua usando `dueDate` — mas para ORDENAR por urgência, que é outra
+      pergunta.
+    */
+    expect(porPeriodo).not.toContain('dueDate')
+    expect(porPeriodo).not.toContain('closeDate')
+  })
+
+  it('trocar de mês não deixa uma fatura de outro período aberta', () => {
+    /*
+      Sem isto, setembro → agosto manteria o painel mostrando a fatura de
+      setembro sobre uma lista de agosto — duas competências na mesma tela,
+      sem dizer qual é qual.
+    */
+    expect(code(BANKS)).toContain('openInvoiceBelongsToPeriod')
+  })
+
+  it('item 11: banco sem fatura no mês não ganha invoiceId inventado', () => {
+    /*
+      A row sem fatura não recebe `onView`: não existe ramo capaz de produzir
+      um id — nem verdadeiro, nem falso.
+    */
+    const banksCode = code(BANKS)
+    expect(banksCode).toContain('invoice ? () => onOpenInvoice(invoice.id) : undefined')
+    expect(banksCode).not.toContain('nearest.invoice.id')
+  })
+})
+
+describe('itens 8 e 52: o deep link explícito continua suportado', () => {
+  it('a página de faturas ainda lê o parâmetro', () => {
+    /*
+      A mudança foi só parar de INJETAR o param na origem. Quem chega por
+      uma URL que já o contém continua com o drawer aberto — inclusive
+      após refresh (item 53), porque a leitura vem da URL, não de state.
+
+      A O4.3 REFORÇOU esse contrato: o param deixou de ser semente copiada
+      para um `selectedInvoiceId` local e virou a própria identidade do
+      painel. Por isso a asserção mudou de `setSelectedInvoiceId(param)`
+      para o hook de navegação — o deep link continua honrado, agora sem a
+      segunda fonte de verdade que o abria uma vez só.
+    */
+    const invoices = code(
+      readFileSync(
+        new URL('../app/(dashboard)/banks/[id]/invoices/page.tsx', import.meta.url),
+        'utf-8',
+      ),
+    )
+    expect(invoices).toContain("useDetailNavigation('invoiceId')")
+    /* E não voltou a existir state local como autoridade do painel. */
+    expect(invoices).not.toContain('setSelectedInvoiceId')
+  })
+})
