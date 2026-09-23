@@ -253,7 +253,7 @@ function BudgetContent({
     : isZero(budget.realized.balance) ? 'neutral' : 'positive'
 
   return (
-    <div className="space-y-6 sm:space-y-8">
+    <div className="space-y-5 sm:space-y-7">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Orçamento</h1>
         <p className="max-w-2xl text-sm text-muted-foreground">Uma visão do que entrou, saiu e ainda está pendente no Cartero.</p>

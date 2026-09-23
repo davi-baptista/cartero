@@ -54,6 +54,7 @@ describe('Budget V2 contract and movement', () => {
     expect(page).toContain('grid grid-cols-1 gap-x-3 gap-y-4 pt-1 min-[375px]:grid-cols-2 sm:grid-cols-3 sm:gap-3 sm:pt-2')
     expect(page).toContain('min-[375px]:col-span-2 sm:col-span-1')
     expect(page).toContain('className="space-y-3"')
+    expect(page).toContain('className="space-y-5 sm:space-y-7"')
   })
 
   it('shows pending values as secondary information without client financial arithmetic', () => {
