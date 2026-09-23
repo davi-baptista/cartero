@@ -180,7 +180,7 @@ function Composition({
       <div>
         <h2 className="text-base font-semibold" id="composition-title">Composição</h2>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-x-4 gap-y-5 sm:grid-cols-2 sm:gap-4">
         <CompositionColumn
           title="Entradas"
           registeredRows={realizedInflowRows}
@@ -364,8 +364,10 @@ function BudgetContent({
       </section>
 
       <div className="border-t border-border/60" aria-hidden="true" />
-      <Composition budget={budget} onRowClick={onRowClick} />
-      <Overdue budget={budget} onRowClick={onRowClick} />
+      <div className="space-y-6 sm:space-y-7">
+        <Composition budget={budget} onRowClick={onRowClick} />
+        <Overdue budget={budget} onRowClick={onRowClick} />
+      </div>
     </div>
   )
 }
