@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { deriveBudgetV2PeriodBounds } from 'src/common/helpers/financial-period.helper';
+import {
+  deriveBudgetV2PeriodBounds,
+  shiftCivilDate,
+} from 'src/common/helpers/financial-period.helper';
 import { financialCivilDay } from 'src/common/helpers/financial-timezone.helper';
 import {
   BudgetV2PeriodPreset,
@@ -26,13 +29,6 @@ function sumDecimal(values: readonly Prisma.Decimal[]): Prisma.Decimal {
 
 function serializeMoney(value: Prisma.Decimal): string {
   return value.toFixed(2);
-}
-
-function shiftCivilDate(date: string, days: number): string {
-  const [year, month, day] = date.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day + days, 12))
-    .toISOString()
-    .slice(0, 10);
 }
 
 @Injectable()

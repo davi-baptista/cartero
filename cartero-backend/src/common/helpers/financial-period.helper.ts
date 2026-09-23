@@ -14,7 +14,7 @@ function civilDateAtUtcNoon(year: number, month: number, day: number): Date {
   return new Date(Date.UTC(year, month - 1, day, 12));
 }
 
-function shiftCivilDate(date: string, days: number): string {
+export function shiftCivilDate(date: string, days: number): string {
   const [year, month, day] = date.split('-').map(Number);
   const shifted = new Date(Date.UTC(year, month - 1, day + days, 12));
   return shifted.toISOString().slice(0, 10);
