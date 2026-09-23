@@ -35,9 +35,13 @@ describe('Budget V2 contract and movement', () => {
       expect(page).toContain(field)
     }
     expect(page).toContain('flex flex-wrap items-center justify-between gap-3')
-    expect(page).toContain('w-auto min-w-40 shrink-0')
+    expect(page).toContain('h-9 w-auto min-w-40 shrink-0 px-3')
+    expect(page).toContain('align="end" sideOffset={4} className="min-w-40 p-1"')
+    expect(page).toContain('className="min-h-8 px-2 py-1.5"')
     expect(page).not.toContain('w-full sm:w-44')
-    expect(page).toContain('w-[72%] rounded-full border-b-[4px] border-muted-foreground/40 sm:w-[58%]')
+    expect(page).not.toContain('w-[72%]')
+    expect(page).not.toContain('border-b-[4px]')
+    expect(page).toContain('flex min-w-0 flex-col items-center')
     expect(page).not.toContain('<Card')
     for (const preset of Object.values(BudgetV2PeriodPreset)) expect(page).toContain(preset)
     expect(layout).not.toContain("  '/budget',")
@@ -68,8 +72,9 @@ describe('Budget V2 unified composition', () => {
     expect(page).not.toContain('ChevronDown')
   })
 
-  it('separates Movement from Composition only on desktop', () => {
-    expect(page).toContain('hidden border-t border-border/60 sm:block')
+  it('separates Movement from Composition on every viewport', () => {
+    expect(page).toContain('border-t border-border/60')
+    expect(page).not.toContain('hidden border-t border-border/60 sm:block')
     expect(page).toContain('<Composition budget={budget} />')
   })
 

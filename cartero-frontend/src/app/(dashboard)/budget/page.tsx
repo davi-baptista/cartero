@@ -64,7 +64,6 @@ function SummaryCard({
           {formatBudgetMoney(value)}
         </p>
          <p className="mt-1 text-center text-xs text-muted-foreground">{secondary}</p>
-         <div className="mt-2 w-[72%] rounded-full border-b-[4px] border-muted-foreground/40 sm:w-[58%]" aria-hidden="true" />
     </div>
   )
 }
@@ -198,11 +197,11 @@ function PeriodSelector({
     <div className="flex items-center gap-2">
       <label className="sr-only" htmlFor="budget-period">Período da movimentação</label>
       <Select value={value} onValueChange={(next) => next && onChange(next as BudgetV2PeriodPreset)}>
-      <SelectTrigger id="budget-period" size="sm" aria-label="Período da movimentação" className="w-auto min-w-40 shrink-0">
+      <SelectTrigger id="budget-period" size="sm" aria-label="Período da movimentação" className="h-9 w-auto min-w-40 shrink-0 px-3">
           <SelectValue>{selected.label}</SelectValue>
         </SelectTrigger>
-        <SelectContent>
-          {PERIOD_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+        <SelectContent align="end" sideOffset={4} className="min-w-40 p-1">
+          {PERIOD_OPTIONS.map((option) => <SelectItem className="min-h-8 px-2 py-1.5" key={option.value} value={option.value}>{option.label}</SelectItem>)}
         </SelectContent>
       </Select>
     </div>
@@ -265,7 +264,7 @@ function BudgetContent({
           </div>
           <PeriodSelector value={preset} onChange={onPresetChange} />
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 pt-1 sm:grid-cols-3 sm:pt-0">
           <SummaryCard
             label="Entradas registradas"
             value={budget.realized.inflow}
@@ -287,7 +286,7 @@ function BudgetContent({
         </div>
       </section>
 
-      <div className="hidden border-t border-border/60 sm:block" aria-hidden="true" />
+      <div className="border-t border-border/60" aria-hidden="true" />
       <Composition budget={budget} />
       <Overdue budget={budget} />
     </div>
