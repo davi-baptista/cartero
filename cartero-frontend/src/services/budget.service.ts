@@ -1,6 +1,10 @@
 import type { NextSettlementItem } from '@/lib/person-next-item'
 import { api } from '@/lib/api'
 import type { Invoice } from '@/types'
+import {
+  BudgetV2PeriodPreset,
+  type BudgetV2Response,
+} from '@/types/budget-v2'
 
 /**
  * Fatura do orçamento: o servidor sempre resolve `reimbursable` e `ownAmount`
@@ -298,6 +302,15 @@ export interface BudgetSummary {
 
 export async function getBudget(params: { month: number; year: number }): Promise<BudgetSummary> {
   const { data } = await api.get<BudgetSummary>('/budget', { params })
+  return data
+}
+
+export async function getBudgetV2(
+  preset: BudgetV2PeriodPreset = BudgetV2PeriodPreset.LAST_30_DAYS,
+): Promise<BudgetV2Response> {
+  const { data } = await api.get<BudgetV2Response>('/budget/v2', {
+    params: { preset },
+  })
   return data
 }
 

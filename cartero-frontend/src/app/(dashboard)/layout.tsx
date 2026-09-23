@@ -148,7 +148,6 @@ function SidebarToggle() {
  */
 const MONTH_SCOPED_ROUTES = [
   '/overview',
-  '/budget',
   '/transactions',
   '/debts',
   '/receivables',
