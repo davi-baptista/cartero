@@ -26,12 +26,16 @@ describe('Budget V2 contract and movement', () => {
     expect(page).toContain('Movimentação')
     expect(page).toContain('Período da movimentação')
     expect(page).toContain('PeriodSelector value={preset}')
+    expect(page).not.toContain('Valores registrados no perÃ­odo.')
+    expect(page).toContain('Uma visão do que entrou, saiu e ainda está pendente no Cartero.')
     for (const label of ['Entradas registradas', 'Saídas registradas', 'Balanço registrado']) {
       expect(page).toContain(label)
     }
     for (const field of ['budget.realized.inflow', 'budget.realized.outflow', 'budget.realized.balance']) {
       expect(page).toContain(field)
     }
+    expect(page).toContain('border-b-2 border-muted-foreground/40')
+    expect(page).not.toContain('<Card')
     for (const preset of Object.values(BudgetV2PeriodPreset)) expect(page).toContain(preset)
     expect(layout).not.toContain("  '/budget',")
   })
@@ -53,6 +57,7 @@ describe('Budget V2 unified composition', () => {
   it('is always visible and has no disclosure or eye toggle', () => {
     expect(page).toContain('<Composition budget={budget} />')
     expect(page).toContain('aria-labelledby="composition-title"')
+    expect(page).not.toContain('Registrado no perÃ­odo e valores ainda em aberto.')
     expect(page).not.toContain('Ver composição')
     expect(page).not.toContain('aria-expanded')
     expect(page).not.toContain('EyeOff')
@@ -90,11 +95,14 @@ describe('Budget V2 unified composition', () => {
 describe('Budget V2 overdue block and state UX', () => {
   it('renders overdue as a full-width block using only the backend overdue fields', () => {
     expect(page).toContain('<Overdue budget={budget} />')
+    expect(page).toContain('sm:w-1/2')
+    expect(page).toContain('CircleAlert')
+    expect(page).toContain('aria-hidden="true"')
     expect(page).toContain('budget.open.overdue.inflow')
     expect(page).toContain('budget.open.overdue.outflow')
     expect(page).toContain('A receber vencido')
     expect(page).toContain('A pagar vencido')
-    expect(page).toContain('Parte dos valores em aberto.')
+    expect(page).not.toContain('Parte dos valores em aberto.')
     expect(page).toContain('Nenhum valor vencido.')
   })
 

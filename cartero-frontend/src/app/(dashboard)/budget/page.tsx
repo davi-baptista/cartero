@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { Card, CardContent } from '@/components/ui/card'
+import { CircleAlert } from 'lucide-react'
 import { QueryError } from '@/components/ui/query-error'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -52,8 +52,7 @@ function SummaryCard({
   tone?: 'neutral' | 'positive' | 'negative'
 }) {
   return (
-    <Card className="min-w-0 py-0">
-      <CardContent className="p-3 sm:p-4">
+    <div className="min-w-0 border-b-2 border-muted-foreground/40 pb-3">
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
         <p
           className={cn(
@@ -65,8 +64,7 @@ function SummaryCard({
           {formatBudgetMoney(value)}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">{secondary}</p>
-      </CardContent>
-    </Card>
+    </div>
   )
 }
 
@@ -146,7 +144,6 @@ function Composition({ budget }: { budget: BudgetV2Response }) {
     <section aria-labelledby="composition-title" className="space-y-3">
       <div>
         <h2 className="text-base font-semibold" id="composition-title">Composição</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Registrado no período e valores ainda em aberto.</p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <CompositionColumn
@@ -219,10 +216,12 @@ function Overdue({ budget }: { budget: BudgetV2Response }) {
   ] as const
 
   return (
-    <section aria-labelledby="overdue-title" className="space-y-3">
+    <section aria-labelledby="overdue-title" className={cn('space-y-3 sm:w-1/2', hasOverdue && 'border-l-2 border-destructive/40 pl-3')}>
       <div>
-        <h2 className="text-base font-semibold" id="overdue-title">Vencidos</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Parte dos valores em aberto.</p>
+        <h2 className="flex items-center gap-2 text-base font-semibold" id="overdue-title">
+          Vencidos
+          {hasOverdue && <CircleAlert className="size-4 text-destructive" aria-hidden="true" />}
+        </h2>
       </div>
       {hasOverdue ? (
         <DetailRows
@@ -262,7 +261,6 @@ function BudgetContent({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-base font-semibold" id="movement-title">Movimentação</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Valores registrados no período.</p>
           </div>
           <PeriodSelector value={preset} onChange={onPresetChange} />
         </div>
