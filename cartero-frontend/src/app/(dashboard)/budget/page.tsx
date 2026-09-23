@@ -266,7 +266,7 @@ function BudgetContent({
           </div>
           <PeriodSelector value={preset} onChange={onPresetChange} />
         </div>
-        <div className="grid grid-cols-1 gap-x-3 gap-y-4 pt-1 min-[375px]:grid-cols-2 sm:grid-cols-3 sm:gap-3 sm:pt-2">
+        <div className="relative grid grid-cols-1 gap-x-3 gap-y-4 pt-2 min-[375px]:grid-cols-2 sm:grid-cols-3 sm:gap-3 sm:pt-3">
           <SummaryCard
             label="Entradas registradas"
             value={budget.realized.inflow}
@@ -286,6 +286,30 @@ function BudgetContent({
             tone={balanceTone}
             className="min-[375px]:col-span-2 sm:col-span-1"
           />
+          <span
+            className="pointer-events-none absolute left-1/2 top-8 hidden -translate-x-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground min-[375px]:block sm:hidden"
+            aria-hidden="true"
+          >
+            −
+          </span>
+          <span
+            className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground min-[375px]:block sm:hidden"
+            aria-hidden="true"
+          >
+            =
+          </span>
+          <span
+            className="pointer-events-none absolute left-1/3 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground sm:block"
+            aria-hidden="true"
+          >
+            −
+          </span>
+          <span
+            className="pointer-events-none absolute left-2/3 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground sm:block"
+            aria-hidden="true"
+          >
+            =
+          </span>
         </div>
       </section>
 

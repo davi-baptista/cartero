@@ -51,7 +51,7 @@ describe('Budget V2 contract and movement', () => {
   })
 
   it('uses the compact 2-plus-1 metric grid with a narrow-screen fallback', () => {
-    expect(page).toContain('grid grid-cols-1 gap-x-3 gap-y-4 pt-1 min-[375px]:grid-cols-2 sm:grid-cols-3 sm:gap-3 sm:pt-2')
+    expect(page).toContain('relative grid grid-cols-1 gap-x-3 gap-y-4 pt-2 min-[375px]:grid-cols-2 sm:grid-cols-3 sm:gap-3 sm:pt-3')
     expect(page).toContain('min-[375px]:col-span-2 sm:col-span-1')
     expect(page).toContain('className="space-y-3"')
     expect(page).toContain('className="space-y-5 sm:space-y-7"')
@@ -63,6 +63,9 @@ describe('Budget V2 contract and movement', () => {
     expect(page).toContain('budget.resultAfterPending')
     expect(page).toContain('pendentes')
     expect(page).toContain('Resultado após pendências')
+    expect(page).toContain('aria-hidden="true"')
+    expect(page).toContain('−')
+    expect(page).toContain('=')
     expect(page).not.toContain('Diferença em aberto')
     expect(page).not.toContain('budget.realized.inflow +')
     expect(page).not.toContain('budget.realized.outflow +')
