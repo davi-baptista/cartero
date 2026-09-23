@@ -52,8 +52,8 @@ function SummaryCard({
   tone?: 'neutral' | 'positive' | 'negative'
 }) {
   return (
-    <Card className="min-w-0">
-      <CardContent className="p-4 sm:p-5">
+    <Card className="min-w-0 py-0">
+      <CardContent className="p-3 sm:p-4">
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
         <p
           className={cn(
@@ -122,7 +122,7 @@ function CompositionColumn({
   registeredEmpty: string
 }) {
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <h3 className="text-sm font-semibold">{title}</h3>
       <CompositionGroup
         label="REGISTRADO NO PERÍODO"
@@ -148,25 +148,23 @@ function Composition({ budget }: { budget: BudgetV2Response }) {
         <h2 className="text-base font-semibold" id="composition-title">Composição</h2>
         <p className="mt-1 text-sm text-muted-foreground">Registrado no período e valores ainda em aberto.</p>
       </div>
-      <Card>
-        <CardContent className="grid gap-6 p-4 sm:grid-cols-2 sm:p-5">
-          <CompositionColumn
-            title="Entradas"
-            registeredRows={realizedInflowRows}
-            openRows={isZero(open.receivables) ? [] : [[formatBudgetMoney(open.receivables), 'Recebíveis']]}
-            registeredEmpty="Nenhuma entrada registrada no período."
-          />
-          <CompositionColumn
-            title="Saídas"
-            registeredRows={realizedOutflowRows}
-            openRows={[
-              ...(!isZero(open.invoices) ? [[formatBudgetMoney(open.invoices), 'Faturas'] as const] : []),
-              ...(!isZero(open.debts) ? [[formatBudgetMoney(open.debts), 'Dívidas'] as const] : []),
-            ]}
-            registeredEmpty="Nenhuma saída registrada no período."
-          />
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <CompositionColumn
+          title="Entradas"
+          registeredRows={realizedInflowRows}
+          openRows={isZero(open.receivables) ? [] : [[formatBudgetMoney(open.receivables), 'Recebíveis']]}
+          registeredEmpty="Nenhuma entrada registrada no período."
+        />
+        <CompositionColumn
+          title="Saídas"
+          registeredRows={realizedOutflowRows}
+          openRows={[
+            ...(!isZero(open.invoices) ? [[formatBudgetMoney(open.invoices), 'Faturas'] as const] : []),
+            ...(!isZero(open.debts) ? [[formatBudgetMoney(open.debts), 'Dívidas'] as const] : []),
+          ]}
+          registeredEmpty="Nenhuma saída registrada no período."
+        />
+      </div>
     </section>
   )
 }
@@ -226,20 +224,16 @@ function Overdue({ budget }: { budget: BudgetV2Response }) {
         <h2 className="text-base font-semibold" id="overdue-title">Vencidos</h2>
         <p className="mt-1 text-sm text-muted-foreground">Parte dos valores em aberto.</p>
       </div>
-      <Card>
-        <CardContent className="p-4 sm:p-5">
-          {hasOverdue ? (
-            <DetailRows
-              rows={rows.filter(([value]) => !isZero(value)).map(([value, label]) => [formatBudgetMoney(value), label] as const)}
-              empty="Nenhum valor vencido."
-            />
-          ) : (
-            <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
-              Nenhum valor vencido.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      {hasOverdue ? (
+        <DetailRows
+          rows={rows.filter(([value]) => !isZero(value)).map(([value, label]) => [formatBudgetMoney(value), label] as const)}
+          empty="Nenhum valor vencido."
+        />
+      ) : (
+        <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
+          Nenhum valor vencido.
+        </p>
+      )}
     </section>
   )
 }
