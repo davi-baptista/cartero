@@ -27,7 +27,6 @@ const ROW = ler('../components/ui/status-list-row.tsx')
 const ROW_PRIMITIVE = ler('../components/ui/financial-list-row.tsx')
 const CHEVRON = ler('../components/ui/disclosure-chevron.tsx')
 const BANKS = ler('../app/(dashboard)/banks/page.tsx')
-const BUDGET = ler('../app/(dashboard)/budget/page.tsx')
 
 describe('itens 2-3: a metadata nunca corta uma cifra', () => {
   it('a metadata usa o slot canônico, sem truncate', () => {
@@ -169,28 +168,6 @@ describe('Parte C: a row de Banco segue o padrão de Pessoas', () => {
     expect(INVOICES_PAGE).toContain('Editar banco')
     expect(INVOICES_PAGE).toContain('Excluir banco')
   })
-})
-
-describe('itens 7/17/47: a lista não repete o drawer', () => {
-  /**
-   * Desktop E mobile: entidade, status, valor, seta. A composição vive no
-   * cabeçalho (consolidado) e no drawer (detalhe) — repeti-la na linha punha
-   * números a competir e dava a cada registro uma altura.
-   */
-  const linhasDoOrcamento = BUDGET.slice(
-    BUDGET.indexOf('{visibleInvoices.map'),
-    BUDGET.indexOf('Pendências anteriores'),
-  )
-
-  it('nenhuma das três listas passa `subtitle`', () => {
-    expect(linhasDoOrcamento).not.toContain('subtitle=')
-  })
-
-  it('a composição da fatura saiu da linha', () => {
-    expect(linhasDoOrcamento).not.toContain('Sua parte')
-    expect(linhasDoOrcamento).not.toContain('de outras pessoas')
-  })
-
 })
 
 describe('Refinamento visual de Bancos', () => {

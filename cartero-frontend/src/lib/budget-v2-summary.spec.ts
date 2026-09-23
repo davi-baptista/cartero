@@ -8,7 +8,7 @@ const service = read('../services/budget.service.ts')
 const types = read('../types/budget-v2.ts')
 const layout = read('../app/(dashboard)/layout.tsx')
 
-describe('Budget V2 summary contract', () => {
+describe('Budget V2 contract and movement', () => {
   it('uses the typed V2 endpoint and keeps the complete core shape', () => {
     expect(service).toContain("api.get<BudgetV2Response>('/budget/v2'")
     expect(page).toContain('getBudgetV2(preset)')
@@ -22,85 +22,87 @@ describe('Budget V2 summary contract', () => {
     expect(types).not.toContain('bankBalance')
   })
 
-  it('keeps money serialized as strings in the frontend contract', () => {
-    expect(types).toContain('inflow: string')
-    expect(types).toContain('outflow: string')
-    expect(types).toContain('balance: string')
-    expect(types).toContain('net: string')
-    expect(page).not.toContain('budget.realized.inflow +')
-    expect(page).not.toContain('budget.open.inflow -')
-    expect(page).not.toContain('estimatedBalance')
-  })
-})
-
-describe('Budget V2 summary composition', () => {
-  it('renders the three movement cards with exact labels and server fields', () => {
+  it('keeps the period selector inside Movement and the three realized authorities', () => {
+    expect(page).toContain('Movimentação')
+    expect(page).toContain('Período da movimentação')
+    expect(page).toContain('PeriodSelector value={preset}')
     for (const label of ['Entradas registradas', 'Saídas registradas', 'Balanço registrado']) {
       expect(page).toContain(label)
     }
-    expect(page).toContain('budget.realized.inflow')
-    expect(page).toContain('budget.realized.outflow')
-    expect(page).toContain('budget.realized.balance')
-    expect(page).toContain('Valores registrados no período.')
-  })
-
-  it('starts both composition disclosures collapsed and maps every canonical label', () => {
-    expect(page.match(/useState\(false\)/g)?.length).toBeGreaterThanOrEqual(2)
-    expect(page).toContain('aria-expanded={open}')
-    for (const label of [
-      'Receitas registradas',
-      'Recebimentos',
-      'Acertos recebidos',
-      'Gastos diretos',
-      'Dívidas quitadas',
-      'Faturas pagas',
-      'Acertos pagos',
-      'Recebíveis',
-      'Faturas',
-      'Dívidas',
-    ]) {
-      expect(page).toContain(label)
+    for (const field of ['budget.realized.inflow', 'budget.realized.outflow', 'budget.realized.balance']) {
+      expect(page).toContain(field)
     }
-    expect(page).toContain('Nenhuma entrada registrada no período.')
-    expect(page).toContain('Nenhuma saída registrada no período.')
-  })
-})
-
-describe('Budget V2 period and state UX', () => {
-  it('offers all four presets in Movimentação and keeps the selector local', () => {
     for (const preset of Object.values(BudgetV2PeriodPreset)) expect(page).toContain(preset)
-    for (const label of ['Últimos 30 dias', 'Este mês', 'Mês passado', 'Todo o histórico']) {
-      expect(page).toContain(label)
-    }
-    expect(page).toContain('Período da movimentação')
-    expect(page).toContain('onPresetChange')
-    expect(page).not.toContain('useMonthPeriod')
     expect(layout).not.toContain("  '/budget',")
   })
 
-  it('separates open and overdue current state without a global filter', () => {
-    for (const label of ['Em aberto', 'A receber', 'A pagar', 'Diferença em aberto', 'Vencidos']) {
-      expect(page).toContain(label)
-    }
+  it('shows open values as secondary information without client financial arithmetic', () => {
     expect(page).toContain('budget.open.inflow')
     expect(page).toContain('budget.open.outflow')
     expect(page).toContain('budget.open.net')
-    expect(page).toContain('budget.open.overdue.inflow')
-    expect(page).toContain('budget.open.overdue.outflow')
-    expect(page).toContain('Nenhum valor vencido.')
+    expect(page).toContain('em aberto')
+    expect(page).toContain('Diferença em aberto')
+    expect(page).not.toContain('budget.realized.inflow +')
+    expect(page).not.toContain('budget.realized.outflow +')
+    expect(page).not.toContain('budget.realized.balance +')
+    expect(page).not.toContain('budget.open.inflow -')
+  })
+})
+
+describe('Budget V2 unified composition', () => {
+  it('is always visible and has no disclosure or eye toggle', () => {
+    expect(page).toContain('<Composition budget={budget} />')
+    expect(page).toContain('aria-labelledby="composition-title"')
+    expect(page).not.toContain('Ver composição')
+    expect(page).not.toContain('aria-expanded')
+    expect(page).not.toContain('EyeOff')
+    expect(page).not.toContain('ChevronDown')
   })
 
-  it('keeps loading, retryable error and zero-value rendering as normal states', () => {
-    expect(page).toContain('<LoadingState />')
-    expect(page).toContain('<QueryError')
-    expect(page).toContain('onRetry={() => void refetch()}')
-    expect(page).toContain('placeholderData: keepPreviousData')
+  it('separates registered and open groups in both columns', () => {
+    expect(page).toContain('REGISTRADO NO PERÍODO')
+    expect(page).toContain('EM ABERTO')
+    for (const field of [
+      'manualIncome',
+      'receivableReceipts',
+      'personSettlementInflows',
+      'manualDirectTransactions',
+      'debtDirectSettlements',
+      'invoiceSettlements',
+      'personSettlementDirectOutflows',
+      'open.receivables',
+      'open.invoices',
+      'open.debts',
+    ]) {
+      expect(page).toContain(field)
+    }
+  })
+
+  it('keeps zero detail rows out and provides concise subgroup empty states', () => {
+    expect(page).toContain('filter(([key]) => !isZero(realized[key]))')
+    expect(page).toContain('Nenhuma entrada registrada no período.')
+    expect(page).toContain('Nenhuma saída registrada no período.')
+    expect(page).toContain('Nenhum valor em aberto.')
     expect(page).toContain('formatBudgetMoney(value)')
   })
 })
 
-describe('Budget V2 scope guard', () => {
-  it('does not retain the removed V1 page concepts or detailed lists', () => {
+describe('Budget V2 overdue block and state UX', () => {
+  it('renders overdue as a full-width block using only the backend overdue fields', () => {
+    expect(page).toContain('<Overdue budget={budget} />')
+    expect(page).toContain('budget.open.overdue.inflow')
+    expect(page).toContain('budget.open.overdue.outflow')
+    expect(page).toContain('A receber vencido')
+    expect(page).toContain('A pagar vencido')
+    expect(page).toContain('Parte dos valores em aberto.')
+    expect(page).toContain('Nenhum valor vencido.')
+  })
+
+  it('keeps loading, retryable error and forbidden V1 concepts out of the page', () => {
+    expect(page).toContain('<LoadingState />')
+    expect(page).toContain('<QueryError')
+    expect(page).toContain('onRetry={() => void refetch()}')
+    expect(page).toContain('placeholderData: keepPreviousData')
     for (const forbidden of [
       'Salário',
       'salary',
@@ -110,11 +112,11 @@ describe('Budget V2 scope guard', () => {
       'Saldo disponível',
       'Saldo estimado',
       'transaction timeline',
+      'peopleSettlements',
+      'InvoiceDetailsDrawer',
+      'PersonStatementDrawer',
     ]) {
       expect(page).not.toContain(forbidden)
     }
-    expect(page).not.toContain('peopleSettlements')
-    expect(page).not.toContain('InvoiceDetailsDrawer')
-    expect(page).not.toContain('PersonStatementDrawer')
   })
 })

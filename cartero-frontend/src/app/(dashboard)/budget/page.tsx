@@ -2,16 +2,14 @@
 
 import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { ChevronDown, CircleAlert, Eye, EyeOff } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { QueryError } from '@/components/ui/query-error'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getBudgetV2 } from '@/services/budget.service'
-import { BudgetV2PeriodPreset, type BudgetV2Response } from '@/types/budget-v2'
 import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
+import { getBudgetV2 } from '@/services/budget.service'
+import { BudgetV2PeriodPreset, type BudgetV2Response } from '@/types/budget-v2'
 
 const PERIOD_OPTIONS = [
   { value: BudgetV2PeriodPreset.LAST_30_DAYS, label: 'Últimos 30 dias' },
@@ -45,10 +43,12 @@ function isZero(value: string) {
 function SummaryCard({
   label,
   value,
+  secondary,
   tone = 'neutral',
 }: {
   label: string
   value: string
+  secondary: string
   tone?: 'neutral' | 'positive' | 'negative'
 }) {
   return (
@@ -57,13 +57,14 @@ function SummaryCard({
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
         <p
           className={cn(
-            'mt-2 truncate text-[22px] font-semibold tabular-nums tracking-[-0.02em]',
+            'mt-1.5 truncate text-[22px] font-semibold tabular-nums tracking-[-0.02em]',
             tone === 'positive' && 'text-receivable',
             tone === 'negative' && 'text-destructive',
           )}
         >
           {formatBudgetMoney(value)}
         </p>
+        <p className="mt-1 text-xs text-muted-foreground">{secondary}</p>
       </CardContent>
     </Card>
   )
@@ -92,82 +93,87 @@ function DetailRows({
   )
 }
 
-function CompositionDisclosure({ budget }: { budget: BudgetV2Response }) {
-  const [open, setOpen] = useState(false)
+function CompositionGroup({
+  label,
+  rows,
+  empty,
+}: {
+  label: string
+  rows: readonly (readonly [string, string])[]
+  empty: string
+}) {
+  return (
+    <div className="space-y-2">
+      <h3 className="text-xs font-medium uppercase tracking-[0.01em] text-muted-foreground">{label}</h3>
+      <DetailRows rows={rows} empty={empty} />
+    </div>
+  )
+}
+
+function CompositionColumn({
+  title,
+  registeredRows,
+  openRows,
+  registeredEmpty,
+}: {
+  title: string
+  registeredRows: readonly (readonly [string, string])[]
+  openRows: readonly (readonly [string, string])[]
+  registeredEmpty: string
+}) {
+  return (
+    <div className="space-y-5">
+      <h3 className="text-sm font-semibold">{title}</h3>
+      <CompositionGroup
+        label="REGISTRADO NO PERÍODO"
+        rows={registeredRows}
+        empty={registeredEmpty}
+      />
+      <CompositionGroup label="EM ABERTO" rows={openRows} empty="Nenhum valor em aberto." />
+    </div>
+  )
+}
+
+function Composition({ budget }: { budget: BudgetV2Response }) {
   const realized = budget.composition.realized
+  const open = budget.composition.open
   const realizedInflowRows = REALIZED_INFLOW_ROWS.filter(([key]) => !isZero(realized[key]))
     .map(([key, label]) => [formatBudgetMoney(realized[key]), label] as const)
   const realizedOutflowRows = REALIZED_OUTFLOW_ROWS.filter(([key]) => !isZero(realized[key]))
     .map(([key, label]) => [formatBudgetMoney(realized[key]), label] as const)
 
   return (
-    <div className="mt-4 border-t border-border/70 pt-3">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="-ml-2 gap-2 text-muted-foreground hover:text-foreground"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        {open ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
-        Ver composição
-        <ChevronDown className={cn('transition-transform', open && 'rotate-180')} aria-hidden />
-      </Button>
-      {open && (
-        <div className="mt-3 grid gap-4 sm:grid-cols-2">
-          <div>
-            <h3 className="mb-2 text-xs font-medium uppercase tracking-[0.01em] text-muted-foreground">Entradas</h3>
-            <DetailRows rows={realizedInflowRows} empty="Nenhuma entrada registrada no período." />
-          </div>
-          <div>
-            <h3 className="mb-2 text-xs font-medium uppercase tracking-[0.01em] text-muted-foreground">Saídas</h3>
-            <DetailRows rows={realizedOutflowRows} empty="Nenhuma saída registrada no período." />
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function OpenComposition({ budget }: { budget: BudgetV2Response }) {
-  const [open, setOpen] = useState(false)
-  const values = budget.composition.open
-  const rows = [
-    ['receivables', 'Recebíveis', values.receivables],
-    ['invoices', 'Faturas', values.invoices],
-    ['debts', 'Dívidas', values.debts],
-  ] as const
-
-  return (
-    <div className="mt-4 border-t border-border/70 pt-3">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="-ml-2 gap-2 text-muted-foreground hover:text-foreground"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        {open ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
-        Ver composição
-        <ChevronDown className={cn('transition-transform', open && 'rotate-180')} aria-hidden />
-      </Button>
-      {open && (
-        <div className="mt-3 divide-y divide-border/60 rounded-lg border border-border/70">
-          {rows.map(([key, label, value]) => (
-            <div className="flex items-center justify-between gap-4 px-3 py-2.5" key={key}>
-              <span className="text-sm text-muted-foreground">{label}</span>
-              <span className="shrink-0 text-sm font-medium tabular-nums">{formatBudgetMoney(value)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <section aria-labelledby="composition-title" className="space-y-3">
+      <div>
+        <h2 className="text-base font-semibold" id="composition-title">Composição</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Registrado no período e valores ainda em aberto.</p>
+      </div>
+      <Card>
+        <CardContent className="grid gap-6 p-4 sm:grid-cols-2 sm:p-5">
+          <CompositionColumn
+            title="Entradas"
+            registeredRows={realizedInflowRows}
+            openRows={isZero(open.receivables) ? [] : [[formatBudgetMoney(open.receivables), 'Recebíveis']]}
+            registeredEmpty="Nenhuma entrada registrada no período."
+          />
+          <CompositionColumn
+            title="Saídas"
+            registeredRows={realizedOutflowRows}
+            openRows={[
+              ...(!isZero(open.invoices) ? [[formatBudgetMoney(open.invoices), 'Faturas'] as const] : []),
+              ...(!isZero(open.debts) ? [[formatBudgetMoney(open.debts), 'Dívidas'] as const] : []),
+            ]}
+            registeredEmpty="Nenhuma saída registrada no período."
+          />
+        </CardContent>
+      </Card>
+    </section>
   )
 }
 
 function LoadingState() {
   return (
-    <div className="space-y-8" aria-label="Carregando orçamento" role="status">
+    <div className="space-y-6" aria-label="Carregando orçamento" role="status">
       <div className="space-y-2">
         <Skeleton className="h-7 w-36" />
         <Skeleton className="h-4 w-80 max-w-full" />
@@ -178,33 +184,8 @@ function LoadingState() {
           {Array.from({ length: 3 }).map((_, index) => <Skeleton className="h-24 rounded-xl" key={index} />)}
         </div>
       </section>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Skeleton className="h-48 rounded-xl" />
-        <Skeleton className="h-48 rounded-xl" />
-      </div>
-    </div>
-  )
-}
-
-function OpenRow({
-  label,
-  value,
-  tone = 'neutral',
-}: {
-  label: string
-  value: string
-  tone?: 'neutral' | 'positive' | 'negative'
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 px-3 py-3">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className={cn(
-        'shrink-0 text-sm font-medium tabular-nums',
-        tone === 'positive' && 'text-receivable',
-        tone === 'negative' && 'text-destructive',
-      )}>
-        {formatBudgetMoney(value)}
-      </span>
+      <Skeleton className="h-80 rounded-xl" />
+      <Skeleton className="h-32 rounded-xl" />
     </div>
   )
 }
@@ -232,6 +213,37 @@ function PeriodSelector({
   )
 }
 
+function Overdue({ budget }: { budget: BudgetV2Response }) {
+  const hasOverdue = !isZero(budget.open.overdue.inflow) || !isZero(budget.open.overdue.outflow)
+  const rows = [
+    [budget.open.overdue.inflow, 'A receber vencido'],
+    [budget.open.overdue.outflow, 'A pagar vencido'],
+  ] as const
+
+  return (
+    <section aria-labelledby="overdue-title" className="space-y-3">
+      <div>
+        <h2 className="text-base font-semibold" id="overdue-title">Vencidos</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Parte dos valores em aberto.</p>
+      </div>
+      <Card>
+        <CardContent className="p-4 sm:p-5">
+          {hasOverdue ? (
+            <DetailRows
+              rows={rows.filter(([value]) => !isZero(value)).map(([value, label]) => [formatBudgetMoney(value), label] as const)}
+              empty="Nenhum valor vencido."
+            />
+          ) : (
+            <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
+              Nenhum valor vencido.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </section>
+  )
+}
+
 function BudgetContent({
   budget,
   preset,
@@ -244,10 +256,9 @@ function BudgetContent({
   const balanceTone = budget.realized.balance.startsWith('-')
     ? 'negative'
     : isZero(budget.realized.balance) ? 'neutral' : 'positive'
-  const hasOverdue = !isZero(budget.open.overdue.inflow) || !isZero(budget.open.overdue.outflow)
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Orçamento</h1>
         <p className="max-w-2xl text-sm text-muted-foreground">Uma visão do que entrou, saiu e ainda está pendente no Cartero.</p>
@@ -262,53 +273,29 @@ function BudgetContent({
           <PeriodSelector value={preset} onChange={onPresetChange} />
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
-          <SummaryCard label="Entradas registradas" value={budget.realized.inflow} tone="positive" />
-          <SummaryCard label="Saídas registradas" value={budget.realized.outflow} tone="negative" />
-          <SummaryCard label="Balanço registrado" value={budget.realized.balance} tone={balanceTone} />
+          <SummaryCard
+            label="Entradas registradas"
+            value={budget.realized.inflow}
+            secondary={`+ ${formatBudgetMoney(budget.open.inflow)} em aberto`}
+            tone="positive"
+          />
+          <SummaryCard
+            label="Saídas registradas"
+            value={budget.realized.outflow}
+            secondary={`+ ${formatBudgetMoney(budget.open.outflow)} em aberto`}
+            tone="negative"
+          />
+          <SummaryCard
+            label="Balanço registrado"
+            value={budget.realized.balance}
+            secondary={`Diferença em aberto: ${formatBudgetMoney(budget.open.net)}`}
+            tone={balanceTone}
+          />
         </div>
-        <CompositionDisclosure budget={budget} />
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section aria-labelledby="open-title">
-          <Card className="h-full">
-            <CardHeader className="px-4 pb-1 sm:px-5">
-              <CardTitle className="text-base" id="open-title">Em aberto</CardTitle>
-              <p className="text-sm text-muted-foreground">Pendências atuais.</p>
-            </CardHeader>
-            <CardContent className="p-4 pt-3 sm:p-5 sm:pt-3">
-              <div className="divide-y divide-border/60 rounded-lg border border-border/70">
-                <OpenRow label="A receber" value={budget.open.inflow} tone="positive" />
-                <OpenRow label="A pagar" value={budget.open.outflow} tone="negative" />
-                <OpenRow label="Diferença em aberto" value={budget.open.net} />
-              </div>
-              <OpenComposition budget={budget} />
-            </CardContent>
-          </Card>
-        </section>
-
-        <section aria-labelledby="overdue-title">
-          <Card className={cn('h-full', hasOverdue && 'ring-destructive/30')}>
-            <CardHeader className="px-4 pb-1 sm:px-5">
-              <CardTitle className="flex items-center gap-2 text-base" id="overdue-title">
-                Vencidos
-                {hasOverdue && <CircleAlert className="size-4 text-destructive" aria-label="Há valores vencidos" />}
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">Parte das pendências atuais.</p>
-            </CardHeader>
-            <CardContent className="p-4 pt-3 sm:p-5 sm:pt-3">
-              {!hasOverdue ? (
-                <p className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">Nenhum valor vencido.</p>
-              ) : (
-                <div className="divide-y divide-border/60 rounded-lg border border-border/70">
-                  <OpenRow label="A receber vencido" value={budget.open.overdue.inflow} tone="positive" />
-                  <OpenRow label="A pagar vencido" value={budget.open.overdue.outflow} tone="negative" />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </section>
-      </div>
+      <Composition budget={budget} />
+      <Overdue budget={budget} />
     </div>
   )
 }
