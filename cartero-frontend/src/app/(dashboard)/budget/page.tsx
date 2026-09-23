@@ -100,11 +100,11 @@ function DetailRows({
           onClick={() => onRowClick(bucket)}
           type="button"
         >
-          <span className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground group-hover:text-foreground">
+          <span className="flex min-w-0 items-center gap-1 text-sm text-foreground">
             <span className="truncate">{label}</span>
             <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden="true" />
           </span>
-          <span className="shrink-0 text-sm font-medium tabular-nums">{value}</span>
+          <span className="shrink-0 text-sm font-medium tabular-nums text-foreground">{value}</span>
         </button>
       ))}
     </div>

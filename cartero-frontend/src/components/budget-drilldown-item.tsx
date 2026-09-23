@@ -28,14 +28,14 @@ function metadata(parts: Array<string | null | undefined>): string | null {
 function ItemText({ primary, secondary }: { primary: string; secondary: string | null }) {
   return (
     <div className="min-w-0 flex-1">
-      <p className="truncate text-sm font-medium">{primary}</p>
+      <p className="truncate text-sm font-medium text-foreground">{primary}</p>
       {secondary && <p className="mt-0.5 truncate text-xs text-muted-foreground">{secondary}</p>}
     </div>
   )
 }
 
 function Amount({ value }: { value: string }) {
-  return <span className="shrink-0 text-sm font-semibold tabular-nums">{formatCurrency(Number(value))}</span>
+  return <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">{formatCurrency(Number(value))}</span>
 }
 
 export function BudgetDrilldownItemRow({
