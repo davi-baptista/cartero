@@ -259,7 +259,7 @@ function BudgetContent({
         <p className="max-w-2xl text-sm text-muted-foreground">Uma visão do que entrou, saiu e ainda está pendente no Cartero.</p>
       </header>
 
-      <section aria-labelledby="movement-title" className="space-y-3">
+      <section aria-labelledby="movement-title" className="-mb-2 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold" id="movement-title">Movimentação</h2>
