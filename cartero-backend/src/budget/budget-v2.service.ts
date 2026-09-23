@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, TransactionType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { parseDateOnly } from 'src/common/helpers/date-only.helper';
 import { deriveBudgetV2PeriodBounds } from 'src/common/helpers/financial-period.helper';
 import { financialCivilDay } from 'src/common/helpers/financial-timezone.helper';
 import {
@@ -25,6 +24,28 @@ function sumDecimal(values: readonly Prisma.Decimal[]): Prisma.Decimal {
 
 function serializeMoney(value: Prisma.Decimal): string {
   return value.toFixed(2);
+}
+
+function shiftCivilDate(date: string, days: number): string {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days, 12))
+    .toISOString()
+    .slice(0, 10);
+}
+
+function storedCivilDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function classifyDueDate(
+  dueDate: Date,
+  today: string,
+  horizonExclusive: string,
+): 'overdue' | 'upcoming' | 'outside' {
+  const dueDay = storedCivilDate(dueDate);
+  if (dueDay < today) return 'overdue';
+  if (dueDay < horizonExclusive) return 'upcoming';
+  return 'outside';
 }
 
 @Injectable()
@@ -54,7 +75,8 @@ export class BudgetV2Service {
       select: { timeZone: true },
     });
     const bounds = deriveBudgetV2PeriodBounds(preset, user.timeZone, { now });
-    const today = parseDateOnly(financialCivilDay(now, user.timeZone));
+    const todayCivil = financialCivilDay(now, user.timeZone);
+    const horizonExclusive = shiftCivilDate(todayCivil, 31);
     const date = bounds.startInclusive
       ? { gte: bounds.startInclusive, lt: bounds.endExclusive }
       : { lt: bounds.endExclusive };
@@ -92,7 +114,7 @@ export class BudgetV2Service {
             userId,
             status: { in: ['OPEN', 'CLOSED', 'OVERDUE'] },
           },
-          select: { totalAmount: true, status: true },
+          select: { totalAmount: true, status: true, dueDate: true },
         }),
       ]);
 
@@ -165,44 +187,94 @@ export class BudgetV2Service {
       composition.personSettlementDirectOutflows,
     ]);
 
-    const openReceivables = sumDecimal(
-      receivables.map((receivable) => receivable.amount),
-    );
-    const openDebts = sumDecimal(debts.map((debt) => debt.amount));
-    const openInvoices = sumDecimal(
-      invoices.map((invoice) => invoice.totalAmount),
+    const upcomingReceivables = sumDecimal(
+      receivables
+        .filter(
+          (receivable) =>
+            classifyDueDate(
+              receivable.dueDate,
+              todayCivil,
+              horizonExclusive,
+            ) === 'upcoming',
+        )
+        .map((receivable) => receivable.amount),
     );
     const overdueReceivables = sumDecimal(
       receivables
-        .filter((receivable) => receivable.dueDate < today)
+        .filter(
+          (receivable) =>
+            classifyDueDate(
+              receivable.dueDate,
+              todayCivil,
+              horizonExclusive,
+            ) === 'overdue',
+        )
         .map((receivable) => receivable.amount),
     );
-    const overdueDebts = sumDecimal(
-      debts.filter((debt) => debt.dueDate < today).map((debt) => debt.amount),
+    const upcomingDebts = sumDecimal(
+      debts
+        .filter(
+          (debt) =>
+            classifyDueDate(debt.dueDate, todayCivil, horizonExclusive) ===
+            'upcoming',
+        )
+        .map((debt) => debt.amount),
     );
-    const overdueInvoices = sumDecimal(
-      invoices
-        .filter((invoice) => invoice.status === 'OVERDUE')
+    const overdueDebts = sumDecimal(
+      debts
+        .filter(
+          (debt) =>
+            classifyDueDate(debt.dueDate, todayCivil, horizonExclusive) ===
+            'overdue',
+        )
+        .map((debt) => debt.amount),
+    );
+    const unresolvedInvoices = invoices.filter(
+      (invoice) => invoice.status !== 'PAID',
+    );
+    const upcomingInvoices = sumDecimal(
+      unresolvedInvoices
+        .filter(
+          (invoice) =>
+            classifyDueDate(invoice.dueDate, todayCivil, horizonExclusive) ===
+            'upcoming',
+        )
         .map((invoice) => invoice.totalAmount),
     );
-    const openOutflow = openInvoices.add(openDebts);
+    const overdueInvoices = sumDecimal(
+      unresolvedInvoices
+        .filter(
+          (invoice) =>
+            classifyDueDate(invoice.dueDate, todayCivil, horizonExclusive) ===
+            'overdue',
+        )
+        .map((invoice) => invoice.totalAmount),
+    );
+    const pendingInflow = upcomingReceivables.add(overdueReceivables);
+    const pendingOutflow = upcomingInvoices
+      .add(upcomingDebts)
+      .add(overdueInvoices)
+      .add(overdueDebts);
+    const pendingNet = pendingInflow.sub(pendingOutflow);
+    const realizedBalance = inflow.sub(outflow);
 
     return {
       period: bounds.period,
       realized: {
         inflow: serializeMoney(inflow),
         outflow: serializeMoney(outflow),
-        balance: serializeMoney(inflow.sub(outflow)),
+        balance: serializeMoney(realizedBalance),
       },
-      open: {
-        inflow: serializeMoney(openReceivables),
-        outflow: serializeMoney(openOutflow),
-        net: serializeMoney(openReceivables.sub(openOutflow)),
+      pending: {
+        inflow: serializeMoney(pendingInflow),
+        outflow: serializeMoney(pendingOutflow),
+        net: serializeMoney(pendingNet),
         overdue: {
           inflow: serializeMoney(overdueReceivables),
           outflow: serializeMoney(overdueDebts.add(overdueInvoices)),
         },
       },
+      resultAfterPending: serializeMoney(realizedBalance.add(pendingNet)),
       composition: {
         realized: {
           manualIncome: serializeMoney(composition.manualIncome),
@@ -221,10 +293,10 @@ export class BudgetV2Service {
             composition.personSettlementDirectOutflows,
           ),
         },
-        open: {
-          invoices: serializeMoney(openInvoices),
-          debts: serializeMoney(openDebts),
-          receivables: serializeMoney(openReceivables),
+        upcoming: {
+          invoices: serializeMoney(upcomingInvoices),
+          debts: serializeMoney(upcomingDebts),
+          receivables: serializeMoney(upcomingReceivables),
         },
       },
     };

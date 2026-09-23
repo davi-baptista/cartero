@@ -202,7 +202,7 @@ describe('BudgetV2Service', () => {
       outflow: '0.00',
       balance: '0.00',
     });
-    expect(result.open).toEqual({
+    expect(result.pending).toEqual({
       inflow: '0.00',
       outflow: '0.00',
       net: '0.00',
@@ -305,9 +305,21 @@ describe('BudgetV2Service', () => {
         findMany: vi.fn(async ({ where }: any) => {
           expect(where.userId).toBe('user-a');
           return [
-            { totalAmount: money('0.20'), status: 'OPEN' },
-            { totalAmount: money('0.30'), status: 'CLOSED' },
-            { totalAmount: money('0.40'), status: 'OVERDUE' },
+            {
+              totalAmount: money('0.20'),
+              status: 'OPEN',
+              dueDate: new Date('2026-09-16'),
+            },
+            {
+              totalAmount: money('0.30'),
+              status: 'CLOSED',
+              dueDate: new Date('2026-09-15'),
+            },
+            {
+              totalAmount: money('0.40'),
+              status: 'OVERDUE',
+              dueDate: new Date('2026-09-10'),
+            },
           ];
         }),
       },
@@ -319,16 +331,16 @@ describe('BudgetV2Service', () => {
       new Date('2026-09-16T12:00:00.000Z'),
     );
 
-    expect(result.open).toEqual({
+    expect(result.pending).toEqual({
       inflow: '99.30',
       outflow: '1.20',
       net: '98.10',
-      overdue: { inflow: '99.20', outflow: '0.50' },
+      overdue: { inflow: '99.20', outflow: '0.80' },
     });
-    expect(result.composition.open).toEqual({
-      receivables: '99.30',
-      debts: '0.30',
-      invoices: '0.90',
+    expect(result.composition.upcoming).toEqual({
+      receivables: '0.10',
+      debts: '0.20',
+      invoices: '0.20',
     });
   });
 
@@ -346,7 +358,13 @@ describe('BudgetV2Service', () => {
           dueDate: new Date('2026-09-20T12:00:00.000Z'),
         },
       ],
-      invoices: [{ totalAmount: money('500.00'), status: 'OPEN' }],
+      invoices: [
+        {
+          totalAmount: money('500.00'),
+          status: 'OPEN',
+          dueDate: new Date('2026-09-20'),
+        },
+      ],
     };
     const prisma = {
       user: {
@@ -394,9 +412,11 @@ describe('BudgetV2Service', () => {
     );
 
     for (const result of results.slice(1)) {
-      expect(result.open).toEqual(results[0].open);
-      expect(result.composition.open).toEqual(results[0].composition.open);
-      expect(result.open.overdue).toEqual(results[0].open.overdue);
+      expect(result.pending).toEqual(results[0].pending);
+      expect(result.composition.upcoming).toEqual(
+        results[0].composition.upcoming,
+      );
+      expect(result.pending.overdue).toEqual(results[0].pending.overdue);
     }
   });
 
@@ -502,8 +522,16 @@ describe('BudgetV2Service', () => {
             status: { in: ['OPEN', 'CLOSED', 'OVERDUE'] },
           });
           return [
-            { totalAmount: money('400.00'), status: 'OPEN' },
-            { totalAmount: money('200.00'), status: 'OVERDUE' },
+            {
+              totalAmount: money('400.00'),
+              status: 'OPEN',
+              dueDate: new Date('2026-09-20'),
+            },
+            {
+              totalAmount: money('200.00'),
+              status: 'OVERDUE',
+              dueDate: new Date('2026-09-10'),
+            },
           ];
         }),
       },
@@ -529,16 +557,16 @@ describe('BudgetV2Service', () => {
       invoiceSettlements: '500.00',
       personSettlementDirectOutflows: '50.00',
     });
-    expect(result.open).toEqual({
+    expect(result.pending).toEqual({
       inflow: '300.00',
       outflow: '750.00',
       net: '-450.00',
       overdue: { inflow: '100.00', outflow: '250.00' },
     });
-    expect(result.composition.open).toEqual({
-      invoices: '600.00',
-      debts: '150.00',
-      receivables: '300.00',
+    expect(result.composition.upcoming).toEqual({
+      invoices: '400.00',
+      debts: '100.00',
+      receivables: '200.00',
     });
     expect(result.period).toEqual({
       preset: BudgetV2PeriodPreset.THIS_MONTH,
@@ -548,9 +576,10 @@ describe('BudgetV2Service', () => {
     });
     expect(Object.keys(result).sort()).toEqual([
       'composition',
-      'open',
+      'pending',
       'period',
       'realized',
+      'resultAfterPending',
     ]);
     expect(result).not.toHaveProperty('future');
     expect(result).not.toHaveProperty('projection');
@@ -625,7 +654,7 @@ describe('BudgetV2Service', () => {
       outflow: '500.00',
       balance: '-500.00',
     });
-    expect(beforeReceipt.open.inflow).toBe('200.00');
+    expect(beforeReceipt.pending.inflow).toBe('200.00');
 
     receiptRecorded = true;
     const afterReceipt = await service.getBudget(
@@ -638,7 +667,7 @@ describe('BudgetV2Service', () => {
       outflow: '500.00',
       balance: '-300.00',
     });
-    expect(afterReceipt.open.inflow).toBe('0.00');
+    expect(afterReceipt.pending.inflow).toBe('0.00');
   });
 
   it('migrates debt authority from open to direct or invoice settlement exactly once', async () => {
@@ -695,7 +724,13 @@ describe('BudgetV2Service', () => {
       invoice: {
         findMany: vi.fn(async () =>
           creditSettled && !invoicePaid
-            ? [{ totalAmount: money('100.00'), status: 'OPEN' }]
+            ? [
+                {
+                  totalAmount: money('100.00'),
+                  status: 'OPEN',
+                  dueDate: new Date('2026-09-20'),
+                },
+              ]
             : [],
         ),
       },
@@ -705,7 +740,7 @@ describe('BudgetV2Service', () => {
 
     expect(
       (await service.getBudget('user-a', BudgetV2PeriodPreset.ALL_TIME, now))
-        .open.outflow,
+        .pending.outflow,
     ).toBe('100.00');
     directSettled = true;
     const direct = await service.getBudget(
@@ -713,7 +748,7 @@ describe('BudgetV2Service', () => {
       BudgetV2PeriodPreset.ALL_TIME,
       now,
     );
-    expect(direct.open.outflow).toBe('0.00');
+    expect(direct.pending.outflow).toBe('0.00');
     expect(direct.composition.realized.debtDirectSettlements).toBe('100.00');
 
     directSettled = false;
@@ -724,14 +759,14 @@ describe('BudgetV2Service', () => {
       now,
     );
     expect(credit.realized.outflow).toBe('0.00');
-    expect(credit.open.outflow).toBe('100.00');
+    expect(credit.pending.outflow).toBe('100.00');
     invoicePaid = true;
     const invoice = await service.getBudget(
       'user-a',
       BudgetV2PeriodPreset.ALL_TIME,
       now,
     );
-    expect(invoice.open.outflow).toBe('0.00');
+    expect(invoice.pending.outflow).toBe('0.00');
     expect(invoice.composition.realized.invoiceSettlements).toBe('100.00');
   });
 
@@ -783,14 +818,17 @@ describe('BudgetV2Service', () => {
       BudgetV2PeriodPreset.ALL_TIME,
       now,
     );
-    expect(before.open).toMatchObject({ inflow: '200.00', outflow: '250.00' });
+    expect(before.pending).toMatchObject({
+      inflow: '200.00',
+      outflow: '250.00',
+    });
     settled = true;
     const after = await service.getBudget(
       'user-a',
       BudgetV2PeriodPreset.ALL_TIME,
       now,
     );
-    expect(after.open).toMatchObject({ inflow: '0.00', outflow: '0.00' });
+    expect(after.pending).toMatchObject({ inflow: '0.00', outflow: '0.00' });
     expect(after.composition.realized.personSettlementDirectOutflows).toBe(
       '50.00',
     );
@@ -800,7 +838,7 @@ describe('BudgetV2Service', () => {
       BudgetV2PeriodPreset.ALL_TIME,
       now,
     );
-    expect(undo.open).toMatchObject({ inflow: '200.00', outflow: '250.00' });
+    expect(undo.pending).toMatchObject({ inflow: '200.00', outflow: '250.00' });
     expect(undo.realized.outflow).toBe('0.00');
   });
 
@@ -849,7 +887,13 @@ describe('BudgetV2Service', () => {
       invoice: {
         findMany: vi.fn(async () =>
           creditSettled && !invoicePaid
-            ? [{ totalAmount: money('50.00'), status: 'OPEN' }]
+            ? [
+                {
+                  totalAmount: money('50.00'),
+                  status: 'OPEN',
+                  dueDate: new Date('2026-09-20'),
+                },
+              ]
             : [],
         ),
       },
@@ -862,14 +906,17 @@ describe('BudgetV2Service', () => {
       BudgetV2PeriodPreset.ALL_TIME,
       now,
     );
-    expect(before.open).toMatchObject({ inflow: '200.00', outflow: '250.00' });
+    expect(before.pending).toMatchObject({
+      inflow: '200.00',
+      outflow: '250.00',
+    });
     creditSettled = true;
     const credit = await service.getBudget(
       'user-a',
       BudgetV2PeriodPreset.ALL_TIME,
       now,
     );
-    expect(credit.open.outflow).toBe('50.00');
+    expect(credit.pending.outflow).toBe('50.00');
     expect(credit.realized.outflow).toBe('0.00');
     invoicePaid = true;
     const invoice = await service.getBudget(
@@ -877,7 +924,7 @@ describe('BudgetV2Service', () => {
       BudgetV2PeriodPreset.ALL_TIME,
       now,
     );
-    expect(invoice.open.outflow).toBe('0.00');
+    expect(invoice.pending.outflow).toBe('0.00');
     expect(invoice.composition.realized.invoiceSettlements).toBe('50.00');
   });
 
@@ -917,7 +964,78 @@ describe('BudgetV2Service', () => {
       outflow: '0.00',
       balance: '0.00',
     });
-    expect(result.open.outflow).toBe('100.00');
+    expect(result.pending.outflow).toBe('0.00');
+  });
+
+  it('partitions every authority by dueDate, including stale invoice statuses', async () => {
+    const due = (offset: number) =>
+      new Date(Date.UTC(2026, 8, 10 + offset, 12));
+    const prisma = {
+      user: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          timeZone: 'America/Sao_Paulo',
+        })),
+      },
+      transaction: { findMany: vi.fn(async () => []) },
+      invoiceSettlement: { findMany: vi.fn(async () => []) },
+      personSettlementGroup: { findMany: vi.fn(async () => []) },
+      receivable: {
+        findMany: vi.fn(async () => [
+          { amount: money('1.00'), dueDate: due(-1) },
+          { amount: money('2.00'), dueDate: due(0) },
+          { amount: money('3.00'), dueDate: due(1) },
+          { amount: money('4.00'), dueDate: due(29) },
+          { amount: money('5.00'), dueDate: due(30) },
+          { amount: money('500000.00'), dueDate: due(31) },
+        ]),
+      },
+      debt: {
+        findMany: vi.fn(async () => [
+          { amount: money('10.00'), dueDate: due(-1) },
+          { amount: money('20.00'), dueDate: due(0) },
+          { amount: money('30.00'), dueDate: due(1) },
+          { amount: money('40.00'), dueDate: due(29) },
+          { amount: money('50.00'), dueDate: due(30) },
+          {
+            amount: money('500000.00'),
+            dueDate: new Date('2030-01-01T12:00:00.000Z'),
+          },
+        ]),
+      },
+      invoice: {
+        findMany: vi.fn(async () => [
+          { totalAmount: money('100.00'), status: 'CLOSED', dueDate: due(-1) },
+          { totalAmount: money('200.00'), status: 'OPEN', dueDate: due(-1) },
+          { totalAmount: money('300.00'), status: 'OPEN', dueDate: due(0) },
+          { totalAmount: money('400.00'), status: 'CLOSED', dueDate: due(1) },
+          { totalAmount: money('500.00'), status: 'OPEN', dueDate: due(29) },
+          { totalAmount: money('600.00'), status: 'CLOSED', dueDate: due(30) },
+          { totalAmount: money('700.00'), status: 'OPEN', dueDate: due(31) },
+          { totalAmount: money('999.00'), status: 'PAID', dueDate: due(-1) },
+        ]),
+      },
+    } as any;
+
+    const result = await new BudgetV2Service(prisma).getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.ALL_TIME,
+      new Date('2026-09-10T12:00:00.000Z'),
+    );
+
+    expect(result.pending).toEqual({
+      inflow: '15.00',
+      outflow: '2250.00',
+      net: '-2235.00',
+      overdue: { inflow: '1.00', outflow: '310.00' },
+    });
+    expect(result.composition.upcoming).toEqual({
+      receivables: '14.00',
+      debts: '140.00',
+      invoices: '1800.00',
+    });
+    expect(result.resultAfterPending).toBe('-2235.00');
+    expect(result.pending.inflow).toBe('15.00');
+    expect(result.pending.overdue.inflow).toBe('1.00');
   });
 
   it('rejects an invalid preset before starting aggregation queries', async () => {
