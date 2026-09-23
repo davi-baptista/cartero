@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, TransactionType } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { deriveBudgetV2PeriodBounds } from 'src/common/helpers/financial-period.helper';
 import { financialCivilDay } from 'src/common/helpers/financial-timezone.helper';
@@ -9,12 +9,14 @@ import {
   type BudgetV2RealizedComposition,
   type BudgetV2ResponseContract,
 } from './budget-v2.types';
-
-const DIRECT_TRANSACTION_TYPES: TransactionType[] = [
-  TransactionType.PIX,
-  TransactionType.DEBIT_CARD,
-  TransactionType.BOLETO,
-];
+import {
+  BudgetV2Bucket,
+  classifyBudgetV2Debt,
+  classifyBudgetV2Invoice,
+  classifyBudgetV2PersonSettlement,
+  classifyBudgetV2Receivable,
+  classifyBudgetV2Transaction,
+} from './budget-v2-classification.helper';
 
 const ZERO = new Prisma.Decimal(0);
 
@@ -31,21 +33,6 @@ function shiftCivilDate(date: string, days: number): string {
   return new Date(Date.UTC(year, month - 1, day + days, 12))
     .toISOString()
     .slice(0, 10);
-}
-
-function storedCivilDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-function classifyDueDate(
-  dueDate: Date,
-  today: string,
-  horizonExclusive: string,
-): 'overdue' | 'upcoming' | 'outside' {
-  const dueDay = storedCivilDate(dueDate);
-  if (dueDay < today) return 'overdue';
-  if (dueDay < horizonExclusive) return 'upcoming';
-  return 'outside';
 }
 
 @Injectable()
@@ -132,28 +119,25 @@ export class BudgetV2Service {
     };
 
     for (const transaction of transactions) {
-      if (transaction.isRefund) continue;
-
-      if (transaction.type === TransactionType.INCOME) {
-        if (transaction.paymentReceivable?.userId === userId) {
-          composition.receivableReceipts = composition.receivableReceipts.add(
-            transaction.amount,
-          );
-        } else {
+      switch (classifyBudgetV2Transaction(transaction, userId)) {
+        case BudgetV2Bucket.MANUAL_INCOME:
           composition.manualIncome = composition.manualIncome.add(
             transaction.amount,
           );
-        }
-        continue;
-      }
-
-      if (!DIRECT_TRANSACTION_TYPES.includes(transaction.type)) continue;
-      if (transaction.paymentDebt?.userId === userId) {
-        composition.debtDirectSettlements =
-          composition.debtDirectSettlements.add(transaction.amount);
-      } else {
-        composition.manualDirectTransactions =
-          composition.manualDirectTransactions.add(transaction.amount);
+          break;
+        case BudgetV2Bucket.RECEIVABLE_RECEIPTS:
+          composition.receivableReceipts = composition.receivableReceipts.add(
+            transaction.amount,
+          );
+          break;
+        case BudgetV2Bucket.DIRECT_EXPENSES:
+          composition.manualDirectTransactions =
+            composition.manualDirectTransactions.add(transaction.amount);
+          break;
+        case BudgetV2Bucket.DEBT_DIRECT_SETTLEMENTS:
+          composition.debtDirectSettlements =
+            composition.debtDirectSettlements.add(transaction.amount);
+          break;
       }
     }
 
@@ -162,16 +146,15 @@ export class BudgetV2Service {
     );
 
     for (const group of groups) {
-      if (group.direction === 'INFLOW') {
-        composition.personSettlementInflows =
-          composition.personSettlementInflows.add(group.netAmount);
-      } else if (
-        group.direction === 'OUTFLOW' &&
-        group.paymentType &&
-        DIRECT_TRANSACTION_TYPES.includes(group.paymentType)
-      ) {
-        composition.personSettlementDirectOutflows =
-          composition.personSettlementDirectOutflows.add(group.netAmount);
+      switch (classifyBudgetV2PersonSettlement(group)) {
+        case BudgetV2Bucket.PERSON_SETTLEMENT_INFLOW:
+          composition.personSettlementInflows =
+            composition.personSettlementInflows.add(group.netAmount);
+          break;
+        case BudgetV2Bucket.PERSON_SETTLEMENT_DIRECT_OUTFLOW:
+          composition.personSettlementDirectOutflows =
+            composition.personSettlementDirectOutflows.add(group.netAmount);
+          break;
       }
     }
 
@@ -191,11 +174,12 @@ export class BudgetV2Service {
       receivables
         .filter(
           (receivable) =>
-            classifyDueDate(
+            classifyBudgetV2Receivable(
+              false,
               receivable.dueDate,
               todayCivil,
               horizonExclusive,
-            ) === 'upcoming',
+            ) === BudgetV2Bucket.UPCOMING_RECEIVABLES,
         )
         .map((receivable) => receivable.amount),
     );
@@ -203,11 +187,12 @@ export class BudgetV2Service {
       receivables
         .filter(
           (receivable) =>
-            classifyDueDate(
+            classifyBudgetV2Receivable(
+              false,
               receivable.dueDate,
               todayCivil,
               horizonExclusive,
-            ) === 'overdue',
+            ) === BudgetV2Bucket.OVERDUE_RECEIVABLES,
         )
         .map((receivable) => receivable.amount),
     );
@@ -215,8 +200,12 @@ export class BudgetV2Service {
       debts
         .filter(
           (debt) =>
-            classifyDueDate(debt.dueDate, todayCivil, horizonExclusive) ===
-            'upcoming',
+            classifyBudgetV2Debt(
+              false,
+              debt.dueDate,
+              todayCivil,
+              horizonExclusive,
+            ) === BudgetV2Bucket.UPCOMING_DEBTS,
         )
         .map((debt) => debt.amount),
     );
@@ -224,29 +213,38 @@ export class BudgetV2Service {
       debts
         .filter(
           (debt) =>
-            classifyDueDate(debt.dueDate, todayCivil, horizonExclusive) ===
-            'overdue',
+            classifyBudgetV2Debt(
+              false,
+              debt.dueDate,
+              todayCivil,
+              horizonExclusive,
+            ) === BudgetV2Bucket.OVERDUE_OUTFLOWS,
         )
         .map((debt) => debt.amount),
     );
-    const unresolvedInvoices = invoices.filter(
-      (invoice) => invoice.status !== 'PAID',
-    );
     const upcomingInvoices = sumDecimal(
-      unresolvedInvoices
+      invoices
         .filter(
           (invoice) =>
-            classifyDueDate(invoice.dueDate, todayCivil, horizonExclusive) ===
-            'upcoming',
+            classifyBudgetV2Invoice(
+              invoice.status,
+              invoice.dueDate,
+              todayCivil,
+              horizonExclusive,
+            ) === BudgetV2Bucket.UPCOMING_INVOICES,
         )
         .map((invoice) => invoice.totalAmount),
     );
     const overdueInvoices = sumDecimal(
-      unresolvedInvoices
+      invoices
         .filter(
           (invoice) =>
-            classifyDueDate(invoice.dueDate, todayCivil, horizonExclusive) ===
-            'overdue',
+            classifyBudgetV2Invoice(
+              invoice.status,
+              invoice.dueDate,
+              todayCivil,
+              horizonExclusive,
+            ) === BudgetV2Bucket.OVERDUE_OUTFLOWS,
         )
         .map((invoice) => invoice.totalAmount),
     );
