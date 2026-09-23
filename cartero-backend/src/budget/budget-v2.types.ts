@@ -46,7 +46,7 @@ export interface BudgetV2Open {
   };
 }
 
-/** Current public response; open/future sections are added in later slices. */
+/** Complete public core response; future projections are intentionally absent. */
 export interface BudgetV2ResponseContract {
   period: BudgetV2Period;
   realized: BudgetV2Realized;

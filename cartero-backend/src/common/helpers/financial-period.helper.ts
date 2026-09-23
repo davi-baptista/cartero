@@ -80,10 +80,11 @@ export function deriveBudgetV2PeriodBounds(
       endDate = tomorrow;
       break;
     case BudgetV2PeriodPreset.LAST_30_DAYS:
-    default:
       startDate = shiftCivilDate(today, -29);
       endDate = tomorrow;
       break;
+    default:
+      throw new Error(`Invalid Budget V2 period preset: ${String(preset)}`);
   }
 
   const endExclusive = firstInstantOfFinancialDay(endDate, timeZone);

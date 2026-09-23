@@ -396,6 +396,553 @@ describe('BudgetV2Service', () => {
     for (const result of results.slice(1)) {
       expect(result.open).toEqual(results[0].open);
       expect(result.composition.open).toEqual(results[0].composition.open);
+      expect(result.open.overdue).toEqual(results[0].open.overdue);
     }
+  });
+
+  it('integrates every realized and open authority in one complete response', async () => {
+    const prisma = {
+      user: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          timeZone: 'America/Sao_Paulo',
+        })),
+      },
+      transaction: {
+        findMany: vi.fn(async ({ where }: any) => {
+          expect(where.userId).toBe('user-a');
+          return [
+            {
+              type: 'INCOME',
+              amount: money('1000.00'),
+              isRefund: false,
+              paymentDebt: null,
+              paymentReceivable: null,
+            },
+            {
+              type: 'INCOME',
+              amount: money('200.00'),
+              isRefund: false,
+              paymentDebt: null,
+              paymentReceivable: { userId: 'user-a' },
+            },
+            {
+              type: 'PIX',
+              amount: money('300.00'),
+              isRefund: false,
+              paymentDebt: null,
+              paymentReceivable: null,
+            },
+            {
+              type: 'PIX',
+              amount: money('100.00'),
+              isRefund: false,
+              paymentDebt: { userId: 'user-a' },
+              paymentReceivable: null,
+            },
+          ];
+        }),
+      },
+      invoiceSettlement: {
+        findMany: vi.fn(async ({ where }: any) => {
+          expect(where.invoice.userId).toBe('user-a');
+          return [{ amount: money('500.00') }];
+        }),
+      },
+      personSettlementGroup: {
+        findMany: vi.fn(async ({ where }: any) => {
+          expect(where.userId).toBe('user-a');
+          return [
+            {
+              direction: 'INFLOW',
+              paymentType: null,
+              netAmount: money('50.00'),
+            },
+            {
+              direction: 'OUTFLOW',
+              paymentType: 'PIX',
+              netAmount: money('50.00'),
+            },
+          ];
+        }),
+      },
+      receivable: {
+        findMany: vi.fn(async ({ where }: any) => {
+          expect(where).toEqual({ userId: 'user-a', isPaid: false });
+          return [
+            {
+              amount: money('100.00'),
+              dueDate: new Date('2026-09-15T12:00:00.000Z'),
+            },
+            {
+              amount: money('200.00'),
+              dueDate: new Date('2026-09-20T12:00:00.000Z'),
+            },
+          ];
+        }),
+      },
+      debt: {
+        findMany: vi.fn(async ({ where }: any) => {
+          expect(where).toEqual({ userId: 'user-a', isPaid: false });
+          return [
+            {
+              amount: money('50.00'),
+              dueDate: new Date('2026-09-15T12:00:00.000Z'),
+            },
+            {
+              amount: money('100.00'),
+              dueDate: new Date('2026-09-20T12:00:00.000Z'),
+            },
+          ];
+        }),
+      },
+      invoice: {
+        findMany: vi.fn(async ({ where }: any) => {
+          expect(where).toEqual({
+            userId: 'user-a',
+            status: { in: ['OPEN', 'CLOSED', 'OVERDUE'] },
+          });
+          return [
+            { totalAmount: money('400.00'), status: 'OPEN' },
+            { totalAmount: money('200.00'), status: 'OVERDUE' },
+          ];
+        }),
+      },
+    } as any;
+
+    const result = await new BudgetV2Service(prisma).getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.THIS_MONTH,
+      new Date('2026-09-16T12:00:00.000Z'),
+    );
+
+    expect(result.realized).toEqual({
+      inflow: '1250.00',
+      outflow: '950.00',
+      balance: '300.00',
+    });
+    expect(result.composition.realized).toEqual({
+      manualIncome: '1000.00',
+      receivableReceipts: '200.00',
+      personSettlementInflows: '50.00',
+      manualDirectTransactions: '300.00',
+      debtDirectSettlements: '100.00',
+      invoiceSettlements: '500.00',
+      personSettlementDirectOutflows: '50.00',
+    });
+    expect(result.open).toEqual({
+      inflow: '300.00',
+      outflow: '750.00',
+      net: '-450.00',
+      overdue: { inflow: '100.00', outflow: '250.00' },
+    });
+    expect(result.composition.open).toEqual({
+      invoices: '600.00',
+      debts: '150.00',
+      receivables: '300.00',
+    });
+    expect(result.period).toEqual({
+      preset: BudgetV2PeriodPreset.THIS_MONTH,
+      startDate: '2026-09-01',
+      endDate: '2026-10-01',
+      timeZone: 'America/Sao_Paulo',
+    });
+    expect(Object.keys(result).sort()).toEqual([
+      'composition',
+      'open',
+      'period',
+      'realized',
+    ]);
+    expect(result).not.toHaveProperty('future');
+    expect(result).not.toHaveProperty('projection');
+    expect(result).not.toHaveProperty('estimatedBalance');
+    expect(result).not.toHaveProperty('bankBalance');
+    expect(result).not.toHaveProperty('salary');
+  });
+
+  it('keeps a third-party reimbursement gross across its lifecycle', async () => {
+    let receiptRecorded = false;
+    const prisma = {
+      user: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          timeZone: 'America/Sao_Paulo',
+        })),
+      },
+      transaction: {
+        findMany: vi.fn(async () =>
+          receiptRecorded
+            ? [
+                {
+                  type: 'PIX',
+                  amount: money('500.00'),
+                  isRefund: false,
+                  paymentDebt: null,
+                  paymentReceivable: null,
+                },
+                {
+                  type: 'INCOME',
+                  amount: money('200.00'),
+                  isRefund: false,
+                  paymentDebt: null,
+                  paymentReceivable: { userId: 'user-a' },
+                },
+              ]
+            : [
+                {
+                  type: 'PIX',
+                  amount: money('500.00'),
+                  isRefund: false,
+                  paymentDebt: null,
+                  paymentReceivable: null,
+                },
+              ],
+        ),
+      },
+      invoiceSettlement: { findMany: vi.fn(async () => []) },
+      personSettlementGroup: { findMany: vi.fn(async () => []) },
+      receivable: {
+        findMany: vi.fn(async () =>
+          receiptRecorded
+            ? []
+            : [
+                {
+                  amount: money('200.00'),
+                  dueDate: new Date('2026-09-20T12:00:00.000Z'),
+                },
+              ],
+        ),
+      },
+      debt: { findMany: vi.fn(async () => []) },
+      invoice: { findMany: vi.fn(async () => []) },
+    } as any;
+    const service = new BudgetV2Service(prisma);
+
+    const beforeReceipt = await service.getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.ALL_TIME,
+      new Date('2026-09-16T12:00:00.000Z'),
+    );
+    expect(beforeReceipt.realized).toMatchObject({
+      outflow: '500.00',
+      balance: '-500.00',
+    });
+    expect(beforeReceipt.open.inflow).toBe('200.00');
+
+    receiptRecorded = true;
+    const afterReceipt = await service.getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.ALL_TIME,
+      new Date('2026-09-16T12:00:00.000Z'),
+    );
+    expect(afterReceipt.realized).toMatchObject({
+      inflow: '200.00',
+      outflow: '500.00',
+      balance: '-300.00',
+    });
+    expect(afterReceipt.open.inflow).toBe('0.00');
+  });
+
+  it('migrates debt authority from open to direct or invoice settlement exactly once', async () => {
+    let directSettled = false;
+    let creditSettled = false;
+    let invoicePaid = false;
+    const prisma = {
+      user: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          timeZone: 'America/Sao_Paulo',
+        })),
+      },
+      transaction: {
+        findMany: vi.fn(async () => {
+          if (directSettled) {
+            return [
+              {
+                type: 'PIX',
+                amount: money('100.00'),
+                isRefund: false,
+                paymentDebt: { userId: 'user-a' },
+                paymentReceivable: null,
+              },
+            ];
+          }
+          if (creditSettled) {
+            return [
+              {
+                type: 'CREDIT_CARD',
+                amount: money('100.00'),
+                isRefund: false,
+                paymentDebt: { userId: 'user-a' },
+                paymentReceivable: null,
+              },
+            ];
+          }
+          return [];
+        }),
+      },
+      invoiceSettlement: {
+        findMany: vi.fn(async () =>
+          invoicePaid ? [{ amount: money('100.00') }] : [],
+        ),
+      },
+      personSettlementGroup: { findMany: vi.fn(async () => []) },
+      receivable: { findMany: vi.fn(async () => []) },
+      debt: {
+        findMany: vi.fn(async () =>
+          directSettled || creditSettled
+            ? []
+            : [{ amount: money('100.00'), dueDate: new Date('2026-09-20') }],
+        ),
+      },
+      invoice: {
+        findMany: vi.fn(async () =>
+          creditSettled && !invoicePaid
+            ? [{ totalAmount: money('100.00'), status: 'OPEN' }]
+            : [],
+        ),
+      },
+    } as any;
+    const service = new BudgetV2Service(prisma);
+    const now = new Date('2026-09-16T12:00:00.000Z');
+
+    expect(
+      (await service.getBudget('user-a', BudgetV2PeriodPreset.ALL_TIME, now))
+        .open.outflow,
+    ).toBe('100.00');
+    directSettled = true;
+    const direct = await service.getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.ALL_TIME,
+      now,
+    );
+    expect(direct.open.outflow).toBe('0.00');
+    expect(direct.composition.realized.debtDirectSettlements).toBe('100.00');
+
+    directSettled = false;
+    creditSettled = true;
+    const credit = await service.getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.ALL_TIME,
+      now,
+    );
+    expect(credit.realized.outflow).toBe('0.00');
+    expect(credit.open.outflow).toBe('100.00');
+    invoicePaid = true;
+    const invoice = await service.getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.ALL_TIME,
+      now,
+    );
+    expect(invoice.open.outflow).toBe('0.00');
+    expect(invoice.composition.realized.invoiceSettlements).toBe('100.00');
+  });
+
+  it('keeps direct group settlement out of open and restores members after undo', async () => {
+    let settled = false;
+    let reversed = false;
+    const prisma = {
+      user: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          timeZone: 'America/Sao_Paulo',
+        })),
+      },
+      transaction: { findMany: vi.fn(async () => []) },
+      invoiceSettlement: { findMany: vi.fn(async () => []) },
+      personSettlementGroup: {
+        findMany: vi.fn(async () =>
+          settled && !reversed
+            ? [
+                {
+                  direction: 'OUTFLOW',
+                  paymentType: 'PIX',
+                  netAmount: money('50.00'),
+                },
+              ]
+            : [],
+        ),
+      },
+      receivable: {
+        findMany: vi.fn(async () =>
+          settled && !reversed
+            ? []
+            : [{ amount: money('200.00'), dueDate: new Date('2026-09-20') }],
+        ),
+      },
+      debt: {
+        findMany: vi.fn(async () =>
+          settled && !reversed
+            ? []
+            : [{ amount: money('250.00'), dueDate: new Date('2026-09-20') }],
+        ),
+      },
+      invoice: { findMany: vi.fn(async () => []) },
+    } as any;
+    const service = new BudgetV2Service(prisma);
+    const now = new Date('2026-09-16T12:00:00.000Z');
+
+    const before = await service.getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.ALL_TIME,
+      now,
+    );
+    expect(before.open).toMatchObject({ inflow: '200.00', outflow: '250.00' });
+    settled = true;
+    const after = await service.getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.ALL_TIME,
+      now,
+    );
+    expect(after.open).toMatchObject({ inflow: '0.00', outflow: '0.00' });
+    expect(after.composition.realized.personSettlementDirectOutflows).toBe(
+      '50.00',
+    );
+    reversed = true;
+    const undo = await service.getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.ALL_TIME,
+      now,
+    );
+    expect(undo.open).toMatchObject({ inflow: '200.00', outflow: '250.00' });
+    expect(undo.realized.outflow).toBe('0.00');
+  });
+
+  it('migrates a credit group settlement to one invoice authority', async () => {
+    let creditSettled = false;
+    let invoicePaid = false;
+    const prisma = {
+      user: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          timeZone: 'America/Sao_Paulo',
+        })),
+      },
+      transaction: { findMany: vi.fn(async () => []) },
+      invoiceSettlement: {
+        findMany: vi.fn(async () =>
+          invoicePaid ? [{ amount: money('50.00') }] : [],
+        ),
+      },
+      personSettlementGroup: {
+        findMany: vi.fn(async () =>
+          creditSettled && !invoicePaid
+            ? [
+                {
+                  direction: 'OUTFLOW',
+                  paymentType: 'CREDIT_CARD',
+                  netAmount: money('50.00'),
+                },
+              ]
+            : [],
+        ),
+      },
+      receivable: {
+        findMany: vi.fn(async () =>
+          creditSettled
+            ? []
+            : [{ amount: money('200.00'), dueDate: new Date('2026-09-20') }],
+        ),
+      },
+      debt: {
+        findMany: vi.fn(async () =>
+          creditSettled
+            ? []
+            : [{ amount: money('250.00'), dueDate: new Date('2026-09-20') }],
+        ),
+      },
+      invoice: {
+        findMany: vi.fn(async () =>
+          creditSettled && !invoicePaid
+            ? [{ totalAmount: money('50.00'), status: 'OPEN' }]
+            : [],
+        ),
+      },
+    } as any;
+    const service = new BudgetV2Service(prisma);
+    const now = new Date('2026-09-16T12:00:00.000Z');
+
+    const before = await service.getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.ALL_TIME,
+      now,
+    );
+    expect(before.open).toMatchObject({ inflow: '200.00', outflow: '250.00' });
+    creditSettled = true;
+    const credit = await service.getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.ALL_TIME,
+      now,
+    );
+    expect(credit.open.outflow).toBe('50.00');
+    expect(credit.realized.outflow).toBe('0.00');
+    invoicePaid = true;
+    const invoice = await service.getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.ALL_TIME,
+      now,
+    );
+    expect(invoice.open.outflow).toBe('0.00');
+    expect(invoice.composition.realized.invoiceSettlements).toBe('50.00');
+  });
+
+  it('keeps ALL_TIME historical bounds and open future obligations separate', async () => {
+    let transactionDate: any;
+    const prisma = {
+      user: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          timeZone: 'America/Sao_Paulo',
+        })),
+      },
+      transaction: {
+        findMany: vi.fn(async ({ where }: any) => {
+          transactionDate = where.date;
+          return [];
+        }),
+      },
+      invoiceSettlement: { findMany: vi.fn(async () => []) },
+      personSettlementGroup: { findMany: vi.fn(async () => []) },
+      receivable: { findMany: vi.fn(async () => []) },
+      debt: {
+        findMany: vi.fn(async () => [
+          { amount: money('100.00'), dueDate: new Date('2026-12-20') },
+        ]),
+      },
+      invoice: { findMany: vi.fn(async () => []) },
+    } as any;
+    const result = await new BudgetV2Service(prisma).getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.ALL_TIME,
+      new Date('2026-09-16T02:00:00.000Z'),
+    );
+
+    expect(transactionDate.lt).toEqual(new Date('2026-09-16T03:00:00.000Z'));
+    expect(result.realized).toEqual({
+      inflow: '0.00',
+      outflow: '0.00',
+      balance: '0.00',
+    });
+    expect(result.open.outflow).toBe('100.00');
+  });
+
+  it('rejects an invalid preset before starting aggregation queries', async () => {
+    const prisma = {
+      user: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          timeZone: 'America/Sao_Paulo',
+        })),
+      },
+      transaction: { findMany: vi.fn() },
+      invoiceSettlement: { findMany: vi.fn() },
+      personSettlementGroup: { findMany: vi.fn() },
+      receivable: { findMany: vi.fn() },
+      debt: { findMany: vi.fn() },
+      invoice: { findMany: vi.fn() },
+    } as any;
+
+    await expect(
+      new BudgetV2Service(prisma).getBudget(
+        'user-a',
+        'INVALID' as BudgetV2PeriodPreset,
+        new Date('2026-09-16T12:00:00.000Z'),
+      ),
+    ).rejects.toThrow();
+    expect(prisma.transaction.findMany).not.toHaveBeenCalled();
+    expect(prisma.receivable.findMany).not.toHaveBeenCalled();
   });
 });

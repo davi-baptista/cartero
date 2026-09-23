@@ -6,6 +6,7 @@ import { BudgetService } from './budget.service';
 import { GetBudgetDto } from './dto/get-budget.dto';
 import { BudgetV2Service } from './budget-v2.service';
 import { GetBudgetV2Dto } from './dto/get-budget-v2.dto';
+import type { BudgetV2ResponseContract } from './budget-v2.types';
 
 @Controller('budget')
 @UseGuards(JwtAuthGuard)
@@ -19,7 +20,7 @@ export class BudgetController {
   getV2(
     @CurrentUser() user: AuthenticatedUser,
     @Query() filters: GetBudgetV2Dto,
-  ) {
+  ): Promise<BudgetV2ResponseContract> {
     return this.budgetV2Service.getBudget(user.id, filters.preset);
   }
 
