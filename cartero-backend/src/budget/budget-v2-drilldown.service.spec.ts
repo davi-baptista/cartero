@@ -38,7 +38,9 @@ function matchesValue(actual: any, condition: any): boolean {
   if (condition.lt && !(actual < condition.lt)) return false;
   if ('not' in condition) return !matchesValue(actual, condition.not);
   if ('is' in condition)
-    return actual !== null && matchesWhere(actual, condition.is);
+    return condition.is === null
+      ? actual === null
+      : actual !== null && matchesWhere(actual, condition.is);
   if ('isNot' in condition)
     return actual === null || !matchesWhere(actual, condition.isNot);
   if (
@@ -105,6 +107,7 @@ function createPrisma() {
   const transactions = [
     {
       id: 'tx-income',
+      userId: 'user-a',
       type: TransactionType.INCOME,
       amount: money('10.00'),
       date: date('2026-09-01'),
@@ -118,6 +121,7 @@ function createPrisma() {
     },
     {
       id: 'tx-receipt',
+      userId: 'user-a',
       type: TransactionType.INCOME,
       amount: money('20.00'),
       date: date('2026-09-02'),
@@ -138,6 +142,7 @@ function createPrisma() {
     },
     {
       id: 'tx-expense',
+      userId: 'user-a',
       type: TransactionType.PIX,
       amount: money('30.00'),
       date: date('2026-09-03'),
@@ -150,7 +155,36 @@ function createPrisma() {
       paymentReceivable: null,
     },
     {
+      id: 'tx-expense-same-date',
+      userId: 'user-a',
+      type: TransactionType.PIX,
+      amount: money('31.00'),
+      date: date('2026-09-03'),
+      isRefund: false,
+      title: 'Farmácia',
+      description: null,
+      bank: { name: 'Inter' },
+      category: { name: 'Saúde' },
+      paymentDebt: null,
+      paymentReceivable: null,
+    },
+    {
+      id: 'tx-expense-foreign',
+      userId: 'user-b',
+      type: TransactionType.PIX,
+      amount: money('999.00'),
+      date: date('2026-09-03'),
+      isRefund: false,
+      title: 'Foreign expense',
+      description: null,
+      bank: { name: 'Inter' },
+      category: { name: 'Casa' },
+      paymentDebt: null,
+      paymentReceivable: null,
+    },
+    {
       id: 'tx-debt',
+      userId: 'user-a',
       type: TransactionType.DEBIT_CARD,
       amount: money('40.00'),
       date: date('2026-09-04'),
@@ -383,7 +417,21 @@ function createPrisma() {
       amount: money('70.00'),
       paidAt: date('2026-09-07'),
       invoice: {
+        userId: 'user-a',
         dueDate: date('2026-09-05'),
+        month: 8,
+        year: 2026,
+        bank: { name: 'Inter' },
+      },
+    },
+    {
+      id: 'settlement-invoice-foreign',
+      invoiceId: 'invoice-settled-foreign',
+      amount: money('999.00'),
+      paidAt: date('2026-09-08'),
+      invoice: {
+        userId: 'user-b',
+        dueDate: date('2026-09-06'),
         month: 8,
         year: 2026,
         bank: { name: 'Inter' },
@@ -481,6 +529,102 @@ describe('BudgetV2DrilldownService', () => {
         bucket,
       ).toBe(expected);
     }
+  });
+
+  it('proves invoice settlement reconciliation is non-vacuous and relation-scoped', async () => {
+    const prisma = createPrisma();
+    const summary = await new BudgetV2Service(prisma).getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.LAST_30_DAYS,
+      date('2026-09-10'),
+    );
+    const service = new BudgetV2DrilldownService(prisma);
+    const first = await service.getDrilldown(
+      'user-a',
+      {
+        bucket: BudgetV2Bucket.INVOICE_SETTLEMENTS,
+        preset: BudgetV2PeriodPreset.LAST_30_DAYS,
+        limit: 1,
+      } as any,
+      date('2026-09-10'),
+    );
+    expect(summary.composition.realized.invoiceSettlements).toBe('70.00');
+    expect(summary.composition.realized.invoiceSettlements).not.toBe('0.00');
+    expect(first.items.map((item) => item.id)).toEqual(['settlement-invoice']);
+    expect(first.total).toBe('70.00');
+    expect(
+      first.items
+        .reduce(
+          (sum, item) => sum.add(new Prisma.Decimal(item.amount)),
+          money('0'),
+        )
+        .toFixed(2),
+    ).toBe('70.00');
+    expect(first.pageInfo.hasMore).toBe(false);
+  });
+
+  it('excludes foreign direct and invoice-settlement contributors from pages and totals', async () => {
+    const service = new BudgetV2DrilldownService(createPrisma());
+    const direct = await service.getDrilldown(
+      'user-a',
+      {
+        bucket: BudgetV2Bucket.DIRECT_EXPENSES,
+        preset: BudgetV2PeriodPreset.LAST_30_DAYS,
+        limit: 10,
+      } as any,
+      date('2026-09-10'),
+    );
+    const invoiceSettlements = await service.getDrilldown(
+      'user-a',
+      {
+        bucket: BudgetV2Bucket.INVOICE_SETTLEMENTS,
+        preset: BudgetV2PeriodPreset.LAST_30_DAYS,
+        limit: 10,
+      } as any,
+      date('2026-09-10'),
+    );
+
+    expect(direct.items.map((item) => item.id)).not.toContain(
+      'tx-expense-foreign',
+    );
+    expect(direct.total).toBe('61.00');
+    expect(invoiceSettlements.items.map((item) => item.id)).toEqual([
+      'settlement-invoice',
+    ]);
+    expect(invoiceSettlements.total).toBe('70.00');
+  });
+
+  it('paginates same-date homogeneous transactions without skips or duplicates', async () => {
+    const service = new BudgetV2DrilldownService(createPrisma());
+    const pages = [] as Awaited<
+      ReturnType<BudgetV2DrilldownService['getDrilldown']>
+    >[];
+    let cursor: string | undefined;
+    do {
+      const page = await service.getDrilldown(
+        'user-a',
+        {
+          bucket: BudgetV2Bucket.DIRECT_EXPENSES,
+          preset: BudgetV2PeriodPreset.LAST_30_DAYS,
+          limit: 1,
+          ...(cursor ? { cursor } : {}),
+        } as any,
+        date('2026-09-10'),
+      );
+      pages.push(page);
+      cursor = page.pageInfo.nextCursor ?? undefined;
+    } while (pages.at(-1)!.pageInfo.hasMore);
+
+    expect(pages.map((page) => page.items.map((item) => item.id))).toEqual([
+      ['tx-expense'],
+      ['tx-expense-same-date'],
+    ]);
+    expect(pages.map((page) => page.pageInfo.hasMore)).toEqual([true, false]);
+    expect(pages.at(-1)!.pageInfo.nextCursor).toBeNull();
+    expect(pages.map((page) => page.total)).toEqual(['61.00', '61.00']);
+    expect(
+      new Set(pages.flatMap((page) => page.items.map((item) => item.id))).size,
+    ).toBe(2);
   });
 
   it('keeps mixed-month upcoming invoices together and applies exact boundaries', async () => {
@@ -670,6 +814,34 @@ describe('BudgetV2DrilldownService', () => {
       }
       expect(model.aggregate).toHaveBeenCalled();
     }
+  });
+
+  it('keeps ALL_TIME realized pages database-bounded', async () => {
+    const prisma = createPrisma();
+    const service = new BudgetV2DrilldownService(prisma);
+
+    await service.getDrilldown(
+      'user-a',
+      {
+        bucket: BudgetV2Bucket.DIRECT_EXPENSES,
+        preset: BudgetV2PeriodPreset.ALL_TIME,
+        limit: 1,
+      } as any,
+      date('2026-09-10'),
+    );
+
+    expect(prisma.transaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        take: 2,
+        orderBy: [{ date: 'desc' }, { id: 'asc' }],
+      }),
+    );
+    expect(prisma.transaction.findMany.mock.calls[0][0].where).toEqual(
+      expect.objectContaining({
+        userId: 'user-a',
+        date: { lt: expect.any(Date) },
+      }),
+    );
   });
 
   it('rejects invalid period scope and incompatible cursors', async () => {

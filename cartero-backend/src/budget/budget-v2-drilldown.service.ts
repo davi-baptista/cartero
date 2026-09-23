@@ -193,10 +193,6 @@ function isRealizedBucket(bucket: BudgetV2Bucket): boolean {
   ].includes(bucket);
 }
 
-function isDescending(bucket: BudgetV2Bucket): boolean {
-  return isRealizedBucket(bucket);
-}
-
 function dateIdCursorWhere(
   cursor: CursorPayload | null,
   descending: boolean,
@@ -258,6 +254,11 @@ function compareOverdue(a: SortableItem, b: SortableItem): number {
     OVERDUE_KIND_RANK[b.kind as keyof typeof OVERDUE_KIND_RANK];
   if (kinds !== 0) return kinds;
   return a.id.localeCompare(b.id);
+}
+
+function assertNever(value: never): never {
+  void value;
+  throw new Error('Unsupported drilldown bucket');
 }
 
 @Injectable()
@@ -408,7 +409,7 @@ export class BudgetV2DrilldownService {
       case BudgetV2Bucket.UPCOMING_INVOICES:
         return this.loadInvoicePageAndTotal(userId, date, cursor, limit);
       default:
-        throw new Error(`Unsupported drilldown bucket: ${bucket}`);
+        return assertNever(bucket);
     }
   }
 
