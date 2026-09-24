@@ -56,8 +56,6 @@ import {
   reopenInvoice,
   markManyInvoicesPaid,
 } from '@/services/invoices.service'
-import { getBanks } from '@/services/banks.service'
-import type { Bank } from '@/types'
 import {
   formatCurrency,
   formatMonthYear,
@@ -69,9 +67,7 @@ import {
   invoiceComposition,
 } from '@/lib/invoice-composition'
 import { parseDateOnly, formatDateValue, todayDateValue } from '@/lib/date'
-import { DatePicker } from '@/components/ui/date-picker'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SettlementPaymentFields } from '@/components/settlement-payment-fields'
 import { useAuth } from '@/providers/auth-provider'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import {
@@ -398,7 +394,6 @@ export function InvoiceDetailsDrawer({
   const [paymentConfirm, setPaymentConfirm] = useState(false)
   const [paymentDate, setPaymentDate] = useState(todayDateValue())
   const [paymentBankId, setPaymentBankId] = useState('')
-  const { data: paymentBanks = [] } = useQuery({ queryKey: ['banks'], queryFn: () => getBanks() })
   const [txSheetOpen, setTxSheetOpen] = useState(false)
   const [editTx, setEditTx] = useState<Transaction | null>(null)
   const [scopeDialog, setScopeDialog] = useState<{
@@ -949,21 +944,17 @@ export function InvoiceDetailsDrawer({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Registrar pagamento da fatura</DialogTitle>
-            <DialogDescription>Informe a data efetiva. O banco é opcional.</DialogDescription>
+            <DialogDescription>Informe a data efetiva do pagamento. Você pode adicionar um banco se quiser.</DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-3 py-1">
-            <div className="flex flex-col gap-1.5">
-              <Label>Data do pagamento</Label>
-              <DatePicker value={paymentDate} onChange={setPaymentDate} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Banco/conta (opcional)</Label>
-              <Select value={paymentBankId || null} onValueChange={(v) => setPaymentBankId(v ?? '')}>
-                <SelectTrigger aria-label="Banco/conta"><SelectValue placeholder="Não informado" /></SelectTrigger>
-                <SelectContent>{paymentBanks.map((bank: Bank) => <SelectItem key={bank.id} value={bank.id}>{bank.name}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-          </div>
+          <SettlementPaymentFields
+            open={paymentConfirm}
+            paymentDate={paymentDate}
+            onPaymentDateChange={setPaymentDate}
+            dateLabel="Data do pagamento"
+            bankId={paymentBankId}
+            onBankIdChange={setPaymentBankId}
+            bankPlaceholder="Não informado"
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setPaymentConfirm(false)} disabled={markPaidMut.isPending}>Cancelar</Button>
             <Button onClick={() => markPaidMut.mutate()} disabled={!paymentDate || markPaidMut.isPending}>

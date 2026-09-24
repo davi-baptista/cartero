@@ -146,11 +146,13 @@ export function invoiceTimingLabel(
     return `Venceu em ${formatDate(invoice.dueDate)}`
   }
 
-  if (invoice.status === 'OPEN') {
+  const closeDiff = civilDaysUntil(parseInvoiceDate(invoice.closeDate), today)
+  if (closeDiff > 0) {
     return formatCloseTiming(parseInvoiceDate(invoice.closeDate), today, 'short')
   }
 
-  return formatDueTiming(parseInvoiceDate(invoice.dueDate), today, 'short')
+  const dueDiff = civilDaysUntil(parseInvoiceDate(invoice.dueDate), today)
+  return dueDiff < 0 ? 'Em atraso' : formatDueTiming(parseInvoiceDate(invoice.dueDate), today, 'short')
 }
 
 /**
@@ -184,9 +186,10 @@ export function invoiceTimingClass(
 ): string {
   if (invoice.status === 'PAID') return 'text-muted-foreground'
 
-  const target = parseInvoiceDate(
-    invoice.status === 'OPEN' ? invoice.closeDate : invoice.dueDate,
-  )
+  const closeDate = parseInvoiceDate(invoice.closeDate)
+  const target = civilDaysUntil(closeDate, today) >= 0
+    ? closeDate
+    : parseInvoiceDate(invoice.dueDate)
 
   switch (timingUrgency(target, today)) {
     case 'overdue':

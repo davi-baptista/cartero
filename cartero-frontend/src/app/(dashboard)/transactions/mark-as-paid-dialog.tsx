@@ -1,32 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 import { DIALOG_COMPACT_CLASS } from '@/components/ui/confirm-dialog'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Loader2 } from 'lucide-react'
-import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { DatePicker } from '@/components/ui/date-picker'
-import { getBanks } from '@/services/banks.service'
-import { TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
 import { todayDateValue } from '@/lib/date'
 import { TransactionType } from '@/types'
-import { isSelectableBank, bankDisplayName } from '@/lib/bank-display'
+import { TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
+import { SettlementPaymentFields } from '@/components/settlement-payment-fields'
 
 const PAYMENT_TYPE_OPTIONS = [
   TransactionType.PIX,
@@ -62,21 +44,15 @@ interface MarkAsPaidDialogProps {
   open: boolean
   kind: 'debt' | 'receivable'
   createTransaction?: boolean
-  /** Bloqueia o botão enquanto a mutação está em andamento. */
   isPending?: boolean
   onConfirm: (payload: { paymentBankId?: string; paymentType?: TransactionType; paymentDate?: string }) => void
   onCancel: () => void
 }
 
 export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPending = false, onConfirm, onCancel }: MarkAsPaidDialogProps) {
-  const [bankId, setBankId] = useState<string>('')
+  const [bankId, setBankId] = useState('')
   const [type, setType] = useState<PaymentType | ''>('')
   const [paymentDate, setPaymentDate] = useState(todayDateValue())
-  const [showOptionalBank, setShowOptionalBank] = useState(false)
-
-  const bankRequired = createTransaction && kind === 'debt' && type === TransactionType.CREDIT_CARD
-  const canShowOptionalBank = createTransaction && !bankRequired && (kind === 'receivable' || Boolean(type))
-  const { data: banks = [] } = useQuery({ queryKey: ['banks'], queryFn: () => getBanks(), enabled: open && (bankRequired || showOptionalBank) })
 
   useEffect(() => {
     if (!open) {
@@ -84,93 +60,51 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPendi
       setBankId('')
       setType('')
       setPaymentDate(todayDateValue())
-      setShowOptionalBank(false)
     }
   }, [open])
 
+  const bankRequired = createTransaction && kind === 'debt' && type === TransactionType.CREDIT_CARD
   const canConfirm = !createTransaction
     ? true
     : kind === 'receivable'
       ? Boolean(paymentDate)
-      : Boolean(paymentDate) && Boolean(type) &&
-        (type !== TransactionType.CREDIT_CARD || Boolean(bankId))
-  const selectedBank = banks.find((b) => b.id === bankId)
+      : Boolean(paymentDate) && Boolean(type) && (!bankRequired || Boolean(bankId))
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && !isPending && onCancel()}>
+    <Dialog open={open} onOpenChange={(value) => !value && !isPending && onCancel()}>
       <DialogContent showCloseButton={false} className={DIALOG_COMPACT_CLASS}>
         <DialogHeader>
-          <DialogTitle>
-            {kind === 'debt' ? 'Marcar dívida como paga' : 'Marcar cobrança como recebida'}
-          </DialogTitle>
+          <DialogTitle>{kind === 'debt' ? 'Marcar dívida como paga' : 'Marcar cobrança como recebida'}</DialogTitle>
           <DialogDescription>
             {!createTransaction
               ? kind === 'receivable'
                 ? 'A cobrança será marcada como recebida sem criar uma receita.'
                 : 'A dívida será marcada como paga sem criar um gasto.'
               : kind === 'receivable'
-              ? 'Informe a data em que o valor foi recebido.'
-              : kind === 'debt'
-              ? 'Escolha o banco e a forma de pagamento. Isso vai criar uma transação vinculada.'
-              : 'Escolha o banco e a forma de recebimento. Isso vai criar uma transação de receita vinculada — independente da forma escolhida, ela será registrada como receita.'}
+                ? 'Informe a data em que o valor foi recebido.'
+                : 'Escolha a forma de pagamento e, se necessário, o banco. Isso vai criar uma transação vinculada.'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 py-1">
-          {canShowOptionalBank && !showOptionalBank && (
-            <button type="button" onClick={() => setShowOptionalBank(true)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">+ Adicionar banco (opcional)</button>
-          )}
-          {createTransaction && (bankRequired || showOptionalBank) && <div className="flex flex-col gap-1.5">
-            <Label>Banco</Label>
-            <Select value={bankId} onValueChange={(v) => setBankId(v ?? '')}>
-              <SelectTrigger aria-label="Banco">
-                <SelectValue placeholder={bankRequired ? 'Selecione o cartão' : 'Selecione um banco'}>{selectedBank ? bankDisplayName(selectedBank) : undefined}</SelectValue>
-              </SelectTrigger>
-              <SelectContent alignItemWithTrigger={false}>
-                {banks.filter(isSelectableBank).map((b) => (
-                  <SelectItem key={b.id} value={b.id}>{bankDisplayName(b)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {!bankRequired && <button type="button" onClick={() => { setBankId(''); setShowOptionalBank(false) }} className="self-start text-xs text-muted-foreground hover:text-foreground">Remover banco</button>}
-          </div>}
-
-          {createTransaction ? (
-            <div className="flex flex-col gap-1.5">
-              <Label>{kind === 'debt' ? 'Data do pagamento' : 'Data do recebimento'}</Label>
-              <DatePicker value={paymentDate} onChange={setPaymentDate} />
-            </div>
-          ) : null}
-
-          {kind === 'debt' && createTransaction ? (
-            <div className="flex flex-col gap-1.5">
-              <Label>Forma de pagamento</Label>
-              <Select<PaymentType> value={type || null} onValueChange={(v) => setType(v ?? '')}>
-                <SelectTrigger aria-label="Tipo">
-                  <SelectValue placeholder="Selecione">
-                    {type ? TRANSACTION_TYPE_LABELS[type] : undefined}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  {PAYMENT_TYPE_OPTIONS.map((t) => (
-                    <SelectItem key={t} value={t}>{TRANSACTION_TYPE_LABELS[t]}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ) : null}
-        </div>
+        {createTransaction && <SettlementPaymentFields
+          open={open}
+          paymentDate={paymentDate}
+          onPaymentDateChange={setPaymentDate}
+          dateLabel={kind === 'debt' ? 'Data do pagamento' : 'Data do recebimento'}
+          bankId={bankId}
+          onBankIdChange={setBankId}
+          bankRequired={bankRequired}
+          bankPlaceholder={bankRequired ? 'Selecione o cartão' : 'Selecione um banco'}
+          paymentType={type}
+          onPaymentTypeChange={(value) => setType(value as PaymentType)}
+          paymentTypeRequired={kind === 'debt'}
+          paymentTypeLabel="Forma de pagamento"
+          paymentTypeOptions={PAYMENT_TYPE_OPTIONS.map((value) => ({ value, label: TRANSACTION_TYPE_LABELS[value] }))}
+        />}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onCancel} disabled={isPending}>
-            Cancelar
-          </Button>
-          <Button
-            disabled={!canConfirm || isPending}
-            onClick={() => canConfirm && !isPending && onConfirm(
-              buildSettlementPayload({ kind, createTransaction, paymentDate, bankId, type }),
-            )}
-          >
+          <Button variant="outline" onClick={onCancel} disabled={isPending}>Cancelar</Button>
+          <Button disabled={!canConfirm || isPending} onClick={() => canConfirm && !isPending && onConfirm(buildSettlementPayload({ kind, createTransaction, paymentDate, bankId, type }))}>
             {isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
             Confirmar
           </Button>

@@ -331,9 +331,24 @@ describe('o drawer aplica a policy', () => {
     expect(bloco).toContain('competenceCardSign(cardCompetencia)')
   })
 
-  it('o CTA some quando não há o que quitar', () => {
-    expect(DRAWER).toContain('cardCompetencia.showSettleAction ?')
-    expect(DRAWER).toContain('cardCompetencia.settledNote')
+  it('o card é informacional e o CTA vive no heading de Em aberto', () => {
+    const cardStart = DRAWER.indexOf(
+      'className="mx-4 rounded-xl bg-muted/40 p-4"',
+    )
+    const headerStart = DRAWER.indexOf(
+      'className="h-auto flex-wrap border-0 px-4 py-2.5"',
+    )
+    const card = DRAWER.slice(cardStart, headerStart)
+    const header = DRAWER.slice(headerStart, headerStart + 2200)
+
+    expect(card).not.toContain('Quitar tudo')
+    expect(card).toContain('cardCompetencia.settledNote')
+    expect(header).toContain('cardCompetencia.showSettleAction &&')
+    expect(header).toContain('Quitar tudo')
+    expect(header).toContain('Adicionar')
+    expect(header.indexOf('Quitar tudo')).toBeLessThan(
+      header.indexOf('Adicionar'),
+    )
   })
 
   it('a nota de conclusão usa o verde de sucesso', () => {
@@ -354,7 +369,6 @@ describe('o histórico ficou legível', () => {
   it('mas continua visualmente secundário', () => {
     /* O cinza já diz "isto é passado", sem custar legibilidade. */
     expect(DRAWER).toContain("item.isPaid && 'text-muted-foreground'")
-    expect(DRAWER).toContain("? 'text-muted-foreground'")
   })
 
   it('e mantém o subtítulo de resolução', () => {

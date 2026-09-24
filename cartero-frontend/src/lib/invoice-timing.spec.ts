@@ -1,7 +1,39 @@
 import { describe, expect, it } from 'vitest'
-import { formatCloseTiming, formatDueTiming } from './invoice-timing'
+import { formatCloseTiming, formatDueTiming, invoiceTimingClass, invoiceTimingLabel } from './invoice-timing'
 import { selectBankInvoice } from './bank-invoice-selection'
 import { InvoiceStatus } from '@/types'
+
+const TIMING_TODAY = new Date(2026, 8, 10)
+
+describe('invoiceTimingLabel — prioridade por data civil', () => {
+  const base = { status: InvoiceStatus.OPEN, closeDate: '2026-09-12', dueDate: '2026-09-20' }
+
+  it('antes do fechamento usa Fecha', () => {
+    expect(invoiceTimingLabel(base, TIMING_TODAY)).toBe('Fecha em 2d')
+  })
+
+  it('no dia do fechamento passa a usar Vence', () => {
+    expect(invoiceTimingLabel({ ...base, closeDate: '2026-09-10' }, TIMING_TODAY)).toBe('Vence em 10d')
+  })
+
+  it('depois do fechamento continua usando Vence', () => {
+    expect(invoiceTimingLabel({ ...base, closeDate: '2026-09-05' }, TIMING_TODAY)).toBe('Vence em 10d')
+  })
+
+  it('no vencimento mostra Vence hoje', () => {
+    expect(invoiceTimingLabel({ ...base, closeDate: '2026-09-05', dueDate: '2026-09-10' }, TIMING_TODAY)).toBe('Vence hoje')
+  })
+
+  it('depois do vencimento mostra Em atraso e vermelho', () => {
+    const invoice = { ...base, closeDate: '2026-09-05', dueDate: '2026-09-09' }
+    expect(invoiceTimingLabel(invoice, TIMING_TODAY)).toBe('Em atraso')
+    expect(invoiceTimingClass(invoice, TIMING_TODAY)).toBe('text-destructive')
+  })
+
+  it('prazo futuro usa amber', () => {
+    expect(invoiceTimingClass(base, TIMING_TODAY)).toBe('text-pending')
+  })
+})
 
 /**
  * ══════════════════════════════════════════════════════════════════════════

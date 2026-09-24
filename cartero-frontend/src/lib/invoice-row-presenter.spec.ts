@@ -51,7 +51,7 @@ describe('os quatro estados persistidos', () => {
   })
 
   it('CLOSED conta até o vencimento', () => {
-    const p = invoiceRowPresentation(fatura(InvoiceStatus.CLOSED), HOJE)
+    const p = invoiceRowPresentation(fatura(InvoiceStatus.CLOSED, { close: 5, due: 27 }), HOJE)
 
     expect(p.statusLabel).toBe('Fatura fechada')
     expect(p.timingLabel).toContain('Vence')

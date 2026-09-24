@@ -85,7 +85,6 @@ import {
 import {
   FinancialListRow,
   ROW_AMOUNT_CLASS,
-  ROW_AMOUNT_TONE,
   ROW_ICON_CLASS,
   ROW_TRAILING_META_CLASS,
 } from '@/components/ui/financial-list-row'
@@ -159,7 +158,6 @@ function AmountDisplay({ amount, type, isRefund = false }: { amount: number; typ
     <span
       className={cn(
         ROW_AMOUNT_CLASS,
-        expense ? ROW_AMOUNT_TONE.out : ROW_AMOUNT_TONE.in,
       )}
     >
       {expense ? `−${formatted}` : `+${formatted}`}

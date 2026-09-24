@@ -150,6 +150,20 @@ describe('selectPendingByDueDate (debts/receivables)', () => {
     expect(result.map((x) => x.id)).toEqual(['d1'])
   })
 
+  it('A3b: item exatamente no limite de +7 dias entra', () => {
+    const r = receivable({ id: 'r-limit', dueDate: windowEnd })
+    const result = selectPendingByDueDate([r], windowEnd)
+    expect(result.map((x) => x.id)).toEqual(['r-limit'])
+  })
+
+  it('A3c: item em +8 dias fica fora', () => {
+    const afterWindow = new Date(TODAY)
+    afterWindow.setDate(afterWindow.getDate() + ATTENTION_DAYS_WINDOW + 1)
+    const r = receivable({ id: 'r-after-limit', dueDate: formatDateValue(afterWindow) })
+    const result = selectPendingByDueDate([r], windowEnd)
+    expect(result).toEqual([])
+  })
+
   it('A4: item fora da janela (>7 dias) é excluído', () => {
     const d = debt({ id: 'd1', dueDate: '2026-10-01' })
     const result = selectPendingByDueDate([d], windowEnd)

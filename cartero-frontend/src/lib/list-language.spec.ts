@@ -169,7 +169,8 @@ describe('o valor da row: um tamanho, uma cor', () => {
       ),
     )
     expect(amount).not.toContain('INCOME_COLOR')
-    expect(amount).toContain('ROW_AMOUNT_TONE')
+    expect(amount).not.toContain('ROW_AMOUNT_TONE')
+    expect(amount).toContain('expense ?')
 
     for (const [nome, fonte] of Object.entries(LISTAS)) {
       const usos = code(fonte).match(/ROW_AMOUNT_CLASS,\s*'[^']*'/g) ?? []

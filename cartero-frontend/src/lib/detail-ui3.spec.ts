@@ -227,7 +227,12 @@ describe('parte C: a geometria das seções tem uma autoridade', () => {
       `Histórico` era um `<p>` solto com `mb-2`: sem altura fixa, sem bordas e
       com outro recuo. A diferença aparecia como um degrau no meio do drawer.
     */
-    expect(PESSOA).toContain('<DrawerSectionHeader title="Histórico" />')
+    expect(PESSOA).toContain(
+      'className="h-auto border-0 px-4 py-2.5"',
+    )
+    expect(PESSOA).toContain(
+      'title={<span className="text-sm font-medium text-foreground">Histórico</span>}',
+    )
     expect(PESSOA).not.toContain(
       'mb-2 text-[11px] font-medium text-muted-foreground',
     )
@@ -283,10 +288,15 @@ describe('parte C: a geometria das seções tem uma autoridade', () => {
   })
 
   it('o card do resumo mantém identidade de card', () => {
-    /* Continua `rounded-xl`, agora com a margem do mesmo token de recuo. */
+    /* O resumo usa a mesma superfície limpa aprovada no drawer de Renda. */
     expect(PESSOA).toContain(
-      'mx-4 rounded-xl border border-border bg-muted/30 px-4 py-4',
+      'mx-4 rounded-xl bg-muted/40 p-4',
     )
+  })
+
+  it('as rows usam o inset e o ritmo do drawer de Renda', () => {
+    expect(PESSOA).toContain('DRAWER_SECTION_INSET')
+    expect(PESSOA).toContain("'mt-2 divide-y divide-border/60'")
   })
 
   it('não virou um mega-component', () => {
@@ -379,7 +389,9 @@ describe('competência sem atividade diz cada coisa UMA vez', () => {
       A ação é a mais útil justamente num mês sem nada, e o cabeçalho é
       constante — fica fora do condicional de lista vazia.
     */
-    const secao = PESSOA.slice(PESSOA.indexOf('Em aberto · {monthSummary.itemCount}'))
+    const secao = PESSOA.slice(
+      PESSOA.indexOf('className="h-auto flex-wrap border-0 px-4 py-2.5"'),
+    )
     const antesDoCondicional = secao.slice(0, secao.indexOf('monthSummary.itemCount === 0'))
 
     expect(antesDoCondicional).toContain('Adicionar')

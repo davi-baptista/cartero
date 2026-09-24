@@ -40,17 +40,16 @@ describe('objetivo 1: a seção "Em aberto" segue o padrão de Fatura', () => {
       primitive, que é onde a geometria vive agora. Duas cópias byte a byte
       passavam neste teste e ainda assim podiam divergir na edição seguinte.
     */
-    const PRIMITIVE = semComentarios(ler('../components/ui/drawer-section.tsx'))
-
-    expect(PRIMITIVE).toContain(
-      'flex h-11 items-center justify-between gap-2 border-y border-border pl-4 pr-2',
+    expect(DRAWER).toContain(
+      'className="h-auto flex-wrap border-0 px-4 py-2.5"',
     )
     expect(FATURA).toContain('DrawerSectionHeader')
     expect(DRAWER).toContain('DrawerSectionHeader')
   })
 
   it('o título conta os itens, como em Fatura', () => {
-    expect(DRAWER).toContain('Em aberto · {monthSummary.itemCount}')
+    expect(DRAWER).toContain('Em aberto')
+    expect(DRAWER).toContain("{monthSummary.itemCount === 1 ? 'item' : 'itens'}")
     expect(FATURA).toContain('Transações · {txs.length}')
   })
 
@@ -63,9 +62,10 @@ describe('objetivo 1: a seção "Em aberto" segue o padrão de Fatura', () => {
     expect(DRAWER).toContain('Adicionar')
 
     const cabecalho = DRAWER.slice(
-      DRAWER.indexOf('Em aberto · {monthSummary.itemCount}'),
-      DRAWER.indexOf('Em aberto · {monthSummary.itemCount}') + 1400,
+      DRAWER.indexOf('className="h-auto flex-wrap border-0 px-4 py-2.5"'),
+      DRAWER.indexOf('className="h-auto flex-wrap border-0 px-4 py-2.5"') + 2600,
     )
+    expect(cabecalho).toContain('Quitar tudo')
     expect(cabecalho).toContain('Adicionar')
     expect(cabecalho).toContain('openNewReceivable')
     expect(cabecalho).toContain('openNewDebt')
@@ -76,18 +76,71 @@ describe('objetivo 1: a seção "Em aberto" segue o padrão de Fatura', () => {
       Diferente de Fatura, onde só existe transação: aqui a ação é ambígua por
       natureza, e um botão simples obrigaria a escolher um sentido por padrão.
     */
-    expect(DRAWER).toContain('Nova cobrança')
-    expect(DRAWER).toContain('Nova dívida')
+    expect(DRAWER).toContain('A receber')
+    expect(DRAWER).toContain('A pagar')
+  })
+
+  it('usa Plus para receber e Minus para pagar', () => {
+    const cabecalho = DRAWER.slice(
+      DRAWER.indexOf('DropdownMenuContent align="end" className="w-auto min-w-0"'),
+      DRAWER.indexOf('DropdownMenuContent align="end" className="w-auto min-w-0"') + 500,
+    )
+    expect(cabecalho).toContain('Plus className="size-3.5"')
+    expect(cabecalho).toContain('Minus className="size-3.5"')
   })
 
   it('o botão usa a escala de Fatura', () => {
-    const escala = "h-7 cursor-pointer gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+    const escala = "h-7 cursor-pointer gap-1 px-2 text-[11px]"
 
     expect(DRAWER).toContain(escala)
+    expect(DRAWER).toContain("variant: 'default'")
     /* Fatura usa a mesma, sem o cursor (o `Button` já o traz). */
     expect(FATURA).toContain(
       'h-7 gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground',
     )
+  })
+
+  it('mantém o menu compacto e os dois CTAs superiores em primary', () => {
+    expect(DRAWER).toContain('className="w-auto min-w-0"')
+    expect(DRAWER).toContain('variant="default"')
+    expect(DRAWER).toContain('flex min-w-0 items-start gap-3')
+    expect(DRAWER).toContain('ml-auto flex shrink-0 items-start gap-2')
+    expect(DRAWER).toContain("buttonVariants({ variant: 'default', size: 'sm', className: 'shrink-0 gap-1.5' })")
+    expect(DRAWER).toContain('Extrato')
+    expect(DRAWER).not.toContain('Extrato em PDF')
+    expect(DRAWER).not.toContain('absolute top-3 right-12')
+    expect(DRAWER).toContain('showCloseButton={false}')
+    expect(DRAWER).toContain('className="size-8 shrink-0 p-0"')
+  })
+
+  it('mantém os valores monetários neutros e o status de atraso', () => {
+    expect(DRAWER).toContain('ROW_AMOUNT_CLASS')
+    expect(DRAWER).not.toContain('text-receivable/80')
+    expect(DRAWER).toContain("status === 'overdue' && 'font-medium text-destructive'")
+  })
+
+  it('mantém o card informacional limpo e os subtotais muted', () => {
+    const card = DRAWER.slice(
+      DRAWER.indexOf('className="mx-4 rounded-xl bg-muted/40 p-4"'),
+      DRAWER.indexOf('className="mx-4 rounded-xl bg-muted/40 p-4"') + 2200,
+    )
+
+    expect(card).not.toContain('Quitar tudo')
+    expect(card).not.toContain('border border-border')
+    expect(card).toContain('font-medium text-muted-foreground')
+    expect(DRAWER).toContain(
+      "className={cn(\n                      DRAWER_SECTION_INSET,\n                      'mt-2 divide-y divide-border/60',\n                    )}",
+    )
+  })
+
+  it('mantém o CTA curto no heading, sem alterar o comportamento', () => {
+    const cabecalho = DRAWER.slice(
+      DRAWER.indexOf('Quitar tudo') - 500,
+      DRAWER.indexOf('Quitar tudo') + 250,
+    )
+
+    expect(cabecalho).toContain('onClick={() => setSettleOpen(true)}')
+    expect(DRAWER).not.toContain('Quitar pendências')
   })
 })
 
@@ -98,7 +151,7 @@ describe('sem itens em aberto, a seção continua existindo', () => {
       ação de adicionar, que é a mais útil num mês vazio, longe dali.
     */
     const secao = DRAWER.slice(
-      DRAWER.indexOf('Em aberto · {monthSummary.itemCount}'),
+      DRAWER.indexOf('className="h-auto flex-wrap border-0 px-4 py-2.5"'),
     )
     const ateOCondicional = secao.slice(
       0,
@@ -261,12 +314,18 @@ describe('objetivo 3: cursor nos alvos de clique', () => {
       A row do drawer é uma `div` de leitura — só os controles internos agem, e
       eles são botões.
     */
-    const rowDoDrawer = DRAWER.slice(
-      DRAWER.indexOf('function StatementRow'),
-      DRAWER.indexOf('function ToggleButton'),
-    )
-
-    expect(rowDoDrawer).not.toContain('cursor-pointer')
+    expect(DRAWER).toContain('ReceivableDetailDrawer')
+    expect(DRAWER).toContain('DebtDetailDrawer')
+    expect(DRAWER).toContain('FinancialListRow')
+    expect(DRAWER).toContain('ROW_ICON_BG_CLASS')
+    expect(DRAWER).toContain('ROW_ICON_CLASS')
+    expect(DRAWER).toContain('SETTLEMENT_ACTION_CIRCLE_CLASS')
+    expect(primitive('financial-list-row.tsx')).toContain('DisclosureChevron')
+    expect(DRAWER).toContain('onView={() => setDetailReceivable(r)}')
+    expect(DRAWER).toContain('onView={() => setDetailDebt(d)}')
+    expect(primitive('financial-list-row.tsx')).toContain('cursor-pointer')
+    expect(DRAWER).toContain('setDetailReceivable(null)')
+    expect(DRAWER).toContain('setDetailDebt(null)')
   })
 })
 
@@ -277,7 +336,8 @@ describe('o que já estava bom foi preservado', () => {
   })
 
   it('a separação entre Em aberto e Histórico', () => {
-    expect(DRAWER).toContain('Em aberto ·')
+    expect(DRAWER).toContain('Em aberto')
+    expect(DRAWER).toContain("{monthSummary.itemCount === 1 ? 'item' : 'itens'}")
     expect(DRAWER).toContain('Histórico')
   })
 
@@ -287,8 +347,12 @@ describe('o que já estava bom foi preservado', () => {
 
   it('as ações de WhatsApp e PDF continuam no topo', () => {
     /* Elas são sobre a PESSOA, não sobre a lista — o lugar delas não mudou. */
-    expect(DRAWER).toContain('Enviar no WhatsApp')
-    expect(DRAWER).toContain('Extrato em PDF')
+    expect(DRAWER).not.toContain('Enviar no WhatsApp')
+    expect(DRAWER).toContain('Extrato')
+    expect(DRAWER).toContain('onClick={downloadStatementPdf}')
+    expect(DRAWER).toContain('onClick={shareStatementPdf}')
+    expect(DRAWER).toContain('Baixar PDF')
+    expect(DRAWER).toContain('Compartilhar PDF')
   })
 })
 

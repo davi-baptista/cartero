@@ -26,7 +26,6 @@ import {
   Check,
   Undo2,
   MoreVertical,
-  MessageCircle,
   FileText,
   Download,
   Share2,
@@ -35,8 +34,18 @@ import {
   CreditCard,
   CalendarDays,
   Plus,
+  Minus,
+  X,
 } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { ROW_AMOUNT_CLASS } from '@/components/ui/financial-list-row'
+import {
+  FinancialListRow,
+  ROW_ICON_BG_CLASS,
+  ROW_ICON_CLASS,
+  SETTLEMENT_ACTION_CIRCLE_CLASS,
+  ROW_TRAILING_META_CLASS,
+} from '@/components/ui/financial-list-row'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   monthBounds,
@@ -59,11 +68,14 @@ import {
   type ReceivableFormData,
 } from '@/app/(dashboard)/receivables/receivable-sheet'
 import { SettlePersonDialog } from '@/app/(dashboard)/persons/settle-person-dialog'
+import { ReceivableDetailDrawer } from '@/app/(dashboard)/receivables/receivable-detail-drawer'
+import { DebtDetailDrawer } from '@/app/(dashboard)/debts/debt-detail-drawer'
 import { settlementStatus } from '@/lib/settlement-status'
 import { apiErrorDetail, apiErrorMessage, isApiErrorCode } from '@/lib/api-error'
 import {
   Sheet,
   SheetContent,
+  SheetClose,
   SheetHeader,
   SheetTitle,
   SheetDescription,
@@ -128,6 +140,7 @@ function StatementRow({
   kind,
   item,
   dueLabel: dueLabelText,
+  onView,
   onToggle,
   onEdit,
   onDelete,
@@ -141,6 +154,7 @@ function StatementRow({
    * Ausente no histórico, onde o item está resolvido e o vencimento basta.
    */
   dueLabel?: string
+  onView?: () => void
   onToggle: () => void
   onEdit: () => void
   onDelete: () => void
@@ -167,6 +181,48 @@ function StatementRow({
       )
     : true
 
+  if (onView) {
+    return (
+      <FinancialListRow
+        onView={onView}
+        ariaLabel={`Ver detalhes de ${item.title}`}
+        leading={
+          <span
+            aria-hidden="true"
+            className={cn(
+              ROW_ICON_CLASS,
+              ROW_ICON_BG_CLASS,
+              SETTLEMENT_ACTION_CIRCLE_CLASS,
+            )}
+          />
+        }
+        title={
+          <span className={cn(item.isPaid && 'text-muted-foreground')}>
+            {item.title}
+          </span>
+        }
+        meta={
+          dueLabelText ? (
+            <span className={cn(status === 'overdue' && 'font-medium text-destructive')}>
+              {dueLabelText}
+            </span>
+          ) : (
+            formatDate(item.dueDate)
+          )
+        }
+        trailing={
+          <>
+            <span className={cn(ROW_AMOUNT_CLASS, item.isPaid && 'text-muted-foreground')}>
+              {isReceivable ? '+' : '-'}
+              {formatCurrency(item.amount)}
+            </span>
+            <span className={ROW_TRAILING_META_CLASS}>{formatDate(item.dueDate)}</span>
+          </>
+        }
+      />
+    )
+  }
+
   return (
     /*
       O recuo é da ROW, não herdado de um container acima.
@@ -182,7 +238,7 @@ function StatementRow({
         'flex items-center gap-2.5 border-b border-border py-2.5 last:border-b-0',
       )}
     >
-      <ToggleButton
+      {!onView && <ToggleButton
         isPaid={item.isPaid}
         onToggle={onToggle}
         label={
@@ -192,7 +248,7 @@ function StatementRow({
               ? 'Marcar como recebido'
               : 'Marcar como paga'
         }
-      />
+      />}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         {/*
           Primeira linha: só o título.
@@ -261,19 +317,12 @@ function StatementRow({
         lugar para fazê-lo, porque é o número que se procura primeiro.
       */}
       <span
-        className={cn(
-          'shrink-0 text-sm font-medium tabular-nums',
-          item.isPaid
-            ? 'text-muted-foreground'
-            : isReceivable
-              ? 'text-receivable/80'
-              : 'text-destructive',
-        )}
+        className={cn(ROW_AMOUNT_CLASS, 'shrink-0', item.isPaid && 'text-muted-foreground')}
       >
         {isReceivable ? '+' : '-'}
         {formatCurrency(item.amount)}
       </span>
-      <DropdownMenu>
+      {!onView && <DropdownMenu>
         <DropdownMenuTrigger
           className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
           aria-label={isReceivable ? 'Ações da cobrança' : 'Ações da dívida'}
@@ -303,7 +352,7 @@ function StatementRow({
             </DropdownMenuItem>
           )}
         </DropdownMenuContent>
-      </DropdownMenu>
+      </DropdownMenu>}
     </div>
   )
 }
@@ -382,6 +431,8 @@ export function PersonStatementDrawer({
   >(null)
   const [settleOpen, setSettleOpen] = useState(false)
   const [groupUndoId, setGroupUndoId] = useState<string | null>(null)
+  const [detailReceivable, setDetailReceivable] = useState<Receivable | null>(null)
+  const [detailDebt, setDetailDebt] = useState<Debt | null>(null)
 
   const [sheetKind, setSheetKind] = useState<'debt' | 'receivable' | null>(null)
   const [editDebt, setEditDebt] = useState<Debt | null>(null)
@@ -1011,21 +1062,6 @@ export function PersonStatementDrawer({
     }
   }
 
-  function sendStatementToWhatsApp() {
-    const context = buildStatementContext(true)
-    if (!context) return
-
-    const phone = normalizeWhatsAppPhone(context.person.phone)
-    if (!phone) return
-
-    const message = buildWhatsAppMessage(context.summary, context.person.name)
-    window.open(
-      `https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
-      '_blank',
-      'noopener,noreferrer',
-    )
-  }
-
   async function buildStatementPdf(requirePhone: boolean) {
     const context = buildStatementContext(requirePhone)
     if (!context) return null
@@ -1121,36 +1157,17 @@ export function PersonStatementDrawer({
   return (
     <>
       <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="flex w-full flex-col sm:max-w-lg" showCloseButton>
+      <SheetContent side="right" className="flex w-full flex-col sm:max-w-lg" showCloseButton={false}>
         <SheetHeader className="px-6 pt-6 pb-0">
-          <SheetTitle className="mr-8 truncate">{person?.name}</SheetTitle>
-          <SheetDescription>Extrato consolidado de dívidas e cobranças</SheetDescription>
-          {/*
-            A ação de adicionar saiu daqui para o cabeçalho de "Em aberto".
-
-            Ela opera sobre a LISTA, e no padrão de Fatura ("Transações · X" à
-            esquerda, "+ Adicionar" à direita) vive junto do conteúdo que
-            afeta. No topo, ocupava uma faixa inteira do painel para uma ação
-            que a seção já contextualiza.
-          */}
-          <div className="flex flex-col gap-2 pt-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="gap-1.5"
-                onClick={sendStatementToWhatsApp}
-              >
-                <MessageCircle className="size-3.5" />
-                Enviar no WhatsApp
-              </Button>
+          <div className="flex min-w-0 items-start gap-3">
+            <SheetTitle className="min-w-0 flex-1 break-words">{person?.name}</SheetTitle>
+            <div className="ml-auto flex shrink-0 items-start gap-2">
               <DropdownMenu>
-                <DropdownMenuTrigger className={buttonVariants({ variant: 'outline', size: 'sm', className: 'gap-1.5' })}>
+                <DropdownMenuTrigger className={buttonVariants({ variant: 'default', size: 'sm', className: 'shrink-0 gap-1.5' })}>
                   <FileText className="size-3.5" />
-                  Extrato em PDF
+                  Extrato
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="min-w-48">
+                <DropdownMenuContent align="end" className="min-w-48">
                   <DropdownMenuItem onClick={downloadStatementPdf}>
                     <Download className="size-3.5" />
                     Baixar PDF
@@ -1161,8 +1178,29 @@ export function PersonStatementDrawer({
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              <SheetClose
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="size-8 shrink-0 p-0"
+                    aria-label="Fechar drawer"
+                  />
+                }
+              >
+                <X className="size-4" />
+              </SheetClose>
             </div>
           </div>
+          <SheetDescription>Extrato consolidado de dívidas e cobranças</SheetDescription>
+          {/*
+            A ação de adicionar saiu daqui para o cabeçalho de "Em aberto".
+
+            Ela opera sobre a LISTA, e no padrão de Fatura ("Transações · X" à
+            esquerda, "+ Adicionar" à direita) vive junto do conteúdo que
+            afeta. No topo, ocupava uma faixa inteira do painel para uma ação
+            que a seção já contextualiza.
+          */}
         </SheetHeader>
 
         {/*
@@ -1246,7 +1284,7 @@ export function PersonStatementDrawer({
                 MESMO recuo das seções: antes ele herdava o `px-6` do scroller
                 e somava o próprio `px-4`, duas camadas para o mesmo respiro.
               */}
-              <div className="mx-4 rounded-xl border border-border bg-muted/30 px-4 py-4">
+              <div className="mx-4 rounded-xl bg-muted/40 p-4">
                 <p className="text-xs font-medium text-muted-foreground">
                   {/*
                     O título nomeia o que o número É: "Saldo a receber" com
@@ -1275,38 +1313,22 @@ export function PersonStatementDrawer({
                       <div className="flex gap-4 text-xs text-muted-foreground">
                         <span>
                           A receber{' '}
-                          <span className="font-medium text-foreground">
+                          <span className="font-medium text-muted-foreground">
                             {formatCurrency(cardCompetencia.receivableTotal)}
                           </span>
                         </span>
                         <span>
                           A pagar{' '}
-                          <span className="font-medium text-foreground">
+                          <span className="font-medium text-muted-foreground">
                             {formatCurrency(cardCompetencia.debtTotal)}
                           </span>
                         </span>
                       </div>
-                      {cardCompetencia.showSettleAction ? (
-                        <Button
-                          size="sm"
-                          className="gap-1.5"
-                          onClick={() => setSettleOpen(true)}
-                        >
-                          <Check className="size-3.5" />
-                          Quitar pendências
-                        </Button>
-                      ) : (
-                        /*
-                          Sem pendência não há o que quitar — e a conclusão
-                          ocupa o lugar do botão, no verde de sucesso do
-                          produto.
-                        */
-                        cardCompetencia.settledNote && (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-paid">
-                            <Check className="size-3.5" aria-hidden />
-                            {cardCompetencia.settledNote}
-                          </span>
-                        )
+                      {cardCompetencia.settledNote && (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-paid">
+                          <Check className="size-3.5" aria-hidden />
+                          {cardCompetencia.settledNote}
+                        </span>
                       )}
                     </div>
 
@@ -1362,20 +1384,35 @@ export function PersonStatementDrawer({
                   tamanho entre uma competência aberta e uma quitada.
                 */}
                 <DrawerSectionHeader
+                  className="h-auto flex-wrap border-0 px-4 py-2.5"
                   title={
-                    <>
-                      Em aberto · {monthSummary.itemCount}{' '}
-                      {monthSummary.itemCount === 1 ? 'item' : 'itens'}
-                    </>
+                    <span className="text-sm font-medium text-foreground">
+                      Em aberto
+                      <span className="ml-1 text-xs font-normal text-muted-foreground">
+                        · {monthSummary.itemCount}{' '}
+                        {monthSummary.itemCount === 1 ? 'item' : 'itens'}
+                      </span>
+                    </span>
                   }
                   action={
+                  <div className="ml-auto flex shrink-0 items-center gap-2">
+                    {cardCompetencia.showSettleAction && (
+                      <Button
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => setSettleOpen(true)}
+                      >
+                        <Check className="size-3.5" />
+                        Quitar tudo
+                      </Button>
+                    )}
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       className={buttonVariants({
-                        variant: 'ghost',
+                        variant: 'default',
                         size: 'sm',
                         className:
-                          'h-7 cursor-pointer gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground',
+                          'h-7 cursor-pointer gap-1 px-2 text-[11px]',
                       })}
                     >
                       <Plus className="size-3.5" />
@@ -1387,17 +1424,18 @@ export function PersonStatementDrawer({
                       só existe transação. Reduzir a um botão simples obrigaria
                       a escolher um sentido por padrão.
                     */}
-                    <DropdownMenuContent align="end" className="min-w-44">
+                    <DropdownMenuContent align="end" className="w-auto min-w-0">
                       <DropdownMenuItem onClick={openNewReceivable}>
                         <Plus className="size-3.5" />
-                        Nova cobrança
+                        A receber
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={openNewDebt}>
-                        <Plus className="size-3.5" />
-                        Nova dívida
+                        <Minus className="size-3.5" />
+                        A pagar
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+                  </div>
                   }
                 />
 
@@ -1406,13 +1444,19 @@ export function PersonStatementDrawer({
                     Nenhum valor em aberto para esta competência.
                   </DrawerSectionEmpty>
                 ) : (
-                  <div>
+                  <div
+                    className={cn(
+                      DRAWER_SECTION_INSET,
+                      'mt-2 divide-y divide-border/60',
+                    )}
+                  >
                     {monthReceivables.map((r) => (
                       <StatementRow
                         key={r.id}
                         kind="receivable"
                         item={r}
                         dueLabel={dueLabel(r, competence)}
+                        onView={() => setDetailReceivable(r)}
                         onToggle={() => handleReceivableToggle(r)}
                         onEdit={() => handleEditReceivable(r)}
                         onDelete={() => handleDeleteReceivable(r)}
@@ -1424,6 +1468,7 @@ export function PersonStatementDrawer({
                         kind="debt"
                         item={d}
                         dueLabel={dueLabel(d, competence)}
+                        onView={() => setDetailDebt(d)}
                         onToggle={() => handleDebtToggle(d)}
                         onEdit={() => handleEditDebt(d)}
                         onDelete={() => handleDeleteDebt(d)}
@@ -1449,7 +1494,10 @@ export function PersonStatementDrawer({
                   regras diferentes, e a diferença aparecia como um degrau no
                   meio do drawer.
                 */}
-                <DrawerSectionHeader title="Histórico" />
+                <DrawerSectionHeader
+                  className="h-auto border-0 px-4 py-2.5"
+                  title={<span className="text-sm font-medium text-foreground">Histórico</span>}
+                />
 
                 {historyReceivables.length === 0 &&
                 historyDebts.length === 0 ? (
@@ -1458,8 +1506,13 @@ export function PersonStatementDrawer({
                     Nenhum item resolvido neste período.
                   </DrawerSectionEmpty>
                 ) : (
-                <div>
                   <div>
+                  <div
+                    className={cn(
+                      DRAWER_SECTION_INSET,
+                      'mt-2 divide-y divide-border/60',
+                    )}
+                  >
                     {historyReceivables.map((r) => (
                       <StatementRow
                         key={r.id}
@@ -1470,6 +1523,7 @@ export function PersonStatementDrawer({
                           competência não mostra sozinho.
                         */
                         dueLabel={resolvedLabel(r, 'receivable', user?.timeZone ?? null)}
+                        onView={() => setDetailReceivable(r)}
                         onToggle={() => handleReceivableToggle(r)}
                         onEdit={() => handleEditReceivable(r)}
                         onDelete={() => handleDeleteReceivable(r)}
@@ -1484,6 +1538,7 @@ export function PersonStatementDrawer({
                         kind="debt"
                         item={d}
                         dueLabel={resolvedLabel(d, 'debt', user?.timeZone ?? null)}
+                        onView={() => setDetailDebt(d)}
                         onToggle={() => handleDebtToggle(d)}
                         onEdit={() => handleEditDebt(d)}
                         onDelete={() => handleDeleteDebt(d)}
@@ -1518,6 +1573,27 @@ export function PersonStatementDrawer({
         </div>
       </SheetContent>
       </Sheet>
+
+      <ReceivableDetailDrawer
+        receivable={detailReceivable}
+        onOpenChange={(nextOpen) => !nextOpen && setDetailReceivable(null)}
+        onEdit={handleEditReceivable}
+        onDelete={handleDeleteReceivable}
+        onToggleReceived={handleReceivableToggle}
+        onEditSettlementDate={(receivable) =>
+          setSettlementDateItem({ kind: 'receivable', item: receivable })
+        }
+      />
+      <DebtDetailDrawer
+        debt={detailDebt}
+        onOpenChange={(nextOpen) => !nextOpen && setDetailDebt(null)}
+        onEdit={handleEditDebt}
+        onDelete={handleDeleteDebt}
+        onTogglePaid={handleDebtToggle}
+        onEditSettlementDate={(debt) =>
+          setSettlementDateItem({ kind: 'debt', item: debt })
+        }
+      />
 
       <MarkAsPaidDialog
         open={markPaidDebt !== null}
