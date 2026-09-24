@@ -17,14 +17,12 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import {
   Pencil,
   Trash2,
   Loader2,
   Check,
-  Undo2,
   MoreVertical,
   FileText,
   Download,
@@ -41,11 +39,9 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { ROW_AMOUNT_CLASS } from '@/components/ui/financial-list-row'
 import {
   FinancialListRow,
-  ROW_ICON_BG_CLASS,
-  ROW_ICON_CLASS,
-  SETTLEMENT_ACTION_CIRCLE_CLASS,
   ROW_TRAILING_META_CLASS,
 } from '@/components/ui/financial-list-row'
+import { FinancialAvatar } from '@/components/ui/financial-avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   monthBounds,
@@ -186,16 +182,7 @@ function StatementRow({
       <FinancialListRow
         onView={onView}
         ariaLabel={`Ver detalhes de ${item.title}`}
-        leading={
-          <span
-            aria-hidden="true"
-            className={cn(
-              ROW_ICON_CLASS,
-              ROW_ICON_BG_CLASS,
-              SETTLEMENT_ACTION_CIRCLE_CLASS,
-            )}
-          />
-        }
+        leading={<FinancialAvatar />}
         title={
           <span className={cn(item.isPaid && 'text-muted-foreground')}>
             {item.title}
@@ -238,10 +225,9 @@ function StatementRow({
         'flex items-center gap-2.5 border-b border-border py-2.5 last:border-b-0',
       )}
     >
-      {!onView && <ToggleButton
-        isPaid={item.isPaid}
-        onToggle={onToggle}
-        label={
+      {!onView && <FinancialAvatar
+        onClick={onToggle}
+        ariaLabel={
           item.isPaid
             ? 'Marcar como pendente'
             : isReceivable
@@ -354,42 +340,6 @@ function StatementRow({
         </DropdownMenuContent>
       </DropdownMenu>}
     </div>
-  )
-}
-
-function ToggleButton({
-  isPaid,
-  onToggle,
-  label,
-  disabled = false,
-}: {
-  isPaid: boolean
-  onToggle: () => void
-  label: string
-  disabled?: boolean
-}) {
-  return (
-    <motion.button
-      type="button"
-      whileTap={{ scale: 0.85 }}
-      transition={{ duration: 0.1 }}
-      onClick={onToggle}
-      disabled={disabled}
-      aria-label={label}
-      title={label}
-      className={cn(
-        'group/dot flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md bg-muted/50 ring-1 ring-border/50 transition-colors hover:bg-muted hover:ring-border',
-        disabled && 'cursor-not-allowed opacity-50 hover:bg-muted/50 hover:ring-border/50',
-      )}
-    >
-      {isPaid ? (
-        <Undo2 className="size-3 text-muted-foreground/50 transition-colors group-hover/dot:text-muted-foreground" />
-      ) : (
-        <span className="text-muted-foreground/0 group-hover/dot:text-muted-foreground transition-colors">
-        <Check className="size-3" />
-      </span>
-      )}
-    </motion.button>
   )
 }
 

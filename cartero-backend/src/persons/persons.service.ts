@@ -7,7 +7,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
-  createPersonSettlementCreditTransaction,
+  createPersonSettlementTransaction,
   removeSettlementTransaction,
   resolveSettlementDate,
 } from 'src/common/helpers/settlement.core';
@@ -16,6 +16,7 @@ import {
   PERSON_SETTLEMENT_CATEGORY_NAME,
   SYSTEM_CATEGORY_ICON,
 } from 'src/common/constants/system-categories';
+import { findOrCreateSystemBank } from 'src/common/helpers/invoice.helper';
 import { resolveSourceDeleteBlockReason } from 'src/common/helpers/receivable-source-capability';
 import {
   buildPersonSummary,
@@ -312,6 +313,7 @@ export class PersonsService {
     );
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`person-settlement:${userId}:${id}`}, 0))`;
       /*
         Reconsulta dentro da transação, sem filtro de período.
 
@@ -423,7 +425,7 @@ export class PersonsService {
         }
       }
 
-      const movementBank =
+      const selectedBank =
         direction === PersonSettlementDirection.NONE
           ? null
           : dto.paymentBankId
@@ -432,7 +434,7 @@ export class PersonsService {
                 userId,
               )
             : null;
-      if (movementBank?.isSystem) {
+      if (selectedBank?.isSystem) {
         throw new ConflictException(
           'O banco sistêmico não pode ser informado pela API',
         );
@@ -445,7 +447,7 @@ export class PersonsService {
           settledAt: paidAt,
           direction,
           netAmount: net.abs(),
-          bankId: movementBank?.id ?? null,
+          bankId: selectedBank?.id ?? null,
           paymentType:
             direction === PersonSettlementDirection.OUTFLOW
               ? dto.paymentType
@@ -465,10 +467,9 @@ export class PersonsService {
         },
       });
 
-      if (
-        direction === PersonSettlementDirection.OUTFLOW &&
-        dto.paymentType === TransactionType.CREDIT_CARD
-      ) {
+      if (direction !== PersonSettlementDirection.NONE) {
+        const transactionBank =
+          selectedBank ?? (await findOrCreateSystemBank(tx, userId));
         const category =
           await this.entityValidationService.findOrCreateSystemCategory(
             tx,
@@ -477,19 +478,24 @@ export class PersonsService {
             SYSTEM_CATEGORY_ICON,
             PERSON_SETTLEMENT_CATEGORY_COLOR,
           );
-        await createPersonSettlementCreditTransaction(tx, {
+        await createPersonSettlementTransaction(tx, {
           userId,
           groupId: group.id,
+          personId: person.id,
           personName: person.name,
           amount: net.abs(),
           settledAt: paidAt,
-          bank: movementBank!,
+          type:
+            direction === PersonSettlementDirection.INFLOW
+              ? TransactionType.INCOME
+              : dto.paymentType!,
+          bank: transactionBank,
           category,
           timeZone: user.timeZone,
         });
       }
 
-      await tx.debt.updateMany({
+      const claimedDebts = await tx.debt.updateMany({
         where: {
           userId,
           id: { in: debts.map((item) => item.id) },
@@ -497,7 +503,7 @@ export class PersonsService {
         },
         data: { isPaid: true, paidAt, paymentTransactionId: null },
       });
-      await tx.receivable.updateMany({
+      const claimedReceivables = await tx.receivable.updateMany({
         where: {
           userId,
           id: { in: receivables.map((item) => item.id) },
@@ -505,6 +511,14 @@ export class PersonsService {
         },
         data: { isPaid: true, paidAt, paymentTransactionId: null },
       });
+      if (
+        claimedDebts.count !== debts.length ||
+        claimedReceivables.count !== receivables.length
+      ) {
+        throw new ConflictException(
+          'Uma ou mais pendências mudaram durante o acerto. Atualize e tente novamente.',
+        );
+      }
 
       return {
         person,
@@ -522,16 +536,20 @@ export class PersonsService {
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const group = await tx.personSettlementGroup.findFirst({
         where: { id: groupId, userId, status: PersonSettlementStatus.ACTIVE },
-        include: { debts: true, receivables: true, creditTransaction: true },
+        include: {
+          debts: true,
+          receivables: true,
+          settlementTransaction: true,
+        },
       });
       if (!group)
         throw new ConflictException('Acerto não encontrado ou já desfeito');
 
-      if (group.creditTransaction) {
+      if (group.settlementTransaction) {
         await removeSettlementTransaction(
           tx,
           userId,
-          group.creditTransaction.id,
+          group.settlementTransaction.id,
         );
       }
 

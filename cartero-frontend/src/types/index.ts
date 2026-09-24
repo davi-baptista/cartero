@@ -82,6 +82,7 @@ export interface Transaction {
   bankId: string
   categoryId: string
   invoiceId?: string
+  personSettlementGroupId?: string | null
   parentId?: string
   installmentIndex?: number | null
   installmentCount?: number | null

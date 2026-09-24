@@ -29,7 +29,7 @@ const REALIZED_INFLOW_ROWS = [
 const REALIZED_OUTFLOW_ROWS = [
   ['manualDirectTransactions', 'Gastos diretos'],
   ['debtDirectSettlements', 'Dívidas quitadas'],
-  ['invoiceSettlements', 'Faturas pagas'],
+  ['invoiceSettlements', 'Pagamento de faturas'],
   ['personSettlementDirectOutflows', 'Acertos pagos'],
 ] as const
 

@@ -21,6 +21,7 @@ import {
   classifyBudgetV2Transaction,
 } from './budget-v2-classification.helper';
 import { RecurringIncomeService } from 'src/recurring-income/recurring-income.service';
+import { budgetPendingHorizonExclusive } from './budget-pending-window';
 
 const ZERO = new Prisma.Decimal(0);
 
@@ -65,7 +66,10 @@ export class BudgetV2Service {
     });
     const bounds = deriveBudgetV2PeriodBounds(preset, user.timeZone, { now });
     const todayCivil = financialCivilDay(now, user.timeZone);
-    const horizonExclusive = shiftCivilDate(todayCivil, 31);
+    const pendingHorizonExclusive = budgetPendingHorizonExclusive(todayCivil);
+    // Invoice timing is a separate Budget concern and remains on its existing
+    // 30-day future window.
+    const invoiceHorizonExclusive = shiftCivilDate(todayCivil, 31);
     const date = bounds.startInclusive
       ? { gte: bounds.startInclusive, lt: bounds.endExclusive }
       : { lt: bounds.endExclusive };
@@ -73,7 +77,7 @@ export class BudgetV2Service {
     const [transactions, settlements, groups, receivables, debts, invoices] =
       await Promise.all([
         this.prisma.transaction.findMany({
-          where: { userId, date },
+          where: { userId, date, personSettlementGroupId: null },
           select: {
             type: true,
             amount: true,
@@ -180,7 +184,7 @@ export class BudgetV2Service {
               false,
               receivable.dueDate,
               todayCivil,
-              horizonExclusive,
+              pendingHorizonExclusive,
             ) === BudgetV2Bucket.UPCOMING_RECEIVABLES,
         )
         .map((receivable) => receivable.amount),
@@ -193,7 +197,7 @@ export class BudgetV2Service {
               false,
               receivable.dueDate,
               todayCivil,
-              horizonExclusive,
+              pendingHorizonExclusive,
             ) === BudgetV2Bucket.OVERDUE_RECEIVABLES,
         )
         .map((receivable) => receivable.amount),
@@ -206,7 +210,7 @@ export class BudgetV2Service {
               false,
               debt.dueDate,
               todayCivil,
-              horizonExclusive,
+              pendingHorizonExclusive,
             ) === BudgetV2Bucket.UPCOMING_DEBTS,
         )
         .map((debt) => debt.amount),
@@ -219,7 +223,7 @@ export class BudgetV2Service {
               false,
               debt.dueDate,
               todayCivil,
-              horizonExclusive,
+              pendingHorizonExclusive,
             ) === BudgetV2Bucket.OVERDUE_OUTFLOWS,
         )
         .map((debt) => debt.amount),
@@ -232,7 +236,7 @@ export class BudgetV2Service {
               invoice.status,
               invoice.dueDate,
               todayCivil,
-              horizonExclusive,
+              invoiceHorizonExclusive,
             ) === BudgetV2Bucket.UPCOMING_INVOICES,
         )
         .map((invoice) => invoice.totalAmount),
@@ -245,7 +249,7 @@ export class BudgetV2Service {
               invoice.status,
               invoice.dueDate,
               todayCivil,
-              horizonExclusive,
+              invoiceHorizonExclusive,
             ) === BudgetV2Bucket.OVERDUE_OUTFLOWS,
         )
         .map((invoice) => invoice.totalAmount),

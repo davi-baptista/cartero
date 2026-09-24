@@ -8,7 +8,7 @@ import {
 } from 'src/common/helpers/receivable-source-capability';
 import {
   deleteInvoiceIfEmpty,
-  findOrCreateSystemReceivableBank,
+  findOrCreateSystemBank,
 } from 'src/common/helpers/invoice.helper';
 import {
   createReceivablePaymentTransaction,
@@ -16,7 +16,11 @@ import {
   resolveSettlementDate,
   correctSettlementDate,
 } from 'src/common/helpers/settlement.core';
-import { parseDateFilterEnd, parseDateFilterStart, parseDateOnly } from 'src/common/helpers/date-only.helper';
+import {
+  parseDateFilterEnd,
+  parseDateFilterStart,
+  parseDateOnly,
+} from 'src/common/helpers/date-only.helper';
 import {
   INCOME_RECEIVED_CATEGORY_COLOR,
   INCOME_RECEIVED_CATEGORY_NAME,
@@ -71,7 +75,10 @@ export class ReceivablesService {
         let parentId: string | null = null;
 
         for (let i = 0; i < installments; i++) {
-            const installmentDate = getInstallmentDate(parseDateOnly(dto.dueDate), i);
+          const installmentDate = getInstallmentDate(
+            parseDateOnly(dto.dueDate),
+            i,
+          );
 
           const receivable: Receivable = await tx.receivable.create({
             data: {
@@ -121,8 +128,12 @@ export class ReceivablesService {
         debtorName: filters.debtorName,
         personId: filters.personId,
         dueDate: {
-          gte: filters.startDate ? parseDateFilterStart(filters.startDate) : undefined,
-          lte: filters.endDate ? parseDateFilterEnd(filters.endDate) : undefined,
+          gte: filters.startDate
+            ? parseDateFilterStart(filters.startDate)
+            : undefined,
+          lte: filters.endDate
+            ? parseDateFilterEnd(filters.endDate)
+            : undefined,
         },
       },
       /*
@@ -195,12 +206,13 @@ export class ReceivablesService {
       select: { timeZone: true },
     });
 
-    const selectedPaymentBank = markingAsReceived && dto.paymentBankId
-      ? await this.entityValidationService.validateBank(
-          dto.paymentBankId,
-          userId,
-        )
-      : null;
+    const selectedPaymentBank =
+      markingAsReceived && dto.paymentBankId
+        ? await this.entityValidationService.validateBank(
+            dto.paymentBankId,
+            userId,
+          )
+        : null;
 
     const { paymentBankId, paymentType, paymentDate, ...receivableDto } = dto;
     const {
@@ -221,7 +233,12 @@ export class ReceivablesService {
 
         if (dto.isPaid === false && existing.isPaid) {
           for (const receivable of receivablesToUpdate) {
-            await assertNotActivePersonSettlementMember(tx, 'receivable', receivable.id, userId);
+            await assertNotActivePersonSettlementMember(
+              tx,
+              'receivable',
+              receivable.id,
+              userId,
+            );
           }
         }
 
@@ -230,7 +247,8 @@ export class ReceivablesService {
         // para os demais campos, mas só quando o valor de fato mudou.
         const occurredAtChanged =
           dto.occurredAt &&
-          parseDateOnly(dto.occurredAt).getTime() !== existing.occurredAt.getTime();
+          parseDateOnly(dto.occurredAt).getTime() !==
+            existing.occurredAt.getTime();
         if (existing.parentId && occurredAtChanged) {
           await tx.receivable.updateMany({
             where: {
@@ -243,7 +261,7 @@ export class ReceivablesService {
 
         const updatedReceivables: Receivable[] = [];
         const receivableBank = markingAsReceived
-          ? selectedPaymentBank ?? (await findOrCreateSystemReceivableBank(tx, userId))
+          ? (selectedPaymentBank ?? (await findOrCreateSystemBank(tx, userId)))
           : null;
 
         for (const receivable of receivablesToUpdate) {
@@ -423,7 +441,13 @@ export class ReceivablesService {
         );
 
         for (const receivable of receivablesToDelete) {
-          if (receivable.isPaid) await assertNotActivePersonSettlementMember(tx, 'receivable', receivable.id, userId);
+          if (receivable.isPaid)
+            await assertNotActivePersonSettlementMember(
+              tx,
+              'receivable',
+              receivable.id,
+              userId,
+            );
         }
 
         for (const receivable of receivablesToDelete) {

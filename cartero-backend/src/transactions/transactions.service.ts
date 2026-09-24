@@ -21,7 +21,7 @@ import {
   getInvoiceDueDateForPeriod,
   getInvoicePeriodForDate,
   offsetInvoicePeriod,
-  findOrCreateSystemReceivableBank,
+  findOrCreateSystemBank,
 } from 'src/common/helpers/invoice.helper';
 import { planTransaction } from './transaction-plan.helper';
 import {
@@ -114,7 +114,7 @@ export class TransactionsService {
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
         const bank =
-          requestedBank ?? (await findOrCreateSystemReceivableBank(tx, userId));
+          requestedBank ?? (await findOrCreateSystemBank(tx, userId));
         const bankId = bank.id;
         const originalDate = parseDateOnly(dto.date);
 
@@ -805,7 +805,14 @@ export class TransactionsService {
   }
 
   async findOne(id: string, userId: string) {
-    return await this.entityValidationService.validateTransaction(id, userId);
+    const transaction = await this.entityValidationService.validateTransaction(
+      id,
+      userId,
+    );
+    return await this.prisma.transaction.findUniqueOrThrow({
+      where: { id: transaction.id, userId },
+      include: { bank: true, category: true, invoice: true, person: true },
+    });
   }
 
   async findAll(userId: string, filters: FindTransactionsDto = {}) {
@@ -1112,7 +1119,7 @@ export class TransactionsService {
             { allowArchived: true },
           );
         } else if (dto.bankId === null) {
-          optionalBank = await findOrCreateSystemReceivableBank(tx, userId);
+          optionalBank = await findOrCreateSystemBank(tx, userId);
         }
 
         for (const transaction of transactionsToUpdate) {
@@ -1966,7 +1973,7 @@ export class TransactionsService {
   ): Promise<void> {
     const ids = transactions.map((transaction) => transaction.id);
 
-    const [debt, receivable] = await Promise.all([
+    const [debt, receivable, settlement] = await Promise.all([
       tx.debt.findFirst({
         where: { userId, paymentTransactionId: { in: ids } },
         select: { id: true },
@@ -1975,7 +1982,23 @@ export class TransactionsService {
         where: { userId, paymentTransactionId: { in: ids } },
         select: { id: true },
       }),
+      tx.transaction.findFirst({
+        where: {
+          id: { in: ids },
+          userId,
+          personSettlementGroupId: { not: null },
+        },
+        select: { id: true },
+      }),
     ]);
+
+    if (settlement) {
+      throw new ConflictException({
+        message:
+          'Esta transação pertence a um acerto com Pessoa. Desfaça o acerto para alterar seus dados financeiros ou removê-la.',
+        code: 'PERSON_SETTLEMENT_TRANSACTION_LINKED',
+      });
+    }
 
     // O verbo muda porque a saída do usuário é diferente: quem tenta apagar
     // precisa desmarcar; quem tenta editar precisa desmarcar, corrigir e

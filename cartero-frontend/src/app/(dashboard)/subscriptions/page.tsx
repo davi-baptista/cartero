@@ -13,10 +13,9 @@ import { MotionRow } from '@/components/ui/motion-row'
 import {
   FinancialListRow,
   ROW_AMOUNT_CLASS,
-  ROW_ICON_BG_CLASS,
-  ROW_ICON_CLASS,
   ROW_TRAILING_META_CLASS,
 } from '@/components/ui/financial-list-row'
+import { FinancialAvatar } from '@/components/ui/financial-avatar'
 import { SubscriptionDetailDrawer } from './subscription-detail-drawer'
 import { useDetailNavigation } from '@/lib/detail-navigation'
 import { useDetailEntity } from '@/lib/use-detail-entity'
@@ -49,11 +48,7 @@ function SubscriptionRow({
       ariaLabel={`Ver detalhes de ${subscription.title}`}
       /* Pausada perde ênfase — a lista inteira, não só um campo. */
       className={cn(inactive && 'opacity-55')}
-      leading={
-        <div className={cn(ROW_ICON_CLASS, ROW_ICON_BG_CLASS)}>
-          <Repeat className="size-4.5 text-muted-foreground sm:size-5" aria-hidden />
-        </div>
-      }
+      leading={<FinancialAvatar icon={<Repeat className="size-4.5 text-muted-foreground sm:size-5" />} />}
       title={subscription.title}
       titleAdornment={
         inactive ? (

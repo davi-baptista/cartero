@@ -2,17 +2,12 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import type { LucideIcon } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   Plus,
   Pencil,
   Trash2,
-  CreditCard,
-  Wallet,
-  Receipt,
-  FileText,
   TrendingUp,
   Search,
   X,
@@ -85,34 +80,27 @@ import {
 import {
   FinancialListRow,
   ROW_AMOUNT_CLASS,
-  ROW_ICON_CLASS,
   ROW_TRAILING_META_CLASS,
 } from '@/components/ui/financial-list-row'
+import { FinancialAvatar } from '@/components/ui/financial-avatar'
+import { TransactionDetailsDrawer } from '@/components/transaction-details-drawer'
 import { cn } from '@/lib/utils'
 import { useHighlight } from '@/lib/use-highlight'
 import type { Transaction } from '@/types'
 import { TransactionType, InstallmentScope } from '@/types'
+import {
+  TRANSACTION_EXPENSE_ICON_COLOR,
+  TRANSACTION_INCOME_ICON_COLOR,
+  TRANSACTION_TYPE_ICONS,
+} from '@/lib/transaction-icons'
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-
-const TYPE_ICON: Record<TransactionType, LucideIcon> = {
-  [TransactionType.INCOME]: TrendingUp,
-  [TransactionType.CREDIT_CARD]: CreditCard,
-  [TransactionType.DEBIT_CARD]: Wallet,
-  [TransactionType.PIX]: Receipt,
-  [TransactionType.BOLETO]: FileText,
-}
 
 // Grupos de tipo combinados para navegação vinda de outras telas.
 type TypeGroup = 'direct'
 const TYPE_GROUPS: Record<TypeGroup, TransactionType[]> = {
   direct: [TransactionType.DEBIT_CARD, TransactionType.PIX, TransactionType.BOLETO],
 }
-
-const INCOME_BG = 'var(--color-income-bg)'
-const EXPENSE_BG = 'var(--color-expense-bg)'
-const EXPENSE_ICON_CLR = 'var(--color-expense-icon)'
-const INCOME_COLOR = 'var(--color-income)'
 
 const INVOICE_MONTHS = [
   'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
@@ -177,7 +165,7 @@ function TransactionRow({
   isHighlighted?: boolean
   highlightRef?: (node: HTMLElement | null) => void
 }) {
-  const Icon = TYPE_ICON[tx.type]
+  const Icon = TRANSACTION_TYPE_ICONS[tx.type]
   const visibleBank = tx.bank?.isSystem ? undefined : tx.bank
 
   return (
@@ -191,12 +179,10 @@ function TransactionRow({
       */
       className={cn(isHighlighted && 'bg-primary/10 ring-2 ring-primary/40')}
       leading={
-        <div
-          className={ROW_ICON_CLASS}
-          style={{ backgroundColor: isExpense(tx.type, tx.isRefund) ? EXPENSE_BG : INCOME_BG }}
-        >
-          <Icon aria-hidden="true" className="size-4.5 sm:size-5" style={{ color: isExpense(tx.type, tx.isRefund) ? EXPENSE_ICON_CLR : INCOME_COLOR }} />
-        </div>
+        <FinancialAvatar
+          tone={isExpense(tx.type, tx.isRefund) ? 'expense' : 'income'}
+          icon={<Icon className="size-4.5 sm:size-5" style={{ color: isExpense(tx.type, tx.isRefund) ? TRANSACTION_EXPENSE_ICON_COLOR : TRANSACTION_INCOME_ICON_COLOR }} />}
+        />
       }
       title={tx.title}
       meta={
@@ -285,7 +271,7 @@ function InstallmentGroup({
   const [showAll, setShowAll] = useState(
     highlightedIndex >= VISIBLE_INSTALLMENTS,
   )
-  const Icon = TYPE_ICON[root.type]
+  const Icon = TRANSACTION_TYPE_ICONS[root.type]
   const visibleBank = root.bank?.isSystem ? undefined : root.bank
   const count = getInstallmentCount(root) ?? installments.length
   const total = installments.reduce((sum, tx) => sum + tx.amount, 0)
@@ -300,9 +286,10 @@ function InstallmentGroup({
         onView={() => onView(root)}
         ariaLabel={`Ver detalhes de ${baseTitle}`}
         leading={
-          <div className={ROW_ICON_CLASS} style={{ backgroundColor: EXPENSE_BG }}>
-            <Icon aria-hidden="true" className="size-4.5 sm:size-5" style={{ color: EXPENSE_ICON_CLR }} />
-          </div>
+          <FinancialAvatar
+            tone="expense"
+            icon={<Icon className="size-4.5 sm:size-5" style={{ color: TRANSACTION_EXPENSE_ICON_COLOR }} />}
+          />
         }
         title={baseTitle}
         titleAdornment={
@@ -403,6 +390,20 @@ function TransactionDetailsDialog({
   onDelete: (tx: Transaction) => void
 }) {
   if (!transaction) return null
+
+  // The API selects all scalar Transaction fields, including this nullable FK.
+  // Keep the original UI as a compatibility fallback for stale cached payloads.
+  if (transaction.personSettlementGroupId !== undefined) {
+    return (
+      <TransactionDetailsDrawer
+        transaction={transaction}
+        siblings={siblings}
+        onClose={() => onOpenChange(false)}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
+    )
+  }
 
   const categoryIcon = transaction.category
     ? resolveCategoryIcon(transaction.category.icon).Icon
@@ -1393,15 +1394,25 @@ export default function TransactionsPage() {
       {/* Sheets & Dialogs */}
       {/* Enquanto uma tarefa está aberta o painel sai da tela, mas a URL
           continua apontando para a transação — é dela que o Cancelar volta. */}
-      <TransactionDetailsDialog
-        transaction={taskOpen ? null : detailEntity}
-        siblings={transactions ?? []}
-        onOpenChange={(open) => {
-          if (!open) detail.close()
-        }}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-      />
+      {!taskOpen && detailEntity?.personSettlementGroupId ? (
+        <TransactionDetailsDrawer
+          transaction={detailEntity}
+          siblings={transactions ?? []}
+          onClose={() => detail.close()}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+        />
+      ) : (
+        <TransactionDetailsDialog
+          transaction={taskOpen ? null : detailEntity}
+          siblings={transactions ?? []}
+          onOpenChange={(open) => {
+            if (!open) detail.close()
+          }}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+        />
+      )}
 
       <TransactionSheet
         open={sheetOpen}

@@ -62,6 +62,7 @@ export function ReceivableDetailDrawer({
   onDelete,
   onToggleReceived,
   onEditSettlementDate,
+  readOnly = false,
 }: {
   /** `null` mantém o drawer fechado. */
   receivable: Receivable | null
@@ -70,6 +71,7 @@ export function ReceivableDetailDrawer({
   onDelete?: (receivable: Receivable) => void
   onToggleReceived: (receivable: Receivable) => void
   onEditSettlementDate?: (receivable: Receivable) => void
+  readOnly?: boolean
 }) {
   const { user } = useAuth()
 
@@ -95,7 +97,7 @@ export function ReceivableDetailDrawer({
       onOpenChange={onOpenChange}
       title={receivable.title}
       description={`Cobrança · vence em ${formatDate(receivable.dueDate)}`}
-      footer={
+      footer={readOnly ? undefined : (
         <>
         <DetailFooter className={DETAIL_ACTION_STACK_CLASS}>
           <Button
@@ -149,7 +151,7 @@ export function ReceivableDetailDrawer({
           )}
         </DetailFooter>
         </>
-      }
+      )}
     >
       <DetailAmount label="Valor">
         <span

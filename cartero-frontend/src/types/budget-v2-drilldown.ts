@@ -44,9 +44,11 @@ export type BudgetV2DrilldownItem =
       id: string
       amount: string
       eventDate: string
+      personId: string
       personName: string
       direction: 'INFLOW' | 'OUTFLOW'
       paymentType: string | null
+      settlementTransactionId: string | null
       bankName: string | null
     }
   | {
@@ -71,6 +73,7 @@ export type BudgetV2DrilldownItem =
       month: number
       year: number
       bankName: string
+      bankId: string
     }
   | {
       kind: 'RECEIVABLE'
@@ -89,6 +92,7 @@ export type BudgetV2DrilldownItem =
       month: number
       year: number
       bankName: string
+      bankId: string
     }
   | {
       kind: 'DEBT'

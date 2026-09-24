@@ -140,11 +140,19 @@ function buildHarness(state: DbState) {
               )),
         ),
       ),
-      findFirst: vi.fn(
-        async ({ where }: any) =>
+      findFirst: vi.fn(async ({ where }: any) => {
+        if (where?.personSettlementGroupId?.not === null) {
+          return (
+            state.transactions.find(
+              (tx) => tx.id === where.id?.in?.[0] && tx.personSettlementGroupId,
+            ) ?? null
+          );
+        }
+        return (
           state.transactions.find((tx) => tx.parentId === where.parentId) ??
-          null,
-      ),
+          null
+        );
+      }),
       findUnique: vi.fn(
         async ({ where }: any) =>
           state.transactions.find((tx) => tx.id === where.id) ?? null,
@@ -1052,6 +1060,23 @@ describe('TransactionsService — salvaguardas de fatura PAID', () => {
 
     expect(harness.deletes.transactions).toHaveLength(0);
     expect(harness.updates.invoices).toHaveLength(0);
+  });
+
+  it('protege a Transaction canônica do settlement contra exclusão e edição financeira', async () => {
+    const canonical = makeTransaction({
+      personSettlementGroupId: 'group-1',
+      type: 'PIX',
+    });
+    const harness = buildHarness(baseState({ transactions: [canonical] }));
+
+    await expect(harness.service.remove('tx-1', USER_ID)).rejects.toThrow(
+      /acerto com Pessoa/i,
+    );
+    await expect(
+      harness.service.update('tx-1', USER_ID, { amount: 250 } as any),
+    ).rejects.toThrow(/acerto com Pessoa/i);
+    expect(harness.deletes.transactions).toHaveLength(0);
+    expect(harness.updates.transactions).toHaveLength(0);
   });
 });
 

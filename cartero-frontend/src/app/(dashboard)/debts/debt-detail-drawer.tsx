@@ -50,6 +50,7 @@ export function DebtDetailDrawer({
   onDelete,
   onTogglePaid,
   onEditSettlementDate,
+  readOnly = false,
 }: {
   /** `null` mantém o drawer fechado. */
   debt: Debt | null
@@ -58,6 +59,7 @@ export function DebtDetailDrawer({
   onDelete: (debt: Debt) => void
   onTogglePaid: (debt: Debt) => void
   onEditSettlementDate?: (debt: Debt) => void
+  readOnly?: boolean
 }) {
   const { user } = useAuth()
 
@@ -74,7 +76,7 @@ export function DebtDetailDrawer({
       onOpenChange={onOpenChange}
       title={debt.title}
       description={`Dívida · vence em ${formatDate(debt.dueDate)}`}
-      footer={
+      footer={readOnly ? undefined : (
         <>
           {/*
             Marcar/desmarcar era a ação do ícone de status na row — que saiu
@@ -125,7 +127,7 @@ export function DebtDetailDrawer({
           </Button>
         </DetailFooter>
         </>
-      }
+      )}
     >
       <DetailAmount label="Valor">
         <span

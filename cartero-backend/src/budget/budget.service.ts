@@ -351,6 +351,7 @@ export class BudgetService {
         where: {
           userId,
           type: { in: DIRECT_PAYMENT_TYPES },
+          personSettlementGroupId: null,
           isRefund: false,
           date: { gte: monthStart, lt: monthEnd },
           // Transação-espelho de "Dívida paga" já é contada via totalDebts —

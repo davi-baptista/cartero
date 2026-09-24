@@ -58,7 +58,7 @@ export interface ReceivablePaymentInput {
    * Banco onde a receita entra.
    *
    * Recebimento não exige banco do usuário — quando ele não escolhe, o
-   * chamador passa o banco de sistema (`findOrCreateSystemReceivableBank`).
+   * chamador passa o banco de sistema (`findOrCreateSystemBank`).
    */
   bank: Pick<Bank, 'id' | 'invoiceDueDate' | 'invoiceDueDaysAfterClose'>;
   /**
@@ -70,34 +70,41 @@ export interface ReceivablePaymentInput {
   timeZone?: string | null;
 }
 
-export interface PersonSettlementCreditInput {
+export interface PersonSettlementTransactionInput {
   userId: string;
   groupId: string;
+  personId: string;
   personName: string;
   amount: Prisma.Decimal;
   settledAt: Date;
+  type: TransactionType;
   bank: Pick<Bank, 'id' | 'invoiceDueDate' | 'invoiceDueDaysAfterClose'>;
   category: SettlementCategory;
   timeZone?: string | null;
 }
 
 /** Creates the single net card charge owned by a person settlement group. */
-export async function createPersonSettlementCreditTransaction(
+export async function createPersonSettlementTransaction(
   tx: Prisma.TransactionClient,
-  input: PersonSettlementCreditInput,
+  input: PersonSettlementTransactionInput,
 ): Promise<string> {
-  const invoice = await findOrCreateInvoice(
-    tx,
-    input.userId,
-    input.bank.id,
-    input.bank.invoiceDueDate,
-    input.bank.invoiceDueDaysAfterClose,
-    input.settledAt,
-    input.timeZone,
-  );
-
-  if (invoice.status === 'PAID') {
-    throw new ForbiddenException('Não é possível lançar em uma fatura já paga');
+  let invoiceId: string | null = null;
+  if (input.type === TransactionType.CREDIT_CARD) {
+    const invoice = await findOrCreateInvoice(
+      tx,
+      input.userId,
+      input.bank.id,
+      input.bank.invoiceDueDate,
+      input.bank.invoiceDueDaysAfterClose,
+      input.settledAt,
+      input.timeZone,
+    );
+    if (invoice.status === 'PAID') {
+      throw new ForbiddenException(
+        'Não é possível lançar em uma fatura já paga',
+      );
+    }
+    invoiceId = invoice.id;
   }
 
   const transaction = await tx.transaction.create({
@@ -105,19 +112,22 @@ export async function createPersonSettlementCreditTransaction(
       userId: input.userId,
       bankId: input.bank.id,
       categoryId: input.category.id,
-      invoiceId: invoice.id,
+      invoiceId,
       personSettlementGroupId: input.groupId,
+      personId: input.personId,
       title: `Acerto com ${input.personName}`,
-      type: TransactionType.CREDIT_CARD,
+      type: input.type,
       amount: input.amount,
       date: input.settledAt,
     },
   });
 
-  await tx.invoice.update({
-    where: { id: invoice.id, userId: input.userId },
-    data: { totalAmount: { increment: input.amount } },
-  });
+  if (invoiceId) {
+    await tx.invoice.update({
+      where: { id: invoiceId, userId: input.userId },
+      data: { totalAmount: { increment: input.amount } },
+    });
+  }
 
   return transaction.id;
 }

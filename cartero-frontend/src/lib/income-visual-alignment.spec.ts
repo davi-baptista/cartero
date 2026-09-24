@@ -4,10 +4,11 @@ import { describe, expect, it } from 'vitest'
 const page = readFileSync(new URL('../app/(dashboard)/income/page.tsx', import.meta.url), 'utf-8')
 const rows = readFileSync(new URL('../components/ui/financial-list-row.tsx', import.meta.url), 'utf-8')
 const persons = readFileSync(new URL('../app/(dashboard)/persons/page.tsx', import.meta.url), 'utf-8')
+const avatar = readFileSync(new URL('../components/ui/financial-avatar.tsx', import.meta.url), 'utf-8')
 
 describe('income visual alignment contract', () => {
   it('keeps the one-off avatar empty and reuses the receivable detail flow', () => {
-    expect(page).toContain('leadingAction={<button type="button" className={`${ROW_ICON_CLASS} ${ROW_ICON_BG_CLASS} ${SETTLEMENT_ACTION_CIRCLE_CLASS}`}')
+    expect(page).toContain('leadingAction={<FinancialAvatar onClick={onView}')
     expect(page).toContain('meta={<span className={presentation.tone === \'overdue\' ? \'text-destructive\' : \'text-muted-foreground\'}>{presentation.label}</span>}')
     expect(page).toContain('trailing={<FinancialRowTrailing amount={formatCurrency(item.amount)} label="A RECEBER" />}')
     expect(page).not.toContain('item.debtorName ||')
@@ -37,8 +38,9 @@ describe('income visual alignment contract', () => {
   })
 
   it('keeps the occurrence quick receive action separate from the row action', () => {
-    expect(page).toContain('onClick={(event) => { event.stopPropagation(); onReceive(occurrence) }}')
-    expect(page).toContain('aria-label={`Marcar ${occurrence.title} como recebido`}')
+    expect(page).toContain('onClick={() => onReceive(occurrence)}')
+    expect(avatar).toContain('event.stopPropagation()')
+    expect(page).toContain('ariaLabel={`Marcar ${occurrence.title} como recebido`}')
     expect(page).toContain('onReceive={(occurrence) => setMarkPaidTarget(occurrence)}')
     expect(page).toContain('<MarkAsPaidDialog')
   })

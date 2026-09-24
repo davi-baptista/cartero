@@ -14,7 +14,7 @@ import {
 } from 'src/common/helpers/actionable-invoices.helper';
 import { InvoiceStatus, Prisma } from '@prisma/client';
 import { MarkManyPaidDto } from './dto/mark-many-paid.dto';
-import { findOrCreateSystemReceivableBank } from 'src/common/helpers/invoice.helper';
+import { findOrCreateSystemBank } from 'src/common/helpers/invoice.helper';
 import { financialCivilDay } from 'src/common/helpers/financial-timezone.helper';
 import { requireAccountTimeZone } from 'src/common/helpers/timezone.helper';
 import { parseDateOnly } from 'src/common/helpers/date-only.helper';
@@ -140,28 +140,35 @@ export class InvoicesService {
       perInvoice.set(row.invoiceId, Number(row._sum.amount ?? 0));
     }
 
-    const candidates: ActionableInvoiceCandidate[] = invoices.map((invoice) => ({
-      // Identidade real do banco, para agrupar (M5A.1) — nunca exposta.
-      bankId: invoice.bankId,
-      bankName: invoice.bank.name,
-      // Desempate determinístico (M5A.2) — já vêm na row, sem query extra.
-      invoiceId: invoice.id,
-      year: invoice.year,
-      month: invoice.month,
-      status: invoice.status,
-      totalAmount: invoice.totalAmount,
-      closeDate: invoice.closeDate,
-      dueDate: invoice.dueDate,
-      reimbursable: perInvoice.get(invoice.id) ?? 0,
-    }));
+    const candidates: ActionableInvoiceCandidate[] = invoices.map(
+      (invoice) => ({
+        // Identidade real do banco, para agrupar (M5A.1) — nunca exposta.
+        bankId: invoice.bankId,
+        bankName: invoice.bank.name,
+        // Desempate determinístico (M5A.2) — já vêm na row, sem query extra.
+        invoiceId: invoice.id,
+        year: invoice.year,
+        month: invoice.month,
+        status: invoice.status,
+        totalAmount: invoice.totalAmount,
+        closeDate: invoice.closeDate,
+        dueDate: invoice.dueDate,
+        reimbursable: perInvoice.get(invoice.id) ?? 0,
+      }),
+    );
 
     return { items: selectActionableInvoices(candidates, limit) };
   }
 
   async update(id: string, userId: string, dto: UpdateInvoiceDto) {
-    const existing = await this.entityValidationService.validateInvoice(id, userId);
+    const existing = await this.entityValidationService.validateInvoice(
+      id,
+      userId,
+    );
     if (existing.status === InvoiceStatus.PAID) {
-      throw new BadRequestException('Fatura paga só pode ser reaberta pelo fluxo de reabertura');
+      throw new BadRequestException(
+        'Fatura paga só pode ser reaberta pelo fluxo de reabertura',
+      );
     }
     if (dto.status === InvoiceStatus.PAID) {
       throw new BadRequestException('Use o fluxo de pagamento da fatura');
@@ -198,18 +205,22 @@ export class InvoicesService {
     if (!(this.prisma as any).invoiceSettlement) {
       return this.prisma.invoice.update({
         where: { id, userId },
-        data: { status: deriveStatusFromInvoiceDates(invoice, new Date(), timeZone) },
+        data: {
+          status: deriveStatusFromInvoiceDates(invoice, new Date(), timeZone),
+        },
       });
     }
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.invoiceSettlement.deleteMany({ where: { invoiceId: invoice.id } });
+      await tx.invoiceSettlement.deleteMany({
+        where: { invoiceId: invoice.id },
+      });
       return tx.invoice.update({
         where: { id, userId },
         data: {
-        // Das datas congeladas da própria fatura, não da configuração atual
-        // do banco: reabrir não é motivo para recalcular o calendário de uma
-        // fatura histórica.
+          // Das datas congeladas da própria fatura, não da configuração atual
+          // do banco: reabrir não é motivo para recalcular o calendário de uma
+          // fatura histórica.
           status: deriveStatusFromInvoiceDates(invoice, new Date(), timeZone),
         },
       });
@@ -236,17 +247,23 @@ export class InvoicesService {
         paid.map((invoice) =>
           this.prisma.invoice.update({
             where: { id: invoice.id, userId },
-            data: { status: deriveStatusFromInvoiceDates(invoice, now, timeZone) },
+            data: {
+              status: deriveStatusFromInvoiceDates(invoice, now, timeZone),
+            },
           }),
         ),
       );
     } else {
       await this.prisma.$transaction(async (tx) => {
         for (const invoice of paid) {
-          await tx.invoiceSettlement.deleteMany({ where: { invoiceId: invoice.id } });
+          await tx.invoiceSettlement.deleteMany({
+            where: { invoiceId: invoice.id },
+          });
           await tx.invoice.update({
             where: { id: invoice.id, userId },
-            data: { status: deriveStatusFromInvoiceDates(invoice, now, timeZone) },
+            data: {
+              status: deriveStatusFromInvoiceDates(invoice, now, timeZone),
+            },
           });
         }
       });
@@ -274,7 +291,10 @@ export class InvoicesService {
       select: { timeZone: true },
     });
     const accountTimeZone = timeZone ?? user.timeZone;
-    const today = financialCivilDay(new Date(), requireAccountTimeZone(accountTimeZone));
+    const today = financialCivilDay(
+      new Date(),
+      requireAccountTimeZone(accountTimeZone),
+    );
     const paidAt = dto.paymentDate
       ? resolveSettlementDate(dto.paymentDate, new Date(), accountTimeZone)
       : parseDateOnly(today);
@@ -288,11 +308,15 @@ export class InvoicesService {
         where: { userId, id: { in: ids } },
       });
       if (requestedInvoices.length !== ids.length) {
-        throw new NotFoundException('Uma ou mais faturas não pertencem à conta ou já estão pagas');
+        throw new NotFoundException(
+          'Uma ou mais faturas não pertencem à conta ou já estão pagas',
+        );
       }
-      const invoices = requestedInvoices.filter((invoice) => invoice.status !== InvoiceStatus.PAID);
+      const invoices = requestedInvoices.filter(
+        (invoice) => invoice.status !== InvoiceStatus.PAID,
+      );
       if (invoices.length === 0) return { count: 0 };
-      const bank = selectedBank ?? (await findOrCreateSystemReceivableBank(tx, userId));
+      const bank = selectedBank ?? (await findOrCreateSystemBank(tx, userId));
       for (const invoice of invoices) {
         await tx.invoiceSettlement.create({
           data: {

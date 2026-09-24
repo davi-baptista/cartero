@@ -17,7 +17,7 @@ function equalValue(actual: unknown, expected: unknown): boolean {
       new Prisma.Decimal(String(expected)),
     );
   }
-  return actual === expected;
+  return expected === null ? actual == null : actual === expected;
 }
 
 function matchesValue(actual: any, condition: any): boolean {
@@ -214,7 +214,7 @@ function createPrisma() {
       paymentType: null,
       netAmount: money('50.00'),
       settledAt: date('2026-09-05'),
-      person: { name: 'Maria' },
+      person: { id: 'person-maria', name: 'Maria' },
       bank: null,
     },
     {
@@ -225,7 +225,7 @@ function createPrisma() {
       paymentType: TransactionType.PIX,
       netAmount: money('60.00'),
       settledAt: date('2026-09-06'),
-      person: { name: 'Pedro' },
+      person: { id: 'person-pedro', name: 'Pedro' },
       bank: { name: 'Inter' },
     },
     {
@@ -236,7 +236,7 @@ function createPrisma() {
       paymentType: TransactionType.CREDIT_CARD,
       netAmount: money('70.00'),
       settledAt: date('2026-09-06'),
-      person: { name: 'Cartão' },
+      person: { id: 'person-card', name: 'Cartão' },
       bank: { name: 'Nubank' },
     },
     {
@@ -247,7 +247,18 @@ function createPrisma() {
       paymentType: null,
       netAmount: money('999.00'),
       settledAt: date('2026-09-06'),
-      person: { name: 'Revertido' },
+      person: { id: 'person-reverted', name: 'Revertido' },
+      bank: null,
+    },
+    {
+      id: 'group-foreign',
+      userId: 'user-b',
+      status: 'ACTIVE',
+      direction: 'INFLOW',
+      paymentType: null,
+      netAmount: money('999.00'),
+      settledAt: date('2026-09-06'),
+      person: { id: 'person-foreign', name: 'Outra conta' },
       bank: null,
     },
   ];
@@ -453,6 +464,62 @@ function createPrisma() {
 }
 
 describe('BudgetV2DrilldownService', () => {
+  it('exposes the linked person id for owned inflow and outflow settlements', async () => {
+    const prisma = createPrisma();
+    const service = new BudgetV2DrilldownService(prisma);
+
+    const inflow = await service.getDrilldown(
+      'user-a',
+      {
+        bucket: BudgetV2Bucket.PERSON_SETTLEMENT_INFLOW,
+        preset: BudgetV2PeriodPreset.LAST_30_DAYS,
+        limit: 100,
+      } as any,
+      date('2026-09-10'),
+    );
+    const outflow = await service.getDrilldown(
+      'user-a',
+      {
+        bucket: BudgetV2Bucket.PERSON_SETTLEMENT_DIRECT_OUTFLOW,
+        preset: BudgetV2PeriodPreset.LAST_30_DAYS,
+        limit: 100,
+      } as any,
+      date('2026-09-10'),
+    );
+
+    expect(inflow.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'group-in',
+          kind: 'PERSON_SETTLEMENT',
+          personId: 'person-maria',
+          personName: 'Maria',
+        }),
+      ]),
+    );
+    expect(outflow.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'group-out',
+          kind: 'PERSON_SETTLEMENT',
+          personId: 'person-pedro',
+          personName: 'Pedro',
+        }),
+      ]),
+    );
+    expect(inflow.items.map((item) => item.id)).not.toContain('group-foreign');
+    expect(
+      prisma.personSettlementGroup.findMany.mock.calls[0][0].where.userId,
+    ).toBe('user-a');
+    expect(
+      prisma.personSettlementGroup.findMany.mock.calls[1][0].where.userId,
+    ).toBe('user-a');
+    expect(
+      prisma.personSettlementGroup.findMany.mock.calls[0][0].select.person
+        .select.id,
+    ).toBe(true);
+  });
+
   it('reconciles all twelve buckets with the released summary', async () => {
     const prisma = createPrisma();
     const summary = await new BudgetV2Service(prisma).getBudget(

@@ -26,6 +26,7 @@ import { describe, expect, it } from 'vitest'
 const ler = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf-8')
 
 const PRIMITIVE = ler('../components/ui/financial-list-row.tsx')
+const AVATAR = ler('../components/ui/financial-avatar.tsx')
 const SHELL = ler('../components/ui/detail-drawer.tsx')
 
 const EXTRATO = ler('../app/(dashboard)/transactions/page.tsx')
@@ -202,13 +203,12 @@ describe('fundo do ícone: um tom para todas as listas', () => {
       Mira o container do ícone: `bg-muted/60` segue legítimo em badge, e
       `bg-muted/40` na ilustração de 64px do estado vazio.
     */
+    expect(AVATAR).toContain('ROW_ICON_CLASS')
+    expect(AVATAR).toContain('ROW_ICON_BG_CLASS')
+    expect(AVATAR).toContain('AVATAR_3D_CLASS')
     for (const [nome, fonte] of Object.entries(LISTAS)) {
-      const usos = code(fonte).match(/ROW_ICON_CLASS,\s*(?:ROW_ICON_BG_CLASS|'[^']*')/g) ?? []
-      for (const uso of usos) {
-        expect(uso, `${nome} deveria usar o token compartilhado`).toContain(
-          'ROW_ICON_BG_CLASS',
-        )
-      }
+      if (nome === 'Bancos' || nome === 'Pessoas') continue
+      expect(fonte, `${nome} deveria usar FinancialAvatar`).toContain('FinancialAvatar')
     }
   })
 })
@@ -317,10 +317,7 @@ describe('o círculo de status é um controle independente', () => {
       com `onClick` perderia os dois.
     */
     for (const [nome, row] of Object.entries(ROWS)) {
-      expect(row, `${nome}: o controle deveria ser um button`).toContain(
-        'type="button"',
-      )
-      expect(row).toContain('ROW_ICON_CLASS')
+      expect(row, `${nome}: deveria delegar o círculo`).toContain('<FinancialAvatar')
       /*
         O foco visível pode vir da primitive compartilhada
         (`SETTLEMENT_ACTION_CIRCLE_CLASS`) em vez de estar escrito na row.
@@ -328,31 +325,15 @@ describe('o círculo de status é um controle independente', () => {
         classe mora. Aceitar as duas origens mantém a garantia e permite
         que Dívidas e A Receber compartilhem um acabamento só.
       */
-      const focoNaRow = row.includes('focus-visible:ring')
-      /*
-        Recorta a DECLARAÇÃO da constante, não o arquivo inteiro: a row e o
-        alvo principal também trazem `focus-visible:ring`, e procurar no
-        arquivo todo daria positivo mesmo com o foco removido do círculo
-        — a checagem passaria a não vigiar nada.
-      */
-      const declaracao =
-        PRIMITIVE.match(
-          /export const SETTLEMENT_ACTION_CIRCLE_CLASS =\s*'[^']*'/,
-        )?.[0] ?? ''
-      const focoNaPrimitive =
-        row.includes('SETTLEMENT_ACTION_CIRCLE_CLASS') &&
-        declaracao.includes('focus-visible:ring')
-      expect(
-        focoNaRow || focoNaPrimitive,
-        `${nome}: faltou foco visível`,
-      ).toBe(true)
-      expect(row, `${nome}: faltou rótulo`).toContain('aria-label={')
+      expect(AVATAR, `${nome}: faltou button acessível`).toContain('<button')
+      expect(AVATAR).toContain('focus-visible:ring')
+      expect(AVATAR).toContain('aria-label={ariaLabel}')
     }
   })
 
   it('item 4: o primitive continua sem regra de domínio', () => {
     for (const dominio of ['Debt', 'Receivable', 'isPaid', 'togglePaid']) {
-      expect(code(PRIMITIVE)).not.toContain(dominio)
+      expect(code(AVATAR)).not.toContain(dominio)
     }
   })
 

@@ -17,7 +17,7 @@ export const DRILLDOWN_BUCKET_CONFIG: Record<
   [BudgetV2DrilldownBucket.PERSON_SETTLEMENT_INFLOW]: { title: 'Acertos recebidos', scope: 'period' },
   [BudgetV2DrilldownBucket.DIRECT_EXPENSES]: { title: 'Gastos diretos', scope: 'period' },
   [BudgetV2DrilldownBucket.DEBT_DIRECT_SETTLEMENTS]: { title: 'Dívidas quitadas', scope: 'period' },
-  [BudgetV2DrilldownBucket.INVOICE_SETTLEMENTS]: { title: 'Faturas pagas', scope: 'period' },
+  [BudgetV2DrilldownBucket.INVOICE_SETTLEMENTS]: { title: 'Pagamento de faturas', scope: 'period' },
   [BudgetV2DrilldownBucket.PERSON_SETTLEMENT_DIRECT_OUTFLOW]: { title: 'Acertos pagos', scope: 'period' },
   [BudgetV2DrilldownBucket.UPCOMING_RECEIVABLES]: { title: 'Recebíveis', scope: 'upcoming' },
   [BudgetV2DrilldownBucket.UPCOMING_INVOICES]: { title: 'Faturas', scope: 'upcoming' },
@@ -38,6 +38,15 @@ export function drilldownContextLabel(
 
 export function isRealizedDrilldownBucket(bucket: BudgetV2DrilldownBucket): boolean {
   return DRILLDOWN_BUCKET_CONFIG[bucket].scope === 'period'
+}
+
+export function drilldownSectionHeading(bucket: BudgetV2DrilldownBucket): string {
+  const scope = DRILLDOWN_BUCKET_CONFIG[bucket].scope
+  if (scope === 'period') return 'Movimenta\u00e7\u00f5es'
+  if (scope === 'overdue') return 'Em atraso'
+  if (bucket === BudgetV2DrilldownBucket.UPCOMING_RECEIVABLES) return 'A receber'
+  if (bucket === BudgetV2DrilldownBucket.UPCOMING_DEBTS) return 'A pagar'
+  return 'Faturas'
 }
 
 export function transactionFallback(bucket: BudgetV2DrilldownBucket): string {

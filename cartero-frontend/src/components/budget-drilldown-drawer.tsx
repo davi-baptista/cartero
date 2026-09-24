@@ -1,19 +1,38 @@
 'use client'
 
-import { useInfiniteQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { AlertCircle, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { DetailAmount, DetailDrawer } from '@/components/ui/detail-drawer'
+import { DetailDrawer } from '@/components/ui/detail-drawer'
+import { MarkAsPaidDialog } from '@/app/(dashboard)/transactions/mark-as-paid-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getBudgetV2Drilldown } from '@/services/budget.service'
+import { updateDebt } from '@/services/debts.service'
+import { updateReceivable } from '@/services/receivables.service'
+import { getPerson } from '@/services/persons.service'
+import { getTransaction } from '@/services/transactions.service'
+import { PersonStatementDrawer } from '@/components/person-statement-drawer'
+import { TransactionDetailsDrawer } from '@/components/transaction-details-drawer'
+import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
+import { DebtDetailDrawer } from '@/app/(dashboard)/debts/debt-detail-drawer'
+import { ReceivableDetailDrawer } from '@/app/(dashboard)/receivables/receivable-detail-drawer'
+import { getDebt } from '@/services/debts.service'
+import { getReceivable } from '@/services/receivables.service'
+import type { MonthPeriod } from '@/components/month-nav'
+import { accountCivilDayOf } from '@/lib/date'
 import { formatCurrency } from '@/lib/formatters'
 import {
   drilldownContextLabel,
   DRILLDOWN_BUCKET_CONFIG,
+  drilldownSectionHeading,
 } from '@/lib/budget-drilldown-config'
 import type { BudgetV2PeriodPreset } from '@/types/budget-v2'
+import type { TransactionType } from '@/types'
 import type { BudgetV2DrilldownBucket } from '@/types/budget-v2-drilldown'
-import { BudgetDrilldownItemRow } from './budget-drilldown-item'
+import type { BudgetV2DrilldownItem } from '@/types/budget-v2-drilldown'
+import { BudgetDrilldownItemRow, type BudgetQuickSettlementTarget } from './budget-drilldown-item'
 
 function DrawerLoading() {
   return (
@@ -54,6 +73,16 @@ export function BudgetDrilldownDrawer({
   open: boolean
   onClose: () => void
 }) {
+  const queryClient = useQueryClient()
+  const [settlementTarget, setSettlementTarget] = useState<BudgetQuickSettlementTarget | null>(null)
+  const [selectedPerson, setSelectedPerson] = useState<{
+    id: string
+    period: MonthPeriod
+  } | null>(null)
+  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null)
+  const [selectedInvoice, setSelectedInvoice] = useState<{ id: string; bankId: string } | null>(null)
+  const [selectedDebtId, setSelectedDebtId] = useState<string | null>(null)
+  const [selectedReceivableId, setSelectedReceivableId] = useState<string | null>(null)
   const activeBucket = bucket ?? null
   const query = useInfiniteQuery({
     queryKey: ['budget-v2-drilldown', activeBucket, preset],
@@ -68,6 +97,52 @@ export function BudgetDrilldownDrawer({
     getNextPageParam: (lastPage) => lastPage.pageInfo.nextCursor ?? undefined,
   })
   const fetchNextPage = query.fetchNextPage
+  const personQuery = useQuery({
+    queryKey: ['person', selectedPerson?.id],
+    queryFn: () => getPerson(selectedPerson!.id),
+    enabled: selectedPerson !== null,
+    retry: false,
+  })
+  const transactionQuery = useQuery({
+    queryKey: ['transaction', selectedTransactionId],
+    queryFn: () => getTransaction(selectedTransactionId!),
+    enabled: selectedTransactionId !== null,
+    retry: false,
+  })
+  const debtQuery = useQuery({
+    queryKey: ['debt', selectedDebtId],
+    queryFn: () => getDebt(selectedDebtId!),
+    enabled: selectedDebtId !== null,
+    retry: false,
+  })
+  const receivableQuery = useQuery({
+    queryKey: ['receivable', selectedReceivableId],
+    queryFn: () => getReceivable(selectedReceivableId!),
+    enabled: selectedReceivableId !== null,
+    retry: false,
+  })
+  const settlementMutation = useMutation({
+    mutationFn: async ({ target, payload }: {
+      target: BudgetQuickSettlementTarget
+      payload: { paymentBankId?: string; paymentType?: TransactionType; paymentDate?: string }
+    }) => {
+      if (target.kind === 'receivable') {
+        await updateReceivable(target.id, { isPaid: true, ...payload })
+      } else {
+        await updateDebt(target.id, { isPaid: true, ...payload })
+      }
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['budget-v2'] }),
+        queryClient.invalidateQueries({ queryKey: ['budget-v2-drilldown'] }),
+        queryClient.invalidateQueries({ queryKey: ['budget'] }),
+      ])
+      setSettlementTarget(null)
+      toast.success('Item marcado como resolvido')
+    },
+    onError: () => toast.error('NÃ£o foi possÃ­vel concluir o acerto.'),
+  })
 
   if (!activeBucket) return null
 
@@ -94,23 +169,71 @@ export function BudgetDrilldownDrawer({
       ) : (
         <>
           {firstPage && (
-            <DetailAmount label="Total">
-              <p className="text-2xl font-semibold tabular-nums">
+            <div className="mx-5 mt-4 rounded-xl bg-muted/40 p-4">
+              <p className="text-xs font-medium text-muted-foreground">Total</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
                 {formatCurrency(Number(firstPage.total))}
               </p>
-            </DetailAmount>
+            </div>
           )}
           {items.length > 0 ? (
-            <div>
-              {items.map((item) => (
-                <BudgetDrilldownItemRow
-                  bucket={activeBucket}
-                  item={item}
-                  key={`${item.kind}:${item.id}`}
-                  timeZone={firstPage?.context.timeZone ?? 'America/Sao_Paulo'}
-                />
-              ))}
-            </div>
+            <>
+
+                <div className="mx-5 mt-8 hidden">
+                  <h3 className="text-sm font-medium">Movimentações</h3>
+                </div>
+                <div className="mx-5 mt-8">
+                  <h3 className="text-sm font-medium">{drilldownSectionHeading(activeBucket)}</h3>
+                </div>
+              <div className="mt-2 divide-y divide-border/60 px-5">
+                {items.map((item) => (
+                  <BudgetDrilldownItemRow
+                    bucket={activeBucket}
+                    item={item}
+                    key={`${item.kind}:${item.id}`}
+                    timeZone={firstPage?.context.timeZone ?? 'America/Sao_Paulo'}
+                    onQuickAction={setSettlementTarget}
+                    onView={(item: BudgetV2DrilldownItem) => {
+                      if (item.kind === 'TRANSACTION' || item.kind === 'RECEIVABLE_RECEIPT' || item.kind === 'DEBT_SETTLEMENT') {
+                        setSelectedTransactionId(item.id)
+                        return
+                      }
+                      if (item.kind === 'INVOICE_SETTLEMENT') {
+                        setSelectedInvoice({ id: item.sourceId, bankId: item.bankId })
+                        return
+                      }
+                      if (item.kind === 'INVOICE') {
+                        setSelectedInvoice({ id: item.id, bankId: item.bankId })
+                        return
+                      }
+                      if (item.kind === 'DEBT') {
+                        setSelectedDebtId(item.id)
+                        return
+                      }
+                      if (item.kind === 'RECEIVABLE') {
+                        setSelectedReceivableId(item.id)
+                        return
+                      }
+                      if (item.kind !== 'PERSON_SETTLEMENT') return
+                      if (item.settlementTransactionId) {
+                        setSelectedTransactionId(item.settlementTransactionId)
+                        return
+                      }
+                      const civilDate = accountCivilDayOf(
+                        item.eventDate,
+                        firstPage?.context.timeZone ?? 'America/Sao_Paulo',
+                      )
+                      const [year, month] = civilDate.split('-').map(Number)
+                      setSelectedPerson({
+                        id: item.personId,
+                        period: { month, year },
+                      })
+                    }}
+                    quickActionPending={settlementMutation.isPending}
+                  />
+                ))}
+              </div>
+            </>
           ) : (
             <p className="px-5 py-8 text-sm text-muted-foreground">Nenhum contribuinte encontrado.</p>
           )}
@@ -143,6 +266,63 @@ export function BudgetDrilldownDrawer({
             </div>
           )}
         </>
+      )}
+      <MarkAsPaidDialog
+        open={settlementTarget !== null}
+        kind={settlementTarget?.kind ?? 'receivable'}
+        isPending={settlementMutation.isPending}
+        onConfirm={(payload) => {
+          if (!settlementTarget) return
+          settlementMutation.mutate({ target: settlementTarget, payload })
+        }}
+        onCancel={() => {
+          if (!settlementMutation.isPending) setSettlementTarget(null)
+        }}
+      />
+      {selectedPerson && personQuery.data && (
+        <PersonStatementDrawer
+          person={{
+            id: personQuery.data.id,
+            name: personQuery.data.name,
+            phone: personQuery.data.phone,
+          }}
+          open
+          onClose={() => setSelectedPerson(null)}
+          period={selectedPerson.period}
+        />
+      )}
+      {selectedTransactionId && transactionQuery.data && (
+        <TransactionDetailsDrawer
+          transaction={transactionQuery.data}
+          onClose={() => setSelectedTransactionId(null)}
+        />
+      )}
+      {selectedInvoice && (
+        <InvoiceDetailsDrawer
+          invoiceId={selectedInvoice.id}
+          bankId={selectedInvoice.bankId}
+          open
+          onOpenChange={(nextOpen) => { if (!nextOpen) setSelectedInvoice(null) }}
+        />
+      )}
+      {selectedDebtId && debtQuery.data && (
+        <DebtDetailDrawer
+          debt={debtQuery.data}
+          onOpenChange={(nextOpen) => { if (!nextOpen) setSelectedDebtId(null) }}
+          onEdit={() => undefined}
+          onDelete={() => undefined}
+          onTogglePaid={() => undefined}
+          readOnly
+        />
+      )}
+      {selectedReceivableId && receivableQuery.data && (
+        <ReceivableDetailDrawer
+          receivable={receivableQuery.data}
+          onOpenChange={(nextOpen) => { if (!nextOpen) setSelectedReceivableId(null) }}
+          onEdit={() => undefined}
+          onToggleReceived={() => undefined}
+          readOnly
+        />
       )}
     </DetailDrawer>
   )

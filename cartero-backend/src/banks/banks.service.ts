@@ -12,7 +12,7 @@ import { EntityValidationService } from 'src/common/entity-validation.service';
 import {
   DEFAULT_INVOICE_DAYS_AFTER_CLOSE,
   getLegacyCloseDay,
-  SYSTEM_RECEIVABLE_BANK_NAME,
+  SYSTEM_BANK_NAME,
 } from 'src/common/helpers/invoice.helper';
 import {
   planBillingConfigUpdate,
@@ -62,7 +62,7 @@ export class BanksService {
    * Recusa o nome técnico da conta interna.
    *
    * Sem isto, um banco comum podia nascer com o nome reservado. O efeito não
-   * era cosmético: `findOrCreateSystemReceivableBank` filtra por
+   * era cosmético: `findOrCreateSystemBank` filtra por
    * `isSystem: true`, então não encontraria esse registro e criaria um
    * SEGUNDO com o mesmo nome — dois bancos homônimos, um deles invisível.
    *
@@ -70,7 +70,7 @@ export class BanksService {
    * convertido em conta de sistema. A validação só impede novos conflitos.
    */
   private assertNameNotReserved(name: string): void {
-    if (name.trim() !== SYSTEM_RECEIVABLE_BANK_NAME) return;
+    if (name.trim() !== SYSTEM_BANK_NAME) return;
 
     throw new BadRequestException(
       'Esse nome é reservado para uso interno do sistema',
@@ -140,7 +140,7 @@ export class BanksService {
      *
      * `archive` e `remove` já a protegiam; `update` não. Conhecendo o id — que
      * chega ao cliente via `transaction.bank` no extrato — era possível
-     * renomeá-la, e aí `findOrCreateSystemReceivableBank`, que busca por nome,
+     * renomeá-la, e aí `findOrCreateSystemBank`, que busca por nome,
      * criaria uma segunda.
      */
     if (bank.isSystem) {

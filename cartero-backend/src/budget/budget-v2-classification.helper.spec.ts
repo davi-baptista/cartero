@@ -8,12 +8,26 @@ import {
   classifyBudgetV2Receivable,
   classifyBudgetV2Transaction,
 } from './budget-v2-classification.helper';
+import { transactionBucketWhere } from './budget-v2-predicates.helper';
 
 const TODAY = '2026-09-10';
 const HORIZON = '2026-10-11';
 const due = (day: string) => new Date(`${day}T12:00:00.000Z`);
 
 describe('Budget V2 shared classification authority', () => {
+  it('excludes settlement-linked Transactions from every generic realized bucket', () => {
+    for (const bucket of [
+      BudgetV2Bucket.MANUAL_INCOME,
+      BudgetV2Bucket.RECEIVABLE_RECEIPTS,
+      BudgetV2Bucket.DIRECT_EXPENSES,
+      BudgetV2Bucket.DEBT_DIRECT_SETTLEMENTS,
+    ]) {
+      expect(
+        transactionBucketWhere(bucket, 'user-a', {}).personSettlementGroupId,
+      ).toBeNull();
+    }
+  });
+
   it('keeps receipts exclusive from manual income', () => {
     expect(
       classifyBudgetV2Transaction(

@@ -160,24 +160,6 @@ export const ROW_ICON_CLASS =
   'flex size-10 shrink-0 items-center justify-center rounded-xl sm:size-11 sm:rounded-2xl'
 
 /**
- * Acabamento do círculo de AÇÃO — o leading de Dívidas e A Receber.
- *
- * As duas telas tinham a mesma lista de classes copiada, e a paridade só
- * se mantinha por disciplina: a rodada que limpou o ponto colorido de
- * Dívidas deixou A Receber com a bolinha por exatamente esse motivo.
- *
- * Fica FORA de `ROW_ICON_CLASS` de propósito. Aquele container é usado por
- * sete telas, e na maioria delas o círculo não é clicável — herdar cursor
- * e profundidade de pressionável ali prometeria uma ação que não existe.
- *
- * `cursor-pointer` é explícito porque o preflight do Tailwind v4 aplica
- * `cursor: default` em `button`: sem esta classe o alvo é clicável e não
- * parece.
- */
-export const SETTLEMENT_ACTION_CIRCLE_CLASS =
-  'cursor-pointer shadow-[var(--action-circle-depth)] ring-1 ring-border/50 outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50'
-
-/**
  * Geometria da row: gap, padding e hover.
  *
  * `px-0` no mobile e `sm:px-2` no desktop — o respiro lateral do celular vem
@@ -265,6 +247,8 @@ export interface FinancialListRowProps {
   trailingCompact?: ReactNode
   /** Abre o detalhe. A row inteira é o alvo — nunca só o chevron. */
   onView?: () => void
+  /** Mantém a anatomia visual sem criar navegação nesta superfície. */
+  interactive?: boolean
   /**
    * Navegação para outra página, em vez de abrir um detalhe local.
    *
@@ -296,6 +280,7 @@ export function FinancialListRow({
   trailing,
   trailingCompact,
   onView,
+  interactive = true,
   href,
   ariaLabel,
   className,
@@ -315,7 +300,7 @@ export function FinancialListRow({
             abre". A área de clique é a row inteira — o chevron nunca é o
             alvo que o usuário precisa acertar.
           */}
-          <DisclosureChevron />
+          {interactive && <DisclosureChevron />}
         </span>
 
         {meta && <div className={ROW_META_CLASS}>{meta}</div>}
@@ -349,7 +334,10 @@ export function FinancialListRow({
     linha inteira.
   */
   const classes = cn(
-    leadingAction ? ROW_SHELL_INNER_CLASS : ROW_SHELL_CLASS,
+    leadingAction
+      ? ROW_SHELL_INNER_CLASS
+      : ROW_SHELL_CLASS,
+    !interactive && 'cursor-default hover:bg-transparent',
     className,
   )
 
@@ -364,11 +352,11 @@ export function FinancialListRow({
     ? undefined
     : (ref as React.Ref<HTMLButtonElement>)
 
-  const principal = href ? (
+  const principal = href && interactive ? (
     <Link href={href} aria-label={ariaLabel} className={classes}>
       {conteudo}
     </Link>
-  ) : (
+  ) : interactive ? (
     <button
       ref={refPrincipal}
       type="button"
@@ -378,6 +366,10 @@ export function FinancialListRow({
     >
       {conteudo}
     </button>
+  ) : (
+    <div className={classes} aria-label={ariaLabel}>
+      {conteudo}
+    </div>
   )
 
   if (!leadingAction) return principal

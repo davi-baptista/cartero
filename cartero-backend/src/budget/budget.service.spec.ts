@@ -68,7 +68,9 @@ function buildPrisma(data: {
     },
     user: {
       findUnique: vi.fn().mockResolvedValue({}),
-      findUniqueOrThrow: vi.fn().mockResolvedValue({ timeZone: 'America/Fortaleza' }),
+      findUniqueOrThrow: vi
+        .fn()
+        .mockResolvedValue({ timeZone: 'America/Fortaleza' }),
       update: vi.fn(),
     },
     invoice: {
@@ -359,6 +361,7 @@ describe('BudgetService — pagamentos diretos', () => {
     expect(where.type).toEqual({ in: ['DEBIT_CARD', 'PIX', 'BOLETO'] });
     expect(where.isRefund).toBe(false);
     expect(where.paymentDebt).toBeNull();
+    expect(where.personSettlementGroupId).toBeNull();
   });
 
   it('pagamentos diretos são sempre considerados já pagos', async () => {
@@ -678,8 +681,16 @@ describe('BudgetService — status das dívidas no breakdown', () => {
     */
     const prisma = buildPrisma({
       debts: [
-        debtRow({ amount: '20', title: 'Menor', dueDate: utcDate(2026, 8, 10) }),
-        debtRow({ amount: '30', title: 'Maior', dueDate: utcDate(2026, 8, 10) }),
+        debtRow({
+          amount: '20',
+          title: 'Menor',
+          dueDate: utcDate(2026, 8, 10),
+        }),
+        debtRow({
+          amount: '30',
+          title: 'Maior',
+          dueDate: utcDate(2026, 8, 10),
+        }),
       ],
     });
 

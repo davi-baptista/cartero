@@ -984,9 +984,9 @@ describe('BudgetV2Service', () => {
           { amount: money('1.00'), dueDate: due(-1) },
           { amount: money('2.00'), dueDate: due(0) },
           { amount: money('3.00'), dueDate: due(1) },
-          { amount: money('4.00'), dueDate: due(29) },
-          { amount: money('5.00'), dueDate: due(30) },
-          { amount: money('500000.00'), dueDate: due(31) },
+          { amount: money('4.00'), dueDate: due(9) },
+          { amount: money('5.00'), dueDate: due(10) },
+          { amount: money('500000.00'), dueDate: due(11) },
         ]),
       },
       debt: {
@@ -994,8 +994,8 @@ describe('BudgetV2Service', () => {
           { amount: money('10.00'), dueDate: due(-1) },
           { amount: money('20.00'), dueDate: due(0) },
           { amount: money('30.00'), dueDate: due(1) },
-          { amount: money('40.00'), dueDate: due(29) },
-          { amount: money('50.00'), dueDate: due(30) },
+          { amount: money('40.00'), dueDate: due(9) },
+          { amount: money('50.00'), dueDate: due(10) },
           {
             amount: money('500000.00'),
             dueDate: new Date('2030-01-01T12:00:00.000Z'),

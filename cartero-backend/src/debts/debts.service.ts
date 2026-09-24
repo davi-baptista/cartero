@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   deleteInvoiceIfEmpty,
-  findOrCreateSystemReceivableBank,
+  findOrCreateSystemBank,
 } from 'src/common/helpers/invoice.helper';
 import { Prisma, Debt, TransactionType } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
@@ -12,7 +12,11 @@ import {
   resolveSettlementDate,
   correctSettlementDate,
 } from 'src/common/helpers/settlement.core';
-import { parseDateFilterEnd, parseDateFilterStart, parseDateOnly } from 'src/common/helpers/date-only.helper';
+import {
+  parseDateFilterEnd,
+  parseDateFilterStart,
+  parseDateOnly,
+} from 'src/common/helpers/date-only.helper';
 import {
   DEBT_PAID_CATEGORY_NAME,
   DEBT_PAID_CATEGORY_COLOR,
@@ -57,7 +61,10 @@ export class DebtsService {
         let parentId: string | null = null;
 
         for (let i = 0; i < installments; i++) {
-            const installmentDate = getInstallmentDate(parseDateOnly(dto.dueDate), i);
+          const installmentDate = getInstallmentDate(
+            parseDateOnly(dto.dueDate),
+            i,
+          );
 
           const debt: Debt = await tx.debt.create({
             data: {
@@ -105,8 +112,12 @@ export class DebtsService {
         creditorName: filters.creditorName,
         personId: filters.personId,
         dueDate: {
-          gte: filters.startDate ? parseDateFilterStart(filters.startDate) : undefined,
-          lte: filters.endDate ? parseDateFilterEnd(filters.endDate) : undefined,
+          gte: filters.startDate
+            ? parseDateFilterStart(filters.startDate)
+            : undefined,
+          lte: filters.endDate
+            ? parseDateFilterEnd(filters.endDate)
+            : undefined,
         },
       },
       include: { person: true },
@@ -170,12 +181,13 @@ export class DebtsService {
       );
     }
 
-    const selectedPaymentBank = markingAsPaid && dto.paymentBankId
-      ? await this.entityValidationService.validateBank(
-          dto.paymentBankId,
-          userId,
-        )
-      : null;
+    const selectedPaymentBank =
+      markingAsPaid && dto.paymentBankId
+        ? await this.entityValidationService.validateBank(
+            dto.paymentBankId,
+            userId,
+          )
+        : null;
 
     /*
       Instruções de pagamento não são colunas da dívida.
@@ -208,7 +220,12 @@ export class DebtsService {
 
         if (dto.isPaid === false && existing.isPaid) {
           for (const debt of debtsToUpdate) {
-            await assertNotActivePersonSettlementMember(tx, 'debt', debt.id, userId);
+            await assertNotActivePersonSettlementMember(
+              tx,
+              'debt',
+              debt.id,
+              userId,
+            );
           }
         }
 
@@ -217,7 +234,8 @@ export class DebtsService {
         // para os demais campos, mas só quando o valor de fato mudou.
         const occurredAtChanged =
           dto.occurredAt &&
-          parseDateOnly(dto.occurredAt).getTime() !== existing.occurredAt.getTime();
+          parseDateOnly(dto.occurredAt).getTime() !==
+            existing.occurredAt.getTime();
         if (existing.parentId && occurredAtChanged) {
           await tx.debt.updateMany({
             where: {
@@ -263,8 +281,7 @@ export class DebtsService {
               );
 
             const paymentBank =
-              selectedPaymentBank ??
-              (await findOrCreateSystemReceivableBank(tx, userId));
+              selectedPaymentBank ?? (await findOrCreateSystemBank(tx, userId));
 
             paymentTransactionId = await createDebtPaymentTransaction(tx, {
               userId,
@@ -292,7 +309,7 @@ export class DebtsService {
             paymentTransactionId = null;
           }
 
-            const updatedDebt = await tx.debt.update({
+          const updatedDebt = await tx.debt.update({
             where: { id: debt.id, userId },
             data: {
               ...(existing.parentId ? installmentSafeDto : debtDto),
@@ -340,7 +357,13 @@ export class DebtsService {
         );
 
         for (const debt of debtsToDelete) {
-          if (debt.isPaid) await assertNotActivePersonSettlementMember(tx, 'debt', debt.id, userId);
+          if (debt.isPaid)
+            await assertNotActivePersonSettlementMember(
+              tx,
+              'debt',
+              debt.id,
+              userId,
+            );
         }
 
         for (const debt of debtsToDelete) {

@@ -21,6 +21,7 @@ import type {
   BudgetV2DrilldownItem,
   BudgetV2DrilldownResponse,
 } from './budget-v2-drilldown.types';
+import { budgetPendingHorizonExclusive } from './budget-pending-window';
 
 const ZERO = new Prisma.Decimal(0);
 const OVERDUE_KIND_RANK = { DEBT: 0, INVOICE: 1 } as const;
@@ -86,7 +87,8 @@ const settlementSelect = {
   settledAt: true,
   direction: true,
   paymentType: true,
-  person: { select: { name: true } },
+  settlementTransaction: { select: { id: true } },
+  person: { select: { id: true, name: true } },
   bank: { select: { name: true } },
 } as const;
 
@@ -100,7 +102,7 @@ const invoiceSettlementSelect = {
       dueDate: true,
       month: true,
       year: true,
-      bank: { select: { name: true } },
+      bank: { select: { id: true, name: true } },
     },
   },
 } as const;
@@ -131,7 +133,7 @@ const invoiceSelect = {
   dueDate: true,
   month: true,
   year: true,
-  bank: { select: { name: true } },
+  bank: { select: { id: true, name: true } },
 } as const;
 
 function serializeMoney(value: Prisma.Decimal | null | undefined): string {
@@ -289,7 +291,14 @@ export class BudgetV2DrilldownService {
       select: { timeZone: true },
     });
     const today = financialCivilDay(now, user.timeZone);
-    const horizonExclusive = shiftCivilDate(today, 31);
+    const pendingHorizonExclusive = budgetPendingHorizonExclusive(today);
+    // Keep invoice pending timing unchanged; only receivables and debts use
+    // the shorter Budget window.
+    const invoiceHorizonExclusive = shiftCivilDate(today, 31);
+    const horizonExclusive =
+      bucket === BudgetV2Bucket.UPCOMING_INVOICES
+        ? invoiceHorizonExclusive
+        : pendingHorizonExclusive;
     const periodBounds = realized
       ? deriveBudgetV2PeriodBounds(dto.preset!, user.timeZone, { now })
       : null;
@@ -549,9 +558,11 @@ export class BudgetV2DrilldownService {
             id: group.id,
             amount: serializeMoney(group.netAmount),
             eventDate,
+            personId: group.person.id,
             personName: group.person.name,
             direction: group.direction as 'INFLOW' | 'OUTFLOW',
             paymentType: group.paymentType,
+            settlementTransactionId: group.settlementTransaction?.id ?? null,
             bankName: group.bank?.name ?? null,
           },
         };
@@ -602,6 +613,7 @@ export class BudgetV2DrilldownService {
             month: settlement.invoice.month,
             year: settlement.invoice.year,
             bankName: settlement.invoice.bank.name,
+            bankId: settlement.invoice.bank.id,
           },
         };
       }),
@@ -717,6 +729,7 @@ export class BudgetV2DrilldownService {
           month: invoice.month,
           year: invoice.year,
           bankName: invoice.bank.name,
+          bankId: invoice.bank.id,
         },
       })),
       total: aggregate._sum.totalAmount ?? ZERO,
@@ -775,6 +788,7 @@ export class BudgetV2DrilldownService {
         month: invoice.month,
         year: invoice.year,
         bankName: invoice.bank.name,
+        bankId: invoice.bank.id,
       },
     }));
     const debtRows = debts.map((debt) => ({

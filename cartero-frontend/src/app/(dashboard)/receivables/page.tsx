@@ -42,11 +42,9 @@ import {
   FinancialListRow,
   ROW_AMOUNT_CLASS,
   ROW_AMOUNT_TONE,
-  ROW_ICON_BG_CLASS,
-  ROW_ICON_CLASS,
   ROW_TRAILING_META_CLASS,
-  SETTLEMENT_ACTION_CIRCLE_CLASS,
 } from '@/components/ui/financial-list-row'
+import { FinancialAvatar } from '@/components/ui/financial-avatar'
 import {
   getReceivable,
   getReceivables,
@@ -134,32 +132,13 @@ const ReceivableRow = memo(function ReceivableRow({
           outro é HTML inválido e foi exatamente o que quebrou este controle.
           A área de toque é o container inteiro do ícone (40/44px).
         */
-        <button
-          type="button"
+        <FinancialAvatar
           onClick={() => onToggleReceived(receivable)}
-          aria-label={
-            receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'
-          }
+          ariaLabel={`${RECEIVABLE_STATUS_LABEL[settlementStatus(receivable, today)]}. ${receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}`}
           title={
             receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'
           }
-          className={cn(
-            ROW_ICON_CLASS,
-            ROW_ICON_BG_CLASS,
-            SETTLEMENT_ACTION_CIRCLE_CLASS,
-          )}
-        >
-          {/*
-            O círculo fica vazio: a bolinha colorida interna virou ruído
-            visual sem comunicar a ação do botão. O status continua legível
-            por leitor de tela — o `aria-label` acima descreve a AÇÃO
-            ("Marcar como recebido"), não o ESTADO, então sem este rótulo
-            o estado sairia da árvore de acessibilidade junto com a cor.
-          */}
-          <span className="sr-only">
-            {RECEIVABLE_STATUS_LABEL[settlementStatus(receivable, today)]}
-          </span>
-        </button>
+        />
       }
       title={
         <span className={cn(receivable.isPaid && 'text-muted-foreground line-through')}>

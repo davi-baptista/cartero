@@ -37,6 +37,7 @@ function harness(debts: any[], receivables: any[]) {
   const transactions: any[] = [];
   const invoices: any[] = [];
   const prisma: any = {
+    $queryRaw: vi.fn(async () => []),
     person: {
       findUnique: vi.fn(async () => ({
         id: 'person-1',
@@ -50,27 +51,25 @@ function harness(debts: any[], receivables: any[]) {
     debt: {
       findMany: vi.fn(async () => debts.filter((item) => !item.isPaid)),
       updateMany: vi.fn(async ({ where, data }: any) => {
-        debts
-          .filter(
-            (item) =>
-              where.id.in.includes(item.id) &&
-              (data.isPaid === false || !item.isPaid),
-          )
-          .forEach((item) => Object.assign(item, data));
-        return { count: 1 };
+        const matching = debts.filter(
+          (item) =>
+            where.id.in.includes(item.id) &&
+            (data.isPaid === false || !item.isPaid),
+        );
+        matching.forEach((item) => Object.assign(item, data));
+        return { count: matching.length };
       }),
     },
     receivable: {
       findMany: vi.fn(async () => receivables.filter((item) => !item.isPaid)),
       updateMany: vi.fn(async ({ where, data }: any) => {
-        receivables
-          .filter(
-            (item) =>
-              where.id.in.includes(item.id) &&
-              (data.isPaid === false || !item.isPaid),
-          )
-          .forEach((item) => Object.assign(item, data));
-        return { count: 1 };
+        const matching = receivables.filter(
+          (item) =>
+            where.id.in.includes(item.id) &&
+            (data.isPaid === false || !item.isPaid),
+        );
+        matching.forEach((item) => Object.assign(item, data));
+        return { count: matching.length };
       }),
     },
     bank: {
@@ -163,7 +162,7 @@ function harness(debts: any[], receivables: any[]) {
         return group
           ? {
               ...group,
-              creditTransaction:
+              settlementTransaction:
                 transactions.find(
                   (item) => item.personSettlementGroupId === group.id,
                 ) ?? null,
@@ -223,13 +222,28 @@ describe('CM1C person settlement groups', () => {
     },
   );
 
-  it('does not create individual payment transactions and preserves gross snapshots', async () => {
-    const h = harness([debt('d1', 100)], [receivable('r1', 200)]);
+  it('aggregates multiple members into one canonical transaction and preserves origin links', async () => {
+    const h = harness(
+      [debt('d1', 100), debt('d2', 25)],
+      [receivable('r1', 200), receivable('r2', 25)],
+    );
+    h.receivables[0].transactionId = 'source-purchase-1';
     const result = await h.service.settle('person-1', USER_ID, {} as any);
     expect(result.createdExpenses).toBe(0);
     expect(result.createdIncomes).toBe(0);
-    expect(Number(h.groups[0].debts.create[0].amount)).toBe(100);
-    expect(Number(h.groups[0].receivables.create[0].amount)).toBe(200);
+    expect(h.groups[0].debts.create).toHaveLength(2);
+    expect(h.groups[0].receivables.create).toHaveLength(2);
+    expect(h.transactions).toHaveLength(1);
+    expect(Number(h.transactions[0].amount)).toBe(
+      Number(result.group!.netAmount),
+    );
+    expect(h.receivables[0].transactionId).toBe('source-purchase-1');
+    expect(
+      h.receivables.every((item) => item.paymentTransactionId === null),
+    ).toBe(true);
+    await h.service.undoSettlement(result.group!.id, USER_ID);
+    expect(h.transactions).toHaveLength(0);
+    expect(h.receivables[0].transactionId).toBe('source-purchase-1');
   });
 
   it('uses the exact civil settlement date and supports zero-net without a bank', async () => {
@@ -239,6 +253,11 @@ describe('CM1C person settlement groups', () => {
     } as any);
     expect(h.groups[0].settledAt.toISOString().slice(0, 10)).toBe('2026-08-10');
     expect(h.groups[0].bankId).toBeNull();
+    expect(h.transactions).toHaveLength(0);
+    await h.service.undoSettlement(h.groups[0].id, USER_ID);
+    expect(h.transactions).toHaveLength(0);
+    expect(h.debts[0].isPaid).toBe(false);
+    expect(h.receivables[0].isPaid).toBe(false);
   });
 
   it('undoes the whole group and permits re-settlement', async () => {
@@ -250,6 +269,34 @@ describe('CM1C person settlement groups', () => {
     const second = await h.service.settle('person-1', USER_ID, {} as any);
     expect(second.group!.id).not.toBe(first.group!.id);
   });
+
+  it.each(['INFLOW', 'PIX', 'DEBIT_CARD', 'BOLETO'] as const)(
+    'reverses and re-settles a canonical %s movement exactly once',
+    async (kind) => {
+      const inflow = kind === 'INFLOW';
+      const h = harness(
+        inflow ? [] : [debt('d1', 100)],
+        inflow ? [receivable('r1', 100)] : [],
+      );
+      const payload = inflow
+        ? {}
+        : { paymentType: kind, paymentBankId: undefined };
+      const first = await h.service.settle('person-1', USER_ID, payload as any);
+      expect(h.transactions).toHaveLength(1);
+      await h.service.undoSettlement(first.group!.id, USER_ID);
+      expect(h.transactions).toHaveLength(0);
+      expect(h.debts.every((item) => !item.isPaid)).toBe(true);
+      expect(h.receivables.every((item) => !item.isPaid)).toBe(true);
+      const second = await h.service.settle(
+        'person-1',
+        USER_ID,
+        payload as any,
+      );
+      expect(second.group!.id).not.toBe(first.group!.id);
+      expect(h.transactions).toHaveLength(1);
+      expect(h.transactions[0].personSettlementGroupId).toBe(second.group!.id);
+    },
+  );
 
   it('requires a valid method for net outflow', async () => {
     const h = harness([debt('d1', 100)], [receivable('r1', 50)]);
@@ -279,12 +326,12 @@ describe('CM1C person settlement groups', () => {
       categoryId: 'cat-settlement',
     });
     expect(Number(h.transactions[0].amount)).toBe(50);
-    expect(h.transactions[0].personId).toBeUndefined();
+    expect(h.transactions[0].personId).toBe('person-1');
     expect(h.invoices[0].totalAmount).toBe(50);
   });
 
-  it.each(['DEBIT_CARD', 'BOLETO'] as const)(
-    'accepts direct group outflow with %s without a transaction artifact',
+  it.each(['PIX', 'DEBIT_CARD', 'BOLETO'] as const)(
+    'creates one canonical transaction for direct group outflow with %s',
     async (paymentType) => {
       const h = harness([debt('d1', 100)], [receivable('r1', 50)]);
       const result = await h.service.settle('person-1', USER_ID, {
@@ -294,7 +341,46 @@ describe('CM1C person settlement groups', () => {
 
       expect(result.group!.paymentType).toBe(paymentType);
       expect(result.group!.direction).toBe('OUTFLOW');
-      expect(h.transactions).toHaveLength(0);
+      expect(h.transactions).toHaveLength(1);
+      expect(h.transactions[0]).toMatchObject({
+        type: paymentType,
+        personId: 'person-1',
+        personSettlementGroupId: result.group!.id,
+        bankId: 'no-bank',
+      });
+    },
+  );
+
+  it.each([true, false])(
+    'creates one canonical inflow transaction (bank selected: %s)',
+    async (withBank) => {
+      const h = harness([], [receivable('r1', 200)]);
+      const result = await h.service.settle('person-1', USER_ID, {
+        ...(withBank ? { paymentBankId: 'bank-1' } : {}),
+      } as any);
+      expect(result.group!.direction).toBe('INFLOW');
+      expect(h.transactions).toHaveLength(1);
+      expect(h.transactions[0]).toMatchObject({
+        type: 'INCOME',
+        amount: money(200),
+        personId: 'person-1',
+        personSettlementGroupId: result.group!.id,
+        bankId: withBank ? 'bank-1' : 'no-bank',
+      });
+    },
+  );
+
+  it.each(['PIX', 'DEBIT_CARD', 'BOLETO'] as const)(
+    'uses the selected bank for %s settlement',
+    async (paymentType) => {
+      const h = harness([debt('d1', 200)], []);
+      const result = await h.service.settle('person-1', USER_ID, {
+        paymentType,
+        paymentBankId: 'bank-1',
+      } as any);
+      expect(result.group!.direction).toBe('OUTFLOW');
+      expect(h.transactions).toHaveLength(1);
+      expect(h.transactions[0].bankId).toBe('bank-1');
     },
   );
 
@@ -305,9 +391,13 @@ describe('CM1C person settlement groups', () => {
     ).rejects.toThrow(/pagamento/);
 
     const none = harness([debt('d1', 100)], [receivable('r1', 100)]);
-    await expect(
-      none.service.settle('person-1', USER_ID, { paymentType: 'PIX' } as any),
-    ).rejects.toThrow(/pagamento/);
+    const noneResult = await none.service.settle(
+      'person-1',
+      USER_ID,
+      {} as any,
+    );
+    expect(noneResult.group!.direction).toBe('NONE');
+    expect(none.transactions).toHaveLength(0);
   });
 
   it.each([

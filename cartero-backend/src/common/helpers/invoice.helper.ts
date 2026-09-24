@@ -2,7 +2,7 @@ import { Bank, Invoice, InvoiceStatus, Prisma } from '@prisma/client';
 import { financialCivilDay } from './financial-timezone.helper';
 import { requireAccountTimeZone } from './timezone.helper';
 
-export const SYSTEM_RECEIVABLE_BANK_NAME = '__system_receivables__';
+export const SYSTEM_BANK_NAME = '__system_receivables__';
 export const DEFAULT_INVOICE_DAYS_AFTER_CLOSE = 7;
 
 export function getLegacyCloseDay(
@@ -14,33 +14,30 @@ export function getLegacyCloseDay(
 }
 
 /**
- * A conta interna de recebíveis do usuário, criando-a se ainda não existir.
+ * A conta interna "Não informado" do usuário, criando-a se ainda não existir.
  *
- * Existe para satisfazer o `bankId` obrigatório da transação de receita gerada
- * ao marcar uma cobrança como recebida sem informar conta de destino. Não é
+ * Existe para satisfazer o `bankId` obrigatório em movimentos sem conta
+ * explícita. Não é
  * uma conta real: fica fora de `GET /banks` e o nome técnico nunca deve
  * aparecer ao usuário.
  *
  * ─── A corrida ───────────────────────────────────────────────────────────
  *
- * `findFirst` seguido de `create` tem janela: dois recebimentos marcados em
- * paralelo, cada um na sua transação, não veem a linha criada pelo outro sob
- * READ COMMITTED, e os dois inserem. O resultado seriam duas contas internas
- * para o mesmo usuário — uma delas passando a receber lançamentos que a outra
- * não conhece.
- *
- * A defesa é a releitura após falha, não uma constraint nova: `Bank` não tem
- * unique de nome, e adicioná-la agora poderia falhar na aplicação se algum
- * usuário já tiver dois bancos homônimos (o `create` do serviço checa por
- * `findFirst`, que tem a mesma janela). Este laço resolve o caso real sem
- * arriscar uma migration que não sobe.
+ * Um advisory transaction lock por usuário serializa a procura/criação sem
+ * adicionar constraint ou migration. A releitura após falha continua cobrindo
+ * conflitos externos ao lock e bancos legados homônimos são preservados.
  */
-export async function findOrCreateSystemReceivableBank(
+export async function findOrCreateSystemBank(
   tx: Prisma.TransactionClient,
   userId: string,
 ): Promise<Bank> {
+  // Serialize creation per user. Bank has no unique constraint on this
+  // technical identity, so a predicate read alone cannot prevent duplicates.
+  if (typeof tx.$queryRaw === 'function') {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`system-bank:${userId}`}, 0))`;
+  }
   const existing = await tx.bank.findFirst({
-    where: { userId, isSystem: true, name: SYSTEM_RECEIVABLE_BANK_NAME },
+    where: { userId, isSystem: true, name: SYSTEM_BANK_NAME },
   });
   if (existing) return existing;
 
@@ -48,7 +45,7 @@ export async function findOrCreateSystemReceivableBank(
     return await tx.bank.create({
       data: {
         userId,
-        name: SYSTEM_RECEIVABLE_BANK_NAME,
+        name: SYSTEM_BANK_NAME,
         isSystem: true,
         invoiceCloseDate: 31,
         invoiceDueDate: 31,
@@ -59,7 +56,7 @@ export async function findOrCreateSystemReceivableBank(
     // Perdeu a corrida: outra execução criou a conta entre a leitura e a
     // escrita. Reler devolve a vencedora em vez de propagar o erro.
     const winner = await tx.bank.findFirst({
-      where: { userId, isSystem: true, name: SYSTEM_RECEIVABLE_BANK_NAME },
+      where: { userId, isSystem: true, name: SYSTEM_BANK_NAME },
     });
     if (winner) return winner;
     throw error;
@@ -325,11 +322,7 @@ export function deriveInvoiceStatus(
   // Comparação por dia civil, pela mesma razão de `getInvoicePeriodForDate`:
   // o horário em que cada data foi ancorada não pode decidir o status.
   // Vencer hoje ainda não é estar vencida; fechar hoje já é estar fechada.
-  return deriveStatusFromInvoiceDates(
-    { closeDate, dueDate },
-    today,
-    timeZone,
-  );
+  return deriveStatusFromInvoiceDates({ closeDate, dueDate }, today, timeZone);
 }
 
 /**
@@ -370,7 +363,11 @@ export async function findOrCreateInvoiceForPeriod(
       dueDate,
       // Derivado das MESMAS datas que estão sendo gravadas, não de um segundo
       // cálculo — assim status e datas não podem nascer contraditórios.
-      status: deriveStatusFromInvoiceDates({ closeDate, dueDate }, new Date(), timeZone),
+      status: deriveStatusFromInvoiceDates(
+        { closeDate, dueDate },
+        new Date(),
+        timeZone,
+      ),
     },
   });
 }

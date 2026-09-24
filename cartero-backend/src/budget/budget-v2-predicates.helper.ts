@@ -12,7 +12,7 @@ export function transactionBucketWhere(
   userId: string,
   date: Prisma.DateTimeFilter,
 ): Prisma.TransactionWhereInput {
-  const base = { userId, date, isRefund: false };
+  const base = { userId, date, isRefund: false, personSettlementGroupId: null };
 
   switch (bucket) {
     case BudgetV2Bucket.MANUAL_INCOME:

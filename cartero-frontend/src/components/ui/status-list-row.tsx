@@ -3,10 +3,10 @@ import Link from 'next/link'
 import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
 import {
   ROW_AMOUNT_CLASS,
-  ROW_ICON_CLASS,
   ROW_META_CLASS,
   ROW_TITLE_CLASS,
 } from '@/components/ui/financial-list-row'
+import { FinancialAvatar } from '@/components/ui/financial-avatar'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/formatters'
 
@@ -34,10 +34,10 @@ export type StatusRowTone = 'neutral' | 'positive' | 'negative'
  * O fundo do ícone sobrevive como sinal discreto de fundo (10-40% de
  * opacidade), não como cor de texto: ele situa a linha sem competir.
  */
-const TONE_CLASSES: Record<StatusRowTone, { bg: string; icon: string }> = {
-  neutral: { bg: 'bg-muted/40', icon: 'text-muted-foreground' },
-  positive: { bg: 'bg-paid/10', icon: 'text-muted-foreground' },
-  negative: { bg: 'bg-destructive/10', icon: 'text-muted-foreground' },
+const TONE_CLASSES: Record<StatusRowTone, { icon: string }> = {
+  neutral: { icon: 'text-muted-foreground' },
+  positive: { icon: 'text-muted-foreground' },
+  negative: { icon: 'text-muted-foreground' },
 }
 
 /*
@@ -196,12 +196,10 @@ export function StatusListRow({
         junto. Eram 32px fixos com ícone de 16px — o bloco esquerdo inteiro
         ficava menor que o das outras listas.
       */}
-      <div className={cn(ROW_ICON_CLASS, toneClasses.bg)}>
-        <Icon
-          className={cn('size-4.5 sm:size-5', toneClasses.icon)}
-          aria-hidden
-        />
-      </div>
+      <FinancialAvatar
+        tone={tone === 'positive' ? 'positive' : tone === 'negative' ? 'negative' : 'neutral'}
+        icon={<Icon className={cn('size-4.5 sm:size-5', toneClasses.icon)} />}
+      />
 
       {/*
         ── Padrão de duas faixas ──

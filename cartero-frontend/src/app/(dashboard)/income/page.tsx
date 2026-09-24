@@ -10,7 +10,8 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Skeleton } from '@/components/ui/skeleton'
 import { QueryError } from '@/components/ui/query-error'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { FinancialListRow, FinancialRowTrailing, ROW_ICON_BG_CLASS, ROW_ICON_CLASS, SETTLEMENT_ACTION_CIRCLE_CLASS } from '@/components/ui/financial-list-row'
+import { FinancialListRow, FinancialRowTrailing } from '@/components/ui/financial-list-row'
+import { FinancialAvatar } from '@/components/ui/financial-avatar'
 import { ReceivableDetailDrawer } from '../receivables/receivable-detail-drawer'
 import { ReceivableSheet, type ReceivableFormData } from '../receivables/receivable-sheet'
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
@@ -29,7 +30,7 @@ function IncomeRow({ item, onView, today }: { item: Receivable; onView: () => vo
   return (
     <FinancialListRow
       ariaLabel={`Abrir ${item.title}`}
-      leadingAction={<button type="button" className={`${ROW_ICON_CLASS} ${ROW_ICON_BG_CLASS} ${SETTLEMENT_ACTION_CIRCLE_CLASS}`} aria-label={`Abrir ${item.title}`} onClick={onView}><span className="sr-only">Abrir detalhes</span></button>}
+      leadingAction={<FinancialAvatar onClick={onView} ariaLabel={`Abrir ${item.title}`} />}
       title={item.title}
       meta={<span className={presentation.tone === 'overdue' ? 'text-destructive' : 'text-muted-foreground'}>{presentation.label}</span>}
       trailing={<FinancialRowTrailing amount={formatCurrency(item.amount)} label="A RECEBER" />}
@@ -49,7 +50,7 @@ function OpenOccurrencesList({ occurrences, today, onSelect, onReceive }: { occu
             key={occurrence.id}
             ariaLabel={`Abrir ${occurrence.title}`}
             onView={() => onSelect(occurrence)}
-            leadingAction={<button type="button" className={`${ROW_ICON_CLASS} ${ROW_ICON_BG_CLASS} ${SETTLEMENT_ACTION_CIRCLE_CLASS}`} aria-label={`Marcar ${occurrence.title} como recebido`} title="Marcar como recebido" onClick={(event) => { event.stopPropagation(); onReceive(occurrence) }}><span className="sr-only">Marcar como recebido</span></button>}
+            leadingAction={<FinancialAvatar onClick={() => onReceive(occurrence)} ariaLabel={`Marcar ${occurrence.title} como recebido`} title="Marcar como recebido" />}
             title={formatDate(occurrence.dueDate)}
             meta={<span className={presentation.tone === 'overdue' ? 'text-destructive' : 'text-muted-foreground'}>{presentation.tone === 'overdue' ? 'Em atraso' : 'A receber'}</span>}
             trailing={<FinancialRowTrailing amount={formatCurrency(occurrence.amount)} label="A RECEBER" />}
@@ -160,7 +161,7 @@ export default function IncomePage() {
         <div className="flex flex-col items-center rounded-xl border border-dashed border-border/70 px-6 py-16 text-center"><div className="flex size-12 items-center justify-center rounded-xl bg-muted"><CircleDollarSign className="size-6 text-muted-foreground" /></div><h2 className="mt-4 text-base font-medium">Comece pelas suas fontes de renda</h2><p className="mt-1 max-w-sm text-sm text-muted-foreground">Cadastre salário e outras rendas para acompanhar o que você espera receber.</p><Button className="mt-5" onClick={() => setChooserOpen(true)}>Adicionar renda</Button></div>
       ) : (
         <div className="space-y-8">
-          {rules.length > 0 ? <section><h2 className="mb-2 text-sm font-medium">Fontes recorrentes</h2><div className="divide-y divide-border/60">{rules.map((rule) => { const occurrences = openRecurringIncomeOccurrences(rule, receivables); const next = nextOpenIncomeOccurrence(occurrences); const presentation = next ? recurringIncomeOccurrencePresentation(next, today) : null; return <FinancialListRow key={rule.id} onView={() => setSelectedRule(rule)} ariaLabel={`Abrir ${rule.title}`} leading={<span className={`${ROW_ICON_CLASS} ${ROW_ICON_BG_CLASS}`}><Repeat className="size-5 text-muted-foreground" /></span>} title={rule.title} titleAdornment={!rule.isActive ? <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Encerrada</span> : null} meta={<>{presentation?.tone === 'overdue' ? <span className="text-destructive">{presentation.label}</span> : <><span>Dia {rule.dayOfMonth}</span>{rule.counterpartyName ? <><span aria-hidden>·</span><span>{rule.counterpartyName}</span></> : null}</>}</>} trailing={<FinancialRowTrailing amount={<>{formatCurrency(rule.amount)} <span className="text-xs font-normal tracking-normal text-muted-foreground">/ mês</span></>} label={rule.isActive ? 'A RECEBER' : 'ENCERRADA'} />} /> })}</div></section> : null}
+                  {rules.length > 0 ? <section><h2 className="mb-2 text-sm font-medium">Fontes recorrentes</h2><div className="divide-y divide-border/60">{rules.map((rule) => { const occurrences = openRecurringIncomeOccurrences(rule, receivables); const next = nextOpenIncomeOccurrence(occurrences); const presentation = next ? recurringIncomeOccurrencePresentation(next, today) : null; return <FinancialListRow key={rule.id} onView={() => setSelectedRule(rule)} ariaLabel={`Abrir ${rule.title}`} leading={<FinancialAvatar icon={<Repeat className="size-5 text-muted-foreground" />} />} title={rule.title} titleAdornment={!rule.isActive ? <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Encerrada</span> : null} meta={<>{presentation?.tone === 'overdue' ? <span className="text-destructive">{presentation.label}</span> : <><span>Dia {rule.dayOfMonth}</span>{rule.counterpartyName ? <><span aria-hidden>·</span><span>{rule.counterpartyName}</span></> : null}</>}</>} trailing={<FinancialRowTrailing amount={<>{formatCurrency(rule.amount)} <span className="text-xs font-normal tracking-normal text-muted-foreground">/ mês</span></>} label={rule.isActive ? 'A RECEBER' : 'ENCERRADA'} />} /> })}</div></section> : null}
           {oneOffs.length > 0 ? <section><h2 className="mb-2 text-sm font-medium">Recebimentos pontuais</h2><div className="divide-y divide-border/60">{oneOffs.map((item) => <IncomeRow key={item.id} item={item} today={today} onView={() => setSelectedReceivable(item)} />)}</div></section> : null}
         </div>
       )}
