@@ -63,18 +63,15 @@ function buildHarness() {
       }),
     },
     receivable: {
-      create: vi.fn(async ({ data }: any) => {
+      createMany: vi.fn(async ({ data }: any) => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         const key = `${data.recurringIncomeRuleId}:${data.recurringMonth}`;
-        if (receivables.has(key)) {
-          throw new Prisma.PrismaClientKnownRequestError('unique', {
-            code: 'P2002',
-            clientVersion: 'test',
-          });
+        if (!receivables.has(key)) {
+          const created = { id: `receivable-${receivables.size + 1}`, ...data };
+          receivables.set(key, created);
+          return { count: 1 };
         }
-        const created = { id: `receivable-${receivables.size + 1}`, ...data };
-        receivables.set(key, created);
-        return created;
+        return { count: 0 };
       }),
     },
   };
@@ -136,6 +133,40 @@ describe('RecurringIncomeService', () => {
       'rule-1:2026-09',
       'rule-1:2026-10',
     ]);
+  });
+
+  it('repeated ensures skip existing occurrences without overwriting snapshots', async () => {
+    const harness = buildHarness();
+    harness.rules.set('rule-1', rule());
+
+    await harness.service.ensureForUser(
+      USER_ID,
+      new Date('2026-09-23T12:00:00Z'),
+    );
+    const existing = harness.receivables.get('rule-1:2026-09');
+    Object.assign(existing, {
+      amount: new Prisma.Decimal(7777),
+      dueDate: new Date('2026-09-02T12:00:00Z'),
+      title: 'Editado manualmente',
+      debtorName: 'Contraparte editada',
+      isPaid: true,
+      paymentTransactionId: 'payment-1',
+    });
+
+    await harness.service.ensureForUser(
+      USER_ID,
+      new Date('2026-09-23T12:00:00Z'),
+    );
+
+    expect(harness.receivables.size).toBe(2);
+    expect(harness.receivables.get('rule-1:2026-09')).toMatchObject({
+      amount: new Prisma.Decimal(7777),
+      dueDate: new Date('2026-09-02T12:00:00Z'),
+      title: 'Editado manualmente',
+      debtorName: 'Contraparte editada',
+      isPaid: true,
+      paymentTransactionId: 'payment-1',
+    });
   });
 
   it('edits are snapshots: existing occurrences keep the old amount', async () => {

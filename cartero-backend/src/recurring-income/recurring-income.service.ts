@@ -14,13 +14,6 @@ import {
   previewRecurringIncome,
 } from './recurring-income.helper';
 
-function isUniqueConflict(error: unknown): boolean {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === 'P2002'
-  );
-}
-
 @Injectable()
 export class RecurringIncomeService {
   constructor(private readonly prisma: PrismaService) {}
@@ -198,25 +191,22 @@ export class RecurringIncomeService {
     while (compareRecurringMonths(month, horizonMonth) <= 0) {
       const dueDate = occurrenceDateForMonth(month, rule.dayOfMonth);
       if (dueDate <= horizon) {
-        try {
-          await this.prisma.receivable.create({
-            data: {
-              userId: rule.userId,
-              title: rule.title,
-              debtorName: rule.counterpartyName ?? rule.title,
-              amount: rule.amount,
-              description: null,
-              occurredAt: parseDateOnly(dueDate),
-              dueDate: parseDateOnly(dueDate),
-              isPaid: false,
-              incomeClassification: 'INCOME',
-              recurringIncomeRuleId: rule.id,
-              recurringMonth: month,
-            },
-          });
-        } catch (error) {
-          if (!isUniqueConflict(error)) throw error;
-        }
+        await this.prisma.receivable.createMany({
+          data: {
+            userId: rule.userId,
+            title: rule.title,
+            debtorName: rule.counterpartyName ?? rule.title,
+            amount: rule.amount,
+            description: null,
+            occurredAt: parseDateOnly(dueDate),
+            dueDate: parseDateOnly(dueDate),
+            isPaid: false,
+            incomeClassification: 'INCOME',
+            recurringIncomeRuleId: rule.id,
+            recurringMonth: month,
+          },
+          skipDuplicates: true,
+        });
       }
       month = addRecurringMonths(month, 1);
     }
