@@ -74,6 +74,11 @@ export class TransactionsService {
     dto: CreateTransactionDto,
     timeZone: string | null | undefined = undefined,
   ) {
+    if (dto.type === 'INVOICE_PAYMENT') {
+      throw new BadRequestException(
+        'Pagamentos de fatura só podem ser criados pelo fluxo da fatura',
+      );
+    }
     if (!dto.bankId && dto.type === 'CREDIT_CARD') {
       throw new BadRequestException(
         'Compras no crédito exigem um banco/cartão',
@@ -811,7 +816,15 @@ export class TransactionsService {
     );
     return await this.prisma.transaction.findUniqueOrThrow({
       where: { id: transaction.id, userId },
-      include: { bank: true, category: true, invoice: true, person: true },
+      include: {
+        bank: true,
+        category: true,
+        invoice: true,
+        person: true,
+        invoiceSettlement: {
+          include: { invoice: { include: { bank: true } } },
+        },
+      },
     });
   }
 
@@ -960,6 +973,11 @@ export class TransactionsService {
     }
 
     const effectiveType = dto.type ?? existingTransaction.type;
+    if (effectiveType === 'INVOICE_PAYMENT') {
+      throw new BadRequestException(
+        'Pagamentos de fatura só podem ser alterados pelo fluxo da fatura',
+      );
+    }
     if (dto.bankId === null && effectiveType === 'CREDIT_CARD') {
       throw new BadRequestException(
         'Compras no crédito exigem um banco/cartão',
@@ -1973,30 +1991,44 @@ export class TransactionsService {
   ): Promise<void> {
     const ids = transactions.map((transaction) => transaction.id);
 
-    const [debt, receivable, settlement] = await Promise.all([
-      tx.debt.findFirst({
-        where: { userId, paymentTransactionId: { in: ids } },
-        select: { id: true },
-      }),
-      tx.receivable.findFirst({
-        where: { userId, paymentTransactionId: { in: ids } },
-        select: { id: true },
-      }),
-      tx.transaction.findFirst({
-        where: {
-          id: { in: ids },
-          userId,
-          personSettlementGroupId: { not: null },
-        },
-        select: { id: true },
-      }),
-    ]);
+    const [debt, receivable, settlement, invoiceSettlement] = await Promise.all(
+      [
+        tx.debt.findFirst({
+          where: { userId, paymentTransactionId: { in: ids } },
+          select: { id: true },
+        }),
+        tx.receivable.findFirst({
+          where: { userId, paymentTransactionId: { in: ids } },
+          select: { id: true },
+        }),
+        tx.transaction.findFirst({
+          where: {
+            id: { in: ids },
+            userId,
+            personSettlementGroupId: { not: null },
+          },
+          select: { id: true },
+        }),
+        tx.invoiceSettlement?.findFirst({
+          where: { invoice: { userId }, transactionId: { in: ids } },
+          select: { id: true },
+        }) ?? Promise.resolve(null),
+      ],
+    );
 
     if (settlement) {
       throw new ConflictException({
         message:
           'Esta transação pertence a um acerto com Pessoa. Desfaça o acerto para alterar seus dados financeiros ou removê-la.',
         code: 'PERSON_SETTLEMENT_TRANSACTION_LINKED',
+      });
+    }
+
+    if (invoiceSettlement) {
+      throw new ConflictException({
+        message:
+          'Esta transação registra o pagamento de uma fatura. Desfaça o pagamento da fatura para alterar ou remover esse movimento.',
+        code: 'INVOICE_SETTLEMENT_TRANSACTION_LINKED',
       });
     }
 

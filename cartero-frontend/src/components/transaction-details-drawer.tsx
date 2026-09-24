@@ -56,13 +56,14 @@ export function TransactionDetailsDrawer({
       </div>
       <dl className="divide-y divide-border px-5">
         <DetailRow label="Natureza">{transaction.type === TransactionType.INCOME ? 'Receita' : 'Gasto'}</DetailRow>
-        {transaction.type !== TransactionType.INCOME && <DetailRow label="Forma de pagamento">{TRANSACTION_TYPE_LABELS[transaction.type]}</DetailRow>}
+        {transaction.type !== TransactionType.INCOME && transaction.type !== TransactionType.INVOICE_PAYMENT && <DetailRow label="Forma de pagamento">{TRANSACTION_TYPE_LABELS[transaction.type]}</DetailRow>}
         <DetailRow label="Banco">{bankDisplayName(transaction.bank)}</DetailRow>
         <DetailRow label="Categoria"><span className="flex min-w-0 items-center justify-end gap-1.5">{Icon && <Icon aria-hidden="true" className="size-3.5 shrink-0" style={transaction.category?.color ? { color: transaction.category.color } : undefined} />}<span className="truncate">{transaction.category?.name ?? 'Não informada'}</span></span></DetailRow>
         {transaction.person && <DetailRow label="Cobrança"><span className="text-receivable">A receber de {transaction.person.name}</span></DetailRow>}
         {installment && <DetailRow label="Parcelamento">{metadata?.index ? `Parcela ${metadata.index} de ${metadata.count}` : 'Parcelado'}</DetailRow>}
         {total !== null && <DetailRow label="Total da compra"><span className="tabular-nums">{formatCurrency(total)}</span><span className="ml-1 text-muted-foreground">· {metadata?.count} parcelas</span></DetailRow>}
         {transaction.invoice && <DetailRow label="Fatura">{`${transaction.invoice.month}/${transaction.invoice.year}`}</DetailRow>}
+        {transaction.invoiceSettlement && <DetailRow label="Fatura">{`${transaction.invoiceSettlement.invoice.month}/${transaction.invoiceSettlement.invoice.year}`}</DetailRow>}
         {transaction.description && <DetailRow label="Descrição" align="start"><span className="whitespace-pre-wrap">{transaction.description}</span></DetailRow>}
       </dl>
     </DetailDrawer>

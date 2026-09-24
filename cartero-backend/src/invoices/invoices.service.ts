@@ -12,13 +12,18 @@ import {
   selectActionableInvoices,
   type ActionableInvoiceCandidate,
 } from 'src/common/helpers/actionable-invoices.helper';
-import { InvoiceStatus, Prisma } from '@prisma/client';
+import { InvoiceStatus, Prisma, TransactionType } from '@prisma/client';
 import { MarkManyPaidDto } from './dto/mark-many-paid.dto';
 import { findOrCreateSystemBank } from 'src/common/helpers/invoice.helper';
 import { financialCivilDay } from 'src/common/helpers/financial-timezone.helper';
 import { requireAccountTimeZone } from 'src/common/helpers/timezone.helper';
 import { parseDateOnly } from 'src/common/helpers/date-only.helper';
 import { resolveSettlementDate } from 'src/common/helpers/settlement.core';
+import {
+  INVOICE_PAYMENT_CATEGORY_COLOR,
+  INVOICE_PAYMENT_CATEGORY_NAME,
+  SYSTEM_CATEGORY_ICON,
+} from 'src/common/constants/system-categories';
 
 @Injectable()
 export class InvoicesService {
@@ -202,7 +207,7 @@ export class InvoicesService {
       throw new BadRequestException('A fatura não está paga');
     }
 
-    if (!(this.prisma as any).invoiceSettlement) {
+    if (!Reflect.has(this.prisma, 'invoiceSettlement')) {
       return this.prisma.invoice.update({
         where: { id, userId },
         data: {
@@ -212,6 +217,17 @@ export class InvoicesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const settlements = await tx.invoiceSettlement.findMany({
+        where: { invoiceId: invoice.id },
+        select: { transactionId: true },
+      });
+      for (const settlement of settlements) {
+        if (settlement.transactionId) {
+          await tx.transaction.delete({
+            where: { id: settlement.transactionId, userId },
+          });
+        }
+      }
       await tx.invoiceSettlement.deleteMany({
         where: { invoiceId: invoice.id },
       });
@@ -242,7 +258,7 @@ export class InvoicesService {
 
     const now = new Date();
 
-    if (!(this.prisma as any).invoiceSettlement) {
+    if (!Reflect.has(this.prisma, 'invoiceSettlement')) {
       await this.prisma.$transaction(
         paid.map((invoice) =>
           this.prisma.invoice.update({
@@ -256,6 +272,17 @@ export class InvoicesService {
     } else {
       await this.prisma.$transaction(async (tx) => {
         for (const invoice of paid) {
+          const settlements = await tx.invoiceSettlement.findMany({
+            where: { invoiceId: invoice.id },
+            select: { transactionId: true },
+          });
+          for (const settlement of settlements) {
+            if (settlement.transactionId) {
+              await tx.transaction.delete({
+                where: { id: settlement.transactionId, userId },
+              });
+            }
+          }
           await tx.invoiceSettlement.deleteMany({
             where: { invoiceId: invoice.id },
           });
@@ -317,8 +344,38 @@ export class InvoicesService {
       );
       if (invoices.length === 0) return { count: 0 };
       const bank = selectedBank ?? (await findOrCreateSystemBank(tx, userId));
+      const category =
+        await this.entityValidationService.findOrCreateSystemCategory(
+          tx,
+          userId,
+          INVOICE_PAYMENT_CATEGORY_NAME,
+          SYSTEM_CATEGORY_ICON,
+          INVOICE_PAYMENT_CATEGORY_COLOR,
+        );
+      let settledCount = 0;
       for (const invoice of invoices) {
-        await tx.invoiceSettlement.create({
+        // Claim the invoice before creating its canonical records. Concurrent
+        // requests block on this row and the loser becomes an idempotent retry.
+        const claim = await tx.invoice.updateMany({
+          where: {
+            id: invoice.id,
+            userId,
+            status: { not: InvoiceStatus.PAID },
+          },
+          data: { status: InvoiceStatus.PAID },
+        });
+        if (claim.count === 0) {
+          // The winning request committed the settlement while this request
+          // was waiting on the row claim. Read the canonical record instead
+          // of attempting a second write; legacy PAID invoices may have none.
+          await tx.invoiceSettlement.findUnique({
+            where: { invoiceId: invoice.id },
+            select: { id: true, transactionId: true },
+          });
+          continue;
+        }
+
+        const settlement = await tx.invoiceSettlement.create({
           data: {
             invoiceId: invoice.id,
             amount: invoice.totalAmount,
@@ -326,12 +383,25 @@ export class InvoicesService {
             bankId: bank.id,
           },
         });
-        await tx.invoice.update({
-          where: { id: invoice.id, userId },
-          data: { status: InvoiceStatus.PAID },
+        const transaction = await tx.transaction.create({
+          data: {
+            userId,
+            bankId: settlement.bankId,
+            categoryId: category.id,
+            title: INVOICE_PAYMENT_CATEGORY_NAME,
+            type: TransactionType.INVOICE_PAYMENT,
+            amount: settlement.amount,
+            isRefund: false,
+            date: settlement.paidAt,
+          },
         });
+        await tx.invoiceSettlement.update({
+          where: { id: settlement.id },
+          data: { transactionId: transaction.id },
+        });
+        settledCount += 1;
       }
-      return { count: invoices.length };
+      return { count: settledCount };
     });
   }
 }

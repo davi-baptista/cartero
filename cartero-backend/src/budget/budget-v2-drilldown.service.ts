@@ -95,6 +95,7 @@ const settlementSelect = {
 const invoiceSettlementSelect = {
   id: true,
   invoiceId: true,
+  transactionId: true,
   amount: true,
   paidAt: true,
   invoice: {
@@ -102,7 +103,7 @@ const invoiceSettlementSelect = {
       dueDate: true,
       month: true,
       year: true,
-      bank: { select: { id: true, name: true } },
+      bank: { select: { id: true, name: true, isSystem: true } },
     },
   },
 } as const;
@@ -607,12 +608,15 @@ export class BudgetV2DrilldownService {
             kind: 'INVOICE_SETTLEMENT',
             id: settlement.id,
             sourceId: settlement.invoiceId,
+            transactionId: settlement.transactionId,
             amount: serializeMoney(settlement.amount),
             eventDate,
             dueDate: iso(settlement.invoice.dueDate),
             month: settlement.invoice.month,
             year: settlement.invoice.year,
-            bankName: settlement.invoice.bank.name,
+            bankName: settlement.invoice.bank.isSystem
+              ? null
+              : settlement.invoice.bank.name,
             bankId: settlement.invoice.bank.id,
           },
         };

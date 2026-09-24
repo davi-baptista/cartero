@@ -199,6 +199,10 @@ export function BudgetDrilldownDrawer({
                         return
                       }
                       if (item.kind === 'INVOICE_SETTLEMENT') {
+                        if (item.transactionId) {
+                          setSelectedTransactionId(item.transactionId)
+                          return
+                        }
                         setSelectedInvoice({ id: item.sourceId, bankId: item.bankId })
                         return
                       }

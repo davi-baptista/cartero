@@ -45,6 +45,7 @@ export function isExpense(type: TransactionType, isRefund = false): boolean {
 
 export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
   [TransactionType.INCOME]: 'Receita',
+  [TransactionType.INVOICE_PAYMENT]: 'Pagamento de fatura',
   [TransactionType.CREDIT_CARD]: 'Crédito',
   [TransactionType.DEBIT_CARD]: 'Débito',
   [TransactionType.PIX]: 'PIX',

@@ -285,6 +285,7 @@ model Transaction {
   receivable        Receivable?   @relation("ReimbursableLink")
   paymentReceivable Receivable?   @relation("ReceivablePaymentLink")
   paymentDebt       Debt?         @relation("DebtPaymentLink")
+  invoiceSettlement InvoiceSettlement?
 
   @@index([userId, parentId])
 }
@@ -360,11 +361,13 @@ model InvoiceSettlement {
   amount    Decimal
   paidAt    DateTime
   bankId    String
+  transactionId String? @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   bank    Bank    @relation(fields: [bankId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
 
   @@index([bankId, paidAt])
 }
@@ -506,6 +509,7 @@ model PersonSettlementReceivable {
 
 enum TransactionType {
   INCOME
+  INVOICE_PAYMENT
   CREDIT_CARD
   DEBIT_CARD
   PIX

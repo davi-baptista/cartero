@@ -62,7 +62,7 @@ function itemIconType(item: BudgetV2DrilldownItem): string | null {
     case 'DEBT_SETTLEMENT':
       return item.paymentType
     case 'INVOICE_SETTLEMENT':
-      return TransactionType.CREDIT_CARD
+      return TransactionType.INVOICE_PAYMENT
     default:
       return null
   }
@@ -138,7 +138,7 @@ export function BudgetDrilldownItemRow({
       ])
       break
     case 'INVOICE_SETTLEMENT':
-      primary = item.bankName
+      primary = item.bankName || 'Pagamento de fatura'
       secondary = metadata([
         formatMonthOfYear(item.month, item.year),
         `Pago ${eventDateLabel(item.eventDate, timeZone)}`,

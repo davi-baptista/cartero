@@ -148,7 +148,10 @@ export function assertDebtPaymentDetails(
       'Informe o banco e a forma de pagamento para quitar a dívida',
     );
   }
-  if (paymentType === TransactionType.INCOME) {
+  if (
+    paymentType === TransactionType.INCOME ||
+    paymentType === TransactionType.INVOICE_PAYMENT
+  ) {
     throw new BadRequestException(
       'A forma de pagamento de uma dívida não pode ser receita',
     );

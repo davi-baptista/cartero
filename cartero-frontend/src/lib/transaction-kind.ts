@@ -42,7 +42,9 @@ export function kindOf(type: TransactionType): TransactionKind {
  * então não há o que derivar.
  */
 export function methodOf(type: TransactionType): PaymentMethod | null {
-  return type === TransactionType.INCOME ? null : (type as PaymentMethod)
+  return type === TransactionType.INCOME || type === TransactionType.INVOICE_PAYMENT
+    ? null
+    : (type as PaymentMethod)
 }
 
 /** `true` quando o tipo aceita parcelamento, pessoa e estorno. */

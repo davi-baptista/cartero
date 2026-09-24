@@ -81,6 +81,12 @@ describe('Budget V2 shared classification authority', () => {
         'user-a',
       ),
     ).toBeNull();
+    expect(
+      classifyBudgetV2Transaction(
+        { type: TransactionType.INVOICE_PAYMENT, isRefund: false },
+        'user-a',
+      ),
+    ).toBeNull();
   });
 
   it('classifies active settlement directions and excludes NONE/credit outflow', () => {

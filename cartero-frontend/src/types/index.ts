@@ -1,5 +1,6 @@
 export enum TransactionType {
   INCOME = 'INCOME',
+  INVOICE_PAYMENT = 'INVOICE_PAYMENT',
   CREDIT_CARD = 'CREDIT_CARD',
   DEBIT_CARD = 'DEBIT_CARD',
   PIX = 'PIX',
@@ -99,6 +100,13 @@ export interface Transaction {
   bank?: Bank
   category?: Category
   invoice?: Invoice
+  invoiceSettlement?: {
+    id: string
+    invoiceId: string
+    amount: number
+    paidAt: string
+    invoice: Invoice
+  }
   createdAt: string
   updatedAt: string
 }

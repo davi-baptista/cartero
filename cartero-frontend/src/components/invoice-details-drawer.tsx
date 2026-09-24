@@ -99,6 +99,7 @@ const EXPENSE_BG = 'var(--color-expense-bg)'
 
 const TYPE_ICON: Record<TransactionType, LucideIcon> = {
   [TransactionType.INCOME]: TrendingUp,
+  [TransactionType.INVOICE_PAYMENT]: Receipt,
   [TransactionType.CREDIT_CARD]: CreditCard,
   [TransactionType.DEBIT_CARD]: Wallet,
   [TransactionType.PIX]: Receipt,

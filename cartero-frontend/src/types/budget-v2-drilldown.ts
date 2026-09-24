@@ -67,12 +67,13 @@ export type BudgetV2DrilldownItem =
       kind: 'INVOICE_SETTLEMENT'
       id: string
       sourceId: string
+      transactionId: string | null
       amount: string
       eventDate: string
       dueDate: string
       month: number
       year: number
-      bankName: string
+      bankName: string | null
       bankId: string
     }
   | {

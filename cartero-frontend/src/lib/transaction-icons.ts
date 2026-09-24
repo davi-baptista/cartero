@@ -5,6 +5,7 @@ import { TransactionType } from '@/types'
 /** The canonical transaction icon mapping used by the Extrato. */
 export const TRANSACTION_TYPE_ICONS: Record<TransactionType, LucideIcon> = {
   [TransactionType.INCOME]: TrendingUp,
+  [TransactionType.INVOICE_PAYMENT]: Receipt,
   [TransactionType.CREDIT_CARD]: CreditCard,
   [TransactionType.DEBIT_CARD]: Wallet,
   [TransactionType.PIX]: Receipt,

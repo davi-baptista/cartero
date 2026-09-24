@@ -502,7 +502,7 @@ function TransactionDetailsDialog({
           <DetailRow label="Natureza">
             {transaction.type === TransactionType.INCOME ? 'Receita' : 'Gasto'}
           </DetailRow>
-          {transaction.type !== TransactionType.INCOME && (
+          {transaction.type !== TransactionType.INCOME && transaction.type !== TransactionType.INVOICE_PAYMENT && (
             <DetailRow label="Forma de pagamento">
               {TRANSACTION_TYPE_LABELS[transaction.type]}
             </DetailRow>

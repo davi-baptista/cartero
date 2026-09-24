@@ -410,7 +410,11 @@ export class PersonsService {
           );
         }
       } else {
-        if (!dto.paymentType || dto.paymentType === TransactionType.INCOME) {
+        if (
+          !dto.paymentType ||
+          dto.paymentType === TransactionType.INCOME ||
+          dto.paymentType === TransactionType.INVOICE_PAYMENT
+        ) {
           throw new ConflictException(
             'Informe uma forma de pagamento válida para o acerto com saída',
           );

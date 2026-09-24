@@ -33,6 +33,7 @@ interface Setup {
   linkedToDebt?: boolean;
   /** `true` quando é comprovante de uma cobrança recebida. */
   linkedToReceivable?: boolean;
+  linkedToInvoiceSettlement?: boolean;
 }
 
 function buildHarness(setup: Setup = {}) {
@@ -60,6 +61,11 @@ function buildHarness(setup: Setup = {}) {
         writes.push(data);
         return { ...transaction, ...data };
       }),
+    },
+    invoiceSettlement: {
+      findFirst: vi.fn(async () =>
+        setup.linkedToInvoiceSettlement ? { id: 'settlement-1' } : null,
+      ),
     },
     debt: {
       findFirst: vi.fn(async () =>
@@ -254,5 +260,51 @@ describe('Transação comum não é afetada', () => {
     );
 
     expect(harness.prisma.debt.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe('Pagamento canônico de fatura', () => {
+  it.each([
+    ['valor', { amount: 100 }],
+    ['banco', { bankId: 'bank-outro' }],
+    ['data', { date: '2026-09-01' }],
+    ['tipo', { type: 'BOLETO' }],
+  ])('bloqueia edição financeira de %s', async (_label, dto) => {
+    const harness = buildHarness({ linkedToInvoiceSettlement: true });
+
+    await expect(
+      harness.service.update('tx-pay', USER_ID, dto as any, 'ONE'),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'INVOICE_SETTLEMENT_TRANSACTION_LINKED',
+        message: expect.stringContaining('Desfaça o pagamento da fatura'),
+      }),
+    });
+    expect(harness.writes).toHaveLength(0);
+  });
+
+  it('bloqueia delete genérico da Transaction canônica', async () => {
+    const harness = buildHarness({ linkedToInvoiceSettlement: true });
+
+    await expect(
+      harness.service.remove('tx-pay', USER_ID, 'ONE'),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'INVOICE_SETTLEMENT_TRANSACTION_LINKED',
+      }),
+    });
+  });
+
+  it('mantém edição puramente descritiva permitida', async () => {
+    const harness = buildHarness({ linkedToInvoiceSettlement: true });
+
+    await harness.service.update(
+      'tx-pay',
+      USER_ID,
+      { description: 'nota' } as any,
+      'ONE',
+    );
+
+    expect(harness.writes.length).toBeGreaterThan(0);
   });
 });
