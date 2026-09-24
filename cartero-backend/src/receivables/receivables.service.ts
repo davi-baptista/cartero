@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { Prisma, Receivable } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
@@ -25,6 +25,8 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
   assertAutomaticReceivableNotDeleted,
+  assertRecurringIncomeClassification,
+  assertRecurringIncomeReceivableNotDeleted,
   assertNotAutomaticReceivable,
   assertReceivableNotReceived,
 } from 'src/common/helpers/settlement.guard';
@@ -32,6 +34,7 @@ import { assertNotActivePersonSettlementMember } from 'src/common/helpers/person
 import { CreateReceivableDto } from './dto/create-receivable.dto';
 import { UpdateReceivableDto } from './dto/update-receivable.dto';
 import { FindReceivablesDto } from './dto/find-receivables.dto';
+import { RecurringIncomeService } from 'src/recurring-income/recurring-income.service';
 
 type ReceivableScope = 'ONE' | 'NEXT' | 'ALL';
 
@@ -40,6 +43,7 @@ export class ReceivablesService {
   constructor(
     private prisma: PrismaService,
     private entityValidationService: EntityValidationService,
+    @Optional() private recurringIncomeService?: RecurringIncomeService,
   ) {}
 
   async create(userId: string, dto: CreateReceivableDto) {
@@ -79,6 +83,7 @@ export class ReceivablesService {
               personId: dto.personId,
               amount: dto.amount,
               description: dto.description,
+              incomeClassification: dto.incomeClassification ?? 'OTHER',
               occurredAt: parseDateOnly(dto.occurredAt),
               dueDate: installmentDate,
             },
@@ -102,10 +107,12 @@ export class ReceivablesService {
   }
 
   async findOne(id: string, userId: string) {
+    await this.recurringIncomeService?.ensureForUser(userId);
     return await this.entityValidationService.validateReceivable(id, userId);
   }
 
   async findAll(userId: string, filters: FindReceivablesDto = {}) {
+    await this.recurringIncomeService?.ensureForUser(userId);
     const receivables = await this.prisma.receivable.findMany({
       where: {
         userId,
@@ -165,6 +172,7 @@ export class ReceivablesService {
      */
     assertReceivableNotReceived(existing, dto, existing);
     assertNotAutomaticReceivable(existing, dto, existing);
+    assertRecurringIncomeClassification(existing, dto.incomeClassification);
 
     let debtorName = dto.debtorName;
     if (dto.personId) {
@@ -256,6 +264,46 @@ export class ReceivablesService {
             paidAt !== null &&
             !receivable.paymentTransactionId
           ) {
+            /*
+              A leitura de `existing` acontece antes da transação e pode ficar
+              velha quando dois requests tentam receber a mesma cobrança.
+
+              A reivindicação condicional é a autoridade da corrida: só um
+              request consegue transformar o registro ainda aberto. Ela ocorre
+              antes da Transaction de recebimento e vive no mesmo `$transaction`,
+              então uma falha posterior desfaz também esta marcação.
+            */
+            const claimed = await tx.receivable.updateMany({
+              where: {
+                id: receivable.id,
+                userId,
+                isPaid: false,
+                paymentTransactionId: null,
+              },
+              data: { isPaid: true, paidAt },
+            });
+
+            if (claimed.count === 0) {
+              /*
+                Outro request venceu a corrida. Releia dentro da mesma
+                transação para devolver o settlement já existente sem criar
+                uma segunda Transaction.
+
+                `isPaid: true` sem comprovante é legado: preservar o estado
+                histórico é mais seguro que inventar uma receita agora.
+              */
+              const settled = await tx.receivable.findUnique({
+                where: { id: receivable.id, userId },
+              });
+
+              if (!settled) {
+                throw new BadRequestException('Recebível não encontrado');
+              }
+
+              updatedReceivables.push(settled);
+              continue;
+            }
+
             const category =
               await this.entityValidationService.findOrCreateSystemCategory(
                 tx,
@@ -301,11 +349,13 @@ export class ReceivablesService {
             paymentTransactionId = null;
           }
 
-            const updatedReceivable = await tx.receivable.update({
+          const updatedReceivable = await tx.receivable.update({
             where: { id: receivable.id, userId },
             data: {
               ...(existing.parentId ? installmentSafeDto : receivableDto),
               debtorName,
+              incomeClassification:
+                dto.incomeClassification ?? receivable.incomeClassification,
               occurredAt: dto.occurredAt
                 ? parseDateOnly(dto.occurredAt)
                 : receivable.occurredAt,
@@ -314,7 +364,7 @@ export class ReceivablesService {
                 : dto.dueDate
                   ? parseDateOnly(dto.dueDate)
                   : receivable.dueDate,
-              paidAt,
+              paidAt: paidAt === undefined ? receivable.paidAt : paidAt,
               paymentTransactionId,
             },
           });
@@ -349,6 +399,7 @@ export class ReceivablesService {
      * pelo lado desprotegido.
      */
     assertAutomaticReceivableNotDeleted(existing);
+    assertRecurringIncomeReceivableNotDeleted(existing);
 
     const normalizedScope = this.normalizeScope(scope);
 

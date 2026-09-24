@@ -20,6 +20,7 @@ import { HealthModule } from './health/health.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { CommitmentsModule } from './commitments/commitments.module';
+import { RecurringIncomeModule } from './recurring-income/recurring-income.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { CommitmentsModule } from './commitments/commitments.module';
     NotificationsModule,
     SubscriptionsModule,
     CommitmentsModule,
+    RecurringIncomeModule,
     ScheduleModule.forRoot(),
   ],
   providers: [AppScheduler],

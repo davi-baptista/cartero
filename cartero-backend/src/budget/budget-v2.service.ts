@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
@@ -20,6 +20,7 @@ import {
   classifyBudgetV2Receivable,
   classifyBudgetV2Transaction,
 } from './budget-v2-classification.helper';
+import { RecurringIncomeService } from 'src/recurring-income/recurring-income.service';
 
 const ZERO = new Prisma.Decimal(0);
 
@@ -33,7 +34,10 @@ function serializeMoney(value: Prisma.Decimal): string {
 
 @Injectable()
 export class BudgetV2Service {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly recurringIncomeService?: RecurringIncomeService,
+  ) {}
 
   async getPeriod(
     userId: string,
@@ -53,6 +57,7 @@ export class BudgetV2Service {
     preset: BudgetV2PeriodPreset = BudgetV2PeriodPreset.LAST_30_DAYS,
     now = new Date(),
   ): Promise<BudgetV2ResponseContract> {
+    await this.recurringIncomeService?.ensureForUser(userId, now);
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: { timeZone: true },

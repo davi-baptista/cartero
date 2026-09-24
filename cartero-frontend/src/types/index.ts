@@ -393,6 +393,23 @@ export interface Receivable {
   parentId?: string
   createdAt: string
   updatedAt: string
+  incomeClassification?: 'INCOME' | 'OTHER' | null
+  recurringIncomeRuleId?: string | null
+  recurringMonth?: string | null
+}
+
+export interface RecurringIncomeRule {
+  id: string
+  userId: string
+  title: string
+  amount: number
+  frequency: 'MONTHLY'
+  dayOfMonth: number
+  firstOccurrence: string
+  counterpartyName?: string | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export interface AuthResponse {

@@ -20,6 +20,7 @@ export async function createReceivable(payload: {
   dueDate: string
   description?: string
   installments?: number
+  incomeClassification?: 'INCOME' | 'OTHER'
 }): Promise<Receivable | Receivable[]> {
   const { data } = await api.post<Receivable | Receivable[]>('/receivables', payload)
   return data
@@ -38,6 +39,7 @@ export async function updateReceivable(
     paymentDate: string
     paymentBankId?: string
     paymentType: TransactionType
+    incomeClassification?: 'INCOME' | 'OTHER'
   }>,
   scope?: InstallmentScope,
 ): Promise<Receivable | Receivable[]> {

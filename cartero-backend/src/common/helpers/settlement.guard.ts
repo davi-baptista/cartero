@@ -164,3 +164,36 @@ export function assertAutomaticReceivableNotDeleted(receivable: {
     code: 'AUTOMATIC_RECEIVABLE_MANAGED_BY_TRANSACTION',
   });
 }
+
+/**
+ * Ocorrências materializadas por renda recorrente são snapshots históricos.
+ * Excluí-las abriria novamente o slot único de competência e permitiria que
+ * o ensure/cron as recriasse silenciosamente.
+ */
+export function assertRecurringIncomeReceivableNotDeleted(receivable: {
+  recurringIncomeRuleId: string | null;
+}): void {
+  if (!receivable.recurringIncomeRuleId) return;
+
+  throw new ConflictException({
+    message:
+      'Este recebimento pertence a uma renda recorrente e não pode ser excluído individualmente. Encerre a renda para impedir novos recebimentos.',
+    code: 'RECURRING_INCOME_RECEIVABLE_DELETE_BLOCKED',
+  });
+}
+
+/** Uma ocorrência recorrente representa renda em todas as suas edições. */
+export function assertRecurringIncomeClassification(
+  receivable: { recurringIncomeRuleId: string | null },
+  incomeClassification?: string,
+): void {
+  if (!receivable.recurringIncomeRuleId) return;
+  if (incomeClassification === undefined || incomeClassification === 'INCOME')
+    return;
+
+  throw new ConflictException({
+    message:
+      'Uma ocorrência de renda recorrente deve permanecer classificada como renda.',
+    code: 'RECURRING_INCOME_CLASSIFICATION_IMMUTABLE',
+  });
+}

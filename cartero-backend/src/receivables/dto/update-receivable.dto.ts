@@ -1,4 +1,4 @@
-import { TransactionType } from '@prisma/client';
+import { IncomeClassification, TransactionType } from '@prisma/client';
 import {
   IsBoolean,
   IsDateString,
@@ -31,6 +31,10 @@ export class UpdateReceivableDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsEnum(IncomeClassification)
+  incomeClassification?: IncomeClassification;
 
   @IsOptional()
   @IsDateString()

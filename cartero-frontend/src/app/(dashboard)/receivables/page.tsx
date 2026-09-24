@@ -600,6 +600,7 @@ export default function ReceivablesPage() {
         return
       case 'unmark-first':
       case 'manage-from-source':
+      case 'recurring-income':
         /* Sem ação executável: o botão nem é oferecido nessas situações. */
         return
       case 'direct':

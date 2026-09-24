@@ -1,5 +1,6 @@
 import {
   IsDateString,
+  IsEnum,
   IsInt,
   IsNumber,
   IsOptional,
@@ -8,6 +9,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
+import { IncomeClassification } from '@prisma/client';
 import {
   MAX_INSTALLMENTS,
   MAX_INSTALLMENTS_MESSAGE,
@@ -32,6 +34,10 @@ export class CreateReceivableDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsEnum(IncomeClassification)
+  incomeClassification?: IncomeClassification;
 
   @IsDateString()
   occurredAt: string;

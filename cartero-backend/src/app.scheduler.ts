@@ -1,8 +1,9 @@
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap, Optional } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from './prisma/prisma.service';
 import { deriveStatusFromInvoiceDates } from './common/helpers/invoice.helper';
 import { requireAccountTimeZone } from './common/helpers/timezone.helper';
+import { RecurringIncomeService } from './recurring-income/recurring-income.service';
 
 /**
  * `true` quando `now` cai na hora cheia em que a meia-noite de
@@ -53,7 +54,10 @@ export function candidatePruningCutoff(now: Date): Date {
 export class AppScheduler implements OnApplicationBootstrap {
   private readonly logger = new Logger(AppScheduler.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional() private readonly recurringIncomeService?: RecurringIncomeService,
+  ) {}
 
   /**
    * Bootstrap sempre roda imediatamente, em qualquer hora — comportamento
@@ -174,6 +178,22 @@ export class AppScheduler implements OnApplicationBootstrap {
           data: { status },
         });
       }
+    }
+  }
+
+  /** Complementary materialization; lazy ensure remains the correctness path. */
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, {
+    timeZone: 'America/Fortaleza',
+  })
+  async materializeRecurringIncome() {
+    if (!this.recurringIncomeService) return;
+
+    try {
+      await this.recurringIncomeService.ensureAll();
+    } catch (error) {
+      this.logger.error(
+        `Falha na materialização de renda recorrente: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 }

@@ -19,6 +19,7 @@ import {
   PiggyBank,
   Repeat,
   CalendarClock,
+  CircleDollarSign,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -191,13 +192,14 @@ const navItems = [
   { href: '/categories', label: 'Categorias', icon: Tags },
   { href: '/debts', label: 'Dívidas', icon: HandCoins },
   { href: '/receivables', label: 'A Receber', icon: Wallet },
+  { href: '/income', label: 'Renda', icon: CircleDollarSign },
   { href: '/persons', label: 'Pessoas', icon: Users },
 ]
 
 const navGroups = [
-  { label: 'GERAL', items: navItems.slice(0, 3).filter(({ href }) => href !== '/budget') },
-  { label: 'PLANEJAMENTO', items: [navItems[1], navItems[4], navItems[3]] },
-  { label: 'CONTAS', items: [navItems[5], navItems[7], navItems[8], navItems[9]] },
+  { label: 'GERAL', items: navItems.filter(({ href }) => ['/overview', '/transactions'].includes(href)) },
+  { label: 'PLANEJAMENTO', items: navItems.filter(({ href }) => ['/budget', '/income', '/commitments', '/subscriptions'].includes(href)) },
+  { label: 'CONTAS', items: navItems.filter(({ href }) => ['/banks', '/debts', '/receivables', '/persons'].includes(href)) },
   { label: 'ORGANIZA\u00c7\u00c3O', items: [navItems[6]] },
 ]
 
