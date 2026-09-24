@@ -408,6 +408,7 @@ export interface RecurringIncomeRule {
   firstOccurrence: string
   counterpartyName?: string | null
   isActive: boolean
+  deletedAt?: string | null
   createdAt: string
   updatedAt: string
 }

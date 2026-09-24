@@ -4,6 +4,7 @@ import {
   defaultFirstOccurrence,
   materializationHorizon,
   occurrenceDateForMonth,
+  previewRecurringIncome,
 } from './recurring-income.helper';
 
 describe('recurring income civil calendar', () => {
@@ -42,5 +43,31 @@ describe('recurring income civil calendar', () => {
     expect(materializationHorizon(new Date('2026-09-23T12:00:00Z'), zone)).toBe(
       '2026-10-23',
     );
+  });
+
+  it('previews past and upcoming occurrences with the same horizon authority', () => {
+    expect(
+      previewRecurringIncome(
+        { firstOccurrence: '2025-09', dayOfMonth: 5, amount: 5000 },
+        new Date('2026-09-23T12:00:00Z'),
+        zone,
+      ),
+    ).toMatchObject({
+      occurrenceCount: 14,
+      overdueCount: 13,
+      upcomingCount: 1,
+      totalAmount: 70000,
+      horizonDate: '2026-10-23',
+    });
+  });
+
+  it('uses month-end clamping and excludes dates beyond the horizon', () => {
+    expect(
+      previewRecurringIncome(
+        { firstOccurrence: '2026-09', dayOfMonth: 31, amount: 2000 },
+        new Date('2026-09-23T12:00:00Z'),
+        zone,
+      ),
+    ).toMatchObject({ occurrenceCount: 1, overdueCount: 0, totalAmount: 2000 });
   });
 });

@@ -37,6 +37,27 @@ const PAYMENT_TYPE_OPTIONS = [
 
 type PaymentType = typeof PAYMENT_TYPE_OPTIONS[number]
 
+export function buildSettlementPayload({
+  kind,
+  createTransaction,
+  paymentDate,
+  bankId,
+  type,
+}: {
+  kind: 'debt' | 'receivable'
+  createTransaction: boolean
+  paymentDate?: string
+  bankId?: string
+  type?: PaymentType | ''
+}) {
+  if (!createTransaction) return {}
+  return {
+    paymentDate,
+    paymentBankId: bankId && bankId !== 'none' ? bankId : undefined,
+    paymentType: kind === 'receivable' ? TransactionType.INCOME : type as TransactionType,
+  }
+}
+
 interface MarkAsPaidDialogProps {
   open: boolean
   kind: 'debt' | 'receivable'
@@ -147,13 +168,7 @@ export function MarkAsPaidDialog({ open, kind, createTransaction = true, isPendi
           <Button
             disabled={!canConfirm || isPending}
             onClick={() => canConfirm && !isPending && onConfirm(
-              !createTransaction
-                ? {}
-                : {
-                    paymentDate,
-                    paymentBankId: bankId && bankId !== 'none' ? bankId : undefined,
-                    paymentType: type as TransactionType,
-                  },
+              buildSettlementPayload({ kind, createTransaction, paymentDate, bankId, type }),
             )}
           >
             {isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}

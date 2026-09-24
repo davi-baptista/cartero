@@ -67,7 +67,7 @@ export function ReceivableDetailDrawer({
   receivable: Receivable | null
   onOpenChange: (open: boolean) => void
   onEdit: (receivable: Receivable) => void
-  onDelete: (receivable: Receivable) => void
+  onDelete?: (receivable: Receivable) => void
   onToggleReceived: (receivable: Receivable) => void
   onEditSettlementDate?: (receivable: Receivable) => void
 }) {
@@ -79,6 +79,7 @@ export function ReceivableDetailDrawer({
   const status = settlementStatus(receivable, today)
   const overdue = status === 'overdue'
   const isAutomatic = Boolean(receivable.transactionId)
+  const isRecurringIncome = Boolean(receivable.recurringIncomeRuleId)
   const policy = resolveReceivableDeletePolicy(receivable)
   const counterparty = receivable.person?.name ?? receivable.debtorName
 
@@ -136,7 +137,7 @@ export function ReceivableDetailDrawer({
             origem. Os modos orientativos escondem o botão, e o aviso acima diz
             o que destrava.
           */}
-          {canDeleteReceivable(policy) && (
+          {onDelete && canDeleteReceivable(policy) && (
             <Button
               variant="destructive"
               className={DETAIL_ACTION_CLASS}
@@ -192,7 +193,9 @@ export function ReceivableDetailDrawer({
           </DetailRow>
         )}
         <DetailRow label="Origem">
-          {purchaseHref ? (
+          {isRecurringIncome ? (
+            'Renda recorrente'
+          ) : purchaseHref ? (
             <Link
               href={purchaseHref}
               className="inline-flex items-center gap-1.5 text-primary underline-offset-2 hover:underline"

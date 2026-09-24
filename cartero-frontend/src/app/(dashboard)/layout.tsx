@@ -192,7 +192,7 @@ const navItems = [
   { href: '/categories', label: 'Categorias', icon: Tags },
   { href: '/debts', label: 'Dívidas', icon: HandCoins },
   { href: '/receivables', label: 'A Receber', icon: Wallet },
-  { href: '/income', label: 'Renda', icon: CircleDollarSign },
+  { href: '/income', label: 'Renda', headerLabel: 'Planejamento', icon: CircleDollarSign },
   { href: '/persons', label: 'Pessoas', icon: Users },
 ]
 
@@ -273,7 +273,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     .toUpperCase()
 
   const currentPage = navItems.find((item) => pathname.startsWith(item.href))
-  const currentPageLabel = currentPage?.label ?? (pathname === '/profile' ? 'Meu perfil' : undefined)
+  const currentPageLabel = currentPage?.headerLabel ?? currentPage?.label ?? (pathname === '/profile' ? 'Meu perfil' : undefined)
+  const isPlanningHeader = currentPage?.href === '/income'
 
   return (
     <MonthPeriodProvider>
@@ -343,7 +344,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {currentPageLabel && (
               <>
                 <div className="hidden h-4 w-px shrink-0 bg-border sm:block" aria-hidden />
-                <span className="hidden truncate text-sm font-medium sm:block">
+                <span className={`hidden truncate text-sm sm:block ${isPlanningHeader ? 'font-normal text-muted-foreground' : 'font-medium'}`}>
                   {currentPageLabel}
                 </span>
               </>

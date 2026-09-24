@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnApplicationBootstrap, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+  Optional,
+} from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from './prisma/prisma.service';
 import { deriveStatusFromInvoiceDates } from './common/helpers/invoice.helper';
@@ -56,7 +61,8 @@ export class AppScheduler implements OnApplicationBootstrap {
 
   constructor(
     private prisma: PrismaService,
-    @Optional() private readonly recurringIncomeService?: RecurringIncomeService,
+    @Optional()
+    private readonly recurringIncomeService?: RecurringIncomeService,
   ) {}
 
   /**

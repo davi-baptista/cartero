@@ -20,6 +20,11 @@ function formatCents(cents: number): string {
   return `${reais.toLocaleString('pt-BR')},${String(centavos).padStart(2, '0')}`
 }
 
+export function currencyBackspaceValue(cents: number, hasSelection: boolean): number {
+  if (hasSelection) return 0
+  return Math.floor(Math.max(0, cents) / 10)
+}
+
 export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
   function CurrencyInput({ value, onChange, ...props }, ref) {
     const cents = Math.round(value * 100)
@@ -33,12 +38,16 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
     function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
       if (e.key === 'Backspace') {
         e.preventDefault()
-        const nextCents = Math.floor(cents / 10)
+        const nextCents = currencyBackspaceValue(cents, e.currentTarget.selectionStart !== e.currentTarget.selectionEnd)
         onChange(nextCents / 100)
       } else if (e.key === 'Delete') {
         e.preventDefault()
         onChange(0)
       }
+    }
+
+    function selectAll(e: React.SyntheticEvent<HTMLInputElement>) {
+      e.currentTarget.select()
     }
 
     return (
@@ -48,6 +57,8 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
         value={formatCents(cents)}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
+        onFocus={selectAll}
+        onClick={selectAll}
         {...props}
       />
     )

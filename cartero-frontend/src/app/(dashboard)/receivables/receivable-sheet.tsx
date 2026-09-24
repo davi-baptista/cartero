@@ -63,6 +63,7 @@ interface ReceivableSheetProps {
   initialPersonId?: string
   /** Timezone da conta autenticada — authority da data padrão de uma NOVA cobrança. */
   timeZone: string | null | undefined
+  mode?: 'receivable' | 'income' | 'income-occurrence'
   onSubmit: (data: ReceivableFormData, scope: InstallmentScope | null) => Promise<void>
 }
 
@@ -73,9 +74,12 @@ export function ReceivableSheet({
   editScope,
   initialPersonId,
   timeZone,
+  mode = 'receivable',
   onSubmit,
 }: ReceivableSheetProps) {
   const isEditing = editTarget !== null
+  const isIncome = mode !== 'receivable'
+  const isOneOffIncome = mode === 'income'
 
   /**
    * Cobrança derivada de uma compra: os fatos financeiros vêm dela.
@@ -160,7 +164,7 @@ export function ReceivableSheet({
     if (open) {
       if (editTarget) {
         const hasPerson = !!editTarget.personId
-        setDebtorMode(hasPerson ? 'person' : 'manual')
+        setDebtorMode(hasPerson && !isIncome ? 'person' : 'manual')
         reset({
           debtorName: editTarget.debtorName,
           personId: editTarget.personId ?? undefined,
@@ -171,7 +175,7 @@ export function ReceivableSheet({
           description: editTarget.description ?? '',
         })
       } else {
-        setDebtorMode(initialPersonId ? 'person' : 'manual')
+        setDebtorMode(initialPersonId && !isIncome ? 'person' : 'manual')
         reset({
           debtorName: '',
           personId: initialPersonId,
@@ -184,7 +188,7 @@ export function ReceivableSheet({
         })
       }
     }
-  }, [open, editTarget, initialPersonId, timeZone, reset])
+  }, [open, editTarget, initialPersonId, timeZone, reset, isIncome])
 
   function handleModeChange(mode: DebtorMode) {
     setDebtorMode(mode)
@@ -224,11 +228,15 @@ export function ReceivableSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="flex w-full flex-col sm:max-w-md" showCloseButton>
         <SheetHeader className="px-6 pt-6 pb-0">
-          <SheetTitle>{isEditing ? 'Editar cobrança' : 'Nova cobrança'}</SheetTitle>
+          <SheetTitle>{isOneOffIncome ? (isEditing ? 'Editar renda pontual' : 'Nova renda pontual') : isIncome ? 'Editar recebimento' : (isEditing ? 'Editar cobrança' : 'Nova cobrança')}</SheetTitle>
           <SheetDescription>
-            {isEditing
-              ? 'Atualize os dados da cobrança.'
-              : 'Registre um valor que você tem a receber.'}
+            {isOneOffIncome
+              ? 'Registre um valor esperado sem criar uma fonte recorrente.'
+              : isIncome
+                ? 'Edite esta ocorrência sem alterar a fonte recorrente.'
+              : isEditing
+                ? 'Atualize os dados da cobrança.'
+                : 'Registre um valor que você tem a receber.'}
           </SheetDescription>
         </SheetHeader>
 
@@ -298,10 +306,10 @@ export function ReceivableSheet({
         >
           {/* Debtor field */}
           <div className="space-y-1.5">
-            <Label>Devedor</Label>
+            <Label>{isIncome ? 'Origem / Empresa' : 'Devedor'}</Label>
 
             {/* Mode toggle */}
-            <div className="flex gap-1">
+            {!isIncome && <div className="flex gap-1">
               {(['manual', 'person'] as DebtorMode[]).map((mode) => (
                 <button
                   key={mode}
@@ -323,13 +331,13 @@ export function ReceivableSheet({
                   {mode === 'manual' ? 'Digitar nome' : 'Pessoa cadastrada'}
                 </button>
               ))}
-            </div>
+            </div>}
 
             {/* Input based on mode */}
-            {debtorMode === 'manual' ? (
+            {isIncome || debtorMode === 'manual' ? (
               <Input
                 id="debtorName"
-                placeholder="Ex: Maria, Empresa Y..."
+                placeholder={isIncome ? 'Ex.: Empresa Horizonte' : 'Ex: Maria, Empresa Y...'}
                 aria-invalid={!!errors.debtorName}
                 disabled={financialLocked}
                 {...register('debtorName')}
@@ -424,10 +432,10 @@ export function ReceivableSheet({
 
           {/* Title */}
           <div className="space-y-1.5">
-            <Label htmlFor="title">Título</Label>
+            <Label htmlFor="title">{isIncome ? 'Nome' : 'Título'}</Label>
             <Input
               id="title"
-              placeholder="Ex: Venda parcelada..."
+              placeholder={isIncome ? 'Ex.: Comissão' : 'Ex: Venda parcelada...'}
               aria-invalid={!!errors.title}
               disabled={!!editTarget?.parentId}
               {...register('title')}
@@ -441,7 +449,7 @@ export function ReceivableSheet({
 
           {/* Amount */}
           <div className="space-y-1.5">
-            <Label htmlFor="amount">Valor (R$)</Label>
+            <Label htmlFor="amount">{isIncome ? 'Valor' : 'Valor (R$)'}</Label>
             <Controller
               control={control}
               name="amount"
@@ -461,8 +469,8 @@ export function ReceivableSheet({
           </div>
 
           {/* Dates */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
+          <div className={cn('grid gap-3', isIncome ? 'grid-cols-1' : 'grid-cols-2')}>
+            {!isIncome && <div className="space-y-1.5">
               <Label>Data da transação</Label>
               <Controller
                 control={control}
@@ -479,10 +487,10 @@ export function ReceivableSheet({
               {errors.occurredAt && (
                 <p className="text-xs text-destructive">{errors.occurredAt.message}</p>
               )}
-            </div>
+            </div>}
 
             <div className="space-y-1.5">
-              <Label>Vencimento</Label>
+              <Label>{isIncome ? 'Data prevista' : 'Vencimento'}</Label>
               <Controller
                 control={control}
                 name="dueDate"
@@ -500,7 +508,11 @@ export function ReceivableSheet({
               )}
             </div>
           </div>
-          {editTarget?.parentId ? (
+          {isIncome ? (
+            <p className="-mt-2 text-xs text-muted-foreground">
+              A data prevista é uma referência; o recebimento real pode acontecer em outro dia.
+            </p>
+          ) : editTarget?.parentId ? (
             <p className="-mt-2 text-xs text-muted-foreground">
               A data da transação altera todas as parcelas; o vencimento não pode ser alterado em parcelas.
             </p>
@@ -511,7 +523,7 @@ export function ReceivableSheet({
           )}
 
           {/* Installments — create only */}
-          {!isEditing && (
+          {!isEditing && !isIncome && (
             <div className="space-y-1.5">
               <Label htmlFor="installments">Parcelas (opcional)</Label>
               <Input
@@ -546,7 +558,7 @@ export function ReceivableSheet({
           </Button>
           <Button type="submit" form="receivable-form" disabled={isSubmitting}>
             {isSubmitting && <Loader2 className="size-4 animate-spin" />}
-            {isEditing ? 'Salvar alterações' : 'Criar cobrança'}
+            {isEditing ? 'Salvar alterações' : isIncome ? 'Criar renda' : 'Criar cobrança'}
           </Button>
         </SheetFooter>
       </SheetContent>

@@ -69,3 +69,44 @@ export function defaultFirstOccurrence(
 export function materializationHorizon(now: Date, timeZone: string): string {
   return shiftCivilDate(financialCivilDay(now, timeZone), 30);
 }
+
+export interface RecurringIncomePreview {
+  firstOccurrence: string;
+  horizonDate: string;
+  occurrenceCount: number;
+  overdueCount: number;
+  upcomingCount: number;
+  totalAmount: number;
+}
+
+/** Preview authority shared with materialization; it does not write data. */
+export function previewRecurringIncome(
+  input: { firstOccurrence: string; dayOfMonth: number; amount: number },
+  now: Date,
+  timeZone: string,
+): RecurringIncomePreview {
+  const today = financialCivilDay(now, timeZone);
+  const horizonDate = materializationHorizon(now, timeZone);
+  const horizonMonth = horizonDate.slice(0, 7);
+  let month = input.firstOccurrence;
+  let occurrenceCount = 0;
+  let overdueCount = 0;
+
+  while (compareRecurringMonths(month, horizonMonth) <= 0) {
+    const dueDate = occurrenceDateForMonth(month, input.dayOfMonth);
+    if (dueDate <= horizonDate) {
+      occurrenceCount += 1;
+      if (dueDate < today) overdueCount += 1;
+    }
+    month = addRecurringMonths(month, 1);
+  }
+
+  return {
+    firstOccurrence: input.firstOccurrence,
+    horizonDate,
+    occurrenceCount,
+    overdueCount,
+    upcomingCount: occurrenceCount - overdueCount,
+    totalAmount: occurrenceCount * input.amount,
+  };
+}

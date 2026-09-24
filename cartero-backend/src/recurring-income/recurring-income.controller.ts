@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { CurrentUser } from 'src/auth/current-user.decorator';
@@ -13,6 +14,7 @@ import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import type { AuthenticatedUser } from 'src/auth/authenticated-user';
 import { CreateRecurringIncomeDto } from './dto/create-recurring-income.dto';
 import { UpdateRecurringIncomeDto } from './dto/update-recurring-income.dto';
+import { PreviewRecurringIncomeDto } from './dto/preview-recurring-income.dto';
 import { RecurringIncomeService } from './recurring-income.service';
 
 @Controller('recurring-incomes')
@@ -23,6 +25,14 @@ export class RecurringIncomeController {
   @Get()
   findAll(@CurrentUser() user: AuthenticatedUser) {
     return this.service.findAll(user.id);
+  }
+
+  @Get('preview')
+  preview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() dto: PreviewRecurringIncomeDto,
+  ) {
+    return this.service.preview(user.id, dto);
   }
 
   @Get(':id')
@@ -48,7 +58,7 @@ export class RecurringIncomeController {
   }
 
   @Delete(':id')
-  deactivate(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.service.deactivate(id, user.id);
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.remove(id, user.id);
   }
 }

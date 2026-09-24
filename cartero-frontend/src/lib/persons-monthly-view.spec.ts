@@ -212,7 +212,7 @@ describe('itens 13, 40 e 57: a página entrou no design system', () => {
   it('as rows usam o primitive compartilhado', () => {
     expect(PAGINA).toContain('<FinancialListRow')
     expect(PAGINA).toContain('ROW_ICON_CLASS')
-    expect(PAGINA).toContain('ROW_AMOUNT_CLASS')
+    expect(PAGINA).toContain('FinancialRowTrailing')
   })
 
   it('não recria a geometria da row', () => {

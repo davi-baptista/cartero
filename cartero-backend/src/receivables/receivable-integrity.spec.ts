@@ -36,6 +36,7 @@ function buildHarness(setup: Setup = {}) {
     transactionCreates: [] as any[],
     transactionDeletes: [] as any[],
     receivableDeletes: [] as any[],
+    categoryNames: [] as string[],
   };
 
   const receivable = setup.receivable ?? {
@@ -110,12 +111,15 @@ function buildHarness(setup: Setup = {}) {
       create: vi.fn(async ({ data }: any) => makeBank(data)),
     },
     category: {
-      findFirst: vi.fn(async () => ({
-        id: 'cat-sys',
-        userId: USER_ID,
-        name: 'Receita recebida',
-        isSystem: true,
-      })),
+      findFirst: vi.fn(async ({ where }: any) => {
+        writes.categoryNames.push(where.name);
+        return {
+          id: 'cat-sys',
+          userId: USER_ID,
+          name: where.name,
+          isSystem: true,
+        };
+      }),
       create: vi.fn(async ({ data }: any) => ({ id: 'cat-sys', ...data })),
     },
     transaction: {
@@ -337,6 +341,38 @@ describe('Ocorrência de renda recorrente — snapshot', () => {
 
     expect(harness.receivable.incomeClassification).toBe('INCOME');
     expect(harness.writes.receivableUpdates).toHaveLength(0);
+  });
+
+  it('liquida ocorrência recorrente na categoria sistêmica Renda', async () => {
+    const harness = buildHarness({ receivable: recurring() });
+
+    await harness.service.update('recurring-1', USER_ID, {
+      isPaid: true,
+    } as any);
+
+    expect(harness.writes.categoryNames).toEqual(['Renda']);
+  });
+});
+
+describe('Categoria de settlement de recebível não-renda', () => {
+  it('preserva Receita recebida para OTHER', async () => {
+    const harness = buildHarness({
+      receivable: automatic({ incomeClassification: 'OTHER' }),
+    });
+
+    await harness.service.update('rec-auto', USER_ID, { isPaid: true } as any);
+
+    expect(harness.writes.categoryNames).toEqual(['Receita recebida']);
+  });
+
+  it('preserva Receita recebida para classificação legada nula', async () => {
+    const harness = buildHarness({
+      receivable: automatic({ incomeClassification: null }),
+    });
+
+    await harness.service.update('rec-auto', USER_ID, { isPaid: true } as any);
+
+    expect(harness.writes.categoryNames).toEqual(['Receita recebida']);
   });
 });
 

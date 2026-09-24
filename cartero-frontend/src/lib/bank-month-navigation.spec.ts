@@ -159,12 +159,9 @@ describe('B20: a gestão do banco continua acessível', () => {
 
 describe('a página segue o sistema visual de Pessoas', () => {
   it('as duas usam os mesmos tokens de row', () => {
-    for (const token of [
-      'ROW_AMOUNT_CLASS',
-      'ROW_TRAILING_LABEL_CLASS',
-      'ROW_ICON_CLASS',
-      'FinancialListRow',
-    ]) {
+    expect(BANKS).toContain('ROW_AMOUNT_CLASS')
+    expect(PERSONS).toContain('FinancialRowTrailing')
+    for (const token of ['ROW_ICON_CLASS', 'FinancialListRow']) {
       expect(BANKS, `Bancos sem ${token}`).toContain(token)
       expect(PERSONS, `Pessoas sem ${token}`).toContain(token)
     }

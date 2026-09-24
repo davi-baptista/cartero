@@ -27,10 +27,9 @@ import {
 import { MotionRow } from '@/components/ui/motion-row'
 import {
   FinancialListRow,
-  ROW_AMOUNT_CLASS,
+  FinancialRowTrailing,
   ROW_AMOUNT_TONE,
   ROW_ICON_BG_CLASS,
-  ROW_TRAILING_LABEL_CLASS,
   ROW_ICON_CLASS,
 } from '@/components/ui/financial-list-row'
 import { nextItemLabel } from '@/lib/person-next-item'
@@ -876,14 +875,7 @@ export default function PersonsPage() {
                       balancesLoading ? (
                         <Skeleton className="h-5 w-20" />
                       ) : (
-                        <>
-                          <span className={cn(ROW_AMOUNT_CLASS, tone)}>
-                            {formatCurrency(net)}
-                          </span>
-                          <span className={cn(ROW_TRAILING_LABEL_CLASS, labelTone)}>
-                            {label}
-                          </span>
-                        </>
+                        <FinancialRowTrailing amount={formatCurrency(net)} label={label} amountTone={tone} labelTone={labelTone} />
                       )
                     }
                   />

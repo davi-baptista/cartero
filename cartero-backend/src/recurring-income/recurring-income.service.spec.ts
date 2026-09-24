@@ -161,6 +161,7 @@ describe('RecurringIncomeService', () => {
     expect(harness.receivables.get('rule-1:2026-11').amount.toString()).toBe(
       '5500',
     );
+    expect(harness.rules.get('rule-1').firstOccurrence).toBe('2026-09');
   });
 
   it('deactivate prevents future materialization and keeps existing rows', async () => {

@@ -141,9 +141,10 @@ describe('o valor da row: um tamanho, uma cor', () => {
 
   it('todas as listas usam a mesma escala', () => {
     for (const [nome, fonte] of Object.entries(LISTAS)) {
-      expect(fonte, `${nome} deveria usar ROW_AMOUNT_CLASS`).toContain(
-        'ROW_AMOUNT_CLASS',
-      )
+      expect(
+        fonte.includes('ROW_AMOUNT_CLASS') || fonte.includes('FinancialRowTrailing'),
+        `${nome} deveria usar o bloco de valor compartilhado`,
+      ).toBe(true)
     }
   })
 

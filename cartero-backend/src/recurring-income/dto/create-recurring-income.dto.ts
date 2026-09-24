@@ -24,11 +24,11 @@ export class CreateRecurringIncomeDto {
   dayOfMonth: number;
 
   /** Competência inicial explícita; omitida usa a próxima ocorrência civil. */
-  @IsOptional()
+  @IsString()
   @Matches(/^\d{4}-(0[1-9]|1[0-2])$/, {
     message: 'firstOccurrence deve estar no formato YYYY-MM',
   })
-  firstOccurrence?: string;
+  firstOccurrence: string;
 
   @IsOptional()
   @IsString()

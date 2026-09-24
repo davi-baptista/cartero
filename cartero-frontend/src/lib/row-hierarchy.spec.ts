@@ -185,8 +185,10 @@ describe('as duas páginas usam o mesmo primitive', () => {
       ['Pessoas', PERSONS],
     ] as const) {
       expect(fonte, nome).toContain('FinancialListRow')
-      expect(fonte, nome).toContain('ROW_AMOUNT_CLASS')
-      expect(fonte, nome).toContain('ROW_TRAILING_LABEL_CLASS')
+      expect(
+        fonte.includes('FinancialRowTrailing') || fonte.includes('ROW_AMOUNT_CLASS'),
+        `${nome} deve usar o bloco direito compartilhado ou seus tokens canônicos`,
+      ).toBe(true)
     }
   })
 

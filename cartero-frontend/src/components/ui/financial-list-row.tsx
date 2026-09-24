@@ -72,7 +72,7 @@ export const ROW_RESOLVED_TONE = 'text-paid'
 
 /** Metadata compacta abaixo do título. */
 export const ROW_META_CLASS =
-  'flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] text-muted-foreground'
+  'flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] text-muted-foreground [&>span:last-child]:min-w-0 [&>span:last-child]:truncate'
 
 /** Valor principal, à direita. A COR fica por conta do domínio. */
 export const ROW_AMOUNT_CLASS =
@@ -90,6 +90,26 @@ export const ROW_TRAILING_META_CLASS = 'text-xs text-muted-foreground'
  */
 export const ROW_TRAILING_LABEL_CLASS =
   'whitespace-nowrap text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70'
+
+/** Bloco direito canônico para valor + rótulo de estado de uma row. */
+export function FinancialRowTrailing({
+  amount,
+  label,
+  amountTone = ROW_AMOUNT_TONE.neutral,
+  labelTone,
+}: {
+  amount: ReactNode
+  label: ReactNode
+  amountTone?: string
+  labelTone?: string
+}) {
+  return (
+    <>
+      <span className={cn(ROW_AMOUNT_CLASS, amountTone)}>{amount}</span>
+      <span className={cn(ROW_TRAILING_LABEL_CLASS, labelTone)}>{label}</span>
+    </>
+  )
+}
 
 /**
  * ── Cores do valor ──

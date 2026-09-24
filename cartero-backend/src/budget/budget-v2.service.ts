@@ -36,7 +36,8 @@ function serializeMoney(value: Prisma.Decimal): string {
 export class BudgetV2Service {
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly recurringIncomeService?: RecurringIncomeService,
+    @Optional()
+    private readonly recurringIncomeService?: RecurringIncomeService,
   ) {}
 
   async getPeriod(

@@ -18,6 +18,8 @@ import {
 } from 'src/common/helpers/settlement.core';
 import { parseDateFilterEnd, parseDateFilterStart, parseDateOnly } from 'src/common/helpers/date-only.helper';
 import {
+  INCOME_RECEIVED_CATEGORY_COLOR,
+  INCOME_RECEIVED_CATEGORY_NAME,
   RECEIVABLE_RECEIVED_CATEGORY_NAME,
   RECEIVABLE_RECEIVED_CATEGORY_COLOR,
   SYSTEM_CATEGORY_ICON,
@@ -304,13 +306,21 @@ export class ReceivablesService {
               continue;
             }
 
+            const categoryName =
+              receivable.incomeClassification === 'INCOME'
+                ? INCOME_RECEIVED_CATEGORY_NAME
+                : RECEIVABLE_RECEIVED_CATEGORY_NAME;
+            const categoryColor =
+              receivable.incomeClassification === 'INCOME'
+                ? INCOME_RECEIVED_CATEGORY_COLOR
+                : RECEIVABLE_RECEIVED_CATEGORY_COLOR;
             const category =
               await this.entityValidationService.findOrCreateSystemCategory(
                 tx,
                 userId,
-                RECEIVABLE_RECEIVED_CATEGORY_NAME,
+                categoryName,
                 SYSTEM_CATEGORY_ICON,
-                RECEIVABLE_RECEIVED_CATEGORY_COLOR,
+                categoryColor,
               );
 
             /*
