@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { DisclosureChevron } from '@/components/ui/disclosure-chevron'
+import { financialDrawerRowSurfaceClass } from '@/components/ui/financial-drawer-row-surface'
 import { cn } from '@/lib/utils'
 
 /**
@@ -174,8 +175,7 @@ export const ROW_ICON_CLASS =
   affordance dependia só do fundo do hover. `StatusListRow` (Orçamento) já
   trazia; estas não.
 */
-const ROW_SHELL_CLASS =
-  'group flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg px-0 py-3.5 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4 sm:px-2 sm:py-4'
+const ROW_SHELL_CLASS = financialDrawerRowSurfaceClass('interactive')
 
 /*
   ── Quando existe um controle independente à esquerda ──
@@ -188,8 +188,7 @@ const ROW_SHELL_CLASS =
   mesma coisa. O `group` mora no wrapper para o chevron reagir ao hover da
   linha inteira, incluindo a passagem sobre o círculo.
 */
-const ROW_SHELL_OUTER_CLASS =
-  'group flex w-full min-w-0 items-center gap-3 rounded-lg px-0 py-3.5 transition-colors hover:bg-muted/30 sm:gap-4 sm:px-2 sm:py-4'
+const ROW_SHELL_OUTER_CLASS = financialDrawerRowSurfaceClass('withLeadingAction')
 
 /*
   O botão principal dentro do wrapper: sem padding vertical próprio (já veio
@@ -197,8 +196,7 @@ const ROW_SHELL_OUTER_CLASS =
   deste controle e não da linha.
 */
 /* O mesmo alvo, quando a row tem um controle independente ao lado. */
-const ROW_SHELL_INNER_CLASS =
-  'flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4'
+const ROW_SHELL_INNER_CLASS = financialDrawerRowSurfaceClass('leadingActionTarget')
 
 export interface FinancialListRowProps {
   /**

@@ -141,7 +141,7 @@ export function BudgetDrilldownDrawer({
       setSettlementTarget(null)
       toast.success('Item marcado como resolvido')
     },
-    onError: () => toast.error('NÃ£o foi possÃ­vel concluir o acerto.'),
+    onError: () => toast.error('Não foi possível concluir o acerto.'),
   })
 
   if (!activeBucket) return null
@@ -178,13 +178,9 @@ export function BudgetDrilldownDrawer({
           )}
           {items.length > 0 ? (
             <>
-
-                <div className="mx-5 mt-8 hidden">
-                  <h3 className="text-sm font-medium">Movimentações</h3>
-                </div>
-                <div className="mx-5 mt-8">
-                  <h3 className="text-sm font-medium">{drilldownSectionHeading(activeBucket)}</h3>
-                </div>
+              <div className="mx-5 mt-8">
+                <h3 className="text-sm font-medium">{drilldownSectionHeading(activeBucket)}</h3>
+              </div>
               <div className="mt-2 divide-y divide-border/60 px-5">
                 {items.map((item) => (
                   <BudgetDrilldownItemRow
@@ -303,6 +299,7 @@ export function BudgetDrilldownDrawer({
       )}
       {selectedInvoice && (
         <InvoiceDetailsDrawer
+          key={`invoice:${selectedInvoice.id}`}
           invoiceId={selectedInvoice.id}
           bankId={selectedInvoice.bankId}
           open

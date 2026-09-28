@@ -332,13 +332,11 @@ describe('o drawer aplica a policy', () => {
   })
 
   it('o card é informacional e o CTA vive no heading de Em aberto', () => {
-    const cardStart = DRAWER.indexOf(
-      'className="mx-4 rounded-xl bg-muted/40 p-4"',
+    const card = DRAWER.slice(
+      DRAWER.indexOf('<DrawerSummaryCard'),
+      DRAWER.indexOf('<DrawerSummaryCard') + 1800,
     )
-    const headerStart = DRAWER.indexOf(
-      'className="h-auto flex-wrap border-0 px-4 py-2.5"',
-    )
-    const card = DRAWER.slice(cardStart, headerStart)
+    const headerStart = DRAWER.indexOf('<DrawerSectionHeader')
     const header = DRAWER.slice(headerStart, headerStart + 2200)
 
     expect(card).not.toContain('Quitar tudo')
@@ -352,7 +350,7 @@ describe('o drawer aplica a policy', () => {
   })
 
   it('a nota de conclusão usa o verde de sucesso', () => {
-    expect(DRAWER).toContain('text-paid')
+    expect(ler('../components/ui/drawer-section.tsx')).toContain('text-paid')
   })
 })
 

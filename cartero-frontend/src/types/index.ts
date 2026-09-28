@@ -235,6 +235,8 @@ export interface Invoice {
   reimbursable?: number
   /** `totalAmount − reimbursable`: o que sai do bolso do usuário. */
   ownAmount?: number
+  /** Presente no detalhe da fatura; ausente em listagens e nulo para legados. */
+  settlement?: { paidAt: string } | null
   bank?: Bank
   transactions?: Transaction[]
   createdAt: string

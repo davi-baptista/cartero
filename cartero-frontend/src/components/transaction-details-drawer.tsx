@@ -17,12 +17,18 @@ export function TransactionDetailsDrawer({
   onClose,
   onEdit,
   onDelete,
+  invoicePeriodFormatter,
+  showInvoiceSettlement = true,
 }: {
   transaction: Transaction
   siblings?: Transaction[]
   onClose: () => void
   onEdit?: (transaction: Transaction) => void
   onDelete?: (transaction: Transaction) => void
+  /** Optional consumer formatting for compatibility with existing invoice labels. */
+  invoicePeriodFormatter?: (invoice: NonNullable<Transaction['invoice']>) => string | null
+  /** Preserve consumer-specific visibility of the related settlement invoice. */
+  showInvoiceSettlement?: boolean
 }) {
   const Icon = transaction.category?.icon
     ? resolveCategoryIcon(transaction.category.icon).Icon
@@ -62,8 +68,8 @@ export function TransactionDetailsDrawer({
         {transaction.person && <DetailRow label="Cobrança"><span className="text-receivable">A receber de {transaction.person.name}</span></DetailRow>}
         {installment && <DetailRow label="Parcelamento">{metadata?.index ? `Parcela ${metadata.index} de ${metadata.count}` : 'Parcelado'}</DetailRow>}
         {total !== null && <DetailRow label="Total da compra"><span className="tabular-nums">{formatCurrency(total)}</span><span className="ml-1 text-muted-foreground">· {metadata?.count} parcelas</span></DetailRow>}
-        {transaction.invoice && <DetailRow label="Fatura">{`${transaction.invoice.month}/${transaction.invoice.year}`}</DetailRow>}
-        {transaction.invoiceSettlement && <DetailRow label="Fatura">{`${transaction.invoiceSettlement.invoice.month}/${transaction.invoiceSettlement.invoice.year}`}</DetailRow>}
+        {transaction.invoice && <DetailRow label="Fatura">{invoicePeriodFormatter?.(transaction.invoice) ?? `${transaction.invoice.month}/${transaction.invoice.year}`}</DetailRow>}
+        {showInvoiceSettlement && transaction.invoiceSettlement && <DetailRow label="Fatura">{`${transaction.invoiceSettlement.invoice.month}/${transaction.invoiceSettlement.invoice.year}`}</DetailRow>}
         {transaction.description && <DetailRow label="Descrição" align="start"><span className="whitespace-pre-wrap">{transaction.description}</span></DetailRow>}
       </dl>
     </DetailDrawer>

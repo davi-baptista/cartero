@@ -51,6 +51,29 @@ export const DETAIL_PARAMS = [
 
 export type DetailParam = (typeof DETAIL_PARAMS)[number]
 
+export type PendingDetailOpen = {
+  id: string
+  fromId: string | null
+}
+
+/** The requested target wins while the router still exposes the prior URL. */
+export function resolveDetailOpenId(
+  paramId: string | null,
+  dismissedNow: boolean,
+  pending: PendingDetailOpen | null,
+): string | null {
+  if (pending?.fromId === paramId) return pending.id
+  return dismissedNow ? null : paramId
+}
+
+/** Retire an open intent as soon as the URL advances away from its origin. */
+export function reconcilePendingDetailOpen(
+  paramId: string | null,
+  pending: PendingDetailOpen | null,
+): PendingDetailOpen | null {
+  return pending?.fromId === paramId ? pending : null
+}
+
 /**
  * A query string com o detalhe aberto.
  *
@@ -134,12 +157,17 @@ export function detailHref(
  *
  *   1. `window.history.replaceState` reescreve a URL de fato, sem passar pelo
  *      cache de rota. É a mesma primitive que o router usa por baixo;
- *   2. o `openId` ganha estado próprio, para a UI não depender de o
- *      `useSearchParams` reagir a uma navegação que o Next pode engolir.
+ *   2. uma abertura registra temporariamente o ID solicitado enquanto o
+ *      `useSearchParams` ainda expõe a URL anterior; assim, uma dispensa
+ *      anterior não reexibe a entidade que acabou de ser fechada.
  *
  * O histórico continua correto: `replaceState` SUBSTITUI a entrada atual, sem
  * empilhar. O Back logo após fechar leva ao que havia antes do detalhe, nunca
  * de volta a ele.
+ *
+ * A intenção pendente é descartada quando o param muda; depois da transição,
+ * a URL volta a ser a única autoridade e Back/Forward não recupera um target
+ * antigo.
  *
  * `router.back()` continua fora: quem chegou por link direto não tem entrada
  * anterior no Cartero, e o mandaria para fora do app.
@@ -194,6 +222,13 @@ export function useDetailNavigation(key: DetailParam) {
     geracao: number
   } | null>(null)
   const [pedidos, setPedidos] = useState(0)
+  const [pendingOpen, setPendingOpen] = useState<PendingDetailOpen | null>(null)
+  const [observedParamId, setObservedParamId] = useState(paramId)
+
+  if (observedParamId !== paramId) {
+    setObservedParamId(paramId)
+    setPendingOpen((current) => reconcilePendingDetailOpen(paramId, current))
+  }
 
   /*
     Fechado quando a dispensa é do MESMO id e nenhuma abertura veio depois.
@@ -202,9 +237,10 @@ export function useDetailNavigation(key: DetailParam) {
   */
   const dispensadoAgora =
     dispensa !== null && dispensa.id === paramId && pedidos <= dispensa.geracao
-  const openId = dispensadoAgora ? null : paramId
+  const openId = resolveDetailOpenId(paramId, dispensadoAgora, pendingOpen)
 
   const open = (id: string) => {
+    setPendingOpen({ id, fromId: paramId })
     setPedidos((n) => n + 1)
     router.push(
       detailHref(pathname, withDetailParam(searchParams, key, id)),
@@ -227,14 +263,19 @@ export function useDetailNavigation(key: DetailParam) {
       path: pathname,
       search: searchParams.toString(),
     })
-    if (new URLSearchParams(atual.search).get(key) === null) return
+    const idNaUrl = new URLSearchParams(atual.search).get(key)
+    const aberturaPendente = pendingOpen?.fromId === paramId ? pendingOpen : null
+    const idDispensado = aberturaPendente?.id ?? idNaUrl
+    if (idDispensado === null) return
+
+    setPendingOpen(null)
 
     /*
       A UI fecha AGORA, sem esperar navegação — é o que torna o X
       determinístico mesmo quando o Next descarta a atualização de rota.
     */
     setDispensa({
-      id: new URLSearchParams(atual.search).get(key),
+      id: idDispensado,
       geracao: pedidos,
     })
 

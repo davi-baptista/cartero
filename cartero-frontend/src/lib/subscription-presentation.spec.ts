@@ -6,6 +6,14 @@ const subscriptions = readFileSync(
   resolve(__dirname, '../app/(dashboard)/subscriptions/page.tsx'),
   'utf8',
 )
+const subscriptionDrawer = readFileSync(
+  resolve(__dirname, '../app/(dashboard)/subscriptions/subscription-detail-drawer.tsx'),
+  'utf8',
+)
+const detailDrawerPrimitive = readFileSync(
+  resolve(__dirname, '../components/ui/detail-drawer.tsx'),
+  'utf8',
+)
 
 describe('subscription amount presentation', () => {
   it('uses neutral amounts in both row variants and the monthly total', () => {
@@ -21,5 +29,13 @@ describe('subscription amount presentation', () => {
     expect(subscriptions).toContain("formatCurrency, formatDate, TRANSACTION_TYPE_LABELS")
     expect(subscriptions).toContain("inactive && 'opacity-55'")
     expect(subscriptions).toContain('Pausada')
+  })
+
+  it('keeps the detail amount neutral while preserving its sign and value', () => {
+    expect(subscriptionDrawer).toContain('<DetailAmount label="Valor por cobrança">')
+    expect(subscriptionDrawer).toContain('className={ROW_AMOUNT_CLASS}')
+    expect(subscriptionDrawer).not.toContain('ROW_AMOUNT_TONE.out')
+    expect(subscriptionDrawer).toContain('−{formatCurrency(Number(subscription.amount))}')
+    expect(detailDrawerPrimitive).toContain('<div className="mt-1 text-foreground">{children}</div>')
   })
 })

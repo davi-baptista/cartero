@@ -33,7 +33,6 @@ import {
   CalendarDays,
   Plus,
   Minus,
-  X,
 } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { ROW_AMOUNT_CLASS } from '@/components/ui/financial-list-row'
@@ -71,10 +70,6 @@ import { apiErrorDetail, apiErrorMessage, isApiErrorCode } from '@/lib/api-error
 import {
   Sheet,
   SheetContent,
-  SheetClose,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
 } from '@/components/ui/sheet'
 import {
   Dialog,
@@ -111,10 +106,21 @@ import {
 } from '@/lib/person-competence-card'
 import { accountCivilDayOf, accountToday } from '@/lib/date'
 import {
-  DRAWER_SECTION_INSET,
+  DrawerCompletionStatus,
+  DrawerFinancialList,
+  DrawerSectionGroup,
+  DrawerSummaryCard,
   DrawerSectionEmpty,
   DrawerSectionHeader,
+  DrawerSectionTitle,
+  DrawerSummaryLabel,
+  DrawerSummaryValue,
 } from '@/components/ui/drawer-section'
+import { DrawerIdentityHeader } from '@/components/ui/drawer-identity-header'
+import {
+  DRAWER_WIDTH_WIDE,
+  DRAWER_WIDE_VERTICAL_RHYTHM,
+} from '@/components/ui/drawer-layout'
 import {
   dueLabel,
   dueContext,
@@ -182,7 +188,15 @@ function StatementRow({
       <FinancialListRow
         onView={onView}
         ariaLabel={`Ver detalhes de ${item.title}`}
-        leading={<FinancialAvatar />}
+        leadingAction={
+          item.isPaid ? undefined : (
+            <FinancialAvatar
+              onClick={onToggle}
+              ariaLabel={isReceivable ? 'Marcar como recebido' : 'Marcar como paga'}
+            />
+          )
+        }
+        leading={item.isPaid ? <FinancialAvatar /> : undefined}
         title={
           <span className={cn(item.isPaid && 'text-muted-foreground')}>
             {item.title}
@@ -221,8 +235,7 @@ function StatementRow({
     */
     <div
       className={cn(
-        DRAWER_SECTION_INSET,
-        'flex items-center gap-2.5 border-b border-border py-2.5 last:border-b-0',
+        'flex items-center gap-2.5 py-2.5',
       )}
     >
       {!onView && <FinancialAvatar
@@ -1107,42 +1120,29 @@ export function PersonStatementDrawer({
   return (
     <>
       <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="flex w-full flex-col sm:max-w-lg" showCloseButton={false}>
-        <SheetHeader className="px-6 pt-6 pb-0">
-          <div className="flex min-w-0 items-start gap-3">
-            <SheetTitle className="min-w-0 flex-1 break-words">{person?.name}</SheetTitle>
-            <div className="ml-auto flex shrink-0 items-start gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger className={buttonVariants({ variant: 'default', size: 'sm', className: 'shrink-0 gap-1.5' })}>
-                  <FileText className="size-3.5" />
-                  Extrato
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-48">
-                  <DropdownMenuItem onClick={downloadStatementPdf}>
-                    <Download className="size-3.5" />
-                    Baixar PDF
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={shareStatementPdf}>
-                    <Share2 className="size-3.5" />
-                    Compartilhar PDF
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <SheetClose
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="size-8 shrink-0 p-0"
-                    aria-label="Fechar drawer"
-                  />
-                }
-              >
-                <X className="size-4" />
-              </SheetClose>
-            </div>
-          </div>
-          <SheetDescription>Extrato consolidado de dívidas e cobranças</SheetDescription>
+      <SheetContent side="right" className={cn('flex w-full flex-col', DRAWER_WIDTH_WIDE, DRAWER_WIDE_VERTICAL_RHYTHM.headerContentGap)} showCloseButton={false}>
+        <DrawerIdentityHeader
+          title={person?.name}
+          description="Extrato consolidado de dívidas e cobranças"
+          action={(
+            <DropdownMenu>
+              <DropdownMenuTrigger className={buttonVariants({ variant: 'default', size: 'sm', className: 'shrink-0 gap-1.5' })}>
+                <FileText className="size-3.5" />
+                Extrato
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-48">
+                <DropdownMenuItem onClick={downloadStatementPdf}>
+                  <Download className="size-3.5" />
+                  Baixar PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={shareStatementPdf}>
+                  <Share2 className="size-3.5" />
+                  Compartilhar PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        />
           {/*
             A ação de adicionar saiu daqui para o cabeçalho de "Em aberto".
 
@@ -1151,7 +1151,6 @@ export function PersonStatementDrawer({
             afeta. No topo, ocupava uma faixa inteira do painel para uma ação
             que a seção já contextualiza.
           */}
-        </SheetHeader>
 
         {/*
           ── O scroller NÃO tem padding horizontal ──
@@ -1162,10 +1161,10 @@ export function PersonStatementDrawer({
 
           Fatura sempre fez o contrário — scroller neutro, padding aplicado
           por seção —, e é o que permite as faixas irem de ponta a ponta com
-          só o conteúdo recuado. `DRAWER_SECTION_INSET` é a autoridade desse
+          só o conteúdo recuado. `DRAWER_WIDE_CONTENT_INSET` é a autoridade desse
           recuo agora.
         */}
-        <div className="flex flex-1 flex-col gap-5 overflow-y-auto pt-4 pb-5">
+        <div className={cn('flex flex-1 flex-col overflow-y-auto pb-5', DRAWER_WIDE_VERTICAL_RHYTHM.sectionTopGap)}>
           {/*
             UM seletor governa tudo: card, lista em aberto e histórico.
 
@@ -1234,8 +1233,8 @@ export function PersonStatementDrawer({
                 MESMO recuo das seções: antes ele herdava o `px-6` do scroller
                 e somava o próprio `px-4`, duas camadas para o mesmo respiro.
               */}
-              <div className="mx-4 rounded-xl bg-muted/40 p-4">
-                <p className="text-xs font-medium text-muted-foreground">
+              <DrawerSummaryCard>
+                <DrawerSummaryLabel>
                   {/*
                     O título nomeia o que o número É: "Saldo a receber" com
                     pendência, "Saldo final do mês" quando tudo foi liquidado.
@@ -1243,7 +1242,7 @@ export function PersonStatementDrawer({
                     os dois se contradizerem.
                   */}
                   {cardCompetencia.label}
-                </p>
+                </DrawerSummaryLabel>
                 {/*
                   Neutro, como em Bancos e no Orçamento.
 
@@ -1252,10 +1251,10 @@ export function PersonStatementDrawer({
                   verde colidia com o verde de "quitado", e a direção já está
                   no sinal e na composição abaixo.
                 */}
-                <p className="mt-1 text-2xl font-semibold tabular-nums tracking-[-0.02em]">
+                <DrawerSummaryValue tracking="tight">
                   {competenceCardSign(cardCompetencia)}
                   {formatCurrency(Math.abs(cardCompetencia.net))}
-                </p>
+                </DrawerSummaryValue>
 
                 {cardCompetencia.mode !== 'empty' && (
                   <>
@@ -1275,10 +1274,7 @@ export function PersonStatementDrawer({
                         </span>
                       </div>
                       {cardCompetencia.settledNote && (
-                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-paid">
-                          <Check className="size-3.5" aria-hidden />
-                          {cardCompetencia.settledNote}
-                        </span>
+                        <DrawerCompletionStatus>{cardCompetencia.settledNote}</DrawerCompletionStatus>
                       )}
                     </div>
 
@@ -1308,7 +1304,7 @@ export function PersonStatementDrawer({
                     )}
                   </>
                 )}
-              </div>
+              </DrawerSummaryCard>
 
               {/*
                 ── Em aberto ──
@@ -1317,7 +1313,7 @@ export function PersonStatementDrawer({
                 vencem nela e o carry-over ainda aberto. Sem chips — a
                 competência já é o filtro.
               */}
-              <div>
+              <DrawerSectionGroup>
                 {/*
                   ── O cabeçalho é CONSTANTE ──
 
@@ -1334,15 +1330,13 @@ export function PersonStatementDrawer({
                   tamanho entre uma competência aberta e uma quitada.
                 */}
                 <DrawerSectionHeader
-                  className="h-auto flex-wrap border-0 px-4 py-2.5"
+                  className={cn('h-auto flex-wrap border-0 px-4', DRAWER_WIDE_VERTICAL_RHYTHM.sectionHeadingPadding)}
                   title={
-                    <span className="text-sm font-medium text-foreground">
-                      Em aberto
-                      <span className="ml-1 text-xs font-normal text-muted-foreground">
-                        · {monthSummary.itemCount}{' '}
-                        {monthSummary.itemCount === 1 ? 'item' : 'itens'}
-                      </span>
-                    </span>
+                    <DrawerSectionTitle
+                      title="Em aberto"
+                      count={monthSummary.itemCount}
+                      className="text-sm font-medium text-foreground"
+                    />
                   }
                   action={
                   <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -1390,16 +1384,11 @@ export function PersonStatementDrawer({
                 />
 
                 {monthSummary.itemCount === 0 ? (
-                  <DrawerSectionEmpty>
+                  <DrawerSectionEmpty className={DRAWER_WIDE_VERTICAL_RHYTHM.sectionEmptyPadding}>
                     Nenhum valor em aberto para esta competência.
                   </DrawerSectionEmpty>
                 ) : (
-                  <div
-                    className={cn(
-                      DRAWER_SECTION_INSET,
-                      'mt-2 divide-y divide-border/60',
-                    )}
-                  >
+                  <DrawerFinancialList inset>
                     {monthReceivables.map((r) => (
                       <StatementRow
                         key={r.id}
@@ -1424,9 +1413,9 @@ export function PersonStatementDrawer({
                         onDelete={() => handleDeleteDebt(d)}
                       />
                     ))}
-                  </div>
+                  </DrawerFinancialList>
                 )}
-              </div>
+              </DrawerSectionGroup>
 
               {/*
                 ── Histórico ──
@@ -1435,7 +1424,7 @@ export function PersonStatementDrawer({
                 Itens resolvidos, arquivados por `referenceMonth` — a competência a
                 que o acerto pertence, não o mês em que o dinheiro se moveu.
               */}
-              <div>
+              <DrawerSectionGroup>
                 {/*
                   A MESMA faixa de "Em aberto", sem ação à direita.
 
@@ -1445,24 +1434,18 @@ export function PersonStatementDrawer({
                   meio do drawer.
                 */}
                 <DrawerSectionHeader
-                  className="h-auto border-0 px-4 py-2.5"
+                  className={cn('h-auto border-0 px-4', DRAWER_WIDE_VERTICAL_RHYTHM.sectionHeadingPadding)}
                   title={<span className="text-sm font-medium text-foreground">Histórico</span>}
                 />
 
                 {historyReceivables.length === 0 &&
                 historyDebts.length === 0 ? (
                   /* Histórico vazio ≠ nada em aberto: universos diferentes. */
-                  <DrawerSectionEmpty>
+                  <DrawerSectionEmpty className={DRAWER_WIDE_VERTICAL_RHYTHM.sectionEmptyPadding}>
                     Nenhum item resolvido neste período.
                   </DrawerSectionEmpty>
                 ) : (
-                  <div>
-                  <div
-                    className={cn(
-                      DRAWER_SECTION_INSET,
-                      'mt-2 divide-y divide-border/60',
-                    )}
-                  >
+                  <DrawerFinancialList inset>
                     {historyReceivables.map((r) => (
                       <StatementRow
                         key={r.id}
@@ -1497,10 +1480,9 @@ export function PersonStatementDrawer({
                         }
                       />
                     ))}
-                  </div>
-                </div>
+                  </DrawerFinancialList>
                 )}
-              </div>
+              </DrawerSectionGroup>
 
               {/*
                 ── NÃO existe um vazio global depois das seções ──

@@ -26,10 +26,12 @@ import { describe, expect, it } from 'vitest'
 const ler = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf-8')
 
 const PRIMITIVE = ler('../components/ui/financial-list-row.tsx')
+const ROW_SURFACE = ler('../components/ui/financial-drawer-row-surface.ts')
 const AVATAR = ler('../components/ui/financial-avatar.tsx')
 const SHELL = ler('../components/ui/detail-drawer.tsx')
 
 const EXTRATO = ler('../app/(dashboard)/transactions/page.tsx')
+const TRANSACTION_DETAILS = ler('../components/transaction-details-drawer.tsx')
 const BANCOS = ler('../app/(dashboard)/banks/page.tsx')
 const DIVIDAS = ler('../app/(dashboard)/debts/page.tsx')
 const RECEBER = ler('../app/(dashboard)/receivables/page.tsx')
@@ -73,9 +75,10 @@ describe('itens 3 e 5: uma fonte para a anatomia', () => {
       numa página é exatamente como a divergência voltaria — e desta vez sem
       ninguém notar, porque as telas pareceriam iguais no dia da mudança.
     */
-    const GEOMETRIA = 'py-3.5 text-left outline-none transition-colors'
+    const GEOMETRIA = 'px-0 py-3.5 text-left outline-none transition-colors'
 
-    expect(PRIMITIVE).toContain(GEOMETRIA)
+    expect(ROW_SURFACE).toContain('interactive: cn(')
+    expect(ROW_SURFACE).toContain(GEOMETRIA)
     for (const [nome, fonte] of Object.entries(LISTAS)) {
       expect(code(fonte), `${nome} não deveria repetir a geometria`).not.toContain(
         GEOMETRIA,
@@ -443,9 +446,11 @@ describe('O1: o detalhe é um painel lateral', () => {
       A asserção é invertida em relação à de O1: agora falha se Transaction
       voltar a montar um diálogo próprio para o detalhe.
     */
-    expect(EXTRATO).toContain('<DetailDrawer')
+    expect(EXTRATO).toContain('<TransactionDetailsDrawer')
+    expect(code(EXTRATO)).not.toContain('<DetailDrawer')
     expect(code(EXTRATO)).not.toContain('<DialogContent')
     expect(code(EXTRATO)).not.toContain("from '@/components/ui/dialog'")
+    expect(TRANSACTION_DETAILS).toContain('<DetailDrawer')
   })
 
   it('a lógica de parcelamento NÃO subiu para a casca', () => {
@@ -453,8 +458,9 @@ describe('O1: o detalhe é um painel lateral', () => {
       `seriesInfo` já era calculado antes do markup, então a migração foi
       estrutural: a casca continua sem saber o que é uma transação.
     */
-    expect(EXTRATO).toContain('const seriesInfo')
-    expect(EXTRATO).toContain("transaction.parentId ?? transaction.id")
+    expect(EXTRATO).not.toContain('const seriesInfo')
+    expect(TRANSACTION_DETAILS).toContain('const series = siblings.filter')
+    expect(TRANSACTION_DETAILS).toContain('transaction.parentId ?? transaction.id')
 
     for (const dominio of ['seriesInfo', 'installment', 'parentId', 'invoice']) {
       expect(code(SHELL), `casca não deveria conhecer ${dominio}`).not.toContain(
@@ -479,7 +485,7 @@ describe('O1: o detalhe é um painel lateral', () => {
 
     /* Nenhum detalhe recria a grade nem o markup de campo. */
     for (const [nome, fonte] of [
-      ['Extrato', EXTRATO],
+      ['Transaction detail', TRANSACTION_DETAILS],
       ['Dívida', DRAWER_DIVIDA],
       ['Cobrança', DRAWER_RECEBER],
       ['Assinatura', DRAWER_ASSINATURA],
@@ -490,6 +496,7 @@ describe('O1: o detalhe é um painel lateral', () => {
       )
       expect(code(fonte), `${nome} recriou o campo`).not.toContain('<dt ')
     }
+    expect(code(EXTRATO)).not.toContain('<DetailRow')
   })
 
   it('o variant de alinhamento é VISUAL, não de domínio', () => {
@@ -522,7 +529,6 @@ describe('O1: o detalhe é um painel lateral', () => {
 
   it('os quatro detalhes de entidade usam a MESMA casca', () => {
     for (const [nome, fonte] of [
-      ['Extrato', EXTRATO],
       ['Dívida', DRAWER_DIVIDA],
       ['Cobrança', DRAWER_RECEBER],
       ['Assinatura', DRAWER_ASSINATURA],
@@ -531,6 +537,8 @@ describe('O1: o detalhe é um painel lateral', () => {
         '<DetailDrawer',
       )
     }
+    expect(EXTRATO).toContain('<TransactionDetailsDrawer')
+    expect(TRANSACTION_DETAILS).toContain('<DetailDrawer')
   })
 })
 

@@ -29,6 +29,7 @@ const code = (s: string) =>
   s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
 const EXTRATO = code(ler('../app/(dashboard)/transactions/page.tsx'))
+const TRANSACTION_DETAILS = code(ler('../components/transaction-details-drawer.tsx'))
 
 /*
   Recorta um bloco até a próxima linha em branco.
@@ -79,7 +80,8 @@ describe('a identidade do detalhe vem da URL', () => {
   })
 
   it('o painel é alimentado pela entidade resolvida, não por state', () => {
-    expect(EXTRATO).toContain('transaction={taskOpen ? null : detailEntity}')
+    expect(EXTRATO).toContain('{!taskOpen && detailEntity && (')
+    expect(EXTRATO).toContain('transaction={detailEntity}')
   })
 
   it('link direto e refresh resolvem por id; o clique usa a lista', () => {
@@ -92,7 +94,7 @@ describe('a identidade do detalhe vem da URL', () => {
   })
 
   it('fechar o painel usa o fechamento explícito da foundation', () => {
-    expect(EXTRATO).toContain('if (!open) detail.close()')
+    expect(EXTRATO).toContain('onClose={() => detail.close()}')
   })
 })
 
@@ -350,12 +352,32 @@ describe('a exclusão só limpa a URL quando dá certo', () => {
 
 describe('os primitivos continuam sem saber de rota', () => {
   it('o painel recebe a transação por prop', () => {
-    const dialog = EXTRATO.slice(EXTRATO.indexOf('function TransactionDetailsDialog'))
-    const assinatura = dialog.slice(0, dialog.indexOf('}) {'))
+    const usage = EXTRATO.slice(EXTRATO.indexOf('<TransactionDetailsDrawer'))
+    const assinatura = TRANSACTION_DETAILS.slice(
+      TRANSACTION_DETAILS.indexOf('export function TransactionDetailsDrawer'),
+      TRANSACTION_DETAILS.indexOf('}) {'),
+    )
 
-    expect(assinatura).toContain('transaction: Transaction | null')
-    expect(assinatura).not.toContain('transactionId')
-    expect(assinatura).not.toContain('useRouter')
+    expect(usage).toContain('transaction={detailEntity}')
+    expect(usage).toContain('onClose={() => detail.close()}')
+    expect(assinatura).toContain('transaction: Transaction')
+    expect(TRANSACTION_DETAILS).not.toContain('transactionId')
+    expect(TRANSACTION_DETAILS).not.toContain('useRouter')
+  })
+
+  it('o Extrato usa o mesmo detalhe e preserva seu rótulo de fatura', () => {
+    expect(EXTRATO).not.toContain('TransactionDetailsDialog')
+    expect(EXTRATO).not.toContain('<DetailRow')
+    expect(EXTRATO).toContain('invoicePeriodFormatter={')
+    expect(EXTRATO).toContain(': formatInvoicePeriod')
+    expect(EXTRATO).toContain('showInvoiceSettlement={Boolean(detailEntity.personSettlementGroupId)}')
+    expect(TRANSACTION_DETAILS).toContain('invoicePeriodFormatter?.(transaction.invoice)')
+    expect(TRANSACTION_DETAILS).toContain('showInvoiceSettlement = true')
+    expect(TRANSACTION_DETAILS).toContain('showInvoiceSettlement && transaction.invoiceSettlement')
+    expect(TRANSACTION_DETAILS).toContain('<DetailRow label="Natureza">')
+    expect(TRANSACTION_DETAILS).toContain('<DetailRow label="Banco">')
+    expect(TRANSACTION_DETAILS).toContain('<DetailRow label="Categoria">')
+    expect(TRANSACTION_DETAILS).toContain('<DetailRow label="Descrição"')
   })
 
   it('a navegação fica no consumidor, nunca no primitivo de linha', () => {

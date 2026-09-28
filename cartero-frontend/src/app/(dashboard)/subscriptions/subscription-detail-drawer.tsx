@@ -13,10 +13,8 @@ import {
 } from '@/components/ui/detail-drawer'
 import {
   ROW_AMOUNT_CLASS,
-  ROW_AMOUNT_TONE,
 } from '@/components/ui/financial-list-row'
 import { bankDisplayName } from '@/lib/bank-display'
-import { cn } from '@/lib/utils'
 import {
   formatCurrency,
   formatDate,
@@ -108,8 +106,7 @@ export function SubscriptionDetailDrawer({
       }
     >
       <DetailAmount label="Valor por cobrança">
-        {/* Saída recorrente — mesma cor de gasto da row. */}
-        <span className={cn(ROW_AMOUNT_CLASS, ROW_AMOUNT_TONE.out)}>
+        <span className={ROW_AMOUNT_CLASS}>
           −{formatCurrency(Number(subscription.amount))}
         </span>
       </DetailAmount>

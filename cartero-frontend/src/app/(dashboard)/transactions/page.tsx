@@ -6,8 +6,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   Plus,
-  Pencil,
-  Trash2,
   TrendingUp,
   Search,
   X,
@@ -62,7 +60,6 @@ import { useDetailTaskAnchor } from '@/lib/use-detail-task-anchor'
 import { getBanks } from '@/services/banks.service'
 import { getCategories } from '@/services/categories.service'
 import { formatCurrency, formatDate, isExpense, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
-import { bankDisplayName } from '@/lib/bank-display'
 import {
   API_ERROR_CODES,
   apiErrorDetail,
@@ -71,12 +68,6 @@ import {
   isApiErrorCode,
 } from '@/lib/api-error'
 import { resolveCategoryIcon } from '@/lib/category-icons'
-import {
-  DETAIL_ACTION_CLASS,
-  DetailDrawer,
-  DetailFooter,
-  DetailRow,
-} from '@/components/ui/detail-drawer'
 import {
   FinancialListRow,
   ROW_AMOUNT_CLASS,
@@ -371,201 +362,6 @@ function InstallmentRow({
     </button>
   )
 }
-
-function TransactionDetailsDialog({
-  transaction,
-  siblings,
-  onOpenChange,
-  onEdit,
-  onDelete,
-}: {
-  transaction: Transaction | null
-  /**
-   * Transações já carregadas na tela, usadas para somar a série de um
-   * parcelamento. Evita uma requisição só para mostrar o total.
-   */
-  siblings: Transaction[]
-  onOpenChange: (open: boolean) => void
-  onEdit: (tx: Transaction) => void
-  onDelete: (tx: Transaction) => void
-}) {
-  if (!transaction) return null
-
-  // The API selects all scalar Transaction fields, including this nullable FK.
-  // Keep the original UI as a compatibility fallback for stale cached payloads.
-  if (transaction.personSettlementGroupId !== undefined) {
-    return (
-      <TransactionDetailsDrawer
-        transaction={transaction}
-        siblings={siblings}
-        onClose={() => onOpenChange(false)}
-        onEdit={onEdit}
-        onDelete={onDelete}
-      />
-    )
-  }
-
-  const categoryIcon = transaction.category
-    ? resolveCategoryIcon(transaction.category.icon).Icon
-    : null
-  const CategoryIcon = categoryIcon
-  const installment = belongsToInstallmentSeries(transaction)
-
-  /**
-   * Posição na série e total da compra.
-   *
-   * A série é agrupada por `parentId ?? id` — metadado estrutural, não o
-   * título. A posição ainda vem do sufixo porque é o único lugar onde ela
-   * existe hoje; a substituição definitiva da regex é fase estrutural.
-   *
-   * O total é a SOMA das parcelas presentes, nunca valor × quantidade: séries
-   * podem ter centavos diferentes entre parcelas. Fica `null` quando a lista
-   * carregada não contém a série inteira, para não exibir um total parcial
-   * como se fosse o da compra.
-   */
-  const seriesInfo = (() => {
-    if (!installment) return null
-
-    const metadata = installmentMetadata(transaction)
-    const count = metadata?.count ?? null
-    const position = metadata?.index?.toString()
-    const rootId = transaction.parentId ?? transaction.id
-    const series = siblings.filter(
-      (tx) => (tx.parentId ?? tx.id) === rootId,
-    )
-
-    const complete = count !== null && series.length === count
-    return {
-      position: position ?? '?',
-      count: count ?? series.length,
-      total: complete
-        ? series.reduce((sum, tx) => sum + tx.amount, 0)
-        : null,
-    }
-  })()
-
-  return (
-    /*
-      A MESMA casca de Dívida, Cobrança e Assinatura — painel lateral.
-
-      Aqui vivia um `DialogContent` central com bottom sheet no mobile, e foi
-      dele que a casca compartilhada nasceu: as duas eram quase idênticas
-      (`sm:max-w-md`, header `px-5 py-5 pr-12`, footer com safe-area). Este
-      era o último detalhe fora do padrão.
-
-      A lógica de parcelamento não se moveu: `seriesInfo` já era calculado
-      antes do markup, e a casca continua sem saber o que é uma transação.
-    */
-    <DetailDrawer
-      open
-      onOpenChange={onOpenChange}
-      title={transaction.title}
-      description={`${TRANSACTION_TYPE_LABELS[transaction.type]} · ${formatDate(transaction.date)}`}
-      footer={
-        <DetailFooter>
-          <Button
-            variant="outline"
-            className={DETAIL_ACTION_CLASS}
-            onClick={() => onEdit(transaction)}
-          >
-            <Pencil className="size-4" />
-            Editar
-          </Button>
-          <Button
-            variant="destructive"
-            className={DETAIL_ACTION_CLASS}
-            onClick={() => onDelete(transaction)}
-          >
-            <Trash2 className="size-4" />
-            Excluir
-          </Button>
-        </DetailFooter>
-      }
-    >
-        <div className="border-b border-border bg-muted/20 px-5 py-4">
-          {/* "Valor pago" não descrevia um estorno nem uma parcela; o rótulo
-              agora diz exatamente qual valor é este. */}
-          <p className="text-xs font-medium text-muted-foreground">
-            {installment ? 'Valor desta parcela' : 'Valor'}
-          </p>
-          <div className="mt-1">
-            <AmountDisplay amount={transaction.amount} type={transaction.type} isRefund={transaction.isRefund} />
-          </div>
-          {transaction.isRefund && (
-            <p className="mt-1 text-[11px] text-primary">
-              Estorno — reduz o total da fatura
-            </p>
-          )}
-        </div>
-
-        <dl className="divide-y divide-border px-5">
-          <DetailRow label="Natureza">
-            {transaction.type === TransactionType.INCOME ? 'Receita' : 'Gasto'}
-          </DetailRow>
-          {transaction.type !== TransactionType.INCOME && transaction.type !== TransactionType.INVOICE_PAYMENT && (
-            <DetailRow label="Forma de pagamento">
-              {TRANSACTION_TYPE_LABELS[transaction.type]}
-            </DetailRow>
-          )}
-          <DetailRow label="Banco">
-            {bankDisplayName(transaction.bank)}
-          </DetailRow>
-          <DetailRow label="Categoria">
-            <span className="flex min-w-0 items-center justify-end gap-1.5">
-              {CategoryIcon && (
-                <CategoryIcon
-                  aria-hidden="true"
-                  className="size-3.5 shrink-0"
-                  style={transaction.category?.color ? { color: transaction.category.color } : undefined}
-                />
-              )}
-              <span className="truncate">{transaction.category?.name ?? 'Não informada'}</span>
-            </span>
-          </DetailRow>
-          {/* Relação explícita: "Eva" sozinho não dizia o que ela é nesta
-              compra. */}
-          {transaction.person && (
-            <DetailRow label="Cobrança">
-              <span className="text-receivable">
-                A receber de {transaction.person.name}
-              </span>
-            </DetailRow>
-          )}
-          {installment && (
-            <DetailRow label="Parcelamento">
-              {seriesInfo
-                ? `Parcela ${seriesInfo.position} de ${seriesInfo.count}`
-                : 'Parcelado'}
-            </DetailRow>
-          )}
-          {/* Total da compra pela SOMA real das parcelas — nunca valor × N,
-              porque a série pode ter centavos diferentes entre parcelas. */}
-          {seriesInfo && seriesInfo.total !== null && (
-            <DetailRow label="Total da compra">
-              <span className="tabular-nums">
-                {formatCurrency(seriesInfo.total)}
-              </span>
-              <span className="ml-1 text-muted-foreground">
-                · {seriesInfo.count} parcelas
-              </span>
-            </DetailRow>
-          )}
-          {transaction.invoice && (
-            <DetailRow label="Fatura">
-              {formatInvoicePeriod(transaction.invoice)}
-            </DetailRow>
-          )}
-          {transaction.description && (
-            <DetailRow label="Descrição" align="start">
-              <span className="whitespace-pre-wrap">{transaction.description}</span>
-            </DetailRow>
-          )}
-        </dl>
-
-    </DetailDrawer>
-  )
-}
-
 
 function RowSkeleton() {
   return (
@@ -1394,23 +1190,17 @@ export default function TransactionsPage() {
       {/* Sheets & Dialogs */}
       {/* Enquanto uma tarefa está aberta o painel sai da tela, mas a URL
           continua apontando para a transação — é dela que o Cancelar volta. */}
-      {!taskOpen && detailEntity?.personSettlementGroupId ? (
+      {!taskOpen && detailEntity && (
         <TransactionDetailsDrawer
           transaction={detailEntity}
           siblings={transactions ?? []}
           onClose={() => detail.close()}
           onEdit={handleEdit}
           onDelete={handleDelete}
-        />
-      ) : (
-        <TransactionDetailsDialog
-          transaction={taskOpen ? null : detailEntity}
-          siblings={transactions ?? []}
-          onOpenChange={(open) => {
-            if (!open) detail.close()
-          }}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
+          invoicePeriodFormatter={
+            detailEntity.personSettlementGroupId ? undefined : formatInvoicePeriod
+          }
+          showInvoiceSettlement={Boolean(detailEntity.personSettlementGroupId)}
         />
       )}
 

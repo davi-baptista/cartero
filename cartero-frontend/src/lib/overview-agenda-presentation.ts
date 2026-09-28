@@ -14,6 +14,14 @@ function lowercaseInline(text: string): string {
   return text.length > 0 ? text.charAt(0).toLowerCase() + text.slice(1) : text
 }
 
+function timingStatusClass(text: string): string {
+  if (text === 'em atraso' || text.startsWith('venceu ')) return 'text-destructive'
+  if (/^(vence|fecha) (hoje|amanhã|em )/.test(text)) {
+    return 'text-pending'
+  }
+  return 'text-destructive'
+}
+
 function agendaIconKind(kind: CalEventKind, hasPerson: boolean): AgendaIconKind {
   if (hasPerson) return 'person'
   if (kind === 'invoice-due') return 'invoice'
@@ -35,9 +43,7 @@ export function resolveAgendaPresentation({
   const text = lowercaseInline(statusText)
   const statusClass = isSettled
     ? 'text-paid'
-    : text === 'vence hoje'
-      ? 'text-pending'
-      : 'text-destructive'
+    : timingStatusClass(text)
 
   return {
     iconKind: agendaIconKind(kind, hasPerson),

@@ -1,10 +1,9 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import type React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ChevronDown, CreditCard, Wallet, Receipt, FileText, TrendingUp, CheckCircle2, Loader2, Undo2, Plus, Pencil, Trash2, MoreVertical, Users } from 'lucide-react'
+import { ChevronDown, CreditCard, Wallet, Receipt, FileText, TrendingUp, CheckCircle2, Loader2, Undo2, Plus, Users } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { motion } from 'motion/react'
@@ -13,8 +12,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   Sheet,
   SheetContent,
-  SheetHeader,
-  SheetTitle,
 } from '@/components/ui/sheet'
 import {
   Dialog,
@@ -24,12 +21,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { TransactionSheet, type TransactionFormData } from '@/app/(dashboard)/transactions/transaction-sheet'
 import { InstallmentScopeDialog } from '@/app/(dashboard)/transactions/installment-scope-dialog'
 import {
@@ -66,12 +57,13 @@ import {
   invoiceBreakdown,
   invoiceComposition,
 } from '@/lib/invoice-composition'
-import { parseDateOnly, formatDateValue, todayDateValue } from '@/lib/date'
+import { accountCivilDayOf, parseDateOnly, formatDateValue, todayDateValue } from '@/lib/date'
+import { formatDate } from '@/lib/formatters'
 import { SettlementPaymentFields } from '@/components/settlement-payment-fields'
 import { useAuth } from '@/providers/auth-provider'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import {
-  INVOICE_STATUS_COLOR,
+  invoiceStatusConfig,
 } from '@/lib/invoice-status'
 import { invalidateInvoiceDependents } from '@/lib/invoice-dependent-queries'
 import {
@@ -86,16 +78,21 @@ import type { Transaction } from '@/types'
 import { InvoiceStatus, TransactionType, InstallmentScope } from '@/types'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { DrawerSectionHeader } from '@/components/ui/drawer-section'
-
-function statusHeaderStyle(status: InvoiceStatus): React.CSSProperties {
-  const c = INVOICE_STATUS_COLOR[status]
-  return { backgroundColor: `color-mix(in oklch, ${c} 10%, transparent)` }
-}
+import { DrawerCompletionStatus, DrawerFinancialList, DrawerOutlineCard, DrawerSectionGroup, DrawerSectionHeader, DrawerSectionTitle, DrawerSummaryCard, DrawerSummaryLabel, DrawerSummaryValue } from '@/components/ui/drawer-section'
+import {
+  DRAWER_WIDE_CONTENT_INSET,
+  DRAWER_WIDTH_WIDE,
+  DRAWER_WIDE_VERTICAL_RHYTHM,
+} from '@/components/ui/drawer-layout'
+import { DrawerIdentityHeader } from '@/components/ui/drawer-identity-header'
+import { FinancialAvatar } from '@/components/ui/financial-avatar'
+import { FinancialListRow, FinancialRowTrailing } from '@/components/ui/financial-list-row'
+import { financialDrawerRowSurfaceClass } from '@/components/ui/financial-drawer-row-surface'
+import { bankDisplayName } from '@/lib/bank-display'
+import { TransactionDetailsDrawer } from '@/components/transaction-details-drawer'
+import { invoiceForDetailId } from '@/lib/invoice-detail-state'
 
 const CATEGORY_CHART_LIMIT = 5
-
-const EXPENSE_BG = 'var(--color-expense-bg)'
 
 const TYPE_ICON: Record<TransactionType, LucideIcon> = {
   [TransactionType.INCOME]: TrendingUp,
@@ -105,10 +102,6 @@ const TYPE_ICON: Record<TransactionType, LucideIcon> = {
   [TransactionType.PIX]: Receipt,
   [TransactionType.BOLETO]: FileText,
 }
-
-const INCOME_COLOR = 'var(--color-income)'
-
-const INCOME_BG = 'var(--color-income-bg)'
 
 const INCOME_ICON_CLR = 'var(--color-income-icon)'
 
@@ -164,107 +157,31 @@ function capitalize(s: string) {
  * competência ao fechar.
  *
  * Extraído sem reescrever: já recebia `invoiceId` + `bankId` e resolvia as
- * próprias queries. `CategoryChart` e `TxRow` vieram junto porque só ele os
- * usa. Existe UMA implementação, consumida por Bancos e pelo Orçamento.
+ * próprias queries. `CategoryChart` e a adaptação `SharedTxRow` vieram junto
+ * porque só este drawer as usa. Existe UMA implementação, consumida por Bancos
+ * e pelo Orçamento.
  */
 
-function TxRow({
-  tx,
-  onEdit,
-  onDelete,
-}: {
-  tx: Transaction
-  /** Ausentes quando a fatura está paga — nada nela pode ser alterado. */
-  onEdit?: (tx: Transaction) => void
-  onDelete?: (tx: Transaction) => void
-}) {
+function SharedTxRow({ tx, onView }: { tx: Transaction; onView: () => void }) {
   const Icon = TYPE_ICON[tx.type]
   const expense = isExpense(tx.type, tx.isRefund)
-  const editable = Boolean(onEdit && onDelete)
+  const category = tx.category
+    ? (() => {
+        const { Icon: CategoryIcon } = resolveCategoryIcon(tx.category.icon)
+        return <span className="flex items-center gap-1"><CategoryIcon aria-hidden="true" className="size-3" style={tx.category.color ? { color: tx.category.color } : undefined} />{tx.category.name}</span>
+      })()
+    : null
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3.5">
-      <div
-        className="flex size-9 shrink-0 items-center justify-center rounded-xl"
-        style={{ backgroundColor: expense ? EXPENSE_BG : INCOME_BG }}
-      >
-        <Icon aria-hidden="true" className="size-4" style={{ color: expense ? EXPENSE_ICON_CLR : INCOME_ICON_CLR }} />
-      </div>
-
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-[13px] font-medium leading-tight">{tx.title}</span>
-        <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-          {tx.category && (() => {
-            const { Icon: CatIcon } = resolveCategoryIcon(tx.category.icon)
-            return (
-              <span className="flex shrink-0 items-center gap-1">
-                <CatIcon
-                  aria-hidden="true"
-                  className="size-3"
-                  style={tx.category.color ? { color: tx.category.color } : undefined}
-                />
-                <span>{tx.category.name}</span>
-              </span>
-            )
-          })()}
-          {tx.description && tx.category && (
-            <span aria-hidden className="text-muted-foreground/40">·</span>
-          )}
-          {tx.description && (
-            <span className="truncate italic pr-0.5">{tx.description}</span>
-          )}
-          {tx.person && (tx.category ?? tx.description) && (
-            <span aria-hidden className="text-muted-foreground/40">·</span>
-          )}
-          {tx.person && (
-            <span className="truncate shrink-0 text-receivable">
-              a receber de {tx.person.name}
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className={cn('shrink-0 text-right', editable && '-mr-1')}>
-        <span
-          className="text-sm font-semibold tabular-nums tracking-[-0.01em]"
-          style={{ color: expense ? undefined : INCOME_COLOR }}
-        >
-          {expense ? `−${formatCurrency(Number(tx.amount))}` : `+${formatCurrency(Number(tx.amount))}`}
-        </span>
-        {tx.date && (
-          <p className="mt-0.5 text-[10px] text-muted-foreground">
-            {format(parseDateOnly(tx.date), 'dd/MM', { locale: ptBR })}
-          </p>
-        )}
-      </div>
-
-      {editable && (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="shrink-0 text-muted-foreground"
-                aria-label={`Ações de ${tx.title}`}
-              />
-            }
-          >
-            <MoreVertical className="size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onEdit!(tx)}>
-              <Pencil className="size-3.5" />
-              Editar
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onDelete!(tx)} className="text-destructive">
-              <Trash2 className="size-3.5" />
-              Excluir
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-    </div>
+    <FinancialListRow
+      onView={onView}
+      ariaLabel={`Abrir transação ${tx.title}`}
+      leading={<FinancialAvatar icon={<Icon aria-hidden="true" className="size-4" style={{ color: expense ? EXPENSE_ICON_CLR : INCOME_ICON_CLR }} />} tone={expense ? 'expense' : 'income'} />}
+      title={tx.title}
+      meta={<>{category}{category && tx.person && <span aria-hidden>·</span>}{tx.person && <span className="text-receivable">a receber de {tx.person.name}</span>}</>}
+      belowMeta={tx.description ? <span className="truncate text-[11px] italic text-muted-foreground">{tx.description}</span> : undefined}
+      trailing={<FinancialRowTrailing amount={<>{expense ? '−' : '+'}{formatCurrency(Number(tx.amount))}</>} label={format(parseDateOnly(tx.date), 'dd/MM', { locale: ptBR })} />}
+    />
   )
 }
 
@@ -287,23 +204,23 @@ function CategoryChart({
   return (
     <section
       aria-label="Composição da fatura"
-      className="border-t border-border px-6 py-4"
+      className={DRAWER_WIDE_CONTENT_INSET}
     >
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h3 className="text-[11px] font-medium text-muted-foreground">
-          Composição da fatura
-        </h3>
-        {selectedCategory && (
-          <button
-            type="button"
-            onClick={() => onSelectCategory(null)}
-            className="text-[11px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
-          >
-            Limpar filtro
-          </button>
-        )}
-      </div>
-      <div className="flex flex-col gap-1">
+      <DrawerOutlineCard>
+        <DrawerSectionHeader
+          className="h-auto border-0 px-0 py-0"
+          title={<span className="text-sm font-medium text-foreground">Composição da fatura</span>}
+          action={selectedCategory ? (
+            <button
+              type="button"
+              onClick={() => onSelectCategory(null)}
+              className="text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+            >
+              Limpar filtro
+            </button>
+          ) : undefined}
+        />
+        <div className={cn(DRAWER_WIDE_VERTICAL_RHYTHM.outlineContentGap, 'flex flex-col gap-1')}>
         {slices.map((slice, i) => {
           /*
             O bucket de terceiros não é uma Category: usa ícone de pessoas e o
@@ -353,27 +270,28 @@ function CategoryChart({
             </button>
           )
         })}
-      </div>
+        </div>
 
-      {hiddenCount > 0 && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          className="mt-2 flex items-center gap-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ChevronDown
-            className={cn(
-              'size-3.5 shrink-0 transition-transform duration-200',
-              expanded && 'rotate-180',
-            )}
-            aria-hidden="true"
-          />
-          {expanded
-            ? 'Ver menos'
-            : `Ver mais ${hiddenCount} ${hiddenCount === 1 ? 'categoria' : 'categorias'}`}
-        </button>
-      )}
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="mt-2 flex items-center gap-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronDown
+              className={cn(
+                'size-3.5 shrink-0 transition-transform duration-200',
+                expanded && 'rotate-180',
+              )}
+              aria-hidden="true"
+            />
+            {expanded
+              ? 'Ver menos'
+              : `Ver mais ${hiddenCount} ${hiddenCount === 1 ? 'categoria' : 'categorias'}`}
+          </button>
+        )}
+      </DrawerOutlineCard>
     </section>
   )
 }
@@ -407,6 +325,7 @@ export function InvoiceDetailsDrawer({
     payload: Parameters<typeof updateTransaction>[1]
   } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null)
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null)
 
   /* Exclusão das parcelas em aberto — mesmo fluxo do Extrato. */
   const [openDeleteTarget, setOpenDeleteTarget] = useState<Transaction | null>(
@@ -430,11 +349,12 @@ export function InvoiceDetailsDrawer({
     setCategoryFilter(key && invoiceId ? { invoiceId, key } : null)
   }
 
-  const { data: invoice, isLoading } = useQuery({
+  const { data: invoiceQueryData, isLoading } = useQuery({
     queryKey: ['invoice', invoiceId],
     queryFn: () => getInvoice(invoiceId!),
     enabled: !!invoiceId,
   })
+  const invoice = invoiceForDetailId(invoiceQueryData, invoiceId)
 
   const markPaidMut = useMutation({
     mutationFn: () => markManyInvoicesPaid({ ids: [invoiceId!], paymentDate, ...(paymentBankId ? { bankId: paymentBankId } : {}) }),
@@ -623,6 +543,11 @@ export function InvoiceDetailsDrawer({
     invoice &&
     (invoice.status === InvoiceStatus.CLOSED || invoice.status === InvoiceStatus.OVERDUE)
   const isPaid = invoice?.status === InvoiceStatus.PAID
+  const isOverdue = invoice?.status === InvoiceStatus.OVERDUE
+  const paidAtLabel = invoice?.settlement?.paidAt
+    ? formatDate(accountCivilDayOf(invoice.settlement.paidAt, user?.timeZone ?? null))
+    : null
+  const overdueDateLabel = invoice && isOverdue ? formatDate(invoice.dueDate) : null
   /** Fatura paga é imutável: o total registrado tem de refletir o que foi pago. */
   const canEditTransactions = Boolean(invoice) && !isPaid
 
@@ -651,6 +576,7 @@ export function InvoiceDetailsDrawer({
    * diálogo consegue dizer quantas parcelas cada opção atinge e em quanto.
    */
   function handleEditTx(tx: Transaction) {
+    setSelectedTx(null)
     setEditTx(tx)
     setTxSheetOpen(true)
   }
@@ -661,6 +587,7 @@ export function InvoiceDetailsDrawer({
     diferentes é como a divergência começa.
   */
   function handleDeleteTx(tx: Transaction) {
+    setSelectedTx(null)
     if (belongsToSeries(tx)) {
       setOpenDeleteTarget(tx)
       return
@@ -761,12 +688,28 @@ export function InvoiceDetailsDrawer({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col p-0 sm:max-w-lg" showCloseButton>
+      <SheetContent side="right" className={cn('flex w-full flex-col p-0', DRAWER_WIDTH_WIDE, DRAWER_WIDE_VERTICAL_RHYTHM.headerContentGap)} showCloseButton={false}>
+        <DrawerIdentityHeader
+          title={invoice ? (invoice.bank?.isSystem ? 'Cartão' : bankDisplayName(invoice.bank, 'Cartão')) : <Skeleton className="h-6 w-36" />}
+          description={(
+            <span className="block truncate">
+              Fatura · {monthYear}
+            </span>
+          )}
+          action={canMarkPaid ? (
+            <Button size="sm" className="shrink-0 gap-1.5" onClick={() => { setPaymentDate(todayDateValue()); setPaymentBankId(''); setPaymentConfirm(true) }} disabled={markPaidMut.isPending}>
+              {markPaidMut.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+              Pagar
+            </Button>
+          ) : isPaid ? (
+            <Button size="sm" className="shrink-0 gap-1.5" onClick={() => setReopenConfirm(true)} disabled={reopenMut.isPending}>
+              {reopenMut.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Undo2 className="size-3.5" />}
+              Reabrir
+            </Button>
+          ) : undefined}
+        />
         {isLoading || !invoice ? (
           <div className="flex flex-1 flex-col">
-            <div className="border-b px-6 pb-4 pt-6">
-              <Skeleton className="h-7 w-40" />
-            </div>
             <div className="border-b px-6 py-4">
               <Skeleton className="h-3 w-24" />
               <Skeleton className="mt-2 h-8 w-36" />
@@ -778,60 +721,37 @@ export function InvoiceDetailsDrawer({
             </div>
           </div>
         ) : (
-          <>
-            {/* Header */}
-            <SheetHeader className="border-b px-6 pb-4 pt-6" style={statusHeaderStyle(invoice.status)}>
-              <SheetTitle className="text-lg font-semibold tracking-tight">
-                {monthYear}
-              </SheetTitle>
-            </SheetHeader>
-
-            {/* Total + action */}
-            <div className="flex items-center justify-between px-6 py-4">
-              <div>
-                <p className="text-xs text-muted-foreground">Total da fatura</p>
-                <p className={cn(
-                  'mt-1 text-[22px] font-semibold tabular-nums leading-none tracking-[-0.02em]',
-                  invoice.status === InvoiceStatus.OVERDUE && 'text-destructive',
-                  invoice.status === InvoiceStatus.PAID && 'text-paid',
-                )}>
-                  {formatCurrency(total)}
-                </p>
-                {reimbursableTotal > 0 && (
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    <span className="text-foreground/80">{formatCurrency(ownTotal)}</span> sua parte ·{' '}
-                    <span className="text-receivable">{formatCurrency(reimbursableTotal)}</span> de outras pessoas
-                  </p>
-                )}
+          <div className={cn('flex min-h-0 flex-1 flex-col', DRAWER_WIDE_VERTICAL_RHYTHM.sectionTopGap)}>
+            <DrawerSummaryCard>
+              <div className="flex items-start justify-between gap-3">
+                <DrawerSummaryLabel>Total da fatura</DrawerSummaryLabel>
+                {isPaid || isOverdue ? null : (() => {
+                  const status = invoiceStatusConfig(invoice.status)
+                  return <span className={cn('shrink-0 rounded-full px-1.5 py-0 text-[10px] font-medium', status.className)}>{status.label}</span>
+                })()}
               </div>
-              {canMarkPaid && (
-                <Button
-                  onClick={() => { setPaymentDate(todayDateValue()); setPaymentBankId(''); setPaymentConfirm(true) }}
-                  disabled={markPaidMut.isPending}
-                >
-                  {markPaidMut.isPending ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="size-3.5" />
-                  )}
-                  Marcar como paga
-                </Button>
+              <DrawerSummaryValue tracking="tight" className="text-foreground">
+                {formatCurrency(total)}
+              </DrawerSummaryValue>
+              {reimbursableTotal > 0 && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  <span className="text-foreground/80">{formatCurrency(ownTotal)}</span> sua parte ·{' '}
+                  <span className="text-receivable">{formatCurrency(reimbursableTotal)}</span> de outras pessoas
+                </p>
               )}
-              {isPaid && (
-                <Button
-                  variant="outline"
-                  onClick={() => setReopenConfirm(true)}
-                  disabled={reopenMut.isPending}
-                >
-                  {reopenMut.isPending ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Undo2 className="size-3.5" />
-                  )}
-                  Reabrir
-                </Button>
+              {isPaid && paidAtLabel && (
+                <div className="mt-3">
+                  <DrawerCompletionStatus variant="success">Paga em {paidAtLabel}</DrawerCompletionStatus>
+                </div>
               )}
-            </div>
+              {overdueDateLabel && (
+                <div className="mt-3">
+                  <DrawerCompletionStatus variant="destructive">
+                    Vencida desde {overdueDateLabel}
+                  </DrawerCompletionStatus>
+                </div>
+              )}
+            </DrawerSummaryCard>
 
             <CategoryChart
               transactions={invoice.transactions}
@@ -840,84 +760,72 @@ export function InvoiceDetailsDrawer({
             />
 
             {/* Transaction list */}
-            <div className="flex-1 overflow-y-auto">
-              {txs.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <div className="mb-3 flex size-11 items-center justify-center rounded-xl bg-muted/40">
-                    <Receipt className="size-5 text-muted-foreground/50" />
-                  </div>
-                  <p className="text-sm font-medium">Nenhuma transação</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {selectedCategory
-                      ? 'Nenhuma transação nesta categoria.'
-                      : 'Esta fatura não tem transações registradas.'}
-                  </p>
-                  {/* Sem o cabeçalho da lista, o botão precisa existir aqui —
-                      é justamente quando ele é mais útil. */}
-                  {canEditTransactions && !selectedCategory && (
+            <div className="subtle-scrollbar flex-1 overflow-y-auto">
+              <DrawerSectionGroup>
+                <DrawerSectionHeader
+                  className={cn('h-auto border-0 px-4', DRAWER_WIDE_VERTICAL_RHYTHM.sectionHeadingPadding)}
+                  title={(
+                    <DrawerSectionTitle
+                      title="Transações"
+                      count={txs.length}
+                      suffix={selectedCategory ? ` de ${txCount}` : undefined}
+                      className="text-sm font-medium text-foreground"
+                    />
+                  )}
+                  action={canEditTransactions && !selectedCategory ? (
                     <Button
-                      variant="outline"
+                      variant="default"
                       size="sm"
-                      className="mt-4"
-                      onClick={() => {
-                        setEditTx(null)
-                        setTxSheetOpen(true)
-                      }}
+                      className="h-7 cursor-pointer gap-1 px-2 text-[11px]"
+                      onClick={() => { setEditTx(null); setTxSheetOpen(true) }}
                     >
                       <Plus className="size-3.5" />
-                      Adicionar transação
+                      Adicionar
                     </Button>
-                  )}
-                </div>
-              ) : (
-                <>
-                  {/* O botão fica no cabeçalho da lista: é uma ação sobre ela,
-                      e uma faixa própria custava espaço num painel estreito. */}
-                  <DrawerSectionHeader
-                    title={
-                      <>
-                        Transações · {txs.length}
-                        {selectedCategory && ` de ${txCount}`}
-                      </>
-                    }
-                    action={
-                    canEditTransactions && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
-                        onClick={() => {
-                          setEditTx(null)
-                            setTxSheetOpen(true)
-                        }}
+                  ) : undefined}
+                />
+                {txs.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center px-4 py-16 text-center">
+                    <div className="mb-3 flex size-11 items-center justify-center rounded-xl bg-muted/40">
+                      <Receipt className="size-5 text-muted-foreground/50" />
+                    </div>
+                    <p className="text-sm font-medium">Nenhuma transação</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {selectedCategory
+                        ? 'Nenhuma transação nesta categoria.'
+                        : 'Esta fatura não tem transações registradas.'}
+                    </p>
+                  </div>
+                ) : (
+                  <DrawerFinancialList inset>
+                    {txs.map((tx, i) => (
+                      <motion.div
+                        key={tx.id}
+                        className={financialDrawerRowSurfaceClass('animatedWrapper')}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2, delay: Math.min(i, 12) * 0.03, ease: EASE_OUT_EXPO }}
                       >
-                        <Plus className="size-3.5" />
-                        Adicionar
-                      </Button>
-                    )
-                    }
-                  />
-                  {txs.map((tx, i) => (
-                    <motion.div
-                      key={tx.id}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.2, delay: Math.min(i, 12) * 0.03, ease: EASE_OUT_EXPO }}
-                      className="border-b border-border last:border-b-0"
-                    >
-                      <TxRow
-                        tx={tx}
-                        onEdit={canEditTransactions ? handleEditTx : undefined}
-                        onDelete={canEditTransactions ? handleDeleteTx : undefined}
-                      />
-                    </motion.div>
-                  ))}
-                </>
-              )}
+                        <SharedTxRow tx={tx} onView={() => setSelectedTx(tx)} />
+                      </motion.div>
+                    ))}
+                  </DrawerFinancialList>
+                )}
+              </DrawerSectionGroup>
             </div>
-          </>
+          </div>
         )}
       </SheetContent>
+
+      {selectedTx && (
+        <TransactionDetailsDrawer
+          transaction={selectedTx}
+          siblings={invoice?.transactions ?? []}
+          onClose={() => setSelectedTx(null)}
+          onEdit={canEditTransactions ? handleEditTx : undefined}
+          onDelete={canEditTransactions ? handleDeleteTx : undefined}
+        />
+      )}
 
       <Dialog open={reopenConfirm} onOpenChange={setReopenConfirm}>
         <DialogContent>

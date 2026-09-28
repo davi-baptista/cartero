@@ -206,6 +206,21 @@ describe('parte C: a geometria das seções tem uma autoridade', () => {
   const FATURA = semComentarios(
     ler('../components/invoice-details-drawer.tsx'),
   )
+  const RENDA = semComentarios(
+    ler('../app/(dashboard)/income/page.tsx'),
+  )
+  const FINANCIAL_ROW = semComentarios(
+    ler('../components/ui/financial-list-row.tsx'),
+  )
+  const ROW_SURFACE = semComentarios(
+    ler('../components/ui/financial-drawer-row-surface.ts'),
+  )
+  const LAYOUT = semComentarios(
+    ler('../components/ui/drawer-layout.ts'),
+  )
+  const INVOICE_API = semComentarios(
+    ler('../../../cartero-backend/src/invoices/invoices.service.ts'),
+  )
 
   it('os dois drawers consomem a MESMA primitive', () => {
     expect(PESSOA).toContain('DrawerSectionHeader')
@@ -228,7 +243,7 @@ describe('parte C: a geometria das seções tem uma autoridade', () => {
       com outro recuo. A diferença aparecia como um degrau no meio do drawer.
     */
     expect(PESSOA).toContain(
-      'className="h-auto border-0 px-4 py-2.5"',
+      'DRAWER_WIDE_VERTICAL_RHYTHM.sectionHeadingPadding',
     )
     expect(PESSOA).toContain(
       'title={<span className="text-sm font-medium text-foreground">Histórico</span>}',
@@ -244,10 +259,45 @@ describe('parte C: a geometria das seções tem uma autoridade', () => {
       tudo, e a faixa da seção nascia recuada — 320px contra os 368px de
       Fatura, em 390px de viewport.
     */
-    expect(PESSOA).toContain(
-      'flex flex-1 flex-col gap-5 overflow-y-auto pt-4 pb-5',
-    )
+    expect(PESSOA).toContain('DRAWER_WIDE_VERTICAL_RHYTHM.headerContentGap')
+    expect(PESSOA).not.toContain('DRAWER_WIDE_VERTICAL_RHYTHM.contentStart')
+    expect(PESSOA).toContain('DRAWER_WIDE_VERTICAL_RHYTHM.sectionTopGap')
     expect(PESSOA).not.toContain('overflow-y-auto px-6')
+  })
+
+  it('os drawers wide compartilham as relações verticais aprovadas', () => {
+    expect(LAYOUT).toContain("headerContentGap: 'gap-5'")
+    expect(LAYOUT).toContain("sectionTopGap: 'gap-5'")
+    expect(LAYOUT).toContain("sectionContentGap: 'gap-2'")
+    expect(LAYOUT).toContain("sectionHeadingPadding: 'pt-2.5 pb-0'")
+    expect(PESSOA).toContain('DRAWER_WIDE_VERTICAL_RHYTHM.sectionTopGap')
+    expect(PESSOA).toContain('DRAWER_WIDE_VERTICAL_RHYTHM.headerContentGap')
+    expect(FATURA).toContain('DRAWER_WIDE_VERTICAL_RHYTHM.sectionTopGap')
+    expect(FATURA).toContain('DRAWER_WIDE_VERTICAL_RHYTHM.headerContentGap')
+    expect(FATURA).not.toContain('my-4')
+    expect(FATURA).not.toContain('py-2.5')
+    expect(RENDA).toContain('DRAWER_WIDE_VERTICAL_RHYTHM.headerContentGap')
+    expect(RENDA).not.toContain('DRAWER_WIDE_VERTICAL_RHYTHM.contentStart')
+    expect(RENDA).toContain('DRAWER_WIDE_VERTICAL_RHYTHM.sectionTopGap')
+    expect(RENDA).toContain('<DrawerSectionHeading>')
+    expect(PRIMITIVE).toContain('DRAWER_WIDE_VERTICAL_RHYTHM.sectionHeadingPadding')
+    expect(RENDA).not.toContain('mt-3 flex gap-2')
+    expect(RENDA).not.toContain('mt-4 rounded-lg border border-border bg-muted/30')
+    expect(RENDA).not.toContain('<div className="mt-8">')
+  })
+
+  it('o section group é a única autoridade heading → conteúdo', () => {
+    expect(LAYOUT).toContain("sectionContentGap: 'gap-2'")
+    expect(PRIMITIVE).toContain('export function DrawerSectionGroup')
+    expect(PRIMITIVE).toContain('DRAWER_WIDE_VERTICAL_RHYTHM.sectionContentGap')
+    expect(PRIMITIVE).not.toContain('mt-2 divide-y')
+
+    for (const drawer of [FATURA, RENDA, PESSOA]) {
+      expect(drawer).toContain('<DrawerSectionGroup>')
+      expect(drawer).not.toContain('DrawerFinancialList inset className=')
+      expect(drawer).not.toContain('DrawerFinancialList className=')
+    }
+    expect(PESSOA.match(/<DrawerSectionGroup>/g)).toHaveLength(2)
   })
 
   it('nenhuma seção de Pessoa escreve a própria tipografia de título', () => {
@@ -269,8 +319,10 @@ describe('parte C: a geometria das seções tem uma autoridade', () => {
   })
 
   it('o recuo do conteúdo é um token, não um número solto', () => {
-    expect(PRIMITIVE).toContain("DRAWER_SECTION_INSET = 'px-4'")
-    expect(PESSOA).toContain('DRAWER_SECTION_INSET')
+    expect(LAYOUT).toContain("DRAWER_WIDE_CONTENT_INSET = 'px-4'")
+    expect(PRIMITIVE).toContain('DRAWER_WIDE_CONTENT_INSET')
+    expect(PRIMITIVE).toContain('DrawerFinancialList')
+    expect(FATURA).toContain('DrawerFinancialList')
   })
 
   it('o vazio respeita o mesmo recuo das rows', () => {
@@ -278,7 +330,7 @@ describe('parte C: a geometria das seções tem uma autoridade', () => {
       Alinhada com o cabeçalho e não com as linhas, a frase pareceria legenda
       do título em vez de conteúdo da seção.
     */
-    expect(PRIMITIVE).toContain('DRAWER_SECTION_INSET')
+    expect(PRIMITIVE).toContain('DRAWER_WIDE_CONTENT_INSET')
     expect(PESSOA).toContain('DrawerSectionEmpty')
   })
 
@@ -289,14 +341,70 @@ describe('parte C: a geometria das seções tem uma autoridade', () => {
 
   it('o card do resumo mantém identidade de card', () => {
     /* O resumo usa a mesma superfície limpa aprovada no drawer de Renda. */
-    expect(PESSOA).toContain(
-      'mx-4 rounded-xl bg-muted/40 p-4',
-    )
+    expect(PRIMITIVE).toContain('DRAWER_WIDE_CONTENT_GUTTER')
+    expect(PRIMITIVE).toContain('rounded-xl bg-muted/40 p-4')
+    expect(PESSOA).toContain('DrawerSummaryCard')
+    expect(FATURA).toContain('DrawerSummaryCard')
   })
 
   it('as rows usam o inset e o ritmo do drawer de Renda', () => {
-    expect(PESSOA).toContain('DRAWER_SECTION_INSET')
-    expect(PESSOA).toContain("'mt-2 divide-y divide-border/60'")
+    expect(RENDA).toContain('<DrawerSectionGroup>')
+    expect(PESSOA).toContain('DrawerFinancialList')
+    expect(FATURA).toContain('DrawerFinancialList')
+    expect(PRIMITIVE).toContain("'divide-y divide-border/60'")
+    expect(PRIMITIVE).not.toContain('mt-2 divide-y')
+    expect(ROW_SURFACE).toContain('financialDrawerRowSurfaceClass')
+    expect(ROW_SURFACE).toContain('sm:gap-4 sm:px-2 sm:py-4')
+    expect(FINANCIAL_ROW).toContain("financialDrawerRowSurfaceClass('interactive')")
+    expect(PESSOA).not.toContain('rounded-none px-0 py-2.5')
+    expect(FATURA).not.toContain('rounded-none px-0 py-2.5')
+  })
+
+  it('a borda da lista de Invoice e o radius compartilham o mesmo root', () => {
+    const lista = FATURA.slice(FATURA.indexOf('<DrawerFinancialList inset'))
+
+    expect(lista).toContain('<motion.div')
+    expect(lista).toContain("className={financialDrawerRowSurfaceClass('animatedWrapper')}")
+  })
+
+  it('as larguras atuais são variantes compartilhadas, sem alterar seus valores', () => {
+    expect(LAYOUT).toContain("DRAWER_WIDTH_COMPACT = 'sm:max-w-md'")
+    expect(LAYOUT).toContain("DRAWER_WIDTH_WIDE = 'sm:max-w-lg'")
+    expect(PESSOA).toContain('DRAWER_WIDTH_WIDE')
+    expect(FATURA).toContain('DRAWER_WIDTH_WIDE')
+    expect(RENDA).toContain('DRAWER_WIDTH_WIDE')
+  })
+
+  it('o header usa o banco da Invoice e o endpoint inclui essa relação', () => {
+    expect(FATURA).toContain("invoice.bank?.isSystem ? 'Cartão' : bankDisplayName(invoice.bank, 'Cartão')")
+    expect(FATURA).toContain('Fatura · {monthYear}')
+    expect(INVOICE_API).toContain('bank: { select: { id: true, name: true, isSystem: true } }')
+    expect(INVOICE_API).toContain('settlement: { select: { paidAt: true } }')
+    expect(FATURA).toContain('accountCivilDayOf(invoice.settlement.paidAt, user?.timeZone ?? null)')
+    expect(FATURA).toContain('<DrawerCompletionStatus variant="success">Paga em {paidAtLabel}</DrawerCompletionStatus>')
+    expect(FATURA).toContain('DrawerCompletionStatus')
+    expect(PESSOA).toContain('<DrawerCompletionStatus>{cardCompetencia.settledNote}</DrawerCompletionStatus>')
+  })
+
+  it('valores da Invoice são neutros e o sinal permanece na transação', () => {
+    expect(FATURA).toContain("expense ? '−' : '+'")
+    expect(FATURA).toContain('<FinancialRowTrailing amount={<>')
+    expect(FATURA).not.toContain('amountTone=')
+    expect(FINANCIAL_ROW).toContain('amountTone = ROW_AMOUNT_TONE.neutral')
+    expect(FATURA).toContain('<DrawerSummaryValue tracking="tight" className="text-foreground">')
+  })
+
+  it('Invoice overdue usa linha temporal destructive e a data civil dueDate', () => {
+    expect(FATURA).toContain('const isOverdue = invoice?.status === InvoiceStatus.OVERDUE')
+    expect(FATURA).toContain('const overdueDateLabel = invoice && isOverdue ? formatDate(invoice.dueDate) : null')
+    expect(FATURA).toContain('{isPaid || isOverdue ? null : (() => {')
+    expect(FATURA).toContain('isPaid && paidAtLabel &&')
+    expect(FATURA).toContain('overdueDateLabel &&')
+    expect(FATURA).toContain('variant="destructive"')
+    expect(FATURA).toContain('Vencida desde {overdueDateLabel}')
+    expect(PRIMITIVE).toContain("variant?: 'success' | 'destructive'")
+    expect(PRIMITIVE).toContain('CircleAlert')
+    expect(PRIMITIVE).toContain('variant === \'success\' ? \'text-paid\' : \'text-destructive\'')
   })
 
   it('não virou um mega-component', () => {
@@ -390,7 +498,7 @@ describe('competência sem atividade diz cada coisa UMA vez', () => {
       constante — fica fora do condicional de lista vazia.
     */
     const secao = PESSOA.slice(
-      PESSOA.indexOf('className="h-auto flex-wrap border-0 px-4 py-2.5"'),
+      PESSOA.indexOf('className={cn(\'h-auto flex-wrap border-0 px-4\''),
     )
     const antesDoCondicional = secao.slice(0, secao.indexOf('monthSummary.itemCount === 0'))
 
@@ -691,7 +799,9 @@ describe('REOPEN: a mesma entidade reabre depois do X', () => {
       NAV_FONTE.indexOf('setDispensa(', inicio),
     )
 
-    expect(corpoClose).toContain('.get(key) === null) return')
+    expect(corpoClose).toContain('const idNaUrl = new URLSearchParams(atual.search).get(key)')
+    expect(corpoClose).toContain('const idDispensado = aberturaPendente?.id ?? idNaUrl')
+    expect(corpoClose).toContain('if (idDispensado === null) return')
   })
 
   it('o espelho registra QUEM foi dispensado, não uma contagem', () => {

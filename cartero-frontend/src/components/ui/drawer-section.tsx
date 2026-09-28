@@ -1,5 +1,11 @@
 import type { ReactNode } from 'react'
+import { Check, CircleAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import {
+  DRAWER_WIDE_CONTENT_GUTTER,
+  DRAWER_WIDE_CONTENT_INSET,
+  DRAWER_WIDE_VERTICAL_RHYTHM,
+} from '@/components/ui/drawer-layout'
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -36,7 +42,149 @@ import { cn } from '@/lib/utils'
  * mensagem "nada em aberto" aparece desalinhada das linhas que ela substitui
  * — e o desalinho é pequeno o bastante para passar despercebido em revisão.
  */
-export const DRAWER_SECTION_INSET = 'px-4'
+/** Shared section owns the single heading-to-content gap. */
+export function DrawerSectionGroup({
+  children,
+  className,
+}: {
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div className={cn('flex flex-col', DRAWER_WIDE_VERTICAL_RHYTHM.sectionContentGap, className)}>
+      {children}
+    </div>
+  )
+}
+
+/** Canonical list separators and optional outer horizontal gutter. */
+export function DrawerFinancialList({
+  children,
+  inset = false,
+}: {
+  children: ReactNode
+  /** Apply the horizontal gutter when the parent scroller is edge-to-edge. */
+  inset?: boolean
+}) {
+  return (
+    <div className={cn('divide-y divide-border/60', inset && DRAWER_WIDE_CONTENT_GUTTER)}>
+      {children}
+    </div>
+  )
+}
+
+/** Shared summary-card surface used at the top of financial detail drawers. */
+export function DrawerSummaryCard({
+  children,
+  className,
+  inset = true,
+}: {
+  children: ReactNode
+  className?: string
+  /** Omit the card gutter when the parent already applies the wide content inset. */
+  inset?: boolean
+}) {
+  return (
+    <div className={cn(inset && DRAWER_WIDE_CONTENT_GUTTER, 'rounded-xl bg-muted/40 p-4', className)}>
+      {children}
+    </div>
+  )
+}
+
+/** Shared label typography for wide-drawer summary cards. */
+export function DrawerSummaryLabel({
+  children,
+  emphasis = 'medium',
+  className,
+}: {
+  children: ReactNode
+  emphasis?: 'regular' | 'medium'
+  className?: string
+}) {
+  return (
+    <p className={cn('text-xs text-muted-foreground', emphasis === 'medium' && 'font-medium', className)}>
+      {children}
+    </p>
+  )
+}
+
+/** Shared value typography; tracking and semantic color remain consumer choices. */
+export function DrawerSummaryValue({
+  children,
+  tracking = 'normal',
+  className,
+}: {
+  children: ReactNode
+  tracking?: 'normal' | 'tight'
+  className?: string
+}) {
+  return (
+    <p className={cn(
+      'mt-1 text-2xl font-semibold tabular-nums',
+      tracking === 'tight' && 'tracking-[-0.02em]',
+      className,
+    )}>
+      {children}
+    </p>
+  )
+}
+
+/** Shared metadata typography for wide-drawer summary cards. */
+export function DrawerSummaryMeta({ children, className }: { children: ReactNode; className?: string }) {
+  return <p className={cn('text-xs text-muted-foreground', className)}>{children}</p>
+}
+
+/** Shared temporal status line used by financial drawer summaries. */
+export function DrawerCompletionStatus({
+  children,
+  variant = 'success',
+}: {
+  children: ReactNode
+  variant?: 'success' | 'destructive'
+}) {
+  const Icon = variant === 'success' ? Check : CircleAlert
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1.5 text-xs font-medium',
+      variant === 'success' ? 'text-paid' : 'text-destructive',
+    )}>
+      <Icon className="size-3.5" aria-hidden />
+      {children}
+    </span>
+  )
+}
+
+/** Outlined neutral container for secondary drawer content. */
+export function DrawerOutlineCard({
+  children,
+  className,
+  variant = 'default',
+}: {
+  children: ReactNode
+  className?: string
+  /** Compact preserves the existing next-occurrence surface in Recurring Income. */
+  variant?: 'default' | 'compact'
+}) {
+  return (
+    <div className={cn(
+      variant === 'compact'
+        ? 'rounded-lg border border-border bg-muted/30 px-3 py-2.5'
+        : 'rounded-xl border border-border bg-muted/30 p-4',
+      className,
+    )}>
+      {children}
+    </div>
+  )
+}
+
+/** Unbordered section heading for wide drawers that use a standalone title. */
+export function DrawerSectionHeading({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <h3 className={cn('text-sm font-medium', DRAWER_WIDE_VERTICAL_RHYTHM.sectionHeadingPadding, className)}>
+      {children}
+    </h3>
+  )
+}
 
 /**
  * A faixa de título de uma seção.
@@ -72,6 +220,25 @@ export function DrawerSectionHeader({
   )
 }
 
+/** Shared title/count typography for countable drawer sections. */
+export function DrawerSectionTitle({
+  title,
+  count,
+  suffix,
+  className,
+}: {
+  title: ReactNode
+  count: number
+  suffix?: ReactNode
+  className?: string
+}) {
+  return (
+    <span className={className}>
+      {title}{' · '}{count}{suffix}
+    </span>
+  )
+}
+
 /**
  * O vazio de uma seção.
  *
@@ -89,7 +256,7 @@ export function DrawerSectionEmpty({
   return (
     <p
       className={cn(
-        DRAWER_SECTION_INSET,
+        DRAWER_WIDE_CONTENT_INSET,
         'py-6 text-center text-[11px] text-muted-foreground',
         className,
       )}

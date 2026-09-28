@@ -36,6 +36,8 @@ export class InvoicesService {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id, userId },
       include: {
+        bank: { select: { id: true, name: true, isSystem: true } },
+        settlement: { select: { paidAt: true } },
         transactions: {
           include: {
             category: {

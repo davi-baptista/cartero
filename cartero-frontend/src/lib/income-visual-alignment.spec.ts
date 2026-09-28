@@ -7,8 +7,14 @@ const persons = readFileSync(new URL('../app/(dashboard)/persons/page.tsx', impo
 const avatar = readFileSync(new URL('../components/ui/financial-avatar.tsx', import.meta.url), 'utf-8')
 
 describe('income visual alignment contract', () => {
-  it('keeps the one-off avatar empty and reuses the receivable detail flow', () => {
-    expect(page).toContain('leadingAction={<FinancialAvatar onClick={onView}')
+  it('routes one-off row body to detail and the open avatar to the canonical receive flow', () => {
+    expect(page).toContain('onView={onView}')
+    expect(page).toContain('onClick={item.isPaid ? onView : onReceive}')
+    expect(page).toContain('onView={() => setSelectedReceivable(item)}')
+    expect(page).toContain('onReceive={() => setMarkPaidTarget(item)}')
+    expect(page).toContain('onConfirm={(payload) => markPaidTarget && markPaidMutation.mutate({ id: markPaidTarget.id, payload })}')
+    expect(rows).toContain('onClick={onView}')
+    expect(rows).toContain('<button')
     expect(page).toContain('meta={<span className={presentation.tone === \'overdue\' ? \'text-destructive\' : \'text-muted-foreground\'}>{presentation.label}</span>}')
     expect(page).toContain('trailing={<FinancialRowTrailing amount={formatCurrency(item.amount)} label="A RECEBER" />}')
     expect(page).not.toContain('item.debtorName ||')

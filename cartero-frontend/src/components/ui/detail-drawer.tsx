@@ -7,6 +7,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
+import { DRAWER_WIDTH_COMPACT } from '@/components/ui/drawer-layout'
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -68,7 +69,7 @@ export function DetailDrawer({
       */}
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 p-0 sm:max-w-md"
+        className={cn('flex w-full flex-col gap-0 p-0', DRAWER_WIDTH_COMPACT)}
         showCloseButton
       >
         {/* `pr-12` reserva o espaço do botão de fechar. */}
@@ -113,7 +114,7 @@ export function DetailAmount({
   return (
     <div className="border-b border-border bg-muted/20 px-5 py-4">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <div className="mt-1">{children}</div>
+      <div className="mt-1 text-foreground">{children}</div>
       {note && <p className="mt-1 text-[11px] text-primary">{note}</p>}
     </div>
   )

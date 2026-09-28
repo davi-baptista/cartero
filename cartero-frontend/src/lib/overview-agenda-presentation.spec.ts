@@ -41,4 +41,29 @@ describe('Overview agenda presentation authority', () => {
       isSettled: false,
     })).toMatchObject({ iconKind: 'receivable', statusClass: 'text-destructive' })
   })
+
+  it.each([
+    'vence hoje',
+    'vence amanhã',
+    'vence em 2 dias',
+    'fecha hoje',
+    'fecha amanhã',
+    'fecha em 2 dias',
+  ])('uses pending for future timing: %s', (statusText) => {
+    expect(resolveAgendaPresentation({
+      kind: 'invoice-due',
+      hasPerson: false,
+      statusText,
+      isSettled: false,
+    }).statusClass).toBe('text-pending')
+  })
+
+  it.each(['venceu ontem', 'venceu há 43 dias', 'Em atraso'])('uses destructive for overdue timing: %s', (statusText) => {
+    expect(resolveAgendaPresentation({
+      kind: 'invoice-due',
+      hasPerson: false,
+      statusText,
+      isSettled: false,
+    }).statusClass).toBe('text-destructive')
+  })
 })

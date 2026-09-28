@@ -166,6 +166,35 @@
   }
 }
 
+/* Shared compact scrollbar for dense drawer/list surfaces. */
+.subtle-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(1 0 0 / 18%) transparent;
+}
+
+.subtle-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.subtle-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.subtle-scrollbar::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+  background-color: oklch(1 0 0 / 18%);
+}
+
+.subtle-scrollbar:hover {
+  scrollbar-color: oklch(1 0 0 / 30%) transparent;
+}
+
+.subtle-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: oklch(1 0 0 / 30%);
+}
+
 @keyframes shimmer {
   from { background-position: 200% center; }
   to   { background-position: -200% center; }

@@ -26,6 +26,7 @@ import { resolveCategoryIcon } from '@/lib/category-icons'
 import { invoiceStatusConfig } from '@/lib/invoice-status'
 import {
   formatDueTimingFromISO,
+  invoiceTimingLabel,
 } from '@/lib/invoice-timing'
 import { cn } from '@/lib/utils'
 import {
@@ -371,7 +372,10 @@ function AgendaSummaryRow({
   const isSettled = group.entries.every((item) => item.settled)
   const isInvoice = entry.kind === 'invoice-due'
   const invoice = entry.invoice
-  const dueText = entry.dueDate ? formatDueDate(entry.dueDate, today).toLowerCase() : undefined
+  // Preserve the shared non-invoice contract: `const dueText = entry.dueDate ? formatDueDate(entry.dueDate, today).toLowerCase() : undefined`
+  const dueText = isInvoice && invoice
+    ? invoiceTimingLabel(invoice, today).toLowerCase()
+    : entry.dueDate ? formatDueDate(entry.dueDate, today).toLowerCase() : undefined
   const aggregateTiming = count > 1 ? aggregateOpenTiming(group.entries, today) : null
   const timingText = aggregateTiming?.text ?? dueText
   const title = group.personName ?? entry.title

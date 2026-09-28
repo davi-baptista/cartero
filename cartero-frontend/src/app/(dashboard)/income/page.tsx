@@ -6,12 +6,30 @@ import { toast } from 'sonner'
 import { CalendarDays, CircleDollarSign, Pencil, Plus, Repeat, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { QueryError } from '@/components/ui/query-error'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { FinancialListRow, FinancialRowTrailing } from '@/components/ui/financial-list-row'
 import { FinancialAvatar } from '@/components/ui/financial-avatar'
+import {
+  DrawerFinancialList,
+  DrawerOutlineCard,
+  DrawerSectionGroup,
+  DrawerSectionHeading,
+  DrawerSectionTitle,
+  DrawerSummaryCard,
+  DrawerSummaryLabel,
+  DrawerSummaryMeta,
+  DrawerSummaryValue,
+} from '@/components/ui/drawer-section'
+import { DrawerIdentityHeader } from '@/components/ui/drawer-identity-header'
+import {
+  DRAWER_WIDE_CONTENT_INSET,
+  DRAWER_WIDTH_WIDE,
+  DRAWER_WIDE_VERTICAL_RHYTHM,
+} from '@/components/ui/drawer-layout'
+import { cn } from '@/lib/utils'
 import { ReceivableDetailDrawer } from '../receivables/receivable-detail-drawer'
 import { ReceivableSheet, type ReceivableFormData } from '../receivables/receivable-sheet'
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
@@ -25,12 +43,19 @@ import { accountToday } from '@/lib/date'
 import { nextOpenIncomeOccurrence, nextOpenIncomeOccurrenceOnOrAfter, openOneOffIncome, openRecurringIncomeOccurrences, recurringIncomeOccurrencePresentation } from '@/lib/income-presentation'
 import type { Receivable, RecurringIncomeRule, TransactionType } from '@/types'
 
-function IncomeRow({ item, onView, today }: { item: Receivable; onView: () => void; today: string }) {
+function IncomeRow({ item, onView, onReceive, today }: { item: Receivable; onView: () => void; onReceive: () => void; today: string }) {
   const presentation = recurringIncomeOccurrencePresentation(item, today)
   return (
     <FinancialListRow
       ariaLabel={`Abrir ${item.title}`}
-      leadingAction={<FinancialAvatar onClick={onView} ariaLabel={`Abrir ${item.title}`} />}
+      onView={onView}
+      leadingAction={
+        <FinancialAvatar
+          onClick={item.isPaid ? onView : onReceive}
+          ariaLabel={item.isPaid ? `Abrir ${item.title}` : `Marcar ${item.title} como recebido`}
+          title={item.isPaid ? `Abrir ${item.title}` : 'Marcar como recebido'}
+        />
+      }
       title={item.title}
       meta={<span className={presentation.tone === 'overdue' ? 'text-destructive' : 'text-muted-foreground'}>{presentation.label}</span>}
       trailing={<FinancialRowTrailing amount={formatCurrency(item.amount)} label="A RECEBER" />}
@@ -39,10 +64,10 @@ function IncomeRow({ item, onView, today }: { item: Receivable; onView: () => vo
 }
 
 function OpenOccurrencesList({ occurrences, today, onSelect, onReceive }: { occurrences: Receivable[]; today: string; onSelect: (occurrence: Receivable) => void; onReceive: (occurrence: Receivable) => void }) {
-  if (occurrences.length === 0) return <p className="mt-3 text-sm text-muted-foreground">Ainda não há ocorrências abertas.</p>
+  if (occurrences.length === 0) return <p className="text-sm text-muted-foreground">Ainda não há ocorrências abertas.</p>
 
   return (
-    <div className="mt-2 divide-y divide-border/60">
+    <DrawerFinancialList>
       {occurrences.map((occurrence) => {
         const presentation = recurringIncomeOccurrencePresentation(occurrence, today)
         return (
@@ -57,7 +82,7 @@ function OpenOccurrencesList({ occurrences, today, onSelect, onReceive }: { occu
           />
         )
       })}
-    </div>
+    </DrawerFinancialList>
   )
 }
 
@@ -162,13 +187,41 @@ export default function IncomePage() {
       ) : (
         <div className="space-y-8">
                   {rules.length > 0 ? <section><h2 className="mb-2 text-sm font-medium">Fontes recorrentes</h2><div className="divide-y divide-border/60">{rules.map((rule) => { const occurrences = openRecurringIncomeOccurrences(rule, receivables); const next = nextOpenIncomeOccurrence(occurrences); const presentation = next ? recurringIncomeOccurrencePresentation(next, today) : null; return <FinancialListRow key={rule.id} onView={() => setSelectedRule(rule)} ariaLabel={`Abrir ${rule.title}`} leading={<FinancialAvatar icon={<Repeat className="size-5 text-muted-foreground" />} />} title={rule.title} titleAdornment={!rule.isActive ? <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Encerrada</span> : null} meta={<>{presentation?.tone === 'overdue' ? <span className="text-destructive">{presentation.label}</span> : <><span>Dia {rule.dayOfMonth}</span>{rule.counterpartyName ? <><span aria-hidden>·</span><span>{rule.counterpartyName}</span></> : null}</>}</>} trailing={<FinancialRowTrailing amount={<>{formatCurrency(rule.amount)} <span className="text-xs font-normal tracking-normal text-muted-foreground">/ mês</span></>} label={rule.isActive ? 'A RECEBER' : 'ENCERRADA'} />} /> })}</div></section> : null}
-          {oneOffs.length > 0 ? <section><h2 className="mb-2 text-sm font-medium">Recebimentos pontuais</h2><div className="divide-y divide-border/60">{oneOffs.map((item) => <IncomeRow key={item.id} item={item} today={today} onView={() => setSelectedReceivable(item)} />)}</div></section> : null}
+          {oneOffs.length > 0 ? <section><h2 className="mb-2 text-sm font-medium">Recebimentos pontuais</h2><div className="divide-y divide-border/60">{oneOffs.map((item) => <IncomeRow key={item.id} item={item} today={today} onView={() => setSelectedReceivable(item)} onReceive={() => setMarkPaidTarget(item)} />)}</div></section> : null}
         </div>
       )}
 
       <Dialog open={chooserOpen} onOpenChange={setChooserOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Adicionar renda</DialogTitle><DialogDescription>Escolha se este recebimento se repete ou acontece uma única vez.</DialogDescription></DialogHeader><div className="grid gap-2"><button type="button" className="flex items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/50" onClick={openRecurringCreate}><Repeat className="mt-0.5 size-5 text-muted-foreground" /><span><span className="block text-sm font-medium">Renda recorrente</span><span className="mt-1 block text-xs text-muted-foreground">Salário, aluguel, pensão ou outra renda mensal.</span></span></button><button type="button" className="flex items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/50" onClick={() => { setChooserOpen(false); setOneOffOpen(true) }}><CalendarDays className="mt-0.5 size-5 text-muted-foreground" /><span><span className="block text-sm font-medium">Renda pontual</span><span className="mt-1 block text-xs text-muted-foreground">Comissão, freelance, bônus ou outro valor esperado.</span></span></button></div><DialogFooter><Button variant="outline" onClick={() => setChooserOpen(false)}>Cancelar</Button></DialogFooter></DialogContent></Dialog>
 
-      <Sheet open={selectedRule !== null} onOpenChange={(open) => { if (!open) setSelectedRule(null) }}><SheetContent className="sm:max-w-lg"><SheetHeader><SheetTitle>{selectedRule?.title}</SheetTitle><SheetDescription>Fonte recorrente · {selectedRule?.isActive ? 'Ativa' : 'Encerrada'}</SheetDescription></SheetHeader>{selectedRule ? <div className="flex flex-1 flex-col overflow-y-auto px-4 pb-6"><div className="rounded-xl bg-muted/40 p-4"><p className="text-xs text-muted-foreground">Valor esperado por mês</p><p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{formatCurrency(selectedRule.amount)}</p><p className="mt-2 text-xs text-muted-foreground">Dia {selectedRule.dayOfMonth}{selectedRule.counterpartyName ? ` · ${selectedRule.counterpartyName}` : ''}</p><p className="mt-2 text-xs text-muted-foreground">Renda desde {formatDate(`${selectedRule.firstOccurrence}-01`)}</p></div><div className="mt-3 flex gap-2"><Button variant="outline" className="gap-2" onClick={() => openRecurringEdit(selectedRule)}><Pencil className="size-3.5" /> Editar renda</Button>{selectedRule.isActive ? <Button variant="destructive" className="gap-2" onClick={() => setDeleteTarget(selectedRule)}><Trash2 className="size-3.5" /> Excluir renda</Button> : null}</div><div className="mt-4 rounded-lg border border-border bg-muted/30 px-3 py-2.5"><p className="text-xs text-muted-foreground">Próxima ocorrência</p><p className="mt-1 text-sm font-medium">{selectedRuleNextOccurrence ? formatDate(selectedRuleNextOccurrence.dueDate) : 'Nenhuma em aberto'}</p></div><div className="mt-8"><h3 className="text-sm font-medium">Ocorrências em aberto</h3><OpenOccurrencesList occurrences={selectedOccurrences} today={today} onSelect={(occurrence) => { setSelectedRule(null); setSelectedReceivable(occurrence) }} onReceive={(occurrence) => setMarkPaidTarget(occurrence)} /></div></div> : null}</SheetContent></Sheet>
+      <Sheet open={selectedRule !== null} onOpenChange={(open) => { if (!open) setSelectedRule(null) }}>
+        <SheetContent className={cn(DRAWER_WIDTH_WIDE, DRAWER_WIDE_VERTICAL_RHYTHM.headerContentGap)} showCloseButton={false}>
+          <DrawerIdentityHeader title={selectedRule?.title} description={`Fonte recorrente · ${selectedRule?.isActive ? 'Ativa' : 'Encerrada'}`} />
+          {selectedRule ? (
+            <div className={cn("flex flex-1 flex-col overflow-y-auto subtle-scrollbar", DRAWER_WIDE_CONTENT_INSET, DRAWER_WIDE_VERTICAL_RHYTHM.sectionTopGap, "pb-6")}>
+              <DrawerSummaryCard inset={false}>
+                <DrawerSummaryLabel emphasis="regular">Valor esperado por mês</DrawerSummaryLabel>
+                <DrawerSummaryValue className="text-foreground">{formatCurrency(selectedRule.amount)}</DrawerSummaryValue>
+                <DrawerSummaryMeta className="mt-2">Dia {selectedRule.dayOfMonth}{selectedRule.counterpartyName ? ` · ${selectedRule.counterpartyName}` : ''}</DrawerSummaryMeta>
+                <DrawerSummaryMeta className="mt-2">Renda desde {formatDate(`${selectedRule.firstOccurrence}-01`)}</DrawerSummaryMeta>
+              </DrawerSummaryCard>
+              <div className="flex gap-2">
+                <Button variant="outline" className="gap-2" onClick={() => openRecurringEdit(selectedRule)}><Pencil className="size-3.5" /> Editar renda</Button>
+                {selectedRule.isActive ? <Button variant="destructive" className="gap-2" onClick={() => setDeleteTarget(selectedRule)}><Trash2 className="size-3.5" /> Excluir renda</Button> : null}
+              </div>
+              <DrawerOutlineCard variant="compact">
+                <p className="text-xs text-muted-foreground">Próxima ocorrência</p>
+                <p className="mt-1 text-sm font-medium">{selectedRuleNextOccurrence ? formatDate(selectedRuleNextOccurrence.dueDate) : 'Nenhuma em aberto'}</p>
+              </DrawerOutlineCard>
+              <DrawerSectionGroup>
+                <DrawerSectionHeading>
+                  <DrawerSectionTitle title="Ocorrências em aberto" count={selectedOccurrences.length} />
+                </DrawerSectionHeading>
+                <OpenOccurrencesList occurrences={selectedOccurrences} today={today} onSelect={(occurrence) => { setSelectedRule(null); setSelectedReceivable(occurrence) }} onReceive={(occurrence) => setMarkPaidTarget(occurrence)} />
+              </DrawerSectionGroup>
+            </div>
+          ) : null}
+        </SheetContent>
+      </Sheet>
       <ReceivableDetailDrawer receivable={selectedReceivable} onOpenChange={(open) => { if (!open) setSelectedReceivable(null) }} onEdit={openReceivableEdit} onToggleReceived={(item) => { setSelectedReceivable(null); setMarkPaidTarget(item) }} />
       <RecurringIncomeSheet key={`${editingRule?.id ?? 'new'}-${recurringSheetOpen}`} open={recurringSheetOpen} onOpenChange={(open) => { setRecurringSheetOpen(open); if (!open) setEditingRule(null) }} editTarget={editingRule} isPending={recurringCreateMutation.isPending || recurringUpdateMutation.isPending} onSubmit={(payload) => editingRule ? recurringUpdateMutation.mutate({ id: editingRule.id, payload }) : recurringCreateMutation.mutate(payload)} />
       <ReceivableSheet mode={occurrenceEditTarget ? 'income-occurrence' : 'income'} open={oneOffOpen || occurrenceEditTarget !== null} onOpenChange={(open) => { if (!open) { setOneOffOpen(false); setOccurrenceEditTarget(null) } }} editTarget={occurrenceEditTarget} editScope={null} timeZone={user?.timeZone} onSubmit={async (data) => { if (occurrenceEditTarget) await updateOccurrenceMutation.mutateAsync({ id: occurrenceEditTarget.id, payload: data }); else await createOneOffMutation.mutateAsync(data) }} />
