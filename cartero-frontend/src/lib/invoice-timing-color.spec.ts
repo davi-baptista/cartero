@@ -173,6 +173,6 @@ describe('a contenção visual da row', () => {
       sugeriria pendência, e nenhuma das duas coisas aconteceu. O tom vem do
       mapa de estados, não de uma classe solta na página.
     */
-    expect(code).toContain('BANK_TRAILING_TONE.noInvoice')
+    expect(code).toContain('ROW_INACTIVE_TRAILING_CLASS')
   })
 })

@@ -6,10 +6,31 @@ export type RecurringIncomeOccurrencePresentation = {
   tone: 'neutral' | 'attention' | 'overdue'
 }
 
+export type RecurringIncomeStatusPresentation = {
+  label: 'Recebimento em atraso' | 'Recebimento próximo' | 'Tudo em dia'
+  tone: 'destructive' | 'pending' | 'success'
+}
+
 function civilDayDistance(from: string, to: string): number {
   const fromDate = new Date(`${from.slice(0, 10)}T00:00:00`)
   const toDate = new Date(`${to.slice(0, 10)}T00:00:00`)
   return Math.round((toDate.getTime() - fromDate.getTime()) / 86_400_000)
+}
+
+export function recurringIncomeStatusPresentation(
+  occurrences: Receivable[],
+  today: string,
+): RecurringIncomeStatusPresentation {
+  if (occurrences.some((occurrence) => civilDayDistance(today, occurrence.dueDate) < 0)) {
+    return { label: 'Recebimento em atraso', tone: 'destructive' }
+  }
+
+  const next = occurrences.find((occurrence) => civilDayDistance(today, occurrence.dueDate) >= 0)
+  if (next && civilDayDistance(today, next.dueDate) <= 5) {
+    return { label: 'Recebimento próximo', tone: 'pending' }
+  }
+
+  return { label: 'Tudo em dia', tone: 'success' }
 }
 
 export function recurringIncomeOccurrencePresentation(

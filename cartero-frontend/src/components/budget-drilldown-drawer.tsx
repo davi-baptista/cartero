@@ -23,6 +23,7 @@ import { getReceivable } from '@/services/receivables.service'
 import type { MonthPeriod } from '@/components/month-nav'
 import { accountCivilDayOf } from '@/lib/date'
 import { formatCurrency } from '@/lib/formatters'
+import { useDetailEntity } from '@/lib/use-detail-entity'
 import {
   drilldownContextLabel,
   DRILLDOWN_BUCKET_CONFIG,
@@ -97,11 +98,12 @@ export function BudgetDrilldownDrawer({
     getNextPageParam: (lastPage) => lastPage.pageInfo.nextCursor ?? undefined,
   })
   const fetchNextPage = query.fetchNextPage
-  const personQuery = useQuery({
-    queryKey: ['person', selectedPerson?.id],
-    queryFn: () => getPerson(selectedPerson!.id),
-    enabled: selectedPerson !== null,
-    retry: false,
+  const { entity: person } = useDetailEntity({
+    openId: selectedPerson?.id ?? null,
+    fromList: undefined,
+    fetchById: getPerson,
+    queryKey: 'person',
+    onNotFound: () => setSelectedPerson(null),
   })
   const transactionQuery = useQuery({
     queryKey: ['transaction', selectedTransactionId],
@@ -224,6 +226,10 @@ export function BudgetDrilldownDrawer({
                         firstPage?.context.timeZone ?? 'America/Sao_Paulo',
                       )
                       const [year, month] = civilDate.split('-').map(Number)
+                      setSelectedTransactionId(null)
+                      setSelectedInvoice(null)
+                      setSelectedDebtId(null)
+                      setSelectedReceivableId(null)
                       setSelectedPerson({
                         id: item.personId,
                         period: { month, year },
@@ -279,15 +285,22 @@ export function BudgetDrilldownDrawer({
           if (!settlementMutation.isPending) setSettlementTarget(null)
         }}
       />
-      {selectedPerson && personQuery.data && (
+      {selectedPerson && person && (
         <PersonStatementDrawer
+          key={`person:${selectedPerson.id}`}
           person={{
-            id: personQuery.data.id,
-            name: personQuery.data.name,
-            phone: personQuery.data.phone,
+            id: person.id,
+            name: person.name,
+            phone: person.phone,
           }}
           open
-          onClose={() => setSelectedPerson(null)}
+          onClose={() => {
+            setSelectedPerson(null)
+            setSelectedTransactionId(null)
+            setSelectedInvoice(null)
+            setSelectedDebtId(null)
+            setSelectedReceivableId(null)
+          }}
           period={selectedPerson.period}
         />
       )}

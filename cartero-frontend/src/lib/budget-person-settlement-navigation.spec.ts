@@ -40,7 +40,8 @@ describe('Budget person settlement detail navigation', () => {
 
   it('uses personId for lookup and PersonStatementDrawer, keeping personName as display only', () => {
     expect(types).toMatch(/kind: 'PERSON_SETTLEMENT'[\s\S]*?personId: string[\s\S]*?personName: string/)
-    expect(drawer).toContain('queryFn: () => getPerson(selectedPerson!.id)')
+    expect(drawer).toContain('openId: selectedPerson?.id ?? null')
+    expect(drawer).toContain("queryKey: 'person'")
     expect(drawer).toContain('id: item.personId')
     expect(drawer).toContain('<PersonStatementDrawer')
     expect(row).toContain("primary = item.personName")

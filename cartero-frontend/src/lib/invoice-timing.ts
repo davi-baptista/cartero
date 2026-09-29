@@ -107,6 +107,38 @@ export type TimingUrgency = 'overdue' | 'today' | 'soon' | 'later'
  */
 export const URGENT_DAYS_WINDOW = 7
 
+export type InvoiceSummaryStatusPresentation = {
+  label: string
+  tone: 'informational' | 'pending' | 'destructive' | 'success'
+}
+
+/** Summary status: lifecycle remains authoritative, timing only refines urgency. */
+export function invoiceSummaryStatusPresentation(
+  invoice: { status: string; closeDate: string; dueDate: string },
+  paidAtLabel: string | null,
+  today: Date = new Date(),
+): InvoiceSummaryStatusPresentation {
+  if (invoice.status === 'PAID') {
+    return { label: paidAtLabel ? `Paga em ${paidAtLabel}` : 'Paga', tone: 'success' }
+  }
+  if (invoice.status === 'OVERDUE') {
+    return { label: `Vencida desde ${formatDate(invoice.dueDate)}`, tone: 'destructive' }
+  }
+
+  const target = invoice.status === 'OPEN' ? invoice.closeDate : invoice.dueDate
+  const daysUntilTarget = civilDaysUntil(parseInvoiceDate(target), today)
+  const soon = daysUntilTarget >= 0 && daysUntilTarget <= 5
+
+  if (invoice.status === 'OPEN') {
+    return { label: soon ? 'Fechando em breve' : 'Em aberto', tone: soon ? 'pending' : 'informational' }
+  }
+
+  return {
+    label: soon ? 'Fechada · vencendo em breve' : 'Fechada',
+    tone: soon ? 'pending' : 'informational',
+  }
+}
+
 export function timingUrgency(
   target: Date,
   today: Date = new Date(),

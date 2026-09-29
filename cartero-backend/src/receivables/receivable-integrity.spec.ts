@@ -64,6 +64,7 @@ function buildHarness(setup: Setup = {}) {
     : null;
 
   const prisma: any = {
+    $executeRaw: vi.fn(async () => 1),
     receivable: {
       findUnique: vi.fn(async ({ where }: any) =>
         where.userId && where.userId !== receivable.userId

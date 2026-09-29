@@ -6,6 +6,7 @@ import {
   openItemsFor,
   summarizeCompetence,
   resolvedLabel,
+  personOpenBalanceStatusPresentation,
 } from './person-settlement-view'
 
 /**

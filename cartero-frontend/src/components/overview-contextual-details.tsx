@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { DebtDetailDrawer } from '@/app/(dashboard)/debts/debt-detail-drawer'
 import { DebtSheet, type DebtFormData } from '@/app/(dashboard)/debts/debt-sheet'
@@ -17,6 +17,7 @@ import { getReceivable, updateReceivable, deleteReceivable, updateReceivableSett
 import { getPerson, undoPersonSettlement } from '@/services/persons.service'
 import { apiErrorDetail, apiErrorMessage, isApiErrorCode } from '@/lib/api-error'
 import { useDetailEntity } from '@/lib/use-detail-entity'
+import { syncSettlementEntity } from '@/lib/settlement-cache'
 import type { Debt, Invoice, Receivable } from '@/types'
 import { InstallmentScope } from '@/types'
 import { useAuth } from '@/providers/auth-provider'
@@ -69,10 +70,12 @@ export function OverviewContextualDetails({
     queryKey: 'receivable',
     onNotFound: onClose,
   })
-  const { data: person } = useQuery({
-    queryKey: ['person', personId],
-    queryFn: () => getPerson(personId!),
-    enabled: Boolean(personId),
+  const { entity: person } = useDetailEntity({
+    openId: personId,
+    fromList: undefined,
+    fetchById: getPerson,
+    queryKey: 'person',
+    onNotFound: onClose,
   })
 
   const [editDebt, setEditDebt] = useState<Debt | null>(null)
@@ -85,8 +88,8 @@ export function OverviewContextualDetails({
     item: Debt | Receivable
   } | null>(null)
 
-  function invalidateDebt() {
-    void Promise.all([
+  async function invalidateDebt() {
+    await Promise.all([
       qc.invalidateQueries({ queryKey: ['debts'] }),
       qc.invalidateQueries({ queryKey: ['transactions'] }),
       qc.invalidateQueries({ queryKey: ['bank-invoices'] }),
@@ -118,7 +121,11 @@ export function OverviewContextualDetails({
   })
   const toggleDebtMut = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof updateDebt>[1] }) => updateDebt(id, payload),
-    onSuccess: invalidateDebt,
+    onSuccess: async (result, variables) => {
+      syncSettlementEntity(qc, 'debt', variables.id, result)
+      await invalidateDebt()
+      toast.success(variables.payload.isPaid ? 'Dívida marcada como paga' : 'Dívida marcada como pendente')
+    },
     onError: (error) => {
       if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) {
         setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
@@ -170,7 +177,11 @@ export function OverviewContextualDetails({
   })
   const toggleReceivableMut = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof updateReceivable>[1] }) => updateReceivable(id, payload),
-    onSuccess: invalidateDebt,
+    onSuccess: async (result, variables) => {
+      syncSettlementEntity(qc, 'receivable', variables.id, result)
+      await invalidateDebt()
+      toast.success(variables.payload.isPaid ? 'Cobrança marcada como recebida' : 'Cobrança marcada como pendente')
+    },
     onError: (error) => {
       if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) {
         setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)

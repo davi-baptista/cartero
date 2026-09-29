@@ -31,6 +31,8 @@ import {
   ROW_AMOUNT_TONE,
   ROW_ICON_BG_CLASS,
   ROW_ICON_CLASS,
+  ROW_INACTIVE_AVATAR_CLASS,
+  ROW_INACTIVE_TRAILING_CLASS,
 } from '@/components/ui/financial-list-row'
 import { nextItemLabel } from '@/lib/person-next-item'
 import {
@@ -80,6 +82,7 @@ import {
 } from '@/lib/person-statement'
 import { PersonStatementDrawer } from '@/components/person-statement-drawer'
 import { accountToday } from '@/lib/date'
+import { resolvePersonTargetId } from '@/lib/person-detail-state'
 import { useAuth } from '@/providers/auth-provider'
 import type { Person } from '@/types'
 
@@ -272,14 +275,24 @@ export default function PersonsPage() {
   } | null>(null)
   const [pedidos, setPedidos] = useState(0)
   const personIdParam = searchParams.get('personId')
-  const openPersonId =
-    dispensa !== null &&
-    dispensa.id === personIdParam &&
-    pedidos <= dispensa.geracao
-      ? null
-      : personIdParam
+  const [pendingPersonId, setPendingPersonId] = useState<string | null>(null)
+  const [observedPersonId, setObservedPersonId] = useState(personIdParam)
+
+  if (observedPersonId !== personIdParam) {
+    setObservedPersonId(personIdParam)
+    if (pendingPersonId === personIdParam) setPendingPersonId(null)
+  }
+
+  const openPersonId = resolvePersonTargetId(
+    personIdParam,
+    pendingPersonId,
+    dispensa?.id ?? null,
+    dispensa?.geracao ?? -1,
+    pedidos,
+  )
 
   const openPerson = (id: string) => {
+    setPendingPersonId(id)
     setPedidos((n) => n + 1)
     const next = new URLSearchParams(searchParams.toString())
     next.set('personId', id)
@@ -287,6 +300,7 @@ export default function PersonsPage() {
   }
 
   const closePerson = () => {
+    setPendingPersonId(null)
     /*
       `replaceState`, não `router.replace`: `/persons` é rota ESTÁTICA, e uma
       troca só de query aponta para a mesma entrada do cache do App Router —
@@ -805,6 +819,7 @@ export default function PersonsPage() {
 
               const label = PERSON_ROW_LABEL[status]
               const labelTone = PERSON_ROW_TONE[status]
+              const isEmpty = !balancesLoading && !balancesError && status === 'empty'
 
               return (
               <MotionRow key={person.id} index={i}>
@@ -818,10 +833,15 @@ export default function PersonsPage() {
                 */}
                 <div className="group relative border-b border-border last:border-b-0">
                   <FinancialListRow
-                    onView={() => openPerson(person.id)}
+                    onView={isEmpty ? undefined : () => openPerson(person.id)}
+                    interactive={!isEmpty}
+                    inactive={isEmpty}
                     ariaLabel={`Ver extrato de ${person.name}`}
                     /* Espaço à direita para o kebab sobreposto não cobrir o valor. */
-                    className="pr-10 sm:pr-12"
+                    className={cn(
+                      'pr-10 sm:pr-12',
+                      isEmpty && 'text-muted-foreground',
+                    )}
                     leading={
                       /*
                         A inicial escala junto com o container, como o glyph
@@ -832,8 +852,8 @@ export default function PersonsPage() {
                       <div
                         className={cn(
                           ROW_ICON_CLASS,
-                          ROW_ICON_BG_CLASS,
-                          'text-sm font-semibold text-muted-foreground sm:text-[15px]',
+                          isEmpty ? ROW_INACTIVE_AVATAR_CLASS : ROW_ICON_BG_CLASS,
+                          'text-sm font-semibold sm:text-[15px]',
                         )}
                       >
                         {person.name[0].toUpperCase()}
@@ -874,6 +894,10 @@ export default function PersonsPage() {
                       */
                       balancesLoading ? (
                         <Skeleton className="h-5 w-20" />
+                      ) : isEmpty ? (
+                        <span className={ROW_INACTIVE_TRAILING_CLASS}>
+                          {label}
+                        </span>
                       ) : (
                         <FinancialRowTrailing amount={formatCurrency(net)} label={label} amountTone={tone} labelTone={labelTone} />
                       )

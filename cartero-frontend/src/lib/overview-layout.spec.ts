@@ -66,4 +66,12 @@ describe('overview desktop composition', () => {
     expect(overview).not.toContain('CAL_DIRECTION_AMOUNT')
     expect(overview).not.toContain('directionClass')
   })
+
+  it('keeps invoice timing copy without a redundant invoice badge', () => {
+    expect(overview).toContain('invoiceTimingLabel(invoice, today).toLowerCase()')
+    expect(overview).toContain('Fatura de ${capitalize(formatMonthYear(invoice.month, invoice.year))}')
+    expect(overview).not.toContain('InvoiceBadge')
+    expect(overview).not.toContain('titleAdornment={isInvoice')
+    expect(overview).toContain('statusClass={presentation.statusClass}')
+  })
 })

@@ -33,6 +33,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { SettlementDateDialog } from '../transactions/settlement-date-dialog'
 import { useDetailNavigation } from '@/lib/detail-navigation'
 import { useDetailEntity } from '@/lib/use-detail-entity'
+import { syncSettlementEntity } from '@/lib/settlement-cache'
 import { useDetailTaskAnchor } from '@/lib/use-detail-task-anchor'
 import { DebtDetailDrawer } from './debt-detail-drawer'
 import {
@@ -332,7 +333,10 @@ export default function DebtsPage() {
       payload: Parameters<typeof updateDebt>[1]
       scope?: InstallmentScope
     }) => updateDebt(id, payload, scope),
-    onSuccess: () => {
+    onSuccess: (result, variables) => {
+      if (variables.payload.isPaid !== undefined) {
+        syncSettlementEntity(qc, 'debt', variables.id, result)
+      }
       qc.invalidateQueries({ queryKey: ['debts'] })
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['bank-invoices'] })
@@ -341,7 +345,13 @@ export default function DebtsPage() {
       setSheetOpen(false)
       setEditDebt(null)
       setEditScope(null)
-      toast.success('Dívida atualizada')
+      toast.success(
+        variables.payload.isPaid === true
+          ? 'Dívida marcada como paga'
+          : variables.payload.isPaid === false
+            ? 'Dívida marcada como pendente'
+            : 'Dívida atualizada',
+      )
     },
     onError: (error) => {
       if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)

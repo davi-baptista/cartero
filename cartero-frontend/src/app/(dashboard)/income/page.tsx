@@ -22,6 +22,7 @@ import {
   DrawerSummaryLabel,
   DrawerSummaryMeta,
   DrawerSummaryValue,
+  DrawerCompletionStatus,
 } from '@/components/ui/drawer-section'
 import { DrawerIdentityHeader } from '@/components/ui/drawer-identity-header'
 import {
@@ -40,7 +41,8 @@ import { useAuth } from '@/providers/auth-provider'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { formatDateValue } from '@/lib/date'
 import { accountToday } from '@/lib/date'
-import { nextOpenIncomeOccurrence, nextOpenIncomeOccurrenceOnOrAfter, openOneOffIncome, openRecurringIncomeOccurrences, recurringIncomeOccurrencePresentation } from '@/lib/income-presentation'
+import { syncSettlementEntity } from '@/lib/settlement-cache'
+import { nextOpenIncomeOccurrence, nextOpenIncomeOccurrenceOnOrAfter, openOneOffIncome, openRecurringIncomeOccurrences, recurringIncomeOccurrencePresentation, recurringIncomeStatusPresentation } from '@/lib/income-presentation'
 import type { Receivable, RecurringIncomeRule, TransactionType } from '@/types'
 
 function IncomeRow({ item, onView, onReceive, today }: { item: Receivable; onView: () => void; onReceive: () => void; today: string }) {
@@ -148,7 +150,12 @@ export default function IncomePage() {
   })
   const markPaidMutation = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: { paymentDate?: string; paymentBankId?: string; paymentType?: TransactionType } }) => updateReceivable(id, { isPaid: true, ...payload }),
-    onSuccess: () => { invalidateIncome(); setMarkPaidTarget(null); toast.success('Recebimento marcado como recebido') },
+    onSuccess: (result, variables) => {
+      syncSettlementEntity(queryClient, 'receivable', variables.id, result)
+      invalidateIncome()
+      setMarkPaidTarget(null)
+      toast.success('Recebimento marcado como recebido')
+    },
     onError: () => toast.error('Não foi possível marcar o recebimento'),
   })
 
@@ -203,6 +210,10 @@ export default function IncomePage() {
                 <DrawerSummaryValue className="text-foreground">{formatCurrency(selectedRule.amount)}</DrawerSummaryValue>
                 <DrawerSummaryMeta className="mt-2">Dia {selectedRule.dayOfMonth}{selectedRule.counterpartyName ? ` · ${selectedRule.counterpartyName}` : ''}</DrawerSummaryMeta>
                 <DrawerSummaryMeta className="mt-2">Renda desde {formatDate(`${selectedRule.firstOccurrence}-01`)}</DrawerSummaryMeta>
+                {(() => {
+                  const status = recurringIncomeStatusPresentation(selectedOccurrences, today)
+                  return <div className="mt-3"><DrawerCompletionStatus variant={status.tone}>{status.label}</DrawerCompletionStatus></div>
+                })()}
               </DrawerSummaryCard>
               <div className="flex gap-2">
                 <Button variant="outline" className="gap-2" onClick={() => openRecurringEdit(selectedRule)}><Pencil className="size-3.5" /> Editar renda</Button>

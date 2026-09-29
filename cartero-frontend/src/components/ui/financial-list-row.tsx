@@ -160,6 +160,14 @@ export const ROW_ICON_BG_CLASS = 'bg-[var(--color-expense-bg)]'
 export const ROW_ICON_CLASS =
   'flex size-10 shrink-0 items-center justify-center rounded-xl sm:size-11 sm:rounded-2xl'
 
+/** Shared visual language for rows that exist but have no financial content. */
+export const ROW_INACTIVE_ROW_CLASS =
+  'cursor-default text-muted-foreground hover:bg-transparent focus-visible:ring-0'
+export const ROW_INACTIVE_AVATAR_CLASS =
+  'bg-muted/50 text-muted-foreground'
+export const ROW_INACTIVE_TRAILING_CLASS =
+  'whitespace-nowrap text-[10px] uppercase tracking-[0.06em] text-muted-foreground'
+
 /**
  * Geometria da row: gap, padding e hover.
  *
@@ -247,6 +255,8 @@ export interface FinancialListRowProps {
   onView?: () => void
   /** Mantém a anatomia visual sem criar navegação nesta superfície. */
   interactive?: boolean
+  /** Estado sem conteúdo: legível, muted e sem affordance de interação. */
+  inactive?: boolean
   /**
    * Navegação para outra página, em vez de abrir um detalhe local.
    *
@@ -279,6 +289,7 @@ export function FinancialListRow({
   trailingCompact,
   onView,
   interactive = true,
+  inactive = false,
   href,
   ariaLabel,
   className,
@@ -336,6 +347,7 @@ export function FinancialListRow({
       ? ROW_SHELL_INNER_CLASS
       : ROW_SHELL_CLASS,
     !interactive && 'cursor-default hover:bg-transparent',
+    inactive && ROW_INACTIVE_ROW_CLASS,
     className,
   )
 
@@ -350,11 +362,11 @@ export function FinancialListRow({
     ? undefined
     : (ref as React.Ref<HTMLButtonElement>)
 
-  const principal = href && interactive ? (
+  const principal = href && interactive && !inactive ? (
     <Link href={href} aria-label={ariaLabel} className={classes}>
       {conteudo}
     </Link>
-  ) : interactive ? (
+  ) : interactive && !inactive ? (
     <button
       ref={refPrincipal}
       type="button"
@@ -365,7 +377,7 @@ export function FinancialListRow({
       {conteudo}
     </button>
   ) : (
-    <div className={classes} aria-label={ariaLabel}>
+    <div className={classes} aria-label={ariaLabel} aria-disabled={inactive || undefined}>
       {conteudo}
     </div>
   )

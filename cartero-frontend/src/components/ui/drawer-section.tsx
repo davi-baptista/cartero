@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Check, CircleAlert } from 'lucide-react'
+import { Check, CircleAlert, Clock3, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   DRAWER_WIDE_CONTENT_GUTTER,
@@ -140,13 +140,25 @@ export function DrawerCompletionStatus({
   variant = 'success',
 }: {
   children: ReactNode
-  variant?: 'success' | 'destructive'
+  variant?: 'success' | 'destructive' | 'pending' | 'informational'
 }) {
-  const Icon = variant === 'success' ? Check : CircleAlert
+  const Icon = variant === 'success'
+    ? Check
+    : variant === 'pending'
+      ? Clock3
+      : variant === 'informational'
+        ? Info
+        : CircleAlert
   return (
     <span className={cn(
       'inline-flex items-center gap-1.5 text-xs font-medium',
-      variant === 'success' ? 'text-paid' : 'text-destructive',
+      variant === 'success'
+        ? 'text-paid'
+        : variant === 'pending'
+          ? 'text-pending'
+          : variant === 'informational'
+            ? 'text-primary'
+            : 'text-destructive',
     )}>
       <Icon className="size-3.5" aria-hidden />
       {children}

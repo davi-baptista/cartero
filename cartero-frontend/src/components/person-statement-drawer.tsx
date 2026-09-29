@@ -122,11 +122,11 @@ import {
   DRAWER_WIDE_VERTICAL_RHYTHM,
 } from '@/components/ui/drawer-layout'
 import {
-  dueLabel,
   dueContext,
   openItemsFor,
   resolvedLabel,
   summarizeCompetence,
+  personOpenBalanceStatusPresentation,
 } from '@/lib/person-settlement-view'
 import {
   buildWhatsAppMessage,
@@ -137,6 +137,7 @@ import { cn } from '@/lib/utils'
 import type { Person, Debt, Receivable } from '@/types'
 import { InstallmentScope, TransactionType } from '@/types'
 import { useAuth } from '@/providers/auth-provider'
+import { syncSettlementEntity } from '@/lib/settlement-cache'
 
 function StatementRow({
   kind,
@@ -189,14 +190,11 @@ function StatementRow({
         onView={onView}
         ariaLabel={`Ver detalhes de ${item.title}`}
         leadingAction={
-          item.isPaid ? undefined : (
-            <FinancialAvatar
-              onClick={onToggle}
-              ariaLabel={isReceivable ? 'Marcar como recebido' : 'Marcar como paga'}
-            />
-          )
+          <FinancialAvatar
+            onClick={onToggle}
+            ariaLabel={item.isPaid ? 'Marcar como pendente' : isReceivable ? 'Marcar como recebido' : 'Marcar como paga'}
+          />
         }
-        leading={item.isPaid ? <FinancialAvatar /> : undefined}
         title={
           <span className={cn(item.isPaid && 'text-muted-foreground')}>
             {item.title}
@@ -613,7 +611,11 @@ export function PersonStatementDrawer({
       */
       paymentDate?: string
     }) => updateDebt(id, { isPaid, paymentBankId, paymentType, paymentDate }),
-    onSuccess: async () => { await invalidateStatement() },
+    onSuccess: async (result, variables) => {
+      syncSettlementEntity(qc, 'debt', variables.id, result)
+      await invalidateStatement()
+      toast.success(variables.isPaid ? 'Dívida marcada como paga' : 'Dívida marcada como pendente')
+    },
     onError: (error) => {
       if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
       else toast.error(apiErrorMessage(error, 'Erro ao atualizar'))
@@ -628,7 +630,11 @@ export function PersonStatementDrawer({
       paymentBankId?: string
       paymentType?: TransactionType
     }) => updateReceivable(id, { isPaid, paymentDate, paymentBankId, paymentType }),
-    onSuccess: async () => { await invalidateStatement() },
+    onSuccess: async (result, variables) => {
+      syncSettlementEntity(qc, 'receivable', variables.id, result)
+      await invalidateStatement()
+      toast.success(variables.isPaid ? 'Cobrança marcada como recebida' : 'Cobrança marcada como pendente')
+    },
     onError: (error) => {
       if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
       else toast.error(apiErrorMessage(error, 'Erro ao atualizar'))
@@ -876,6 +882,7 @@ export function PersonStatementDrawer({
     deduplicado por item, então nada aparece duas vezes.
   */
   const competence = { year: period.year, month: period.month }
+  const today = accountToday(user?.timeZone ?? null)
   const settlementReceivables = data?.settlement.receivables ?? []
   const settlementDebts = data?.settlement.debts ?? []
 
@@ -1304,6 +1311,21 @@ export function PersonStatementDrawer({
                     )}
                   </>
                 )}
+                {cardCompetencia.mode === 'open' && (() => {
+                  const status = personOpenBalanceStatusPresentation(
+                    [...monthReceivables, ...monthDebts],
+                    today,
+                  )
+                  if (!status) return null
+
+                  return (
+                    <div className="mt-3">
+                      <DrawerCompletionStatus variant={status.tone}>
+                        {status.label}
+                      </DrawerCompletionStatus>
+                    </div>
+                  )
+                })()}
               </DrawerSummaryCard>
 
               {/*
@@ -1394,7 +1416,7 @@ export function PersonStatementDrawer({
                         key={r.id}
                         kind="receivable"
                         item={r}
-                        dueLabel={dueLabel(r, competence)}
+                        dueLabel={dueContext(r, competence, today).text}
                         onView={() => setDetailReceivable(r)}
                         onToggle={() => handleReceivableToggle(r)}
                         onEdit={() => handleEditReceivable(r)}
@@ -1406,7 +1428,7 @@ export function PersonStatementDrawer({
                         key={d.id}
                         kind="debt"
                         item={d}
-                        dueLabel={dueLabel(d, competence)}
+                        dueLabel={dueContext(d, competence, today).text}
                         onView={() => setDetailDebt(d)}
                         onToggle={() => handleDebtToggle(d)}
                         onEdit={() => handleEditDebt(d)}

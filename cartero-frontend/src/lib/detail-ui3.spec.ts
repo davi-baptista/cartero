@@ -381,7 +381,7 @@ describe('parte C: a geometria das seções tem uma autoridade', () => {
     expect(INVOICE_API).toContain('bank: { select: { id: true, name: true, isSystem: true } }')
     expect(INVOICE_API).toContain('settlement: { select: { paidAt: true } }')
     expect(FATURA).toContain('accountCivilDayOf(invoice.settlement.paidAt, user?.timeZone ?? null)')
-    expect(FATURA).toContain('<DrawerCompletionStatus variant="success">Paga em {paidAtLabel}</DrawerCompletionStatus>')
+    expect(FATURA).toContain('invoiceSummaryStatusPresentation')
     expect(FATURA).toContain('DrawerCompletionStatus')
     expect(PESSOA).toContain('<DrawerCompletionStatus>{cardCompetencia.settledNote}</DrawerCompletionStatus>')
   })
@@ -395,16 +395,16 @@ describe('parte C: a geometria das seções tem uma autoridade', () => {
   })
 
   it('Invoice overdue usa linha temporal destructive e a data civil dueDate', () => {
-    expect(FATURA).toContain('const isOverdue = invoice?.status === InvoiceStatus.OVERDUE')
-    expect(FATURA).toContain('const overdueDateLabel = invoice && isOverdue ? formatDate(invoice.dueDate) : null')
-    expect(FATURA).toContain('{isPaid || isOverdue ? null : (() => {')
-    expect(FATURA).toContain('isPaid && paidAtLabel &&')
-    expect(FATURA).toContain('overdueDateLabel &&')
-    expect(FATURA).toContain('variant="destructive"')
-    expect(FATURA).toContain('Vencida desde {overdueDateLabel}')
-    expect(PRIMITIVE).toContain("variant?: 'success' | 'destructive'")
+    expect(FATURA).toContain('invoiceSummaryStatusPresentation')
+    expect(FATURA).toContain('variant={summaryStatus.tone}')
+    expect(PRIMITIVE).toContain("variant?: 'success' | 'destructive' | 'pending' | 'informational'")
     expect(PRIMITIVE).toContain('CircleAlert')
-    expect(PRIMITIVE).toContain('variant === \'success\' ? \'text-paid\' : \'text-destructive\'')
+    expect(PRIMITIVE).toContain("variant === 'pending'")
+    expect(PRIMITIVE).toContain("variant === 'informational'")
+    expect(PRIMITIVE).toContain("? 'text-primary'")
+    expect(PRIMITIVE).toContain("? 'text-pending'")
+    expect(PRIMITIVE).toContain("'text-destructive'")
+    expect(PRIMITIVE).toContain("'text-paid'")
   })
 
   it('não virou um mega-component', () => {
@@ -418,7 +418,6 @@ describe('parte C: a geometria das seções tem uma autoridade', () => {
       'person',
       'Person',
       'amount',
-      'status',
     ]) {
       expect(PRIMITIVE, proibido).not.toContain(proibido)
     }

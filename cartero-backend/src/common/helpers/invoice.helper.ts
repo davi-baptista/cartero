@@ -33,8 +33,11 @@ export async function findOrCreateSystemBank(
 ): Promise<Bank> {
   // Serialize creation per user. Bank has no unique constraint on this
   // technical identity, so a predicate read alone cannot prevent duplicates.
-  if (typeof tx.$queryRaw === 'function') {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`system-bank:${userId}`}, 0))`;
+  if (typeof tx.$executeRaw === 'function') {
+    // The advisory-lock function returns void. `$queryRaw` makes Prisma
+    // deserialize that result and can surface P2010; this statement is used
+    // only for its side effect, so execute it without result deserialization.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`system-bank:${userId}`}, 0))`;
   }
   const existing = await tx.bank.findFirst({
     where: { userId, isSystem: true, name: SYSTEM_BANK_NAME },

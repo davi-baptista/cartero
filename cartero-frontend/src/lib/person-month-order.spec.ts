@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   comparePastRows,
   historicalMagnitude,
+  personUrgencyGroup,
   sortPersonRowsForMonth,
   type OrderablePerson,
 } from './person-month-order'
@@ -350,6 +351,60 @@ describe('propriedades da ordenação', () => {
   it('lista vazia e de um item não quebram', () => {
     expect(ordem([], 'past')).toEqual([])
     expect(ordem([hist('Só', 1)], 'past')).toEqual(['Só'])
+  })
+})
+
+describe('ordenação operacional do mês ativo', () => {
+  const hoje = '2026-09-29'
+  const aberto = (name: string, dueDate: string, amount: number, id = name) =>
+    p(name, {
+      id,
+      receivablePending: amount,
+      periodReceivableTotal: amount,
+      netBalance: amount,
+      nextItem: { direction: 'receive', dueDate },
+    })
+
+  it('usa overdue, data, valor aberto, resolvido, vazio e id como authorities', () => {
+    const rows = [
+      aberto('A', '2026-08-14', 50),
+      aberto('B', '2026-09-19', 100),
+      aberto('C', '2026-09-30', 100),
+      aberto('D', '2026-10-04', 100),
+      aberto('E', '2026-10-19', 100),
+      p('F', { id: 'F', periodReceivableTotal: 700, settledReceivablesCount: 1 }),
+      p('G', { id: 'G', periodReceivableTotal: 100, settledReceivablesCount: 1 }),
+      p('H', { id: 'H' }),
+    ]
+
+    expect(sortPersonRowsForMonth(rows, 'current', hoje).map((row) => row.name)).toEqual([
+      'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+    ])
+  })
+
+  it('desempata abertos pela maior pendência e resolvidos pelo maior histórico', () => {
+    const rows = [
+      aberto('Menor', '2026-10-01', 10),
+      aberto('Maior', '2026-10-01', 100),
+      p('Resolvido menor', { periodReceivableTotal: 100, settledReceivablesCount: 1 }),
+      p('Resolvido maior', { periodReceivableTotal: 700, settledReceivablesCount: 1 }),
+    ]
+
+    expect(sortPersonRowsForMonth(rows, 'current', hoje).map((row) => row.name)).toEqual([
+      'Maior', 'Menor', 'Resolvido maior', 'Resolvido menor',
+    ])
+  })
+
+  it('mantém o saldo líquido zero ativo quando há valores abertos', () => {
+    const row = p('Bilateral', {
+      receivablePending: 100,
+      debtPending: 100,
+      periodReceivableTotal: 100,
+      periodDebtTotal: 100,
+      nextItem: { direction: 'receive', dueDate: '2026-10-19' },
+    })
+
+    expect(personUrgencyGroup(row, hoje)).toBe(1)
   })
 })
 

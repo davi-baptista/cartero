@@ -36,6 +36,7 @@ import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dia
 import { SettlementDateDialog } from '../transactions/settlement-date-dialog'
 import { useDetailNavigation } from '@/lib/detail-navigation'
 import { useDetailEntity } from '@/lib/use-detail-entity'
+import { syncSettlementEntity } from '@/lib/settlement-cache'
 import { useDetailTaskAnchor } from '@/lib/use-detail-task-anchor'
 import { ReceivableDetailDrawer } from './receivable-detail-drawer'
 import {
@@ -348,7 +349,10 @@ export default function ReceivablesPage() {
       payload: Parameters<typeof updateReceivable>[1]
       scope?: InstallmentScope
     }) => updateReceivable(id, payload, scope),
-    onSuccess: () => {
+    onSuccess: (result, variables) => {
+      if (variables.payload.isPaid !== undefined) {
+        syncSettlementEntity(qc, 'receivable', variables.id, result)
+      }
       qc.invalidateQueries({ queryKey: ['receivables'] })
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['bank-invoices'] })
@@ -357,7 +361,13 @@ export default function ReceivablesPage() {
       setSheetOpen(false)
       setEditReceivable(null)
       setEditScope(null)
-      toast.success('Cobrança atualizada')
+      toast.success(
+        variables.payload.isPaid === true
+          ? 'Cobrança marcada como recebida'
+          : variables.payload.isPaid === false
+            ? 'Cobrança marcada como pendente'
+            : 'Cobrança atualizada',
+      )
     },
     onError: (error) => {
       if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)

@@ -37,6 +37,8 @@ import {
   ROW_ICON_BG_CLASS,
   ROW_TRAILING_LABEL_CLASS,
   ROW_ICON_CLASS,
+  ROW_INACTIVE_AVATAR_CLASS,
+  ROW_INACTIVE_TRAILING_CLASS,
 } from '@/components/ui/financial-list-row'
 import { cn } from '@/lib/utils'
 import type { Bank, Invoice } from '@/types'
@@ -47,7 +49,6 @@ import {
 } from '@/lib/bank-month-summary-lines'
 import {
   BANK_TRAILING_LABEL,
-  BANK_TRAILING_TONE,
   banksForPeriod,
   summarizeBankMonth,
 } from '@/lib/bank-invoice-selection'
@@ -147,11 +148,20 @@ function BankRow({
           row não finge ser clicável.
         */
         onView={invoice ? () => onOpenInvoice(invoice.id) : undefined}
+        interactive={invoice !== null}
+        inactive={invoice === null}
         ariaLabel={ariaLabel}
         /* Espaço à direita para o kebab sobreposto não cobrir o valor. */
-        className="pr-10 sm:pr-12"
+        className={cn(
+          'pr-10 sm:pr-12',
+          !invoice && 'text-muted-foreground',
+        )}
         leading={
-          <div className={cn(ROW_ICON_CLASS, ROW_ICON_BG_CLASS, 'text-sm font-semibold text-muted-foreground select-none')}>
+          <div className={cn(
+            ROW_ICON_CLASS,
+            invoice ? ROW_ICON_BG_CLASS : ROW_INACTIVE_AVATAR_CLASS,
+            'text-sm font-semibold select-none',
+          )}>
             {initial}
           </div>
         }
@@ -236,8 +246,7 @@ function BankRow({
             */
             <span
               className={cn(
-                ROW_TRAILING_LABEL_CLASS,
-                BANK_TRAILING_TONE.noInvoice,
+                ROW_INACTIVE_TRAILING_CLASS,
               )}
             >
               {BANK_TRAILING_LABEL.noInvoice}

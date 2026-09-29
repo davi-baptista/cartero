@@ -23,7 +23,6 @@ import {
 import { accountToday, accountTodayDate, formatDateValue } from '@/lib/date'
 import { useAuth } from '@/providers/auth-provider'
 import { resolveCategoryIcon } from '@/lib/category-icons'
-import { invoiceStatusConfig } from '@/lib/invoice-status'
 import {
   formatDueTimingFromISO,
   invoiceTimingLabel,
@@ -54,7 +53,6 @@ import { FinancialListRow } from '@/components/ui/financial-list-row'
 import { OverviewContextualDetails } from '@/components/overview-contextual-details'
 import { Button } from '@/components/ui/button'
 import type { Invoice, Debt, Receivable, Bank, Transaction } from '@/types'
-import { InvoiceStatus } from '@/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -296,21 +294,6 @@ function CategoryBreakdown({
 
 // ─── Attention panel ──────────────────────────────────────────────────────────
 
-function InvoiceBadge({ status }: { status: InvoiceStatus }) {
-  const { label, className } = invoiceStatusConfig(status)
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full px-1.5 py-0 text-[9px] font-medium',
-        className,
-      )}
-    >
-      {label}
-    </span>
-  )
-}
-
-
 /** Ícone neutro compartilhado das rows deste painel; o status carrega a semântica. */
 function AttentionRowIcon({
   icon: Icon,
@@ -431,7 +414,6 @@ function AgendaSummaryRow({
         />
       }
       title={title}
-      titleAdornment={isInvoice && invoice ? <InvoiceBadge status={invoice.status} /> : undefined}
       meta={
         <AgendaMeta
           description={description}

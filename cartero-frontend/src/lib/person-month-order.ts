@@ -4,11 +4,15 @@ import {
 } from '@/lib/bank-month-summary-lines'
 import { formatDateValue } from '@/lib/date'
 import {
-  personPriorityRank,
   type NextSettlementItem,
   type SortablePerson,
 } from '@/lib/person-next-item'
-import { hasPeriodActivity, type PeriodBalance } from '@/lib/person-period-view'
+import {
+  hasOpenObligation,
+  hasPeriodActivity,
+  outstandingNetAmount,
+  type PeriodBalance,
+} from '@/lib/person-period-view'
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -40,6 +44,7 @@ import { hasPeriodActivity, type PeriodBalance } from '@/lib/person-period-view'
 export interface OrderablePerson
   extends Omit<SortablePerson, 'nextItem'>,
     Omit<PeriodBalance, 'nextItem'> {
+  id?: string
   name: string
   nextItem: NextSettlementItem | null
 }
@@ -112,32 +117,49 @@ export function compareUrgencyRows(
   b: OrderablePerson,
   today?: string,
 ): number {
-  /*
-    `hasActivity` é o que separa SETTLED de EMPTY.
-
-    Sem ele o rank decidia os dois últimos grupos por `Math.abs(netBalance)` —
-    outstanding, que ZERA no settlement. Uma pessoa com −R$ 1 quitados e outra
-    sem nenhuma relação no mês ficavam no mesmo grupo, e o nome desempatava:
-    "C6" aparecia entre "Breno" e "Fabricio", ambos com saldo final.
-
-    A informação existe no balanço; faltava chegar até aqui.
-  */
-  const rankA = personPriorityRank(
-    { ...a, hasActivity: hasPeriodActivity(a) },
-    today,
-  )
-  const rankB = personPriorityRank(
-    { ...b, hasActivity: hasPeriodActivity(b) },
-    today,
-  )
+  const rankA = personUrgencyGroup(a, today)
+  const rankB = personUrgencyGroup(b, today)
   if (rankA !== rankB) return rankA - rankB
 
-  /* Dentro do grupo, a data mais próxima lidera. */
+  /* Dentro dos grupos abertos, a data canônica lidera. */
   const diaA = a.nextItem?.dueDate.slice(0, 10)
   const diaB = b.nextItem?.dueDate.slice(0, 10)
   if (diaA && diaB && diaA !== diaB) return diaA < diaB ? -1 : 1
 
-  return a.name.localeCompare(b.name)
+  /* Datas iguais: maior pendência primeiro. Resolvedores usam o histórico. */
+  const amountA = rankA <= 1 ? openMagnitude(a) : historicalMagnitude(a)
+  const amountB = rankB <= 1 ? openMagnitude(b) : historicalMagnitude(b)
+  if (Math.abs(amountA - amountB) > 0.005) return amountB - amountA
+
+  const nameOrder = a.name.localeCompare(b.name)
+  if (nameOrder !== 0) return nameOrder
+  return (a.id ?? '').localeCompare(b.id ?? '')
+}
+
+/**
+ * Groups for the current/future competence. This is the presentation
+ * authority for the list; the page only supplies the already-derived rows.
+ *
+ * 0 overdue open, 1 future/today open, 2 open without a date, 3 settled,
+ * 4 empty.
+ */
+export function personUrgencyGroup(
+  person: OrderablePerson,
+  today: string = formatDateValue(),
+): 0 | 1 | 2 | 3 | 4 {
+  const open = hasOpenObligation(person) ||
+    (person.nextItem !== null && Math.abs(person.netBalance) > 0.005)
+  if (open) {
+    if (!person.nextItem) return 2
+    return person.nextItem.dueDate.slice(0, 10) < today ? 0 : 1
+  }
+  return hasPeriodActivity(person) ? 3 : 4
+}
+
+/** Amount shown by an open row, used only as a deterministic tie-break. */
+function openMagnitude(person: OrderablePerson): number {
+  const derived = Math.abs(outstandingNetAmount(person))
+  return derived > 0.005 ? derived : Math.abs(person.netBalance)
 }
 
 /**

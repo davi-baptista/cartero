@@ -42,7 +42,7 @@ export function compareCompetence(
 }
 
 /** `YYYY-MM-DD` do vencimento, para comparar por dia civil. */
-function dueDay(item: Timed): string {
+function dueDay(item: Pick<Timed, 'dueDate'>): string {
   return item.dueDate.slice(0, 10)
 }
 
@@ -78,6 +78,36 @@ export function belongsToCompetence(
 }
 
 export type DueState = 'overdue' | 'dueToday' | 'pending'
+
+export type PersonOpenBalanceStatusPresentation = {
+  label: 'Valores vencidos' | 'Valores vencendo em breve' | 'Valores em aberto'
+  tone: 'destructive' | 'pending' | 'informational'
+}
+
+/** Status agregado dos valores ainda abertos na competência exibida. */
+export function personOpenBalanceStatusPresentation(
+  items: readonly Pick<Timed, 'dueDate' | 'isPaid'>[],
+  today = formatDateValue(),
+): PersonOpenBalanceStatusPresentation | null {
+  const openItems = items.filter((item) => !item.isPaid)
+  if (openItems.length === 0) return null
+
+  if (openItems.some((item) => dueDay(item) < today)) {
+    return { label: 'Valores vencidos', tone: 'destructive' }
+  }
+
+  const nearestDue = openItems.map((item) => dueDay(item)).sort()[0]
+  if (nearestDue) {
+    const daysUntilDue = Math.round(
+      (new Date(`${nearestDue}T00:00:00`).getTime() - new Date(`${today}T00:00:00`).getTime()) / 86_400_000,
+    )
+    if (daysUntilDue <= 5) {
+      return { label: 'Valores vencendo em breve', tone: 'pending' }
+    }
+  }
+
+  return { label: 'Valores em aberto', tone: 'informational' }
+}
 
 /**
  * Estado temporal do item.

@@ -3,6 +3,14 @@
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
+/** Return detail data only when it belongs to the currently requested id. */
+export function detailEntityForId<T extends { id: string }>(
+  entity: T | undefined,
+  openId: string | null,
+): T | null {
+  return entity?.id === openId ? entity : null
+}
+
 /**
  * ══════════════════════════════════════════════════════════════════════════
  * Resolver a entidade que a URL diz estar aberta
@@ -63,7 +71,7 @@ export function useDetailEntity<T extends { id: string }>({
   }, [isError])
 
   return {
-    entity: fromList ?? data ?? null,
+    entity: fromList ?? detailEntityForId(data, openId),
     isLoading: precisaBuscar && isLoading,
   }
 }

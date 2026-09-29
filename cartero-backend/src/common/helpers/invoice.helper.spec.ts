@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_INVOICE_DAYS_AFTER_CLOSE,
   deriveInvoiceStatus,
+  findOrCreateSystemBank,
   getInvoiceCloseDateForPeriod,
   getInvoiceDueDateForPeriod,
   getInvoicePeriodForDate,
@@ -427,5 +428,50 @@ describe('getLegacyCloseDay', () => {
 describe('constantes', () => {
   it('o intervalo padrão entre fechamento e vencimento é de 7 dias', () => {
     expect(DEFAULT_INVOICE_DAYS_AFTER_CLOSE).toBe(7);
+  });
+});
+
+describe('findOrCreateSystemBank', () => {
+  const bank = (overrides: Record<string, unknown> = {}) => ({
+    id: 'system-bank-1',
+    userId: 'user-1',
+    name: '__system_receivables__',
+    isSystem: true,
+    ...overrides,
+  });
+
+  it('uses executeRaw for the void-returning advisory lock and creates the bank', async () => {
+    const tx: any = {
+      $executeRaw: vi.fn(async () => 1),
+      bank: {
+        findFirst: vi.fn(async () => null),
+        create: vi.fn(async ({ data }: any) => bank(data)),
+      },
+    };
+
+    const result = await findOrCreateSystemBank(tx, 'user-1');
+
+    expect(result).toMatchObject({
+      userId: 'user-1',
+      name: '__system_receivables__',
+      isSystem: true,
+    });
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(tx.$queryRaw).toBeUndefined();
+    expect(tx.bank.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the existing canonical system bank without creating another one', async () => {
+    const existing = bank();
+    const tx: any = {
+      $executeRaw: vi.fn(async () => 1),
+      bank: {
+        findFirst: vi.fn(async () => existing),
+        create: vi.fn(),
+      },
+    };
+
+    await expect(findOrCreateSystemBank(tx, 'user-1')).resolves.toBe(existing);
+    expect(tx.bank.create).not.toHaveBeenCalled();
   });
 });

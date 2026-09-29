@@ -57,14 +57,12 @@ import {
   invoiceBreakdown,
   invoiceComposition,
 } from '@/lib/invoice-composition'
-import { accountCivilDayOf, parseDateOnly, formatDateValue, todayDateValue } from '@/lib/date'
+import { accountCivilDayOf, accountToday, parseDateOnly, formatDateValue, todayDateValue } from '@/lib/date'
+import { parseInvoiceDate } from '@/lib/invoice-dates'
 import { formatDate } from '@/lib/formatters'
 import { SettlementPaymentFields } from '@/components/settlement-payment-fields'
 import { useAuth } from '@/providers/auth-provider'
 import { resolveCategoryIcon } from '@/lib/category-icons'
-import {
-  invoiceStatusConfig,
-} from '@/lib/invoice-status'
 import { invalidateInvoiceDependents } from '@/lib/invoice-dependent-queries'
 import {
   invalidateTransactionDependents,
@@ -87,6 +85,7 @@ import {
 import { DrawerIdentityHeader } from '@/components/ui/drawer-identity-header'
 import { FinancialAvatar } from '@/components/ui/financial-avatar'
 import { FinancialListRow, FinancialRowTrailing } from '@/components/ui/financial-list-row'
+import { invoiceSummaryStatusPresentation } from '@/lib/invoice-timing'
 import { financialDrawerRowSurfaceClass } from '@/components/ui/financial-drawer-row-surface'
 import { bankDisplayName } from '@/lib/bank-display'
 import { TransactionDetailsDrawer } from '@/components/transaction-details-drawer'
@@ -543,11 +542,16 @@ export function InvoiceDetailsDrawer({
     invoice &&
     (invoice.status === InvoiceStatus.CLOSED || invoice.status === InvoiceStatus.OVERDUE)
   const isPaid = invoice?.status === InvoiceStatus.PAID
-  const isOverdue = invoice?.status === InvoiceStatus.OVERDUE
   const paidAtLabel = invoice?.settlement?.paidAt
     ? formatDate(accountCivilDayOf(invoice.settlement.paidAt, user?.timeZone ?? null))
     : null
-  const overdueDateLabel = invoice && isOverdue ? formatDate(invoice.dueDate) : null
+  const summaryStatus = invoice
+    ? invoiceSummaryStatusPresentation(
+        invoice,
+        paidAtLabel,
+        parseInvoiceDate(accountToday(user?.timeZone ?? null)),
+      )
+    : null
   /** Fatura paga é imutável: o total registrado tem de refletir o que foi pago. */
   const canEditTransactions = Boolean(invoice) && !isPaid
 
@@ -723,13 +727,7 @@ export function InvoiceDetailsDrawer({
         ) : (
           <div className={cn('flex min-h-0 flex-1 flex-col', DRAWER_WIDE_VERTICAL_RHYTHM.sectionTopGap)}>
             <DrawerSummaryCard>
-              <div className="flex items-start justify-between gap-3">
-                <DrawerSummaryLabel>Total da fatura</DrawerSummaryLabel>
-                {isPaid || isOverdue ? null : (() => {
-                  const status = invoiceStatusConfig(invoice.status)
-                  return <span className={cn('shrink-0 rounded-full px-1.5 py-0 text-[10px] font-medium', status.className)}>{status.label}</span>
-                })()}
-              </div>
+              <DrawerSummaryLabel>Total da fatura</DrawerSummaryLabel>
               <DrawerSummaryValue tracking="tight" className="text-foreground">
                 {formatCurrency(total)}
               </DrawerSummaryValue>
@@ -739,15 +737,10 @@ export function InvoiceDetailsDrawer({
                   <span className="text-receivable">{formatCurrency(reimbursableTotal)}</span> de outras pessoas
                 </p>
               )}
-              {isPaid && paidAtLabel && (
+              {summaryStatus && (
                 <div className="mt-3">
-                  <DrawerCompletionStatus variant="success">Paga em {paidAtLabel}</DrawerCompletionStatus>
-                </div>
-              )}
-              {overdueDateLabel && (
-                <div className="mt-3">
-                  <DrawerCompletionStatus variant="destructive">
-                    Vencida desde {overdueDateLabel}
+                  <DrawerCompletionStatus variant={summaryStatus.tone}>
+                    {summaryStatus.label}
                   </DrawerCompletionStatus>
                 </div>
               )}
