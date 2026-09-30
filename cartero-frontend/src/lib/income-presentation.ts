@@ -1,4 +1,5 @@
 import type { Receivable, RecurringIncomeRule } from '@/types'
+import { compareIncomeHistoryItems, isResolvedIncomeHistoryItem } from '@/lib/income-history'
 import { formatDate } from '@/lib/formatters'
 
 export type RecurringIncomeOccurrencePresentation = {
@@ -73,4 +74,14 @@ export function openOneOffIncome(receivables: Receivable[]) {
 
 export function openRecurringIncomeOccurrences(rule: RecurringIncomeRule, receivables: Receivable[]) {
   return recurringIncomeOccurrences(rule, receivables).filter((item) => !item.isPaid)
+}
+
+/** Occorrências recebidas, ordenadas pela data efetiva do recebimento. */
+export function recurringIncomeHistoryOccurrences(
+  rule: RecurringIncomeRule,
+  receivables: Receivable[],
+) {
+  return recurringIncomeOccurrences(rule, receivables)
+    .filter(isResolvedIncomeHistoryItem)
+    .sort(compareIncomeHistoryItems)
 }

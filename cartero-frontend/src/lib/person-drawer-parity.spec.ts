@@ -42,6 +42,9 @@ const ROW_SURFACE = semComentarios(
 const FINANCIAL_LIST_ROW = semComentarios(
   ler('../components/ui/financial-list-row.tsx'),
 )
+const FINANCIAL_SETTLEMENT_ROW = semComentarios(
+  ler('../components/ui/financial-settlement-row.tsx'),
+)
 const SECTION_TITLE = DRAWER_SECTIONS.slice(
   DRAWER_SECTIONS.indexOf('export function DrawerSectionTitle'),
   DRAWER_SECTIONS.indexOf('export function DrawerSectionEmpty'),
@@ -327,7 +330,8 @@ describe('objetivo 3: cursor nos alvos de clique', () => {
     */
     expect(DRAWER).toContain('ReceivableDetailDrawer')
     expect(DRAWER).toContain('DebtDetailDrawer')
-    expect(DRAWER).toContain('FinancialListRow')
+    expect(DRAWER).toContain('FinancialSettlementRow')
+    expect(FINANCIAL_SETTLEMENT_ROW).toContain('<FinancialListRow')
     expect(DRAWER).toContain('FinancialAvatar')
     expect(primitive('financial-avatar.tsx')).toContain('AVATAR_3D_CLASS')
     expect(FINANCIAL_LIST_ROW).toContain('DisclosureChevron')
@@ -349,22 +353,25 @@ describe('objetivo 3: cursor nos alvos de clique', () => {
     expect(DRAWER).toContain('<DrawerSectionHeader')
     expect(DRAWER).toContain('<DrawerSectionTitle')
     expect(DRAWER).toContain('<DrawerFinancialList inset>')
-    expect(DRAWER).toContain('<FinancialListRow')
+    expect(DRAWER).toContain('<FinancialSettlementRow')
   })
 
-  it('separa detalhe da row e quitação no círculo apenas para itens abertos', () => {
+  it('usa a composição compartilhada para separar detalhe e alternância de status', () => {
     expect(DRAWER).toContain('onView={onView}')
-    expect(DRAWER).toContain('onClick={onToggle}')
+    expect(DRAWER).toContain('onToggleStatus={onToggle}')
     expect(DRAWER).toContain('onToggle={() => handleReceivableToggle(r)}')
     expect(DRAWER).toContain('onToggle={() => handleDebtToggle(d)}')
     expect(DRAWER).toContain('onView={() => setDetailReceivable(r)}')
     expect(DRAWER).toContain('onView={() => setDetailDebt(d)}')
-    expect(DRAWER).toContain('leadingAction={')
-    expect(DRAWER).toContain("item.isPaid ? 'Marcar como pendente' : isReceivable ? 'Marcar como recebido' : 'Marcar como paga'")
+    expect(DRAWER).toContain('<FinancialSettlementRow')
+    expect(FINANCIAL_SETTLEMENT_ROW).toContain('leadingAction={')
+    expect(FINANCIAL_SETTLEMENT_ROW).toContain('onToggleStatus')
+    expect(FINANCIAL_SETTLEMENT_ROW).toContain('statusActionLabel')
     expect(FINANCIAL_LIST_ROW).toContain('{leadingAction}')
     expect(FINANCIAL_LIST_ROW).toContain('<button')
     expect(FINANCIAL_LIST_ROW).toContain('onClick={onView}')
   })
+
 })
 
 describe('o que já estava bom foi preservado', () => {

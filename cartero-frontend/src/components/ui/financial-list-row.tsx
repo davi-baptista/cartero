@@ -70,6 +70,7 @@ export const ROW_TITLE_CLASS =
  * exatamente assim.
  */
 export const ROW_RESOLVED_TONE = 'text-paid'
+export const ROW_HISTORY_TITLE_TONE = 'text-muted-foreground'
 
 /** Metadata compacta abaixo do título. */
 export const ROW_META_CLASS =

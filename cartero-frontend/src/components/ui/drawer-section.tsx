@@ -261,14 +261,17 @@ export function DrawerSectionTitle({
 export function DrawerSectionEmpty({
   children,
   className,
+  inset = true,
 }: {
   children: ReactNode
   className?: string
+  /** Omit the horizontal gutter when the parent content is already inset. */
+  inset?: boolean
 }) {
   return (
     <p
       className={cn(
-        DRAWER_WIDE_CONTENT_INSET,
+        inset && DRAWER_WIDE_CONTENT_INSET,
         'py-6 text-center text-[11px] text-muted-foreground',
         className,
       )}

@@ -10,13 +10,15 @@ import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { QueryError } from '@/components/ui/query-error'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { FinancialListRow, FinancialRowTrailing } from '@/components/ui/financial-list-row'
+import { FinancialListRow, FinancialRowTrailing, ROW_AMOUNT_CLASS } from '@/components/ui/financial-list-row'
+import { FinancialSettlementRow } from '@/components/ui/financial-settlement-row'
 import { FinancialAvatar } from '@/components/ui/financial-avatar'
 import {
   DrawerFinancialList,
   DrawerOutlineCard,
   DrawerSectionGroup,
   DrawerSectionHeading,
+  DrawerSectionEmpty,
   DrawerSectionTitle,
   DrawerSummaryCard,
   DrawerSummaryLabel,
@@ -34,30 +36,27 @@ import { cn } from '@/lib/utils'
 import { ReceivableDetailDrawer } from '../receivables/receivable-detail-drawer'
 import { ReceivableSheet, type ReceivableFormData } from '../receivables/receivable-sheet'
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
+import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dialog'
 import { RecurringIncomeSheet } from './recurring-income-sheet'
 import { getReceivables, createReceivable, updateReceivable } from '@/services/receivables.service'
 import { createRecurringIncome, deleteRecurringIncome, getRecurringIncomes, updateRecurringIncome, type CreateRecurringIncomePayload, type UpdateRecurringIncomePayload } from '@/services/recurring-income.service'
 import { useAuth } from '@/providers/auth-provider'
-import { formatCurrency, formatDate } from '@/lib/formatters'
-import { formatDateValue } from '@/lib/date'
-import { accountToday } from '@/lib/date'
+import { formatCurrency, formatDate, formatSignedCurrency } from '@/lib/formatters'
+import { accountToday, formatDateValue } from '@/lib/date'
 import { syncSettlementEntity } from '@/lib/settlement-cache'
-import { nextOpenIncomeOccurrence, nextOpenIncomeOccurrenceOnOrAfter, openOneOffIncome, openRecurringIncomeOccurrences, recurringIncomeOccurrencePresentation, recurringIncomeStatusPresentation } from '@/lib/income-presentation'
+import { nextOpenIncomeOccurrence, nextOpenIncomeOccurrenceOnOrAfter, openOneOffIncome, openRecurringIncomeOccurrences, recurringIncomeHistoryOccurrences, recurringIncomeOccurrencePresentation, recurringIncomeStatusPresentation } from '@/lib/income-presentation'
+import { incomeHistoryReceiptLabel, paginateIncomeHistory, settledIncomeHistory } from '@/lib/income-history'
 import type { Receivable, RecurringIncomeRule, TransactionType } from '@/types'
 
 function IncomeRow({ item, onView, onReceive, today }: { item: Receivable; onView: () => void; onReceive: () => void; today: string }) {
   const presentation = recurringIncomeOccurrencePresentation(item, today)
   return (
-    <FinancialListRow
+    <FinancialSettlementRow
+      resolved={false}
+      onToggleStatus={onReceive}
       ariaLabel={`Abrir ${item.title}`}
       onView={onView}
-      leadingAction={
-        <FinancialAvatar
-          onClick={item.isPaid ? onView : onReceive}
-          ariaLabel={item.isPaid ? `Abrir ${item.title}` : `Marcar ${item.title} como recebido`}
-          title={item.isPaid ? `Abrir ${item.title}` : 'Marcar como recebido'}
-        />
-      }
+      statusActionLabel={`Marcar ${item.title} como recebido`}
       title={item.title}
       meta={<span className={presentation.tone === 'overdue' ? 'text-destructive' : 'text-muted-foreground'}>{presentation.label}</span>}
       trailing={<FinancialRowTrailing amount={formatCurrency(item.amount)} label="A RECEBER" />}
@@ -73,14 +72,54 @@ function OpenOccurrencesList({ occurrences, today, onSelect, onReceive }: { occu
       {occurrences.map((occurrence) => {
         const presentation = recurringIncomeOccurrencePresentation(occurrence, today)
         return (
-          <FinancialListRow
+          <FinancialSettlementRow
             key={occurrence.id}
+            resolved={false}
+            onToggleStatus={() => onReceive(occurrence)}
             ariaLabel={`Abrir ${occurrence.title}`}
             onView={() => onSelect(occurrence)}
-            leadingAction={<FinancialAvatar onClick={() => onReceive(occurrence)} ariaLabel={`Marcar ${occurrence.title} como recebido`} title="Marcar como recebido" />}
+            statusActionLabel={`Marcar ${occurrence.title} como recebido`}
             title={formatDate(occurrence.dueDate)}
             meta={<span className={presentation.tone === 'overdue' ? 'text-destructive' : 'text-muted-foreground'}>{presentation.tone === 'overdue' ? 'Em atraso' : 'A receber'}</span>}
             trailing={<FinancialRowTrailing amount={formatCurrency(occurrence.amount)} label="A RECEBER" />}
+          />
+        )
+      })}
+    </DrawerFinancialList>
+  )
+}
+
+function HistoryOccurrencesList({ occurrences, timeZone, onSelect, onReverse }: { occurrences: Receivable[]; timeZone: string | null | undefined; onSelect: (occurrence: Receivable) => void; onReverse: (occurrence: Receivable) => void }) {
+  if (occurrences.length === 0) {
+    return (
+      <DrawerSectionEmpty inset={false} className={DRAWER_WIDE_VERTICAL_RHYTHM.sectionEmptyPadding}>
+        Nenhum recebimento realizado.
+      </DrawerSectionEmpty>
+    )
+  }
+
+  return (
+    <DrawerFinancialList>
+      {occurrences.map((occurrence) => {
+        const receiptLabel = incomeHistoryReceiptLabel(occurrence, timeZone)
+        return (
+          <FinancialSettlementRow
+            key={occurrence.id}
+            resolved
+            onToggleStatus={() => onReverse(occurrence)}
+            statusActionLabel={`Marcar ${occurrence.title} como pendente`}
+            ariaLabel={`Abrir ${occurrence.title}: ${receiptLabel}`}
+            onView={() => onSelect(occurrence)}
+            title={formatDate(occurrence.dueDate)}
+            meta={<span>{receiptLabel}</span>}
+            trailing={
+              <>
+                <span className={cn(ROW_AMOUNT_CLASS, 'text-muted-foreground')}>
+                  {formatSignedCurrency(Number(occurrence.amount), 'in')}
+                </span>
+                <span className="text-xs text-muted-foreground">{formatDate(occurrence.dueDate)}</span>
+              </>
+            }
           />
         )
       })}
@@ -100,6 +139,8 @@ export default function IncomePage() {
   const [oneOffOpen, setOneOffOpen] = useState(false)
   const [occurrenceEditTarget, setOccurrenceEditTarget] = useState<Receivable | null>(null)
   const [markPaidTarget, setMarkPaidTarget] = useState<Receivable | null>(null)
+  const [unmarkPaidTarget, setUnmarkPaidTarget] = useState<Receivable | null>(null)
+  const [historyPage, setHistoryPage] = useState(0)
 
   const rulesQuery = useQuery({ queryKey: ['recurring-incomes'], queryFn: getRecurringIncomes })
   const receivablesQuery = useQuery({ queryKey: ['receivables'], queryFn: () => getReceivables() })
@@ -107,8 +148,11 @@ export default function IncomePage() {
   const receivables = receivablesQuery.data ?? []
   const oneOffs = openOneOffIncome(receivables)
   const selectedOccurrences = selectedRule ? openRecurringIncomeOccurrences(selectedRule, receivables) : []
+  const selectedHistoryOccurrences = selectedRule ? recurringIncomeHistoryOccurrences(selectedRule, receivables) : []
   const today = user?.timeZone ? accountToday(user.timeZone) : formatDateValue()
   const selectedRuleNextOccurrence = nextOpenIncomeOccurrenceOnOrAfter(selectedOccurrences, today) ?? null
+  const generalHistory = settledIncomeHistory(receivables)
+  const paginatedHistory = paginateIncomeHistory(generalHistory, historyPage)
 
   const invalidateIncome = () => {
     queryClient.invalidateQueries({ queryKey: ['recurring-incomes'] })
@@ -148,16 +192,35 @@ export default function IncomePage() {
     onSuccess: () => { invalidateIncome(); setOccurrenceEditTarget(null); toast.success('Recebimento atualizado') },
     onError: () => toast.error('Não foi possível atualizar o recebimento'),
   })
-  const markPaidMutation = useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: { paymentDate?: string; paymentBankId?: string; paymentType?: TransactionType } }) => updateReceivable(id, { isPaid: true, ...payload }),
+  const settlementMutation = useMutation({
+    mutationFn: ({ id, isPaid, payload }: { id: string; isPaid: boolean; payload?: { paymentDate?: string; paymentBankId?: string; paymentType?: TransactionType } }) => updateReceivable(id, { isPaid, ...payload }),
     onSuccess: (result, variables) => {
       syncSettlementEntity(queryClient, 'receivable', variables.id, result)
       invalidateIncome()
-      setMarkPaidTarget(null)
-      toast.success('Recebimento marcado como recebido')
+      if (variables.isPaid) setHistoryPage(0)
+      const updated = Array.isArray(result) ? result.find((item) => item.id === variables.id) : result
+      if (updated && selectedReceivable?.id === updated.id) setSelectedReceivable(updated)
+      if (variables.isPaid) setMarkPaidTarget(null)
+      toast.success(variables.isPaid ? 'Recebimento marcado como recebido' : 'Recebimento marcado como pendente')
     },
-    onError: () => toast.error('Não foi possível marcar o recebimento'),
+    onError: (_error, variables) => toast.error(variables.isPaid ? 'Não foi possível marcar o recebimento' : 'Não foi possível marcar o recebimento como pendente'),
   })
+
+  function handleSelectedReceivableToggle(item: Receivable) {
+    if (!item.isPaid) {
+      setMarkPaidTarget(item)
+    } else if (item.paymentTransactionId) {
+      setUnmarkPaidTarget(item)
+    } else {
+      settlementMutation.mutate({ id: item.id, isPaid: false })
+    }
+  }
+
+  function handleUnmarkPaidConfirm() {
+    if (!unmarkPaidTarget) return
+    settlementMutation.mutate({ id: unmarkPaidTarget.id, isPaid: false })
+    setUnmarkPaidTarget(null)
+  }
 
   function openRecurringCreate() {
     setChooserOpen(false)
@@ -189,16 +252,68 @@ export default function IncomePage() {
         <Button className="shrink-0 gap-2" onClick={() => setChooserOpen(true)}><Plus className="size-4" /> <span className="hidden sm:inline">Adicionar renda</span><span className="sm:hidden">Adicionar</span></Button>
       </div>
 
-      {loading ? <div className="space-y-2">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-full" />)}</div> : rules.length === 0 && oneOffs.length === 0 ? (
-        <div className="flex flex-col items-center rounded-xl border border-dashed border-border/70 px-6 py-16 text-center"><div className="flex size-12 items-center justify-center rounded-xl bg-muted"><CircleDollarSign className="size-6 text-muted-foreground" /></div><h2 className="mt-4 text-base font-medium">Comece pelas suas fontes de renda</h2><p className="mt-1 max-w-sm text-sm text-muted-foreground">Cadastre salário e outras rendas para acompanhar o que você espera receber.</p><Button className="mt-5" onClick={() => setChooserOpen(true)}>Adicionar renda</Button></div>
-      ) : (
+      {loading ? <div className="space-y-2">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-full" />)}</div> : (
         <div className="space-y-8">
-                  {rules.length > 0 ? <section><h2 className="mb-2 text-sm font-medium">Fontes recorrentes</h2><div className="divide-y divide-border/60">{rules.map((rule) => { const occurrences = openRecurringIncomeOccurrences(rule, receivables); const next = nextOpenIncomeOccurrence(occurrences); const presentation = next ? recurringIncomeOccurrencePresentation(next, today) : null; return <FinancialListRow key={rule.id} onView={() => setSelectedRule(rule)} ariaLabel={`Abrir ${rule.title}`} leading={<FinancialAvatar icon={<Repeat className="size-5 text-muted-foreground" />} />} title={rule.title} titleAdornment={!rule.isActive ? <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Encerrada</span> : null} meta={<>{presentation?.tone === 'overdue' ? <span className="text-destructive">{presentation.label}</span> : <><span>Dia {rule.dayOfMonth}</span>{rule.counterpartyName ? <><span aria-hidden>·</span><span>{rule.counterpartyName}</span></> : null}</>}</>} trailing={<FinancialRowTrailing amount={<>{formatCurrency(rule.amount)} <span className="text-xs font-normal tracking-normal text-muted-foreground">/ mês</span></>} label={rule.isActive ? 'A RECEBER' : 'ENCERRADA'} />} /> })}</div></section> : null}
-          {oneOffs.length > 0 ? <section><h2 className="mb-2 text-sm font-medium">Recebimentos pontuais</h2><div className="divide-y divide-border/60">{oneOffs.map((item) => <IncomeRow key={item.id} item={item} today={today} onView={() => setSelectedReceivable(item)} onReceive={() => setMarkPaidTarget(item)} />)}</div></section> : null}
+          {rules.length === 0 && oneOffs.length === 0 ? (
+            <div className="flex flex-col items-center rounded-xl border border-dashed border-border/70 px-6 py-16 text-center"><div className="flex size-12 items-center justify-center rounded-xl bg-muted"><CircleDollarSign className="size-6 text-muted-foreground" /></div><h2 className="mt-4 text-base font-medium">Comece pelas suas fontes de renda</h2><p className="mt-1 max-w-sm text-sm text-muted-foreground">Cadastre salário e outras rendas para acompanhar o que você espera receber.</p><Button className="mt-5" onClick={() => setChooserOpen(true)}>Adicionar renda</Button></div>
+          ) : (
+            <div className="space-y-8">
+              {rules.length > 0 ? <section><h2 className="mb-2 text-sm font-medium">Fontes recorrentes</h2><div className="divide-y divide-border/60">{rules.map((rule) => { const occurrences = openRecurringIncomeOccurrences(rule, receivables); const next = nextOpenIncomeOccurrence(occurrences); const presentation = next ? recurringIncomeOccurrencePresentation(next, today) : null; return <FinancialListRow key={rule.id} onView={() => setSelectedRule(rule)} ariaLabel={`Abrir ${rule.title}`} leading={<FinancialAvatar icon={<Repeat className="size-5 text-muted-foreground" />} />} title={rule.title} titleAdornment={!rule.isActive ? <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Encerrada</span> : null} meta={<>{presentation?.tone === 'overdue' ? <span className="text-destructive">{presentation.label}</span> : <><span>Dia {rule.dayOfMonth}</span>{rule.counterpartyName ? <><span aria-hidden>·</span><span>{rule.counterpartyName}</span></> : null}</>}</>} trailing={<FinancialRowTrailing amount={<>{formatCurrency(rule.amount)} <span className="text-xs font-normal tracking-normal text-muted-foreground">/ mês</span></>} label={rule.isActive ? 'A RECEBER' : 'ENCERRADA'} />} /> })}</div></section> : null}
+              {oneOffs.length > 0 ? <section><h2 className="mb-2 text-sm font-medium">Recebimentos pontuais</h2><div className="divide-y divide-border/60">{oneOffs.map((item) => <IncomeRow key={item.id} item={item} today={today} onView={() => setSelectedReceivable(item)} onReceive={() => setMarkPaidTarget(item)} />)}</div></section> : null}
+            </div>
+          )}
+          <section className="space-y-2">
+          <h2 className="text-sm font-medium">Histórico</h2>
+          {generalHistory.length === 0 ? (
+            <DrawerSectionEmpty className="px-0 py-6 text-left">
+              Nenhum recebimento realizado.
+            </DrawerSectionEmpty>
+          ) : (
+            <div className="divide-y divide-border/60">
+              {paginatedHistory.items.map((item) => {
+                const receiptLabel = incomeHistoryReceiptLabel(item, user?.timeZone)
+                const source = item.recurringIncomeRuleId ? 'Fonte recorrente' : 'Renda pontual'
+                return (
+                  <FinancialSettlementRow
+                    key={item.id}
+                    resolved
+                    onToggleStatus={() => handleSelectedReceivableToggle(item)}
+                    statusActionLabel={`Marcar ${item.title} como pendente`}
+                    ariaLabel={`Abrir ${item.title}: ${receiptLabel}`}
+                    onView={() => setSelectedReceivable(item)}
+                    title={item.title}
+                    meta={<><span>{receiptLabel}</span><span aria-hidden>·</span><span>{source}</span></>}
+                    trailing={
+                      <>
+                        <span className={cn(ROW_AMOUNT_CLASS, 'text-muted-foreground')}>
+                          {formatSignedCurrency(Number(item.amount), 'in')}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{formatDate(item.dueDate)}</span>
+                      </>
+                    }
+                  />
+                )
+              })}
+            </div>
+          )}
+          {paginatedHistory.hasPagination ? (
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <Button type="button" variant="outline" size="sm" aria-label="Página anterior do histórico" disabled={paginatedHistory.page === 0} onClick={() => setHistoryPage(paginatedHistory.page - 1)}>
+                Anterior
+              </Button>
+              <span className="text-xs text-muted-foreground" aria-live="polite">
+                Página {paginatedHistory.page + 1} de {paginatedHistory.pageCount}
+              </span>
+              <Button type="button" variant="outline" size="sm" aria-label="Próxima página do histórico" disabled={paginatedHistory.page >= paginatedHistory.pageCount - 1} onClick={() => setHistoryPage(paginatedHistory.page + 1)}>
+                Próxima
+              </Button>
+            </div>
+          ) : null}
+          </section>
         </div>
       )}
 
-      <Dialog open={chooserOpen} onOpenChange={setChooserOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Adicionar renda</DialogTitle><DialogDescription>Escolha se este recebimento se repete ou acontece uma única vez.</DialogDescription></DialogHeader><div className="grid gap-2"><button type="button" className="flex items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/50" onClick={openRecurringCreate}><Repeat className="mt-0.5 size-5 text-muted-foreground" /><span><span className="block text-sm font-medium">Renda recorrente</span><span className="mt-1 block text-xs text-muted-foreground">Salário, aluguel, pensão ou outra renda mensal.</span></span></button><button type="button" className="flex items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/50" onClick={() => { setChooserOpen(false); setOneOffOpen(true) }}><CalendarDays className="mt-0.5 size-5 text-muted-foreground" /><span><span className="block text-sm font-medium">Renda pontual</span><span className="mt-1 block text-xs text-muted-foreground">Comissão, freelance, bônus ou outro valor esperado.</span></span></button></div><DialogFooter><Button variant="outline" onClick={() => setChooserOpen(false)}>Cancelar</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={chooserOpen} onOpenChange={setChooserOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Adicionar renda</DialogTitle><DialogDescription>Escolha se este recebimento se repete ou acontece uma única vez.</DialogDescription></DialogHeader><div className="grid gap-2"><button type="button" className="flex items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/50" onClick={openRecurringCreate}><Repeat className="mt-0.5 size-5 text-muted-foreground" /><span><span className="block text-sm font-medium">Renda recorrente</span><span className="mt-1 block text-xs text-muted-foreground">Salário, aluguel, pensão ou outra renda mensal.</span></span></button><button type="button" className="flex items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/50" onClick={() => { setChooserOpen(false); setOneOffOpen(true) }}><CalendarDays className="mt-0.5 size-5 text-muted-foreground" /><span><span className="block text-sm font-medium">Renda pontual</span><span className="mt-1 block text-xs text-muted-foreground">Comissão, freelance, bônus ou outro recebimento pontual.</span></span></button></div><DialogFooter><Button variant="outline" onClick={() => setChooserOpen(false)}>Cancelar</Button></DialogFooter></DialogContent></Dialog>
 
       <Sheet open={selectedRule !== null} onOpenChange={(open) => { if (!open) setSelectedRule(null) }}>
         <SheetContent className={cn(DRAWER_WIDTH_WIDE, DRAWER_WIDE_VERTICAL_RHYTHM.headerContentGap)} showCloseButton={false}>
@@ -227,16 +342,26 @@ export default function IncomePage() {
                 <DrawerSectionHeading>
                   <DrawerSectionTitle title="Ocorrências em aberto" count={selectedOccurrences.length} />
                 </DrawerSectionHeading>
-                <OpenOccurrencesList occurrences={selectedOccurrences} today={today} onSelect={(occurrence) => { setSelectedRule(null); setSelectedReceivable(occurrence) }} onReceive={(occurrence) => setMarkPaidTarget(occurrence)} />
+                <OpenOccurrencesList occurrences={selectedOccurrences} today={today} onSelect={setSelectedReceivable} onReceive={(occurrence) => setMarkPaidTarget(occurrence)} />
+              </DrawerSectionGroup>
+              <DrawerSectionGroup>
+                <DrawerSectionHeading>Histórico</DrawerSectionHeading>
+                <HistoryOccurrencesList
+                  occurrences={selectedHistoryOccurrences}
+                  timeZone={user?.timeZone}
+                  onSelect={setSelectedReceivable}
+                  onReverse={handleSelectedReceivableToggle}
+                />
               </DrawerSectionGroup>
             </div>
           ) : null}
         </SheetContent>
       </Sheet>
-      <ReceivableDetailDrawer receivable={selectedReceivable} onOpenChange={(open) => { if (!open) setSelectedReceivable(null) }} onEdit={openReceivableEdit} onToggleReceived={(item) => { setSelectedReceivable(null); setMarkPaidTarget(item) }} />
+      <ReceivableDetailDrawer receivable={selectedReceivable} onOpenChange={(open) => { if (!open) setSelectedReceivable(null) }} onEdit={openReceivableEdit} onToggleReceived={handleSelectedReceivableToggle} />
       <RecurringIncomeSheet key={`${editingRule?.id ?? 'new'}-${recurringSheetOpen}`} open={recurringSheetOpen} onOpenChange={(open) => { setRecurringSheetOpen(open); if (!open) setEditingRule(null) }} editTarget={editingRule} isPending={recurringCreateMutation.isPending || recurringUpdateMutation.isPending} onSubmit={(payload) => editingRule ? recurringUpdateMutation.mutate({ id: editingRule.id, payload }) : recurringCreateMutation.mutate(payload)} />
       <ReceivableSheet mode={occurrenceEditTarget ? 'income-occurrence' : 'income'} open={oneOffOpen || occurrenceEditTarget !== null} onOpenChange={(open) => { if (!open) { setOneOffOpen(false); setOccurrenceEditTarget(null) } }} editTarget={occurrenceEditTarget} editScope={null} timeZone={user?.timeZone} onSubmit={async (data) => { if (occurrenceEditTarget) await updateOccurrenceMutation.mutateAsync({ id: occurrenceEditTarget.id, payload: data }); else await createOneOffMutation.mutateAsync(data) }} />
-      <MarkAsPaidDialog open={markPaidTarget !== null} kind="receivable" createTransaction onConfirm={(payload) => markPaidTarget && markPaidMutation.mutate({ id: markPaidTarget.id, payload })} onCancel={() => setMarkPaidTarget(null)} isPending={markPaidMutation.isPending} />
+      <MarkAsPaidDialog open={markPaidTarget !== null} kind="receivable" createTransaction onConfirm={(payload) => markPaidTarget && settlementMutation.mutate({ id: markPaidTarget.id, isPaid: true, payload })} onCancel={() => setMarkPaidTarget(null)} isPending={settlementMutation.isPending} />
+      <UnmarkPaidWarningDialog open={unmarkPaidTarget !== null} kind="receivable" isPending={settlementMutation.isPending} onConfirm={handleUnmarkPaidConfirm} onCancel={() => setUnmarkPaidTarget(null)} />
       <ConfirmDialog open={deleteTarget !== null} title="Excluir renda recorrente?" description="Novos recebimentos deixarão de ser criados. Os recebimentos em aberto serão removidos, mas os já realizados e o histórico financeiro serão preservados." confirmLabel="Excluir renda" variant="destructive" isPending={deleteMutation.isPending} onCancel={() => setDeleteTarget(null)} onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)} />
     </div>
   )

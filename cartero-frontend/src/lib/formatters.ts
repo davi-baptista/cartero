@@ -10,6 +10,10 @@ export function formatCurrency(value: number): string {
   }).format(value)
 }
 
+export function formatSignedCurrency(value: number, direction: 'in' | 'out'): string {
+  return `${direction === 'in' ? '+' : '-'}${formatCurrency(value)}`
+}
+
 export function formatDate(dateString: string): string {
   return format(parseDateOnly(dateString), 'dd/MM/yyyy', { locale: ptBR })
 }

@@ -400,7 +400,7 @@ export interface Receivable {
   occurredAt: string
   dueDate: string
   isPaid: boolean
-  paidAt?: string
+  paidAt?: string | null
   parentId?: string
   createdAt: string
   updatedAt: string

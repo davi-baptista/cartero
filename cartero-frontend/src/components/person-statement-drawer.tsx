@@ -36,11 +36,9 @@ import {
 } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { ROW_AMOUNT_CLASS } from '@/components/ui/financial-list-row'
-import {
-  FinancialListRow,
-  ROW_TRAILING_META_CLASS,
-} from '@/components/ui/financial-list-row'
+import { ROW_TRAILING_META_CLASS } from '@/components/ui/financial-list-row'
 import { FinancialAvatar } from '@/components/ui/financial-avatar'
+import { FinancialSettlementRow } from '@/components/ui/financial-settlement-row'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   monthBounds,
@@ -134,6 +132,7 @@ import {
 } from '@/lib/person-statement'
 import { canEditSettlementDate } from '@/lib/settlement-date-action'
 import { cn } from '@/lib/utils'
+import { formatSignedCurrency } from '@/lib/formatters'
 import type { Person, Debt, Receivable } from '@/types'
 import { InstallmentScope, TransactionType } from '@/types'
 import { useAuth } from '@/providers/auth-provider'
@@ -186,20 +185,13 @@ function StatementRow({
 
   if (onView) {
     return (
-      <FinancialListRow
+      <FinancialSettlementRow
+        resolved={item.isPaid}
+        onToggleStatus={onToggle}
         onView={onView}
         ariaLabel={`Ver detalhes de ${item.title}`}
-        leadingAction={
-          <FinancialAvatar
-            onClick={onToggle}
-            ariaLabel={item.isPaid ? 'Marcar como pendente' : isReceivable ? 'Marcar como recebido' : 'Marcar como paga'}
-          />
-        }
-        title={
-          <span className={cn(item.isPaid && 'text-muted-foreground')}>
-            {item.title}
-          </span>
-        }
+        statusActionLabel={item.isPaid ? 'Marcar como pendente' : isReceivable ? 'Marcar como recebido' : 'Marcar como paga'}
+        title={item.title}
         meta={
           dueLabelText ? (
             <span className={cn(status === 'overdue' && 'font-medium text-destructive')}>
@@ -212,8 +204,7 @@ function StatementRow({
         trailing={
           <>
             <span className={cn(ROW_AMOUNT_CLASS, item.isPaid && 'text-muted-foreground')}>
-              {isReceivable ? '+' : '-'}
-              {formatCurrency(item.amount)}
+              {formatSignedCurrency(Number(item.amount), isReceivable ? 'in' : 'out')}
             </span>
             <span className={ROW_TRAILING_META_CLASS}>{formatDate(item.dueDate)}</span>
           </>
