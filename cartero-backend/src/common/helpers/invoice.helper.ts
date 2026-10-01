@@ -1,6 +1,7 @@
 import { Bank, Invoice, InvoiceStatus, Prisma } from '@prisma/client';
 import { financialCivilDay } from './financial-timezone.helper';
 import { requireAccountTimeZone } from './timezone.helper';
+import { acquireTransactionAdvisoryLock } from './advisory-lock.helper';
 
 export const SYSTEM_BANK_NAME = '__system_receivables__';
 export const DEFAULT_INVOICE_DAYS_AFTER_CLOSE = 7;
@@ -33,12 +34,7 @@ export async function findOrCreateSystemBank(
 ): Promise<Bank> {
   // Serialize creation per user. Bank has no unique constraint on this
   // technical identity, so a predicate read alone cannot prevent duplicates.
-  if (typeof tx.$executeRaw === 'function') {
-    // The advisory-lock function returns void. `$queryRaw` makes Prisma
-    // deserialize that result and can surface P2010; this statement is used
-    // only for its side effect, so execute it without result deserialization.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`system-bank:${userId}`}, 0))`;
-  }
+  await acquireTransactionAdvisoryLock(tx, `system-bank:${userId}`);
   const existing = await tx.bank.findFirst({
     where: { userId, isSystem: true, name: SYSTEM_BANK_NAME },
   });

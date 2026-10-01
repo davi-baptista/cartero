@@ -17,6 +17,7 @@ import {
   SYSTEM_CATEGORY_ICON,
 } from 'src/common/constants/system-categories';
 import { findOrCreateSystemBank } from 'src/common/helpers/invoice.helper';
+import { acquireTransactionAdvisoryLock } from 'src/common/helpers/advisory-lock.helper';
 import { resolveSourceDeleteBlockReason } from 'src/common/helpers/receivable-source-capability';
 import {
   buildPersonSummary,
@@ -313,7 +314,10 @@ export class PersonsService {
     );
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`person-settlement:${userId}:${id}`}, 0))`;
+      await acquireTransactionAdvisoryLock(
+        tx,
+        `person-settlement:${userId}:${id}`,
+      );
       /*
         Reconsulta dentro da transação, sem filtro de período.
 

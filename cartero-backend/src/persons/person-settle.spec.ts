@@ -37,7 +37,7 @@ function harness(debts: any[], receivables: any[]) {
   const transactions: any[] = [];
   const invoices: any[] = [];
   const prisma: any = {
-    $queryRaw: vi.fn(async () => []),
+    $executeRaw: vi.fn(async () => 1),
     person: {
       findUnique: vi.fn(async () => ({
         id: 'person-1',
@@ -199,6 +199,15 @@ function harness(debts: any[], receivables: any[]) {
 }
 
 describe('CM1C person settlement groups', () => {
+  it('acquires the settlement advisory lock without querying its void result', async () => {
+    const h = harness([debt('d1', 100)], [receivable('r1', 100)]);
+
+    await h.service.settle('person-1', USER_ID, {} as any);
+
+    expect(h.prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(h.prisma.$queryRaw).toBeUndefined();
+  });
+
   it.each([
     [100, 200, 'INFLOW', 100],
     [500, 200, 'OUTFLOW', 300],
