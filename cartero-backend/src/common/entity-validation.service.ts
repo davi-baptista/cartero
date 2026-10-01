@@ -139,7 +139,7 @@ export class EntityValidationService {
    * A categoria de sistema com este nome, criando-a se ainda não existir.
    *
    * Usada por cinco fluxos que precisam classificar um lançamento automático:
-   * "Dívida paga" (pagar dívida e settle de pessoa), "Receita recebida"
+   * "Dívida paga" (pagar dívida e settle de pessoa), "A receber pago"
    * (receber recebível e settle) e "Assinatura" (criar/editar assinatura).
    *
    * ─── Categoria própria com nome homônimo ─────────────────────────────────

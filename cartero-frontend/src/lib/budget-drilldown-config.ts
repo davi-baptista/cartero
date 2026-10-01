@@ -2,26 +2,27 @@ import { BudgetV2DrilldownBucket } from '@/types/budget-v2-drilldown'
 import { BudgetV2PeriodPreset } from '@/types/budget-v2'
 
 export const PERIOD_LABELS: Record<BudgetV2PeriodPreset, string> = {
-  [BudgetV2PeriodPreset.LAST_30_DAYS]: 'Últimos 30 dias',
+  [BudgetV2PeriodPreset.MONTH]: 'Mês selecionado',
+  [BudgetV2PeriodPreset.NEXT_MONTH]: 'Próximo mês',
   [BudgetV2PeriodPreset.THIS_MONTH]: 'Este mês',
   [BudgetV2PeriodPreset.LAST_MONTH]: 'Mês passado',
-  [BudgetV2PeriodPreset.ALL_TIME]: 'Todo o histórico',
+  [BudgetV2PeriodPreset.ALL_TIME]: 'Tudo',
 }
 
 export const DRILLDOWN_BUCKET_CONFIG: Record<
   BudgetV2DrilldownBucket,
   { title: string; scope: 'period' | 'upcoming' | 'overdue' }
 > = {
-  [BudgetV2DrilldownBucket.MANUAL_INCOME]: { title: 'Receitas registradas', scope: 'period' },
+  [BudgetV2DrilldownBucket.MANUAL_INCOME]: { title: 'Rendas', scope: 'period' },
   [BudgetV2DrilldownBucket.RECEIVABLE_RECEIPTS]: { title: 'Recebimentos', scope: 'period' },
   [BudgetV2DrilldownBucket.PERSON_SETTLEMENT_INFLOW]: { title: 'Acertos recebidos', scope: 'period' },
   [BudgetV2DrilldownBucket.DIRECT_EXPENSES]: { title: 'Gastos diretos', scope: 'period' },
   [BudgetV2DrilldownBucket.DEBT_DIRECT_SETTLEMENTS]: { title: 'Dívidas quitadas', scope: 'period' },
   [BudgetV2DrilldownBucket.INVOICE_SETTLEMENTS]: { title: 'Pagamento de faturas', scope: 'period' },
   [BudgetV2DrilldownBucket.PERSON_SETTLEMENT_DIRECT_OUTFLOW]: { title: 'Acertos pagos', scope: 'period' },
-  [BudgetV2DrilldownBucket.UPCOMING_RECEIVABLES]: { title: 'Recebíveis', scope: 'upcoming' },
-  [BudgetV2DrilldownBucket.UPCOMING_INVOICES]: { title: 'Faturas', scope: 'upcoming' },
-  [BudgetV2DrilldownBucket.UPCOMING_DEBTS]: { title: 'Dívidas', scope: 'upcoming' },
+  [BudgetV2DrilldownBucket.UPCOMING_RECEIVABLES]: { title: 'Recebíveis', scope: 'period' },
+  [BudgetV2DrilldownBucket.UPCOMING_INVOICES]: { title: 'Faturas', scope: 'period' },
+  [BudgetV2DrilldownBucket.UPCOMING_DEBTS]: { title: 'Dívidas', scope: 'period' },
   [BudgetV2DrilldownBucket.OVERDUE_RECEIVABLES]: { title: 'A receber vencido', scope: 'overdue' },
   [BudgetV2DrilldownBucket.OVERDUE_OUTFLOWS]: { title: 'A pagar vencido', scope: 'overdue' },
 }
@@ -29,15 +30,23 @@ export const DRILLDOWN_BUCKET_CONFIG: Record<
 export function drilldownContextLabel(
   bucket: BudgetV2DrilldownBucket,
   preset: BudgetV2PeriodPreset,
+  periodLabel?: string,
 ): string {
   const scope = DRILLDOWN_BUCKET_CONFIG[bucket].scope
-  if (scope === 'period') return PERIOD_LABELS[preset]
-  if (scope === 'upcoming') return 'Próximos 30 dias'
+  if (scope === 'period') return periodLabel ?? PERIOD_LABELS[preset]
   return 'Vencidos'
 }
 
 export function isRealizedDrilldownBucket(bucket: BudgetV2DrilldownBucket): boolean {
-  return DRILLDOWN_BUCKET_CONFIG[bucket].scope === 'period'
+  return [
+    BudgetV2DrilldownBucket.MANUAL_INCOME,
+    BudgetV2DrilldownBucket.RECEIVABLE_RECEIPTS,
+    BudgetV2DrilldownBucket.PERSON_SETTLEMENT_INFLOW,
+    BudgetV2DrilldownBucket.DIRECT_EXPENSES,
+    BudgetV2DrilldownBucket.DEBT_DIRECT_SETTLEMENTS,
+    BudgetV2DrilldownBucket.INVOICE_SETTLEMENTS,
+    BudgetV2DrilldownBucket.PERSON_SETTLEMENT_DIRECT_OUTFLOW,
+  ].includes(bucket)
 }
 
 export function drilldownSectionHeading(bucket: BudgetV2DrilldownBucket): string {
@@ -50,5 +59,5 @@ export function drilldownSectionHeading(bucket: BudgetV2DrilldownBucket): string
 }
 
 export function transactionFallback(bucket: BudgetV2DrilldownBucket): string {
-  return bucket === BudgetV2DrilldownBucket.MANUAL_INCOME ? 'Receita' : 'Gasto'
+  return bucket === BudgetV2DrilldownBucket.MANUAL_INCOME ? 'Renda' : 'Gasto'
 }

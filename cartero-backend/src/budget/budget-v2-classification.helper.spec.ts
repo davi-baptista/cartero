@@ -34,7 +34,7 @@ describe('Budget V2 shared classification authority', () => {
         {
           type: TransactionType.INCOME,
           isRefund: false,
-          paymentReceivable: { userId: 'user-a' },
+          paymentReceivable: { userId: 'user-a', personId: 'person-a' },
         },
         'user-a',
       ),
@@ -50,6 +50,88 @@ describe('Budget V2 shared classification authority', () => {
       ),
     ).toBe(BudgetV2Bucket.MANUAL_INCOME);
   });
+
+  it('routes canonical income receivables to Rendas and person receivables to Recebimentos', () => {
+    expect(
+      classifyBudgetV2Transaction(
+        {
+          type: TransactionType.INCOME,
+          isRefund: false,
+          paymentReceivable: {
+            userId: 'user-a',
+            personId: null,
+            incomeClassification: 'INCOME',
+          },
+        },
+        'user-a',
+      ),
+    ).toBe(BudgetV2Bucket.MANUAL_INCOME);
+    expect(
+      classifyBudgetV2Transaction(
+        {
+          type: TransactionType.INCOME,
+          isRefund: false,
+          paymentReceivable: {
+            userId: 'user-a',
+            personId: 'person-a',
+            incomeClassification: 'OTHER',
+          },
+        },
+        'user-a',
+      ),
+    ).toBe(BudgetV2Bucket.RECEIVABLE_RECEIPTS);
+  });
+
+  it.each([
+    [null, null, BudgetV2Bucket.RECEIVABLE_RECEIPTS],
+    [null, 'person-a', BudgetV2Bucket.RECEIVABLE_RECEIPTS],
+    ['INCOME', null, BudgetV2Bucket.MANUAL_INCOME],
+    ['INCOME', 'person-a', BudgetV2Bucket.MANUAL_INCOME],
+    ['OTHER', 'person-a', BudgetV2Bucket.RECEIVABLE_RECEIPTS],
+  ] as const)(
+    'classifies income class=%s person=%s as %s',
+    (incomeClassification, personId, expected) => {
+      expect(
+        classifyBudgetV2Transaction(
+          {
+            type: TransactionType.INCOME,
+            isRefund: false,
+            paymentReceivable: {
+              userId: 'user-a',
+              incomeClassification,
+              recurringIncomeRuleId: null,
+              personId,
+            },
+          },
+          'user-a',
+        ),
+      ).toBe(expected);
+    },
+  );
+
+  it.each([
+    [null, 'rule-a', BudgetV2Bucket.MANUAL_INCOME],
+    ['OTHER', 'rule-a', BudgetV2Bucket.MANUAL_INCOME],
+  ] as const)(
+    'classifies recurring income class=%s rule=%s as %s',
+    (incomeClassification, recurringIncomeRuleId, expected) => {
+      expect(
+        classifyBudgetV2Transaction(
+          {
+            type: TransactionType.INCOME,
+            isRefund: false,
+            paymentReceivable: {
+              userId: 'user-a',
+              incomeClassification,
+              recurringIncomeRuleId,
+              personId: null,
+            },
+          },
+          'user-a',
+        ),
+      ).toBe(expected);
+    },
+  );
 
   it('keeps debt settlement exclusive from direct expenses', () => {
     expect(

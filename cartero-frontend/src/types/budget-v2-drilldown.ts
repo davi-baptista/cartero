@@ -36,6 +36,7 @@ export type BudgetV2DrilldownItem =
       title: string
       description: string | null
       counterparty: string | null
+      personName?: string | null
       bankName: string | null
       paymentType: string
     }
@@ -60,6 +61,7 @@ export type BudgetV2DrilldownItem =
       title: string
       description: string | null
       counterparty: string | null
+      personName: string | null
       bankName: string | null
       paymentType: string
     }
@@ -126,6 +128,8 @@ export interface BudgetV2DrilldownResponse {
 export interface BudgetV2DrilldownRequest {
   bucket: BudgetV2DrilldownBucket
   preset?: BudgetV2PeriodPreset
+  month?: number
+  year?: number
   cursor?: string
   limit?: number
 }

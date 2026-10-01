@@ -24,8 +24,8 @@ import {
 import {
   INCOME_RECEIVED_CATEGORY_COLOR,
   INCOME_RECEIVED_CATEGORY_NAME,
-  RECEIVABLE_RECEIVED_CATEGORY_NAME,
-  RECEIVABLE_RECEIVED_CATEGORY_COLOR,
+  RECEIVABLE_PAID_CATEGORY_NAME,
+  RECEIVABLE_PAID_CATEGORY_COLOR,
   SYSTEM_CATEGORY_ICON,
 } from 'src/common/constants/system-categories';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -327,11 +327,11 @@ export class ReceivablesService {
             const categoryName =
               receivable.incomeClassification === 'INCOME'
                 ? INCOME_RECEIVED_CATEGORY_NAME
-                : RECEIVABLE_RECEIVED_CATEGORY_NAME;
+                : RECEIVABLE_PAID_CATEGORY_NAME;
             const categoryColor =
               receivable.incomeClassification === 'INCOME'
                 ? INCOME_RECEIVED_CATEGORY_COLOR
-                : RECEIVABLE_RECEIVED_CATEGORY_COLOR;
+                : RECEIVABLE_PAID_CATEGORY_COLOR;
             const category =
               await this.entityValidationService.findOrCreateSystemCategory(
                 tx,

@@ -1,5 +1,10 @@
 import { InvoiceStatus, Prisma, TransactionType } from '@prisma/client';
-import { BudgetV2Bucket } from './budget-v2-classification.helper';
+import {
+  BUDGET_V2_RECEIPT_CLASSIFICATIONS,
+  BudgetV2Bucket,
+} from './budget-v2-classification.helper';
+import type { BudgetV2Period } from './budget-v2.types';
+import { financialCivilDateStart } from 'src/common/helpers/financial-period.helper';
 
 export const DIRECT_PAYMENT_TYPES = [
   TransactionType.PIX,
@@ -22,13 +27,35 @@ export function transactionBucketWhere(
         OR: [
           { paymentReceivable: { is: null } },
           { paymentReceivable: { isNot: { userId } } },
+          {
+            paymentReceivable: {
+              is: { userId, incomeClassification: 'INCOME' },
+            },
+          },
+          {
+            paymentReceivable: {
+              is: { userId, recurringIncomeRuleId: { not: null } },
+            },
+          },
         ],
       };
     case BudgetV2Bucket.RECEIVABLE_RECEIPTS:
       return {
         ...base,
         type: TransactionType.INCOME,
-        paymentReceivable: { is: { userId } },
+        paymentReceivable: {
+          is: {
+            userId,
+            AND: [
+              {
+                OR: BUDGET_V2_RECEIPT_CLASSIFICATIONS.map(
+                  (incomeClassification) => ({ incomeClassification }),
+                ),
+              },
+              { recurringIncomeRuleId: null },
+            ],
+          },
+        },
       };
     case BudgetV2Bucket.DIRECT_EXPENSES:
       return {
@@ -103,4 +130,37 @@ export function invoiceBucketWhere(
     },
     dueDate,
   };
+}
+
+function civilDateStart(date: string): Date {
+  return financialCivilDateStart(date);
+}
+
+export function unresolvedDueDateWhere(
+  userId: string,
+  period: BudgetV2Period,
+  today: string,
+): { userId: string; OR: Array<Record<string, unknown>> } {
+  const todayDate = civilDateStart(today);
+  const overdue = { dueDate: { lt: todayDate } };
+  if (period.startDate === null) {
+    return { userId, OR: [overdue, { dueDate: { gte: todayDate } }] };
+  }
+
+  const start = period.startDate > today ? period.startDate : today;
+  const normal =
+    start < period.endDate
+      ? {
+          dueDate: {
+            gte: civilDateStart(start),
+            lt: civilDateStart(period.endDate),
+          },
+        }
+      : {
+          dueDate: {
+            gte: civilDateStart(period.endDate),
+            lt: civilDateStart(period.endDate),
+          },
+        };
+  return { userId, OR: [overdue, normal] };
 }

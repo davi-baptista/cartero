@@ -22,14 +22,14 @@ import { getDebt } from '@/services/debts.service'
 import { getReceivable } from '@/services/receivables.service'
 import type { MonthPeriod } from '@/components/month-nav'
 import { accountCivilDayOf } from '@/lib/date'
-import { formatCurrency } from '@/lib/formatters'
+import { formatCurrency, formatMonthYear } from '@/lib/formatters'
 import { useDetailEntity } from '@/lib/use-detail-entity'
 import {
   drilldownContextLabel,
   DRILLDOWN_BUCKET_CONFIG,
   drilldownSectionHeading,
 } from '@/lib/budget-drilldown-config'
-import type { BudgetV2PeriodPreset } from '@/types/budget-v2'
+import { BudgetV2PeriodPreset } from '@/types/budget-v2'
 import type { TransactionType } from '@/types'
 import type { BudgetV2DrilldownBucket } from '@/types/budget-v2-drilldown'
 import type { BudgetV2DrilldownItem } from '@/types/budget-v2-drilldown'
@@ -65,12 +65,14 @@ function DrawerError({ onRetry }: { onRetry: () => void }) {
 
 export function BudgetDrilldownDrawer({
   bucket,
-  preset,
+  period,
+  allTime,
   open,
   onClose,
 }: {
   bucket: BudgetV2DrilldownBucket | null
-  preset: BudgetV2PeriodPreset
+  period: MonthPeriod
+  allTime: boolean
   open: boolean
   onClose: () => void
 }) {
@@ -86,13 +88,17 @@ export function BudgetDrilldownDrawer({
   const [selectedReceivableId, setSelectedReceivableId] = useState<string | null>(null)
   const activeBucket = bucket ?? null
   const query = useInfiniteQuery({
-    queryKey: ['budget-v2-drilldown', activeBucket, preset],
+    queryKey: ['budget-v2-drilldown', activeBucket, allTime ? 'ALL_TIME' : 'MONTH', period.month, period.year],
     enabled: open && activeBucket !== null,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       getBudgetV2Drilldown({
         bucket: activeBucket!,
-        ...(DRILLDOWN_BUCKET_CONFIG[activeBucket!].scope === 'period' ? { preset } : {}),
+        ...(DRILLDOWN_BUCKET_CONFIG[activeBucket!].scope === 'period'
+          ? allTime
+            ? { preset: BudgetV2PeriodPreset.ALL_TIME }
+            : { preset: BudgetV2PeriodPreset.MONTH, month: period.month, year: period.year }
+          : {}),
         ...(pageParam ? { cursor: pageParam } : {}),
       }),
     getNextPageParam: (lastPage) => lastPage.pageInfo.nextCursor ?? undefined,
@@ -152,7 +158,11 @@ export function BudgetDrilldownDrawer({
   const pages = query.data?.pages ?? []
   const items = pages.flatMap((page) => page.items)
   const firstPage = pages[0]
-  const contextLabel = drilldownContextLabel(activeBucket, preset)
+  const contextLabel = drilldownContextLabel(
+    activeBucket,
+    allTime ? BudgetV2PeriodPreset.ALL_TIME : BudgetV2PeriodPreset.MONTH,
+    allTime ? undefined : formatMonthYear(period.month, period.year),
+  )
   const showPaginationError = query.isFetchNextPageError && items.length > 0
 
   return (

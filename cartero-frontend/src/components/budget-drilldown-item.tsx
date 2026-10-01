@@ -13,6 +13,7 @@ import {
   TRANSACTION_TYPE_ICONS,
 } from '@/lib/transaction-icons'
 import { TransactionType } from '@/types'
+import { transactionPersonContext } from '@/lib/transaction-person-context'
 import {
   DRILLDOWN_BUCKET_CONFIG,
   transactionFallback,
@@ -111,13 +112,17 @@ export function BudgetDrilldownItemRow({
       ])
       break
     case 'RECEIVABLE_RECEIPT':
-      primary = item.counterparty || item.description || item.title
-      secondary = metadata([
-        item.description,
-        eventDateLabel(item.eventDate, timeZone),
-        item.bankName,
-        paymentTypeLabel(item.paymentType),
-      ])
+      primary = item.title || item.description || item.counterparty || 'Recebimento'
+      {
+        const personContext = transactionPersonContext({ direction: 'in', personName: item.personName })
+        secondary = metadata([
+          personContext ? `${personContext.label} ${personContext.personName}` : item.counterparty,
+          item.description,
+          eventDateLabel(item.eventDate, timeZone),
+          item.bankName,
+          paymentTypeLabel(item.paymentType),
+        ])
+      }
       break
     case 'PERSON_SETTLEMENT':
       primary = item.personName
@@ -129,13 +134,20 @@ export function BudgetDrilldownItemRow({
       break
     case 'DEBT_SETTLEMENT':
       primary = item.title || item.counterparty || 'Dívida'
-      secondary = metadata([
-        item.counterparty !== primary ? item.counterparty : null,
-        item.description,
-        eventDateLabel(item.eventDate, timeZone),
-        item.bankName,
-        paymentTypeLabel(item.paymentType),
-      ])
+      {
+        const personContext = transactionPersonContext({ direction: 'out', personName: item.personName })
+        secondary = metadata([
+          paymentTypeLabel(item.paymentType),
+          personContext
+            ? `${personContext.label} ${personContext.personName}`
+            : item.counterparty !== primary
+              ? item.counterparty
+              : null,
+          item.description,
+          eventDateLabel(item.eventDate, timeZone),
+          item.bankName,
+        ])
+      }
       break
     case 'INVOICE_SETTLEMENT':
       primary = item.bankName || 'Pagamento de fatura'

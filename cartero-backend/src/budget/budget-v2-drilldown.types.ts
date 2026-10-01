@@ -24,6 +24,7 @@ export type BudgetV2DrilldownItem =
       title: string;
       description: string | null;
       counterparty: string | null;
+      personName?: string | null;
       bankName: string | null;
       paymentType: string;
     }
@@ -48,6 +49,7 @@ export type BudgetV2DrilldownItem =
       title: string;
       description: string | null;
       counterparty: string | null;
+      personName: string | null;
       bankName: string | null;
       paymentType: string;
     }

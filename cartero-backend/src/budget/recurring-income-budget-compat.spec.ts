@@ -59,7 +59,7 @@ describe('recurring income compatibility with existing Budget V2', () => {
 
     const before = await harness.service.getBudget(
       'user-1',
-      BudgetV2PeriodPreset.LAST_30_DAYS,
+      BudgetV2PeriodPreset.THIS_MONTH,
       now,
     );
     expect(before.pending.inflow).toBe('500.00');
@@ -68,7 +68,7 @@ describe('recurring income compatibility with existing Budget V2', () => {
     harness.state.settled = true;
     const after = await harness.service.getBudget(
       'user-1',
-      BudgetV2PeriodPreset.LAST_30_DAYS,
+      BudgetV2PeriodPreset.THIS_MONTH,
       now,
     );
     expect(after.pending.inflow).toBe('0.00');

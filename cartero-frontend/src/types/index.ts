@@ -89,6 +89,12 @@ export interface Transaction {
   installmentCount?: number | null
   personId?: string
   person?: Person
+  paymentReceivable?: {
+    person?: Pick<Person, 'id' | 'name'> | null
+  } | null
+  paymentDebt?: {
+    person?: Pick<Person, 'id' | 'name'> | null
+  } | null
   /** Preenchido quando o lançamento foi gerado por uma assinatura. */
   subscriptionId?: string
   type: TransactionType

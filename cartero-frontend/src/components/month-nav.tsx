@@ -1,11 +1,12 @@
 'use client'
 
-import { createContext, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { formatMonthYear } from '@/lib/formatters'
 import { accountTodayDate, formatDateValue } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/providers/auth-provider'
+import { usePathname } from 'next/navigation'
 
 export type MonthPeriod = { month: number; year: number }
 
@@ -102,14 +103,27 @@ export function MonthNav({
 const MonthPeriodContext = createContext<{
   period: MonthPeriod
   setPeriod: (next: MonthPeriod) => void
+  budgetAllTime: boolean
+  setBudgetAllTime: (hidden: boolean | ((current: boolean) => boolean)) => void
 } | null>(null)
 
 export function MonthPeriodProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
+  const pathname = usePathname() ?? ''
   const [period, setPeriod] = useState<MonthPeriod>(() =>
     currentPeriod(user?.timeZone ?? null),
   )
-  const value = useMemo(() => ({ period, setPeriod }), [period])
+  const [budgetMode, setBudgetMode] = useState({ pathname, allTime: false })
+  if (budgetMode.pathname !== pathname) {
+    setBudgetMode({ pathname, allTime: false })
+  }
+  const budgetAllTime = pathname.startsWith('/budget') && budgetMode.allTime
+  const setBudgetAllTime = useCallback((next: boolean | ((current: boolean) => boolean)) =>
+    setBudgetMode((current) => ({
+      pathname,
+      allTime: typeof next === 'function' ? next(current.pathname === pathname && current.allTime) : next,
+    })), [pathname])
+  const value = useMemo(() => ({ period, setPeriod, budgetAllTime, setBudgetAllTime }), [period, budgetAllTime, setBudgetAllTime])
   return <MonthPeriodContext value={value}>{children}</MonthPeriodContext>
 }
 

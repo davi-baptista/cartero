@@ -15,6 +15,20 @@ export class GetBudgetV2DrilldownDto {
   preset?: BudgetV2PeriodPreset;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  month?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(9999)
+  year?: number;
+
+  @IsOptional()
   @IsString()
   cursor?: string;
 

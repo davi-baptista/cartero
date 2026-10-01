@@ -148,6 +148,7 @@ function SidebarToggle() {
  * da exceção deixou de existir e a página entrou no padrão das demais.
  */
 const MONTH_SCOPED_ROUTES = [
+  '/budget',
   '/overview',
   '/transactions',
   '/debts',
@@ -165,11 +166,12 @@ const MONTH_SCOPED_ROUTES = [
 const MONTH_SCOPED_EXACT = ['/banks']
 
 function HeaderMonthNav({ pathname }: { pathname: string }) {
-  const { period, setPeriod } = useMonthPeriod()
+  const { period, setPeriod, budgetAllTime } = useMonthPeriod()
   const scoped =
     MONTH_SCOPED_ROUTES.some((route) => pathname.startsWith(route)) ||
     MONTH_SCOPED_EXACT.includes(pathname)
   if (!scoped) return null
+  if (pathname.startsWith('/budget') && budgetAllTime) return null
   // No mobile o nome da página sai da barra, então o seletor ocupa o espaço
   // livre centralizado; no desktop ele volta a encostar à direita.
   return (

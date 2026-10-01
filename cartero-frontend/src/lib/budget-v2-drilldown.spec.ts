@@ -46,12 +46,12 @@ describe('Budget V2 drilldown contract', () => {
     }
   })
 
-  it('uses the drilldown endpoint and sends presets only for realized buckets', () => {
+  it('uses the drilldown endpoint and sends presets for period-bound buckets', () => {
     expect(service).toContain("'/budget/v2/drilldown'")
-    expect(service).toContain('isRealizedDrilldownBucket(request.bucket)')
+    expect(service).toContain('request.bucket !== BudgetV2DrilldownBucket.OVERDUE_RECEIVABLES')
     expect(service).toContain('request.preset')
     expect(config).toContain("scope: 'period'")
-    expect(config).toContain("scope: 'upcoming'")
+    expect(config).toContain("scope: 'period'")
     expect(config).toContain("scope: 'overdue'")
   })
 
@@ -70,7 +70,7 @@ describe('Budget V2 drilldown contract', () => {
 
   it('keeps drawer scope, pagination order, canonical totals, and retry states', () => {
     expect(drawer).toContain('useInfiniteQuery')
-    expect(drawer).toContain('queryKey: [\'budget-v2-drilldown\', activeBucket, preset]')
+    expect(drawer).toContain('queryKey: [\'budget-v2-drilldown\', activeBucket, allTime ? \'ALL_TIME\' : \'MONTH\', period.month, period.year]')
     expect(drawer).toContain('pageInfo.nextCursor')
     expect(drawer).toContain('fetchNextPage')
     expect(drawer).toContain('pages.flatMap((page) => page.items)')
@@ -93,6 +93,18 @@ describe('Budget V2 drilldown contract', () => {
     expect(page).toContain("'Pagamento de faturas'")
     expect(config).not.toContain('Faturas pagas')
     expect(page).not.toContain('Faturas pagas')
+  })
+
+  it('keeps paid debt title and normalizes person context in the shared row', () => {
+    expect(types).toContain("kind: 'DEBT_SETTLEMENT'")
+    expect(types).toContain('personName: string | null')
+    expect(item).toContain("transactionPersonContext({ direction: 'out', personName: item.personName })")
+    expect(item).toContain('personContext.label')
+    expect(item).toContain('primary = item.title || item.counterparty')
+    const backendTypes = read('../../../cartero-backend/src/budget/budget-v2-drilldown.types.ts')
+    const backendService = read('../../../cartero-backend/src/budget/budget-v2-drilldown.service.ts')
+    expect(backendTypes).toContain('personName: string | null')
+    expect(backendService).toContain('personName: source.person?.name ?? null')
   })
 
   it('uses date-only-safe display helpers without financial arithmetic', () => {

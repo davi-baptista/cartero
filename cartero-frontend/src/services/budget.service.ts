@@ -10,7 +10,6 @@ import {
   type BudgetV2DrilldownRequest,
   type BudgetV2DrilldownResponse,
 } from '@/types/budget-v2-drilldown'
-import { isRealizedDrilldownBucket } from '@/lib/budget-drilldown-config'
 
 /**
  * Fatura do orçamento: o servidor sempre resolve `reimbursable` e `ownAmount`
@@ -312,10 +311,11 @@ export async function getBudget(params: { month: number; year: number }): Promis
 }
 
 export async function getBudgetV2(
-  preset: BudgetV2PeriodPreset = BudgetV2PeriodPreset.LAST_30_DAYS,
+  request: BudgetV2PeriodPreset | { preset: BudgetV2PeriodPreset; month?: number; year?: number } = BudgetV2PeriodPreset.THIS_MONTH,
 ): Promise<BudgetV2Response> {
+  const params = typeof request === 'string' ? { preset: request } : request
   const { data } = await api.get<BudgetV2Response>('/budget/v2', {
-    params: { preset },
+    params,
   })
   return data
 }
@@ -326,15 +326,19 @@ export async function getBudgetV2Drilldown(
   const params: {
     bucket: BudgetV2DrilldownBucket
     preset?: BudgetV2PeriodPreset
+    month?: number
+    year?: number
     cursor?: string
     limit?: number
   } = {
     bucket: request.bucket,
     ...(request.cursor ? { cursor: request.cursor } : {}),
     ...(request.limit ? { limit: request.limit } : {}),
+    ...(request.month ? { month: request.month } : {}),
+    ...(request.year ? { year: request.year } : {}),
   }
 
-  if (isRealizedDrilldownBucket(request.bucket) && request.preset) {
+  if (request.preset && request.bucket !== BudgetV2DrilldownBucket.OVERDUE_RECEIVABLES && request.bucket !== BudgetV2DrilldownBucket.OVERDUE_OUTFLOWS) {
     params.preset = request.preset
   }
 

@@ -19,7 +19,12 @@ export type BudgetV2Transaction = {
   type: TransactionType;
   isRefund: boolean;
   paymentDebt?: { userId: string } | null;
-  paymentReceivable?: { userId: string } | null;
+  paymentReceivable?: {
+    userId: string;
+    personId?: string | null;
+    incomeClassification?: 'INCOME' | 'OTHER' | null;
+    recurringIncomeRuleId?: string | null;
+  } | null;
 };
 
 export type BudgetV2PersonSettlementGroup = {
@@ -28,6 +33,26 @@ export type BudgetV2PersonSettlementGroup = {
 };
 
 export type BudgetV2DueState = 'upcoming' | 'overdue' | 'outside';
+
+export const BUDGET_V2_RECEIPT_CLASSIFICATIONS = [null, 'OTHER'] as const;
+
+export function isBudgetV2ReceiptClassification(
+  value: 'INCOME' | 'OTHER' | null | undefined,
+): value is (typeof BUDGET_V2_RECEIPT_CLASSIFICATIONS)[number] {
+  return (
+    BUDGET_V2_RECEIPT_CLASSIFICATIONS as readonly (string | null)[]
+  ).includes(value ?? null);
+}
+
+export function isBudgetV2ManualIncomeReceivable(receivable: {
+  incomeClassification?: 'INCOME' | 'OTHER' | null;
+  recurringIncomeRuleId?: string | null;
+}): boolean {
+  return (
+    receivable.incomeClassification === 'INCOME' ||
+    Boolean(receivable.recurringIncomeRuleId)
+  );
+}
 
 const DIRECT_TRANSACTION_TYPES: TransactionType[] = [
   TransactionType.PIX,
@@ -42,9 +67,16 @@ export function classifyBudgetV2Transaction(
   if (transaction.isRefund) return null;
 
   if (transaction.type === TransactionType.INCOME) {
-    return transaction.paymentReceivable?.userId === userId
-      ? BudgetV2Bucket.RECEIVABLE_RECEIPTS
-      : BudgetV2Bucket.MANUAL_INCOME;
+    const receivable = transaction.paymentReceivable;
+    if (receivable?.userId === userId) {
+      if (isBudgetV2ManualIncomeReceivable(receivable)) {
+        return BudgetV2Bucket.MANUAL_INCOME;
+      }
+      return isBudgetV2ReceiptClassification(receivable.incomeClassification)
+        ? BudgetV2Bucket.RECEIVABLE_RECEIPTS
+        : null;
+    }
+    return BudgetV2Bucket.MANUAL_INCOME;
   }
 
   if (!DIRECT_TRANSACTION_TYPES.includes(transaction.type)) return null;

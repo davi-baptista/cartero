@@ -45,6 +45,7 @@ import {
 } from '@/services/transactions.service'
 import { InstallmentDeleteDialog } from './installment-delete-dialog'
 import { deleteSuccessMessage } from '@/lib/installment-delete-copy'
+import { transactionPersonContext } from '@/lib/transaction-person-context'
 import { useAuth } from '@/providers/auth-provider'
 import {
   invalidateTransactionDependents,
@@ -158,6 +159,7 @@ function TransactionRow({
 }) {
   const Icon = TRANSACTION_TYPE_ICONS[tx.type]
   const visibleBank = tx.bank?.isSystem ? undefined : tx.bank
+  const personContext = transactionPersonContext(tx)
 
   return (
     <FinancialListRow
@@ -180,6 +182,12 @@ function TransactionRow({
         <>
           <span className="shrink-0">{TRANSACTION_TYPE_LABELS[tx.type]}</span>
           {tx.isRefund && <span className="shrink-0 text-primary">· reembolso</span>}
+          {personContext && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="truncate text-receivable">{personContext.label} {personContext.personName}</span>
+            </>
+          )}
           {visibleBank && <span aria-hidden>·</span>}
           {visibleBank && <span className="truncate">{visibleBank.name}</span>}
           {tx.invoice && (
@@ -192,7 +200,7 @@ function TransactionRow({
           )}
           {/* O nome sozinho era indistinguível do banco na mesma linha —
               "Eva" e "Nubank" liam igual. O rótulo diz a relação. */}
-          {tx.person && (
+          {!personContext && tx.person && (
             <>
               <span aria-hidden>·</span>
               <span className="truncate text-receivable">

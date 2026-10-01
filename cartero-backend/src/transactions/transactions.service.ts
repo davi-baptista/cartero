@@ -821,6 +821,16 @@ export class TransactionsService {
         category: true,
         invoice: true,
         person: true,
+        paymentReceivable: {
+          select: {
+            person: { select: { id: true, name: true } },
+          },
+        },
+        paymentDebt: {
+          select: {
+            person: { select: { id: true, name: true } },
+          },
+        },
         invoiceSettlement: {
           include: { invoice: { include: { bank: true } } },
         },
@@ -894,6 +904,16 @@ export class TransactionsService {
         },
         category: { select: { id: true, name: true, color: true, icon: true } },
         person: { select: { id: true, name: true } },
+        paymentReceivable: {
+          select: {
+            person: { select: { id: true, name: true } },
+          },
+        },
+        paymentDebt: {
+          select: {
+            person: { select: { id: true, name: true } },
+          },
+        },
         invoice: {
           select: { id: true, month: true, year: true, status: true },
         },

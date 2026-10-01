@@ -356,24 +356,24 @@ describe('Ocorrência de renda recorrente — snapshot', () => {
 });
 
 describe('Categoria de settlement de recebível não-renda', () => {
-  it('preserva Receita recebida para OTHER', async () => {
+  it('preserva A receber pago para OTHER', async () => {
     const harness = buildHarness({
       receivable: automatic({ incomeClassification: 'OTHER' }),
     });
 
     await harness.service.update('rec-auto', USER_ID, { isPaid: true } as any);
 
-    expect(harness.writes.categoryNames).toEqual(['Receita recebida']);
+    expect(harness.writes.categoryNames).toEqual(['A receber pago']);
   });
 
-  it('preserva Receita recebida para classificação legada nula', async () => {
+  it('preserva A receber pago para classificação legada nula', async () => {
     const harness = buildHarness({
       receivable: automatic({ incomeClassification: null }),
     });
 
     await harness.service.update('rec-auto', USER_ID, { isPaid: true } as any);
 
-    expect(harness.writes.categoryNames).toEqual(['Receita recebida']);
+    expect(harness.writes.categoryNames).toEqual(['A receber pago']);
   });
 });
 

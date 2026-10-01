@@ -25,7 +25,13 @@ export class BudgetController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() filters: GetBudgetV2Dto,
   ): Promise<BudgetV2ResponseContract> {
-    return this.budgetV2Service.getBudget(user.id, filters.preset);
+    return this.budgetV2Service.getBudget(
+      user.id,
+      filters.preset,
+      new Date(),
+      filters.month,
+      filters.year,
+    );
   }
 
   @Get('v2/drilldown')

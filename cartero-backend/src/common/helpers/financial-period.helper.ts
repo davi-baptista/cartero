@@ -40,6 +40,11 @@ export interface FinancialPeriodNow {
   now?: Date;
 }
 
+export function financialCivilDateStart(date: string): Date {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day, 0));
+}
+
 export interface BudgetV2PeriodBounds {
   period: BudgetV2Period;
   startInclusive: Date | null;
@@ -67,6 +72,14 @@ export function deriveBudgetV2PeriodBounds(
   let startDate: string | null;
   let endDate: string;
   switch (preset) {
+    case BudgetV2PeriodPreset.MONTH:
+      throw new Error('MONTH requires an explicit competence');
+    case BudgetV2PeriodPreset.NEXT_MONTH:
+      startDate = nextMonthStart;
+      endDate = new Date(Date.UTC(year, month + 1, 1, 12))
+        .toISOString()
+        .slice(0, 10);
+      break;
     case BudgetV2PeriodPreset.THIS_MONTH:
       startDate = currentMonthStart;
       endDate = nextMonthStart;
@@ -77,10 +90,6 @@ export function deriveBudgetV2PeriodBounds(
       break;
     case BudgetV2PeriodPreset.ALL_TIME:
       startDate = null;
-      endDate = tomorrow;
-      break;
-    case BudgetV2PeriodPreset.LAST_30_DAYS:
-      startDate = shiftCivilDate(today, -29);
       endDate = tomorrow;
       break;
     default:
@@ -94,6 +103,33 @@ export function deriveBudgetV2PeriodBounds(
 
   return {
     period: { preset, startDate, endDate, timeZone },
+    startInclusive,
+    endExclusive,
+  };
+}
+
+export function deriveBudgetV2MonthBounds(
+  month: number,
+  year: number,
+  accountTimeZone: string | null | undefined,
+): BudgetV2PeriodBounds {
+  const timeZone = requireAccountTimeZone(
+    accountTimeZone,
+    'budget v2 account timezone',
+  );
+  const startDate = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`;
+  const endDate = new Date(Date.UTC(year, month, 1, 12))
+    .toISOString()
+    .slice(0, 10);
+  const endExclusive = firstInstantOfFinancialDay(endDate, timeZone);
+  const startInclusive = firstInstantOfFinancialDay(startDate, timeZone);
+  return {
+    period: {
+      preset: BudgetV2PeriodPreset.MONTH,
+      startDate,
+      endDate,
+      timeZone,
+    },
     startInclusive,
     endExclusive,
   };

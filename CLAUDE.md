@@ -207,7 +207,7 @@ GET /health                → keepalive público (sem auth), retorna { status: 
 
 - **Três** categorias são auto-criadas pelo backend na primeira vez que são necessárias, via `EntityValidationService.findOrCreateSystemCategory` (busca **apenas por nome** — a unicidade é `(userId, name)`, então filtrar por `isSystem` faria o create seguinte violar a constraint):
   - **"Dívida paga"** — cor `#65a30d` (verde-oliva, puxado pro vermelho/amarelo)
-  - **"Receita recebida"** — cor `#22c55e` (verde vívido)
+  - **"A receber pago"** — cor `#22c55e` (verde vívido)
   - **"Assinatura"** — cor `#8b5cf6` (violeta) — default dos lançamentos gerados por Subscription quando nenhuma categoria é escolhida
   - Todas usam ícone `"Lock"` (via `SYSTEM_CATEGORY_ICON` em `common/constants/system-categories.ts`), que existe só em um mapa separado (`SYSTEM_ICON_MAP` em `lib/category-icons.ts`) — **nunca aparece no seletor de ícones normal** (`CATEGORY_ICON_GROUPS`), só é resolvido para exibição
 - **Categoria manual homônima NÃO é promovida**: se o usuário já tem uma categoria chamada "Assinatura" com `isSystem: false`, ela é **reutilizada como está** — `isSystem`, ícone e cor dele permanecem. A versão anterior a convertia em categoria de sistema como efeito colateral de criar uma assinatura, e ela deixava de ser editável e excluível sem caminho de volta pela UI
@@ -365,7 +365,7 @@ Se qualquer um desses três parâmetros estiver presente na URL, o filtro padrã
 - Invoice sync executado no bootstrap (app.scheduler.ts) ✅
 - Cookie de refresh first-party via proxy `/api`, com `sameSite: 'lax'` e `secure` em produção ✅
 - **Transações reembolsáveis** ✅ (ver seção própria abaixo)
-- **Transações de pagamento (Dívida paga / Receita recebida)** ✅ (ver seção própria abaixo)
+- **Transações de pagamento (Dívida paga / A receber pago)** ✅ (ver seção própria abaixo)
 - **Categorias de sistema** ✅ (`isSystem`, protegidas contra edição/exclusão/colisão de nome)
 - `GET /health` ✅ — keepalive público, sem tocar no banco
 - **Web Push** ✅ — `NotificationsService` (VAPID + `web-push`), `POST /notifications/subscribe` e `POST /notifications/run`; Service Worker em `public/sw.js`
@@ -474,7 +474,7 @@ model Receivable {
 
 ---
 
-## Feature: Transações de Pagamento — Dívida paga / Receita recebida (✅ Implementada)
+## Feature: Transações de Pagamento — Dívida paga / A receber pago (✅ Implementada)
 
 ### Contexto e motivação
 
@@ -491,7 +491,7 @@ Marcar uma Dívida como paga ou um Receivable como recebido agora gera automatic
 
 **Receivable recebido:**
 - Mesma mecânica, mas `Transaction.type` é **sempre forçado a `INCOME`** no backend, independente do `paymentType` escolhido no modal (escolher CREDIT_CARD aqui é um edge case estranho mas permitido — só afeta qual fatura recebe o lançamento, o tipo continua INCOME para não distorcer os totais de gasto/receita)
-- Categoria de sistema: "Receita recebida"
+- Categoria de sistema: "A receber pago"
 - `Receivable.paymentTransactionId` é um **campo distinto** de `Receivable.transactionId` (relation `ReceivablePaymentLink`) — uma mesma linha pode ter os dois simultaneamente (ex: receivable nascido de uma transação reembolsável que depois é marcado como recebido)
 
 **Desmarcar (`true → false`):**

@@ -7,12 +7,13 @@ const page = read('../app/(dashboard)/budget/page.tsx')
 const service = read('../services/budget.service.ts')
 const types = read('../types/budget-v2.ts')
 const layout = read('../app/(dashboard)/layout.tsx')
+const monthNav = read('../components/month-nav.tsx')
 
 describe('Budget V2 contract and movement', () => {
   it('uses the typed V2 endpoint and keeps the complete core shape', () => {
     expect(service).toContain("api.get<BudgetV2Response>('/budget/v2'")
-    expect(page).toContain('getBudgetV2(preset)')
-    expect(page).toContain("queryKey: ['budget-v2', preset]")
+    expect(page).toContain('getBudgetV2(allTime')
+    expect(page).toContain("queryKey: ['budget-v2', allTime ? 'ALL_TIME' : 'MONTH', period.month, period.year]")
     expect(types).toContain('period: BudgetV2Period')
     expect(types).toContain('realized: BudgetV2Realized')
     expect(types).toContain('pending: BudgetV2Pending')
@@ -25,8 +26,16 @@ describe('Budget V2 contract and movement', () => {
 
   it('keeps the period selector inside Movement and the three realized authorities', () => {
     expect(page).toContain('Movimentação')
-    expect(page).toContain('Período da movimentação')
-    expect(page).toContain('PeriodSelector value={preset}')
+    expect(page).toContain('useMonthPeriod')
+    expect(page).toContain('Trocar para período completo')
+    expect(page).toContain('Voltar para visão mensal')
+    expect(page).toContain('variant="default"')
+    expect(page).toContain('budgetAllTime: allTime, setBudgetAllTime: setAllTime')
+    expect(page).not.toContain('useEffect')
+    expect(monthNav).toContain('pathname.startsWith(\'/budget\') && budgetMode.allTime')
+    expect(monthNav).toContain('if (budgetMode.pathname !== pathname)')
+    expect(layout).toContain("pathname.startsWith('/budget') && budgetAllTime")
+    expect(layout).toContain('if (!scoped) return null')
     expect(page).not.toContain('Valores registrados no perÃ­odo.')
     expect(page).toContain('Uma visão do que entrou, saiu e ainda está pendente no Cartero.')
     for (const label of ['Entradas registradas', 'Saídas registradas', 'Balanço registrado']) {
@@ -36,18 +45,15 @@ describe('Budget V2 contract and movement', () => {
       expect(page).toContain(field)
     }
     expect(page).toContain('flex flex-wrap items-center justify-between gap-3')
-    expect(page).toContain('size="default"')
-    expect(page).toContain('h-10 w-auto min-w-40 shrink-0 px-3')
-    expect(page).toContain('side="bottom" align="end" sideOffset={4} alignItemWithTrigger={false}')
-    expect(page).toContain('className="min-w-40 p-1"')
-    expect(page).toContain('className="min-h-8 px-2 py-1.5"')
+    expect(page).not.toContain('PeriodSelector')
     expect(page).not.toContain('w-full sm:w-44')
     expect(page).not.toContain('w-[72%]')
     expect(page).not.toContain('border-b-[4px]')
     expect(page).toContain('flex min-w-0 flex-col items-center')
     expect(page).not.toContain('<Card')
-    for (const preset of Object.values(BudgetV2PeriodPreset)) expect(page).toContain(preset)
-    expect(layout).not.toContain("  '/budget',")
+    expect(page).toContain(BudgetV2PeriodPreset.MONTH)
+    expect(page).toContain(BudgetV2PeriodPreset.ALL_TIME)
+    expect(layout).toContain("  '/budget',")
   })
 
   it('uses the compact 2-plus-1 metric grid with a narrow-screen fallback', () => {
@@ -92,14 +98,14 @@ describe('Budget V2 unified composition', () => {
   })
 
   it('separates Movement from Composition on every viewport', () => {
-    expect(page).toContain('border-t border-border/60')
+    expect(page).not.toContain('border-t border-border/60')
     expect(page).not.toContain('hidden border-t border-border/60 sm:block')
     expect(page).toContain('<Composition budget={budget} onRowClick={onRowClick} />')
   })
 
   it('separates registered and upcoming groups in both columns', () => {
     expect(page).toContain('REGISTRADO NO PERÍODO')
-    expect(page).toContain('A VENCER · PRÓXIMOS 30 DIAS')
+    expect(page).toContain('A VENCER NO PERÍODO')
     for (const field of [
       'manualIncome',
       'receivableReceipts',

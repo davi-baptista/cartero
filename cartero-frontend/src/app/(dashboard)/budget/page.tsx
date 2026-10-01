@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ChevronRight, CircleAlert } from 'lucide-react'
 import { BudgetDrilldownDrawer } from '@/components/budget-drilldown-drawer'
+import { useMonthPeriod } from '@/components/month-nav'
+import { Button } from '@/components/ui/button'
 import { QueryError } from '@/components/ui/query-error'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
@@ -13,15 +14,8 @@ import { getBudgetV2 } from '@/services/budget.service'
 import { BudgetV2PeriodPreset, type BudgetV2Response } from '@/types/budget-v2'
 import { BudgetV2DrilldownBucket } from '@/types/budget-v2-drilldown'
 
-const PERIOD_OPTIONS = [
-  { value: BudgetV2PeriodPreset.LAST_30_DAYS, label: 'Últimos 30 dias' },
-  { value: BudgetV2PeriodPreset.THIS_MONTH, label: 'Este mês' },
-  { value: BudgetV2PeriodPreset.LAST_MONTH, label: 'Mês passado' },
-  { value: BudgetV2PeriodPreset.ALL_TIME, label: 'Todo o histórico' },
-] as const
-
 const REALIZED_INFLOW_ROWS = [
-  ['manualIncome', 'Receitas registradas'],
+  ['manualIncome', 'Rendas'],
   ['receivableReceipts', 'Recebimentos'],
   ['personSettlementInflows', 'Acertos recebidos'],
 ] as const
@@ -156,7 +150,7 @@ function CompositionColumn({
         empty={registeredEmpty}
         onRowClick={onRowClick}
       />
-      <CompositionGroup label="A VENCER · PRÓXIMOS 30 DIAS" rows={openRows} empty="Nenhum valor a vencer." onRowClick={onRowClick} />
+      <CompositionGroup label="A VENCER NO PERÍODO" rows={openRows} empty="Nenhum valor a vencer." onRowClick={onRowClick} />
     </div>
   )
 }
@@ -228,29 +222,6 @@ function LoadingState() {
   )
 }
 
-function PeriodSelector({
-  value,
-  onChange,
-}: {
-  value: BudgetV2PeriodPreset
-  onChange: (value: BudgetV2PeriodPreset) => void
-}) {
-  const selected = PERIOD_OPTIONS.find((option) => option.value === value) ?? PERIOD_OPTIONS[0]
-  return (
-    <div className="flex items-center gap-2">
-      <label className="sr-only" htmlFor="budget-period">Período da movimentação</label>
-      <Select value={value} onValueChange={(next) => next && onChange(next as BudgetV2PeriodPreset)}>
-      <SelectTrigger id="budget-period" size="default" aria-label="Período da movimentação" className="h-10 w-auto min-w-40 shrink-0 px-3">
-          <SelectValue>{selected.label}</SelectValue>
-        </SelectTrigger>
-        <SelectContent side="bottom" align="end" sideOffset={4} alignItemWithTrigger={false} className="min-w-40 p-1">
-          {PERIOD_OPTIONS.map((option) => <SelectItem className="min-h-8 px-2 py-1.5" key={option.value} value={option.value}>{option.label}</SelectItem>)}
-        </SelectContent>
-      </Select>
-    </div>
-  )
-}
-
 function Overdue({
   budget,
   onRowClick,
@@ -289,13 +260,13 @@ function Overdue({
 
 function BudgetContent({
   budget,
-  preset,
-  onPresetChange,
+  allTime,
+  onAllTimeChange,
   onRowClick,
 }: {
   budget: BudgetV2Response
-  preset: BudgetV2PeriodPreset
-  onPresetChange: (value: BudgetV2PeriodPreset) => void
+  allTime: boolean
+  onAllTimeChange: () => void
   onRowClick: (bucket: BudgetV2DrilldownBucket) => void
 }) {
   const balanceTone = budget.realized.balance.startsWith('-')
@@ -314,7 +285,9 @@ function BudgetContent({
           <div>
             <h2 className="text-base font-semibold" id="movement-title">Movimentação</h2>
           </div>
-          <PeriodSelector value={preset} onChange={onPresetChange} />
+          <Button type="button" variant="default" size="sm" onClick={onAllTimeChange}>
+            {allTime ? 'Voltar para visão mensal' : 'Trocar para período completo'}
+          </Button>
         </div>
         <div className="relative grid grid-cols-1 gap-x-3 gap-y-4 pt-2 min-[375px]:grid-cols-2 sm:grid-cols-3 sm:gap-3 sm:pt-3">
           <SummaryCard
@@ -363,7 +336,6 @@ function BudgetContent({
         </div>
       </section>
 
-      <div className="border-t border-border/60" aria-hidden="true" />
       <div className="space-y-8 sm:space-y-7">
         <Composition budget={budget} onRowClick={onRowClick} />
         <Overdue budget={budget} onRowClick={onRowClick} />
@@ -373,11 +345,13 @@ function BudgetContent({
 }
 
 export default function BudgetPage() {
-  const [preset, setPreset] = useState(BudgetV2PeriodPreset.LAST_30_DAYS)
+  const { period, budgetAllTime: allTime, setBudgetAllTime: setAllTime } = useMonthPeriod()
   const [drilldownBucket, setDrilldownBucket] = useState<BudgetV2DrilldownBucket | null>(null)
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
-    queryKey: ['budget-v2', preset],
-    queryFn: () => getBudgetV2(preset),
+    queryKey: ['budget-v2', allTime ? 'ALL_TIME' : 'MONTH', period.month, period.year],
+    queryFn: () => getBudgetV2(allTime
+      ? { preset: BudgetV2PeriodPreset.ALL_TIME }
+      : { preset: BudgetV2PeriodPreset.MONTH, month: period.month, year: period.year }),
     placeholderData: keepPreviousData,
   })
 
@@ -391,16 +365,17 @@ export default function BudgetPage() {
     <>
       <BudgetContent
         budget={data}
-        preset={preset}
-        onPresetChange={(nextPreset) => {
+        allTime={allTime}
+        onAllTimeChange={() => {
           setDrilldownBucket(null)
-          setPreset(nextPreset)
+          setAllTime((value) => !value)
         }}
         onRowClick={setDrilldownBucket}
       />
       <BudgetDrilldownDrawer
         bucket={drilldownBucket}
-        preset={preset}
+        period={period}
+        allTime={allTime}
         open={drilldownBucket !== null}
         onClose={() => setDrilldownBucket(null)}
       />

@@ -7,6 +7,7 @@ import { bankDisplayName } from '@/lib/bank-display'
 import { resolveCategoryIcon } from '@/lib/category-icons'
 import { formatCurrency, formatDate, isExpense, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
 import { belongsToSeries, installmentMetadata } from '@/lib/installment-series'
+import { transactionPersonContext } from '@/lib/transaction-person-context'
 import { ROW_AMOUNT_CLASS } from '@/components/ui/financial-list-row'
 import type { Transaction } from '@/types'
 import { TransactionType } from '@/types'
@@ -41,6 +42,7 @@ export function TransactionDetailsDrawer({
     ? series.reduce((sum, item) => sum + item.amount, 0)
     : null
   const expense = isExpense(transaction.type, transaction.isRefund)
+  const personContext = transactionPersonContext(transaction)
 
   return (
     <DetailDrawer
@@ -65,7 +67,8 @@ export function TransactionDetailsDrawer({
         {transaction.type !== TransactionType.INCOME && transaction.type !== TransactionType.INVOICE_PAYMENT && <DetailRow label="Forma de pagamento">{TRANSACTION_TYPE_LABELS[transaction.type]}</DetailRow>}
         <DetailRow label="Banco">{bankDisplayName(transaction.bank)}</DetailRow>
         <DetailRow label="Categoria"><span className="flex min-w-0 items-center justify-end gap-1.5">{Icon && <Icon aria-hidden="true" className="size-3.5 shrink-0" style={transaction.category?.color ? { color: transaction.category.color } : undefined} />}<span className="truncate">{transaction.category?.name ?? 'Não informada'}</span></span></DetailRow>
-        {transaction.person && <DetailRow label="Cobrança"><span className="text-receivable">A receber de {transaction.person.name}</span></DetailRow>}
+        {personContext && <DetailRow label={personContext.direction === 'in' ? 'Recebido de' : 'Pago para'}><span className="text-receivable">{personContext.personName}</span></DetailRow>}
+        {!personContext && transaction.person && <DetailRow label="Cobrança"><span className="text-receivable">A receber de {transaction.person.name}</span></DetailRow>}
         {installment && <DetailRow label="Parcelamento">{metadata?.index ? `Parcela ${metadata.index} de ${metadata.count}` : 'Parcelado'}</DetailRow>}
         {total !== null && <DetailRow label="Total da compra"><span className="tabular-nums">{formatCurrency(total)}</span><span className="ml-1 text-muted-foreground">· {metadata?.count} parcelas</span></DetailRow>}
         {transaction.invoice && <DetailRow label="Fatura">{invoicePeriodFormatter?.(transaction.invoice) ?? `${transaction.invoice.month}/${transaction.invoice.year}`}</DetailRow>}

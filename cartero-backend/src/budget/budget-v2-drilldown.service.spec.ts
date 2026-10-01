@@ -1,5 +1,6 @@
 import { Prisma, TransactionType } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
+import { BadRequestException } from '@nestjs/common';
 import { BudgetV2Service } from './budget-v2.service';
 import { BudgetV2DrilldownService } from './budget-v2-drilldown.service';
 import { BudgetV2Bucket } from './budget-v2-classification.helper';
@@ -464,6 +465,28 @@ function createPrisma() {
 }
 
 describe('BudgetV2DrilldownService', () => {
+  it('rejects MONTH without month/year as a client error', async () => {
+    await expect(
+      new BudgetV2DrilldownService(createPrisma()).getDrilldown('user-a', {
+        bucket: BudgetV2Bucket.RECEIVABLE_RECEIPTS,
+        preset: BudgetV2PeriodPreset.MONTH,
+      } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it.each([{ month: 9 }, { year: 2026 }])(
+    'rejects an incomplete MONTH pair %# as a client error',
+    async (period) => {
+      await expect(
+        new BudgetV2DrilldownService(createPrisma()).getDrilldown('user-a', {
+          bucket: BudgetV2Bucket.RECEIVABLE_RECEIPTS,
+          preset: BudgetV2PeriodPreset.MONTH,
+          ...period,
+        } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    },
+  );
+
   it('exposes the linked person id for owned inflow and outflow settlements', async () => {
     const prisma = createPrisma();
     const service = new BudgetV2DrilldownService(prisma);
@@ -472,7 +495,7 @@ describe('BudgetV2DrilldownService', () => {
       'user-a',
       {
         bucket: BudgetV2Bucket.PERSON_SETTLEMENT_INFLOW,
-        preset: BudgetV2PeriodPreset.LAST_30_DAYS,
+        preset: BudgetV2PeriodPreset.THIS_MONTH,
         limit: 100,
       } as any,
       date('2026-09-10'),
@@ -481,7 +504,7 @@ describe('BudgetV2DrilldownService', () => {
       'user-a',
       {
         bucket: BudgetV2Bucket.PERSON_SETTLEMENT_DIRECT_OUTFLOW,
-        preset: BudgetV2PeriodPreset.LAST_30_DAYS,
+        preset: BudgetV2PeriodPreset.THIS_MONTH,
         limit: 100,
       } as any,
       date('2026-09-10'),
@@ -524,7 +547,7 @@ describe('BudgetV2DrilldownService', () => {
     const prisma = createPrisma();
     const summary = await new BudgetV2Service(prisma).getBudget(
       'user-a',
-      BudgetV2PeriodPreset.LAST_30_DAYS,
+      BudgetV2PeriodPreset.THIS_MONTH,
       date('2026-09-10'),
     );
     const service = new BudgetV2DrilldownService(prisma);
@@ -579,7 +602,7 @@ describe('BudgetV2DrilldownService', () => {
         {
           bucket,
           ...(realizedBuckets.has(bucket)
-            ? { preset: BudgetV2PeriodPreset.LAST_30_DAYS }
+            ? { preset: BudgetV2PeriodPreset.THIS_MONTH }
             : {}),
           limit: 100,
         } as any,
@@ -602,7 +625,7 @@ describe('BudgetV2DrilldownService', () => {
     const prisma = createPrisma();
     const summary = await new BudgetV2Service(prisma).getBudget(
       'user-a',
-      BudgetV2PeriodPreset.LAST_30_DAYS,
+      BudgetV2PeriodPreset.THIS_MONTH,
       date('2026-09-10'),
     );
     const service = new BudgetV2DrilldownService(prisma);
@@ -610,7 +633,7 @@ describe('BudgetV2DrilldownService', () => {
       'user-a',
       {
         bucket: BudgetV2Bucket.INVOICE_SETTLEMENTS,
-        preset: BudgetV2PeriodPreset.LAST_30_DAYS,
+        preset: BudgetV2PeriodPreset.THIS_MONTH,
         limit: 1,
       } as any,
       date('2026-09-10'),
@@ -636,7 +659,7 @@ describe('BudgetV2DrilldownService', () => {
       'user-a',
       {
         bucket: BudgetV2Bucket.DIRECT_EXPENSES,
-        preset: BudgetV2PeriodPreset.LAST_30_DAYS,
+        preset: BudgetV2PeriodPreset.THIS_MONTH,
         limit: 10,
       } as any,
       date('2026-09-10'),
@@ -645,7 +668,7 @@ describe('BudgetV2DrilldownService', () => {
       'user-a',
       {
         bucket: BudgetV2Bucket.INVOICE_SETTLEMENTS,
-        preset: BudgetV2PeriodPreset.LAST_30_DAYS,
+        preset: BudgetV2PeriodPreset.THIS_MONTH,
         limit: 10,
       } as any,
       date('2026-09-10'),
@@ -672,7 +695,7 @@ describe('BudgetV2DrilldownService', () => {
         'user-a',
         {
           bucket: BudgetV2Bucket.DIRECT_EXPENSES,
-          preset: BudgetV2PeriodPreset.LAST_30_DAYS,
+          preset: BudgetV2PeriodPreset.THIS_MONTH,
           limit: 1,
           ...(cursor ? { cursor } : {}),
         } as any,
@@ -698,22 +721,21 @@ describe('BudgetV2DrilldownService', () => {
     const service = new BudgetV2DrilldownService(createPrisma());
     const response = await service.getDrilldown(
       'user-a',
-      { bucket: BudgetV2Bucket.UPCOMING_INVOICES, limit: 100 } as any,
+      {
+        bucket: BudgetV2Bucket.UPCOMING_INVOICES,
+        preset: BudgetV2PeriodPreset.NEXT_MONTH,
+        limit: 100,
+      } as any,
       date('2026-09-10'),
     );
 
-    expect(response.items.map((item) => item.id)).toEqual([
-      'invoice-inter',
-      'invoice-nubank',
-    ]);
-    expect(response.items.map((item) => item.kind)).toEqual([
-      'INVOICE',
-      'INVOICE',
-    ]);
-    expect(response.total).toBe('310.00');
-    expect(response.context.pendingWindow).toEqual({
-      startDate: '2026-09-10',
-      endDateExclusive: '2026-10-11',
+    expect(response.items.map((item) => item.id)).toEqual(['invoice-nubank']);
+    expect(response.items.map((item) => item.kind)).toEqual(['INVOICE']);
+    expect(response.total).toBe('160.00');
+    expect(response.context.period).toMatchObject({
+      preset: BudgetV2PeriodPreset.NEXT_MONTH,
+      startDate: '2026-10-01',
+      endDate: '2026-11-01',
     });
   });
 
@@ -773,7 +795,7 @@ describe('BudgetV2DrilldownService', () => {
     const prisma = createPrisma();
     const summary = await new BudgetV2Service(prisma).getBudget(
       'user-a',
-      BudgetV2PeriodPreset.LAST_30_DAYS,
+      BudgetV2PeriodPreset.THIS_MONTH,
       date('2026-09-10'),
     );
     const service = new BudgetV2DrilldownService(prisma);
@@ -798,7 +820,7 @@ describe('BudgetV2DrilldownService', () => {
             bucket,
             limit: 1,
             ...(realized.has(bucket)
-              ? { preset: BudgetV2PeriodPreset.LAST_30_DAYS }
+              ? { preset: BudgetV2PeriodPreset.THIS_MONTH }
               : {}),
             ...(cursor ? { cursor } : {}),
           } as any,
@@ -858,7 +880,7 @@ describe('BudgetV2DrilldownService', () => {
           bucket,
           limit: 1,
           ...(realized.has(bucket)
-            ? { preset: BudgetV2PeriodPreset.LAST_30_DAYS }
+            ? { preset: BudgetV2PeriodPreset.THIS_MONTH }
             : {}),
         } as any,
         date('2026-09-10'),
@@ -924,7 +946,7 @@ describe('BudgetV2DrilldownService', () => {
         bucket: BudgetV2Bucket.UPCOMING_DEBTS,
         preset: BudgetV2PeriodPreset.ALL_TIME,
       } as any),
-    ).rejects.toThrow('preset is forbidden');
+    ).resolves.toMatchObject({ bucket: BudgetV2Bucket.UPCOMING_DEBTS });
     await expect(
       service.getDrilldown('user-a', {
         bucket: BudgetV2Bucket.UPCOMING_DEBTS,

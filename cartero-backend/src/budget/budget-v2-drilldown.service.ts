@@ -2,8 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
+  deriveBudgetV2MonthBounds,
   deriveBudgetV2PeriodBounds,
-  shiftCivilDate,
 } from 'src/common/helpers/financial-period.helper';
 import { financialCivilDay } from 'src/common/helpers/financial-timezone.helper';
 import { BudgetV2Bucket } from './budget-v2-classification.helper';
@@ -15,13 +15,12 @@ import {
   settlementBucketWhere,
   transactionBucketWhere,
 } from './budget-v2-predicates.helper';
-import type { BudgetV2PeriodPreset } from './budget-v2.types';
+import { BudgetV2PeriodPreset } from './budget-v2.types';
 import type { GetBudgetV2DrilldownDto } from './dto/get-budget-v2-drilldown.dto';
 import type {
   BudgetV2DrilldownItem,
   BudgetV2DrilldownResponse,
 } from './budget-v2-drilldown.types';
-import { budgetPendingHorizonExclusive } from './budget-pending-window';
 
 const ZERO = new Prisma.Decimal(0);
 const OVERDUE_KIND_RANK = { DEBT: 0, INVOICE: 1 } as const;
@@ -66,13 +65,16 @@ const transactionSelect = {
       title: true,
       description: true,
       creditorName: true,
-      person: { select: { name: true } },
+      person: { select: { id: true, name: true } },
     },
   },
   paymentReceivable: {
     select: {
       id: true,
       userId: true,
+      personId: true,
+      incomeClassification: true,
+      recurringIncomeRuleId: true,
       title: true,
       description: true,
       debtorName: true,
@@ -196,6 +198,14 @@ function isRealizedBucket(bucket: BudgetV2Bucket): boolean {
   ].includes(bucket);
 }
 
+function isPendingBucket(bucket: BudgetV2Bucket): boolean {
+  return [
+    BudgetV2Bucket.UPCOMING_RECEIVABLES,
+    BudgetV2Bucket.UPCOMING_INVOICES,
+    BudgetV2Bucket.UPCOMING_DEBTS,
+  ].includes(bucket);
+}
+
 function dateIdCursorWhere(
   cursor: CursorPayload | null,
   descending: boolean,
@@ -275,13 +285,14 @@ export class BudgetV2DrilldownService {
   ): Promise<BudgetV2DrilldownResponse> {
     const bucket = dto.bucket;
     const realized = isRealizedBucket(bucket);
+    const pendingPreset = dto.preset ?? BudgetV2PeriodPreset.THIS_MONTH;
 
     if (realized && !dto.preset) {
       throw new BadRequestException(
         'preset is required for realized budget drilldown buckets',
       );
     }
-    if (!realized && dto.preset) {
+    if (!realized && !isPendingBucket(bucket) && dto.preset) {
       throw new BadRequestException(
         'preset is forbidden for pending budget drilldown buckets',
       );
@@ -292,24 +303,33 @@ export class BudgetV2DrilldownService {
       select: { timeZone: true },
     });
     const today = financialCivilDay(now, user.timeZone);
-    const pendingHorizonExclusive = budgetPendingHorizonExclusive(today);
-    // Keep invoice pending timing unchanged; only receivables and debts use
-    // the shorter Budget window.
-    const invoiceHorizonExclusive = shiftCivilDate(today, 31);
-    const horizonExclusive =
-      bucket === BudgetV2Bucket.UPCOMING_INVOICES
-        ? invoiceHorizonExclusive
-        : pendingHorizonExclusive;
-    const periodBounds = realized
-      ? deriveBudgetV2PeriodBounds(dto.preset!, user.timeZone, { now })
-      : null;
-    const scope = realized
-      ? `${periodBounds!.period.startDate ?? ''}|${periodBounds!.period.endDate}`
-      : `${today}|${horizonExclusive}`;
+    if ((dto.month === undefined) !== (dto.year === undefined)) {
+      throw new BadRequestException('month and year must be provided together');
+    }
+    if (
+      (realized || isPendingBucket(bucket)) &&
+      pendingPreset === BudgetV2PeriodPreset.MONTH &&
+      (dto.month === undefined || dto.year === undefined)
+    ) {
+      throw new BadRequestException('MONTH preset requires month and year');
+    }
+    const periodBounds =
+      realized || isPendingBucket(bucket)
+        ? dto.month !== undefined && dto.year !== undefined
+          ? deriveBudgetV2MonthBounds(dto.month, dto.year, user.timeZone)
+          : deriveBudgetV2PeriodBounds(
+              realized ? dto.preset! : pendingPreset,
+              user.timeZone,
+              { now },
+            )
+        : null;
+    const scope = periodBounds
+      ? `${periodBounds.period.startDate ?? ''}|${periodBounds.period.endDate}`
+      : `${today}|overdue`;
     const cursorScope = {
       version: 1 as const,
       bucket,
-      preset: dto.preset ?? null,
+      preset: periodBounds ? periodBounds.period.preset : null,
       timeZone: user.timeZone,
       scope,
     };
@@ -320,7 +340,6 @@ export class BudgetV2DrilldownService {
       bucket,
       periodBounds,
       today,
-      horizonExclusive,
       cursor,
       dto.limit,
     );
@@ -336,10 +355,7 @@ export class BudgetV2DrilldownService {
         ...(periodBounds
           ? { period: periodBounds.period }
           : {
-              pendingWindow: {
-                startDate: today,
-                endDateExclusive: horizonExclusive,
-              },
+              pendingWindow: { startDate: today, endDateExclusive: today },
             }),
       },
       items: items.map((row) => row.item),
@@ -362,26 +378,36 @@ export class BudgetV2DrilldownService {
     bucket: BudgetV2Bucket,
     periodBounds: ReturnType<typeof deriveBudgetV2PeriodBounds> | null,
     today: string,
-    horizonExclusive: string,
     cursor: CursorPayload | null,
     limit: number,
   ): Promise<PageResult> {
     if (bucket === BudgetV2Bucket.OVERDUE_OUTFLOWS) {
       return this.loadOverdueOutflows(userId, today, cursor, limit);
     }
+    if (bucket === BudgetV2Bucket.OVERDUE_RECEIVABLES) {
+      return this.loadReceivablePageAndTotal(
+        userId,
+        { lt: new Date(`${today}T00:00:00.000Z`) },
+        cursor,
+        limit,
+      );
+    }
 
-    const date = periodBounds
-      ? periodBounds.startInclusive
-        ? { gte: periodBounds.startInclusive, lt: periodBounds.endExclusive }
-        : { lt: periodBounds.endExclusive }
-      : bucket === BudgetV2Bucket.UPCOMING_RECEIVABLES ||
-          bucket === BudgetV2Bucket.UPCOMING_DEBTS ||
-          bucket === BudgetV2Bucket.UPCOMING_INVOICES
-        ? {
-            gte: new Date(`${today}T00:00:00.000Z`),
-            lt: new Date(`${horizonExclusive}T00:00:00.000Z`),
-          }
-        : { lt: new Date(`${today}T00:00:00.000Z`) };
+    const date =
+      periodBounds && isRealizedBucket(bucket)
+        ? periodBounds.startInclusive
+          ? { gte: periodBounds.startInclusive, lt: periodBounds.endExclusive }
+          : { lt: periodBounds.endExclusive }
+        : periodBounds
+          ? periodBounds.period.startDate === null
+            ? { gte: new Date(`${today}T00:00:00.000Z`) }
+            : {
+                gte: new Date(
+                  `${periodBounds.period.startDate > today ? periodBounds.period.startDate : today}T00:00:00.000Z`,
+                ),
+                lt: new Date(`${periodBounds.period.endDate}T00:00:00.000Z`),
+              }
+          : { lt: new Date(`${today}T00:00:00.000Z`) };
 
     switch (bucket) {
       case BudgetV2Bucket.MANUAL_INCOME:
@@ -412,7 +438,6 @@ export class BudgetV2DrilldownService {
           limit,
         );
       case BudgetV2Bucket.UPCOMING_RECEIVABLES:
-      case BudgetV2Bucket.OVERDUE_RECEIVABLES:
         return this.loadReceivablePageAndTotal(userId, date, cursor, limit);
       case BudgetV2Bucket.UPCOMING_DEBTS:
         return this.loadDebtPageAndTotal(userId, date, cursor, limit);
@@ -476,6 +501,7 @@ export class BudgetV2DrilldownService {
           title: source.title,
           description: source.description,
           counterparty: source.person?.name ?? source.debtorName,
+          personName: source.person?.name ?? null,
           bankName: transaction.bank.name,
           paymentType: transaction.type,
         },
@@ -497,6 +523,7 @@ export class BudgetV2DrilldownService {
           title: source.title,
           description: source.description,
           counterparty: source.person?.name ?? source.creditorName,
+          personName: source.person?.name ?? null,
           bankName: transaction.bank.name,
           paymentType: transaction.type,
         },

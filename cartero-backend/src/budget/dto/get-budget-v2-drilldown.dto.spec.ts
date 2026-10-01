@@ -17,7 +17,7 @@ describe('GetBudgetV2DrilldownDto', () => {
     expect(
       await errors({
         bucket: validBucket,
-        preset: BudgetV2PeriodPreset.LAST_30_DAYS,
+        preset: BudgetV2PeriodPreset.THIS_MONTH,
       }),
     ).toHaveLength(0);
   });
@@ -33,6 +33,21 @@ describe('GetBudgetV2DrilldownDto', () => {
     ).not.toHaveLength(0);
     expect(await errors({ bucket: validBucket })).toHaveLength(0);
   });
+
+  it.each([0, 13, 1.5, 'bad'])('rejects invalid month %s', async (month) => {
+    expect(
+      await errors({ bucket: validBucket, month, year: 2026 }),
+    ).not.toHaveLength(0);
+  });
+
+  it.each([0, 10000, 2026.5, 'bad'])(
+    'rejects invalid year %s',
+    async (year) => {
+      expect(
+        await errors({ bucket: validBucket, month: 9, year }),
+      ).not.toHaveLength(0);
+    },
+  );
 
   it.each([1, 20, 100, '1', '20', '100'])('accepts limit %s', async (limit) => {
     expect(await errors({ bucket: validBucket, limit })).toHaveLength(0);

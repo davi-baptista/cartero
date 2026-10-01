@@ -1,11 +1,50 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Prisma } from '@prisma/client';
+import { BadRequestException } from '@nestjs/common';
 import { BudgetV2Service } from './budget-v2.service';
 import { BudgetV2PeriodPreset } from './budget-v2.types';
 
 const money = (value: string) => new Prisma.Decimal(value);
 
 describe('BudgetV2Service', () => {
+  it('rejects an explicit MONTH preset without its month/year pair as a client error', async () => {
+    const prisma = {
+      user: { findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'UTC' })) },
+    } as any;
+    const ensureForUser = vi.fn();
+    const service = new BudgetV2Service(prisma, { ensureForUser } as any);
+    await expect(
+      service.getBudget(
+        'user-a',
+        BudgetV2PeriodPreset.MONTH,
+        new Date('2026-09-10T12:00:00Z'),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(ensureForUser).not.toHaveBeenCalled();
+    expect(prisma.user.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [9, undefined],
+    [undefined, 2026],
+  ])(
+    'rejects incomplete month/year pair %s/%s before side effects',
+    async (month, year) => {
+      const ensureForUser = vi.fn();
+      const service = new BudgetV2Service({} as any, { ensureForUser } as any);
+      await expect(
+        service.getBudget(
+          'user-a',
+          BudgetV2PeriodPreset.MONTH,
+          new Date('2026-09-10T12:00:00Z'),
+          month,
+          year,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(ensureForUser).not.toHaveBeenCalled();
+    },
+  );
+
   it("uses the authenticated user's account timezone", async () => {
     const prisma = {
       user: {
@@ -127,7 +166,7 @@ describe('BudgetV2Service', () => {
 
     const result = await new BudgetV2Service(prisma).getBudget(
       'user-a',
-      BudgetV2PeriodPreset.LAST_30_DAYS,
+      BudgetV2PeriodPreset.THIS_MONTH,
       new Date('2026-09-16T12:00:00.000Z'),
     );
 
@@ -164,10 +203,10 @@ describe('BudgetV2Service', () => {
     ).args;
     expect(transactionQuery.where.userId).toBe('user-a');
     expect(transactionQuery.where.date.gte).toEqual(
-      new Date('2026-08-18T03:00:00.000Z'),
+      new Date('2026-09-01T03:00:00.000Z'),
     );
     expect(transactionQuery.where.date.lt).toEqual(
-      new Date('2026-09-17T03:00:00.000Z'),
+      new Date('2026-10-01T03:00:00.000Z'),
     );
     expect(
       calls.find((call) => call.source === 'settlement').args.where,
@@ -396,7 +435,6 @@ describe('BudgetV2Service', () => {
     } as any;
     const service = new BudgetV2Service(prisma);
     const presets = [
-      BudgetV2PeriodPreset.LAST_30_DAYS,
       BudgetV2PeriodPreset.THIS_MONTH,
       BudgetV2PeriodPreset.LAST_MONTH,
       BudgetV2PeriodPreset.ALL_TIME,
@@ -412,10 +450,6 @@ describe('BudgetV2Service', () => {
     );
 
     for (const result of results.slice(1)) {
-      expect(result.pending).toEqual(results[0].pending);
-      expect(result.composition.upcoming).toEqual(
-        results[0].composition.upcoming,
-      );
       expect(result.pending.overdue).toEqual(results[0].pending.overdue);
     }
   });
@@ -487,7 +521,7 @@ describe('BudgetV2Service', () => {
       },
       receivable: {
         findMany: vi.fn(async ({ where }: any) => {
-          expect(where).toEqual({ userId: 'user-a', isPaid: false });
+          expect(where).toMatchObject({ userId: 'user-a', isPaid: false });
           return [
             {
               amount: money('100.00'),
@@ -502,7 +536,7 @@ describe('BudgetV2Service', () => {
       },
       debt: {
         findMany: vi.fn(async ({ where }: any) => {
-          expect(where).toEqual({ userId: 'user-a', isPaid: false });
+          expect(where).toMatchObject({ userId: 'user-a', isPaid: false });
           return [
             {
               amount: money('50.00'),
@@ -517,7 +551,7 @@ describe('BudgetV2Service', () => {
       },
       invoice: {
         findMany: vi.fn(async ({ where }: any) => {
-          expect(where).toEqual({
+          expect(where).toMatchObject({
             userId: 'user-a',
             status: { in: ['OPEN', 'CLOSED', 'OVERDUE'] },
           });
@@ -964,7 +998,7 @@ describe('BudgetV2Service', () => {
       outflow: '0.00',
       balance: '0.00',
     });
-    expect(result.pending.outflow).toBe('0.00');
+    expect(result.pending.outflow).toBe('100.00');
   });
 
   it('partitions every authority by dueDate, including stale invoice statuses', async () => {
@@ -1023,18 +1057,18 @@ describe('BudgetV2Service', () => {
     );
 
     expect(result.pending).toEqual({
-      inflow: '15.00',
-      outflow: '2250.00',
-      net: '-2235.00',
+      inflow: '500015.00',
+      outflow: '502950.00',
+      net: '-2935.00',
       overdue: { inflow: '1.00', outflow: '310.00' },
     });
     expect(result.composition.upcoming).toEqual({
-      receivables: '14.00',
-      debts: '140.00',
-      invoices: '1800.00',
+      receivables: '500014.00',
+      debts: '500140.00',
+      invoices: '2500.00',
     });
-    expect(result.resultAfterPending).toBe('-2235.00');
-    expect(result.pending.inflow).toBe('15.00');
+    expect(result.resultAfterPending).toBe('-2935.00');
+    expect(result.pending.inflow).toBe('500015.00');
     expect(result.pending.overdue.inflow).toBe('1.00');
   });
 

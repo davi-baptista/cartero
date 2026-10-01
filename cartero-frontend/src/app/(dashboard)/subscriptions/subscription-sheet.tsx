@@ -151,7 +151,7 @@ export function SubscriptionSheet({
    *
    * "Assinatura" é o default quando nada é escolhido, mas oferecê-la na lista
    * sugeriria que ela é uma opção como as outras — e as demais ("Dívida paga",
-   * "Receita recebida") pertencem a fluxos que não são este. A categoria atual
+   * "A receber pago") pertencem a fluxos que não são este. A categoria atual
    * de uma assinatura em edição continua aparecendo, mesmo sendo de sistema.
    */
   const selectableCategories = categories.filter((c) => !c.isSystem)

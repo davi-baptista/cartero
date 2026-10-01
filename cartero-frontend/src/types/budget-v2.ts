@@ -1,5 +1,6 @@
 export enum BudgetV2PeriodPreset {
-  LAST_30_DAYS = 'LAST_30_DAYS',
+  MONTH = 'MONTH',
+  NEXT_MONTH = 'NEXT_MONTH',
   THIS_MONTH = 'THIS_MONTH',
   LAST_MONTH = 'LAST_MONTH',
   ALL_TIME = 'ALL_TIME',
