@@ -254,15 +254,13 @@ const ler = (rel: string) =>
 const code = (s: string) =>
   s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
-const PAGINA = ler('../app/(dashboard)/receivables/page.tsx')
 const DRAWER = ler('../app/(dashboard)/receivables/receivable-detail-drawer.tsx')
 const PESSOA = ler('../components/person-statement-drawer.tsx')
 const HOOK = ler('./use-delete-source-transaction.ts')
 
 describe('itens 43 e 45: nenhuma superfície decide sozinha', () => {
-  it('as duas consomem o resolver canônico', () => {
+  it('o drawer e o extrato da pessoa consomem o resolver canônico', () => {
     for (const [nome, fonte] of [
-      ['A Receber', PAGINA],
       ['Detalhe', DRAWER],
       ['Pessoa', PESSOA],
     ] as const) {
@@ -277,10 +275,7 @@ describe('itens 43 e 45: nenhuma superfície decide sozinha', () => {
       `transactionId || paymentTransactionId` tratava origem e comprovante
       como a mesma coisa. É a regressão exata que produziu o 409.
     */
-    for (const [nome, fonte] of [
-      ['A Receber', PAGINA],
-      ['Pessoa', PESSOA],
-    ] as const) {
+    for (const [nome, fonte] of [['Pessoa', PESSOA]] as const) {
       expect(
         code(fonte),
         `${nome} voltou ao predicate genérico`,
@@ -321,10 +316,7 @@ describe('itens 11, 12 e 36: a exclusão opera na compra', () => {
 
 describe('itens 8, 9 e 44: a confirmação diz a consequência', () => {
   it('avisa que a compra também será excluída', () => {
-    for (const [nome, fonte] of [
-      ['A Receber', PAGINA],
-      ['Pessoa', PESSOA],
-    ] as const) {
+    for (const [nome, fonte] of [['Pessoa', PESSOA]] as const) {
       expect(fonte, `${nome}: título`).toContain('Excluir compra e cobrança?')
       expect(fonte, `${nome}: consequência`).toContain(
         'a compra de origem também será excluída',
@@ -340,8 +332,7 @@ describe('itens 8, 9 e 44: a confirmação diz a consequência', () => {
       O aviso oferece "Manter a transação", que aqui deixaria a compra
       atribuída a alguém sem a cobrança correspondente.
     */
-    expect(PAGINA).toContain("case 'source-transaction':")
-    expect(PAGINA).toContain("case 'linked-payment':")
+    expect(DRAWER).toContain('resolveReceivableDeletePolicy(receivable)')
   })
 })
 

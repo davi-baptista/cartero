@@ -148,7 +148,7 @@ describe('Budget V2 drilldown contract', () => {
 
   it('shares the Extrato transaction icon authority', () => {
     const icons = read('./transaction-icons.ts')
-    const transactions = read('../app/(dashboard)/transactions/page.tsx')
+    const transactions = read('../app/(dashboard)/movements/statement/page.tsx')
 
     expect(transactions).toContain('TRANSACTION_TYPE_ICONS')
     expect(icons).toContain('[TransactionType.INCOME]: TrendingUp')

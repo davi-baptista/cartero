@@ -166,6 +166,13 @@
   }
 }
 
+/* Keep document scrolling out of the authenticated dashboard shell only. */
+body:has([data-slot="dashboard-root"]) {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* Shared compact scrollbar for dense drawer/list surfaces. */
 .subtle-scrollbar {
   scrollbar-width: thin;

@@ -1,6 +1,26 @@
 import { api } from '@/lib/api'
 import type { Transaction, TransactionFilters, TransactionType, InstallmentScope } from '@/types'
 
+export interface TransactionTimelineFilters {
+  cursor?: string
+  limit: number
+  search?: string
+  startDate?: string
+  endDate?: string
+  bankId?: string
+  categoryId?: string
+  type?: TransactionType
+  group?: 'direct'
+}
+
+export interface TransactionPage {
+  items: Transaction[]
+  pageInfo: {
+    nextCursor: string | null
+    hasMore: boolean
+  }
+}
+
 function normalizeTransaction(transaction: Transaction): Transaction {
   return {
     ...transaction,
@@ -17,6 +37,17 @@ function normalizeTransactionResponse(
 export async function getTransactions(filters?: TransactionFilters): Promise<Transaction[]> {
   const { data } = await api.get<Transaction[]>('/transactions', { params: filters })
   return data.map(normalizeTransaction)
+}
+
+/** Cursor page used by the global statement; legacy callers keep getTransactions. */
+export async function getTransactionPage(
+  filters: TransactionTimelineFilters,
+): Promise<TransactionPage> {
+  const { data } = await api.get<TransactionPage>('/transactions', { params: filters })
+  return {
+    ...data,
+    items: data.items.map(normalizeTransaction),
+  }
 }
 
 /** Fatura que vai receber uma parcela — existente ou ainda a ser criada. */

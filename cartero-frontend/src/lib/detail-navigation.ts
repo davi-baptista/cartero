@@ -123,7 +123,7 @@ export function withoutDetailParams(
   return next
 }
 
-/** `/debts?a=1` ou `/debts` — nunca `/debts?` com a interrogação órfã. */
+/** `/movements/obligations?a=1` ou a rota sem query, nunca `?` órfão. */
 export function detailHref(
   pathname: string,
   params: URLSearchParams,

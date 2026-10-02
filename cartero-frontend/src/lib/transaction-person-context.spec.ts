@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { transactionPersonContext } from '@/lib/transaction-person-context'
 import { TransactionType, type Transaction } from '@/types'
 
-const extrato = readFileSync(new URL('../app/(dashboard)/transactions/page.tsx', import.meta.url), 'utf8')
+const extrato = readFileSync(new URL('../app/(dashboard)/movements/statement/page.tsx', import.meta.url), 'utf8')
 const detail = readFileSync(new URL('../components/transaction-details-drawer.tsx', import.meta.url), 'utf8')
 const budgetRow = readFileSync(new URL('../components/budget-drilldown-item.tsx', import.meta.url), 'utf8')
 
@@ -46,7 +46,7 @@ describe('transaction receipt person context', () => {
   it('uses the normalized context in Extrato, Budget and canonical detail without replacing titles', () => {
     expect(extrato).toContain('title={tx.title}')
     expect(extrato).toContain('transactionPersonContext(tx)')
-    expect(extrato).toContain('{personContext.label} {personContext.personName}')
+    expect(extrato).toContain('personContext,')
     expect(detail).toContain('transactionPersonContext(transaction)')
     expect(detail).toContain("personContext.direction === 'in' ? 'Recebido de' : 'Pago para'")
     expect(budgetRow).toContain('transactionPersonContext({ direction: \'out\', personName: item.personName })')

@@ -20,7 +20,11 @@ import { describe, expect, it } from 'vitest'
  */
 
 const PAGE = readFileSync(
-  new URL('../app/(dashboard)/transactions/page.tsx', import.meta.url),
+  new URL('../app/(dashboard)/movements/statement/page.tsx', import.meta.url),
+  'utf-8',
+)
+const DISPLAY_ITEMS = readFileSync(
+  new URL('./statement-display-items.ts', import.meta.url),
   'utf-8',
 )
 
@@ -77,7 +81,8 @@ describe('itens 3, 5 e 6: o resto da tela permanece', () => {
 
   it('item 4: o parcelamento não foi tocado', () => {
     // Agrupamento e expansão de parcelas seguem como estavam.
-    expect(PAGE).toContain('parentId')
+    expect(PAGE).toContain('buildStatementDisplayItems')
+    expect(DISPLAY_ITEMS).toContain('parentId')
   })
 
   it('os estados de erro e vazio continuam distintos', () => {
@@ -87,16 +92,14 @@ describe('itens 3, 5 e 6: o resto da tela permanece', () => {
 })
 
 describe('item 7: a transição para a lista é limpa', () => {
-  it('a lista abre com o divisor, sem espaço órfão', () => {
-    /*
-      Os cards ficavam entre os filtros e a lista. Sem eles, o `gap-6` do
-      container leva direto ao `border-t` — nenhum vazio a preencher.
-    */
+  it('a lista começa pelo heading mensal, sem divisor órfão', () => {
+    /* Os cards e a divisória entre filtros e lista não fazem parte do Extrato. */
     const trecho = PAGE.slice(
       PAGE.indexOf('{/* Transaction list */}'),
       PAGE.indexOf('{/* Transaction list */}') + 120,
     )
-    expect(trecho).toContain('border-t border-border')
+    expect(trecho).not.toContain('border-t border-border')
+    expect(PAGE).toContain('id={`statement-month-${section.key}`}')
   })
 })
 
@@ -105,9 +108,9 @@ describe('item 10: a temporalidade do Extrato não mudou', () => {
     /*
       Cada tela mantém a sua; aqui é `Transaction.date`.
 
-      `invoicePeriod` continua existindo e é legítimo: é o parâmetro de URL
-      que a Visão Geral usa para o drill-through por categoria, um recorte
-      OPCIONAL pedido pelo chamador — não a competência padrão da tela.
+      `invoicePeriod` segue como filtro da consulta de categorias da Visão
+      Geral. Não é um parâmetro de rota do Extrato global, cuja navegação por
+      categoria usa apenas `categoryId`.
     */
     expect(PAGE).not.toContain('paidAtMonth')
     expect(PAGE).not.toContain('dueMonth')

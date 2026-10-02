@@ -170,6 +170,7 @@ function debt(over: Partial<Debt> & { id: string }): Debt {
     dueDate: over.dueDate ?? '2026-08-05',
     isAlertEnabled: true,
     isPaid: over.isPaid ?? false,
+    paidAt: over.paidAt,
     createdAt: '2026-01-01',
     updatedAt: '2026-01-01',
   } as Debt
@@ -185,6 +186,7 @@ function receivable(over: Partial<Receivable> & { id: string }): Receivable {
     occurredAt: over.occurredAt ?? '2026-08-01',
     dueDate: over.dueDate ?? '2026-08-10',
     isPaid: over.isPaid ?? false,
+    paidAt: over.paidAt,
     createdAt: '2026-01-01',
     updatedAt: '2026-01-01',
   } as Receivable
@@ -218,6 +220,7 @@ function flat(map: Map<number, ReturnType<typeof buildCalendarEvents> extends Ma
 function build(over: {
   year?: number
   month?: number
+  today?: string
   debts?: Debt[]
   receivables?: Receivable[]
   invoices?: Invoice[]
@@ -231,6 +234,7 @@ function build(over: {
     invoices: over.invoices ?? [],
     transactions: over.transactions ?? [],
     bankNames: BANKS,
+    today: over.today,
   })
 }
 
@@ -329,6 +333,22 @@ describe('Fatura', () => {
 })
 
 describe('Dívida', () => {
+  it('links with the correct domain and only sends month context when the section needs it', () => {
+    const upcoming = flat(build({
+      month: 8,
+      today: '2026-08-01',
+      debts: [debt({ id: 'open', dueDate: '2026-08-05' })],
+    })).find((event) => event.entityId === 'open')
+    const settled = flat(build({
+      month: 8,
+      today: '2026-08-01',
+      debts: [debt({ id: 'paid', dueDate: '2026-08-05', isPaid: true, paidAt: '2026-09-02T12:00:00Z' })],
+    })).find((event) => event.entityId === 'paid')
+
+    expect(upcoming?.href).toBe('/movements/obligations?domain=debt&highlight=open&month=8&year=2026')
+    expect(settled?.href).toBe('/movements/obligations?domain=debt&highlight=paid&month=9&year=2026')
+  })
+
   it('pendente antes do vencimento', () => {
     const event = flat(
       build({ debts: [debt({ id: 'd1', dueDate: '2099-08-05' })], year: 2099 }),
@@ -376,6 +396,16 @@ describe('Dívida', () => {
 })
 
 describe('Cobrança', () => {
+  it('links with the receivable domain and resolution month for settled history', () => {
+    const event = flat(build({
+      month: 8,
+      today: '2026-08-01',
+      receivables: [receivable({ id: 'r1', dueDate: '2026-08-05', isPaid: true, paidAt: '2026-09-02T12:00:00Z' })],
+    })).find((item) => item.entityId === 'r1')
+
+    expect(event?.href).toBe('/movements/obligations?domain=receivable&highlight=r1&month=9&year=2026')
+  })
+
   it('pendente NÃO usa a direção de entrada', () => {
     /**
      * O defeito corrigido na Fase 9D: pendente usava o verde de "recebido",

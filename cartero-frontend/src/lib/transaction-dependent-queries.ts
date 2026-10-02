@@ -70,6 +70,8 @@ export function invalidateTransactionDependents(
 ) {
   /* A lista do Extrato, em qualquer recorte de período ou filtro. */
   qc.invalidateQueries({ queryKey: ['transactions'] })
+  /* Read model paginado usado pela view nova de Movimentações. */
+  qc.invalidateQueries({ queryKey: ['movement-statement'] })
 
   /*
     A fatura muda de total a cada lançamento — a aberta, a lista do cartão e a

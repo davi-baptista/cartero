@@ -27,6 +27,7 @@ const semComentarios = (s: string) =>
 const DRAWER = semComentarios(
   ler('../components/person-statement-drawer.tsx'),
 )
+const SETTLEMENT_VIEW = semComentarios(ler('./person-settlement-view.ts'))
 const FATURA = semComentarios(
   ler('../components/invoice-details-drawer.tsx'),
 )
@@ -44,6 +45,12 @@ const FINANCIAL_LIST_ROW = semComentarios(
 )
 const FINANCIAL_SETTLEMENT_ROW = semComentarios(
   ler('../components/ui/financial-settlement-row.tsx'),
+)
+const INCOME_PAGE = semComentarios(
+  ler('../app/(dashboard)/income/page.tsx'),
+)
+const BUDGET_ROW = semComentarios(
+  ler('../components/budget-drilldown-item.tsx'),
 )
 const SECTION_TITLE = DRAWER_SECTIONS.slice(
   DRAWER_SECTIONS.indexOf('export function DrawerSectionTitle'),
@@ -112,12 +119,26 @@ describe('objetivo 1: a seção "Em aberto" segue o padrão de Fatura', () => {
   })
 
   it('o botão usa a escala de Fatura', () => {
-    const escala = "h-7 cursor-pointer gap-1 px-2 text-[11px]"
+    const escala = "h-7 cursor-pointer gap-1 px-2"
 
     expect(DRAWER).toContain(escala)
     expect(DRAWER).toContain("variant: 'default'")
     /* O CTA da Fatura usa a mesma escala, com o cursor do Button primitivo. */
     expect(FATURA).toContain('h-7 cursor-pointer gap-1 px-2 text-[11px]')
+  })
+
+  it('Quitar tudo e Adicionar consomem a mesma autoridade tipográfica', () => {
+    const adicionar = DRAWER.slice(
+      DRAWER.indexOf("buttonVariants({\n                        variant: 'default'"),
+      DRAWER.indexOf("buttonVariants({\n                        variant: 'default'") + 420,
+    )
+
+    expect(DRAWER).toContain('<Button\n                        size="sm"\n                        className="gap-1.5"')
+    expect(adicionar).toContain("variant: 'default'")
+    expect(adicionar).toContain("size: 'sm'")
+    expect(adicionar).not.toContain('text-[11px]')
+    expect(adicionar).not.toContain('font-')
+    expect(adicionar).not.toContain('leading-')
   })
 
   it('mantém o menu compacto e os dois CTAs superiores em primary', () => {
@@ -372,6 +393,61 @@ describe('objetivo 3: cursor nos alvos de clique', () => {
     expect(FINANCIAL_LIST_ROW).toContain('onClick={onView}')
   })
 
+})
+
+describe('financial rows compartilham a autoridade de secondary text', () => {
+  it('Invoice define meta, gaps e trailing secondary', () => {
+    expect(FINANCIAL_LIST_ROW).toContain('flex min-w-0 flex-1 flex-col gap-1.5')
+    expect(FINANCIAL_LIST_ROW).toContain(
+      "'flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] text-muted-foreground",
+    )
+    expect(FINANCIAL_LIST_ROW).toContain('shrink-0 flex-col items-end gap-1')
+    expect(FINANCIAL_LIST_ROW).toContain(
+      'whitespace-nowrap text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70',
+    )
+    expect(FATURA).toContain('<FinancialListRow')
+    expect(FATURA).toContain('<FinancialRowTrailing')
+  })
+
+  it('consumidores usam a primitive ou as authorities compartilhadas', () => {
+    expect(DRAWER).toContain('<FinancialSettlementRow')
+    expect(DRAWER).toContain('ROW_AMOUNT_CLASS')
+    expect(DRAWER).not.toContain('ROW_TRAILING_META_CLASS')
+    expect(INCOME_PAGE).toContain('<FinancialSettlementRow')
+    expect(INCOME_PAGE).toContain('ROW_TRAILING_META_CLASS')
+    expect(BUDGET_ROW).toContain('<FinancialListRow')
+    expect(BUDGET_ROW).toContain('<FinancialRowTrailing')
+  })
+})
+
+describe('Person History não repete o vencimento no trailing', () => {
+  it('future e overdue mantêm a data curta na meta esquerda', () => {
+    const abertas = DRAWER.slice(
+      DRAWER.indexOf('{monthReceivables.map'),
+      DRAWER.indexOf('{historyReceivables.map'),
+    )
+
+    expect(abertas).toContain('dueLabel={dueContext(r, competence, today).text}')
+    expect(abertas).toContain('dueLabel={dueContext(d, competence, today).text}')
+    expect(SETTLEMENT_VIEW).toContain('text: `Vence em ${dueText}`')
+    expect(SETTLEMENT_VIEW).toContain('text: `Venceu em ${dueText}`')
+  })
+
+  it('remove a data direita, preservando metadata esquerda e valor', () => {
+    const history = DRAWER.slice(DRAWER.indexOf('{historyReceivables.map'))
+
+    expect(DRAWER).toContain(
+      "formatSignedCurrency(Number(item.amount), isReceivable ? 'in' : 'out')",
+    )
+    expect(history).not.toContain('formatDate(item.dueDate)')
+    expect(history).not.toContain('ROW_TRAILING_META_CLASS')
+    expect(history).toContain(
+      "dueLabel={resolvedLabel(r, 'receivable', user?.timeZone ?? null)}",
+    )
+    expect(history).toContain(
+      "dueLabel={resolvedLabel(d, 'debt', user?.timeZone ?? null)}",
+    )
+  })
 })
 
 describe('o que já estava bom foi preservado', () => {

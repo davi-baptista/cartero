@@ -17,18 +17,19 @@ describe('dashboard navigation grouping', () => {
     for (const href of [
       '/overview',
       '/budget',
-      '/transactions',
+      '/movements',
       '/subscriptions',
       '/commitments',
       '/banks',
       '/categories',
-      '/debts',
-      '/receivables',
       '/persons',
     ]) {
       expect(layout).toContain(`href: '${href}'`)
     }
 
+    expect(layout).not.toContain("href: '/transactions'")
+    expect(layout).not.toContain("href: '/debts'")
+    expect(layout).not.toContain("href: '/receivables'")
     expect(layout).not.toContain("href: '/profile'")
     expect(layout).toContain('isNavItemActive(href, pathname)')
     expect(layout).toContain('setOpenMobile(false)')

@@ -21,6 +21,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { CommitmentsModule } from './commitments/commitments.module';
 import { RecurringIncomeModule } from './recurring-income/recurring-income.module';
+import { ObligationsModule } from './obligations/obligations.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { RecurringIncomeModule } from './recurring-income/recurring-income.modul
     SubscriptionsModule,
     CommitmentsModule,
     RecurringIncomeModule,
+    ObligationsModule,
     ScheduleModule.forRoot(),
   ],
   providers: [AppScheduler],

@@ -57,7 +57,28 @@ export function DrawerSectionGroup({
   )
 }
 
-/** Canonical list separators and optional outer horizontal gutter. */
+/** Shared financial list separators with an explicit page/drawer inset variant. */
+export function FinancialRowList({
+  children,
+  variant = 'page',
+  inset = false,
+}: {
+  children: ReactNode
+  variant?: 'page' | 'drawer'
+  /** Apply the drawer horizontal gutter when its parent scroller is edge-to-edge. */
+  inset?: boolean
+}) {
+  return (
+    <div className={cn(
+      'divide-y divide-border/60',
+      variant === 'drawer' && inset && DRAWER_WIDE_CONTENT_GUTTER,
+    )}>
+      {children}
+    </div>
+  )
+}
+
+/** Drawer compatibility wrapper; preserves all existing drawer list geometry. */
 export function DrawerFinancialList({
   children,
   inset = false,
@@ -67,9 +88,9 @@ export function DrawerFinancialList({
   inset?: boolean
 }) {
   return (
-    <div className={cn('divide-y divide-border/60', inset && DRAWER_WIDE_CONTENT_GUTTER)}>
+    <FinancialRowList variant="drawer" inset={inset}>
       {children}
-    </div>
+    </FinancialRowList>
   )
 }
 

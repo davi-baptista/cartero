@@ -216,8 +216,6 @@ function CategoryBreakdown({
   isError,
   isFetching,
   onRetry,
-  startDate,
-  endDate,
 }: {
   rows: CategoryRowData[]
   /** Soma das linhas — por construção igual ao gasto próprio do período. */
@@ -226,8 +224,6 @@ function CategoryBreakdown({
   isError: boolean
   isFetching: boolean
   onRetry: () => void
-  startDate: string
-  endDate: string
 }) {
   return (
     <section aria-label="Seus gastos por categoria">
@@ -283,7 +279,7 @@ function CategoryBreakdown({
               key={row.categoryId}
               {...row}
               index={i}
-              href={`/transactions?startDate=${startDate}&endDate=${endDate}&categoryId=${row.categoryId}&invoicePeriod=true`}
+              href={`/movements/statement?categoryId=${row.categoryId}`}
             />
           ))}
         </div>
@@ -1095,8 +1091,6 @@ export default function OverviewPage() {
           isError={txError}
           isFetching={txFetching}
           onRetry={() => void refetchTx()}
-          startDate={startDate}
-          endDate={endDate}
         />
       </div>
     </div>

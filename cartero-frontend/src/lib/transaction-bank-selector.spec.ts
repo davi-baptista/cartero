@@ -38,8 +38,10 @@ describe('transaction bank selector — optional bank UX', () => {
   })
 
   it('progressively reveals expense methods and details', () => {
-    expect(SHEET).toContain("{selectedKind === 'expense' && (")
-    expect(SHEET).toContain('{selectedType && (<>')
+    expect(SHEET).toContain("const paymentMethodChoice = selectedKind === 'expense' ? (")
+    expect(SHEET).toContain('<Label>Forma de pagamento</Label>')
+    expect(SHEET).toContain('{selectedType && (')
+    expect(SHEET).toContain('scrollManagedByParent && PROGRESSIVE_REVEAL_CLASS')
     expect(SHEET).toContain("disabled={isSubmitting || (!isEditing && !selectedType)}")
   })
 
@@ -61,6 +63,7 @@ describe('transaction bank selector — optional bank UX', () => {
     expect(SHEET).toContain('const selectedKind = entryIntent ?? undefined')
     expect(SHEET).toContain('setEntryIntent(kind)')
     expect(SHEET).toContain("setEntryIntent('expense')")
-    expect(SHEET).toContain("{selectedKind === 'expense' && (")
+    expect(SHEET).toContain("const selectedKind = entryIntent ?? undefined")
+    expect(SHEET).toContain("const paymentMethodChoice = selectedKind === 'expense' ? (")
   })
 })

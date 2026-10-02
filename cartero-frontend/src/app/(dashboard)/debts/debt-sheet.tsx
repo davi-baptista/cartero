@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useForm, useWatch, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -28,6 +29,8 @@ import {
 } from '@/components/ui/select'
 import { createPerson, getPersons } from '@/services/persons.service'
 import { cn } from '@/lib/utils'
+import { DRAWER_SCROLL_REGION_CLASS } from '@/components/ui/drawer-layout'
+import { PROGRESSIVE_REVEAL_CLASS } from '@/components/ui/progressive-reveal'
 import { accountToday } from '@/lib/date'
 import type { Debt, InstallmentScope } from '@/types'
 
@@ -64,9 +67,15 @@ interface DebtSheetProps {
   /** Timezone da conta autenticada — authority da data padrão de uma NOVA dívida. */
   timeZone: string | null | undefined
   onSubmit: (data: DebtFormData, scope: InstallmentScope | null) => Promise<void>
+  embedded?: boolean
+  leadingContent?: ReactNode
+  /** Let the unified drawer own the only scroll viewport in embedded mode. */
+  scrollManagedByParent?: boolean
+  /** Fixed footer host supplied by the unified drawer in parent-scroll mode. */
+  embeddedFooterHost?: HTMLElement | null
 }
 
-export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPersonId, timeZone, onSubmit }: DebtSheetProps) {
+export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPersonId, timeZone, onSubmit, embedded = false, leadingContent, scrollManagedByParent = false, embeddedFooterHost }: DebtSheetProps) {
   const isEditing = editTarget !== null
   const [creditorMode, setCreditorMode] = useState<CreditorMode>('manual')
   const [showInlineCreate, setShowInlineCreate] = useState(false)
@@ -116,6 +125,8 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPe
     if (open) {
       if (editTarget) {
         const hasPerson = !!editTarget.personId
+        // Opening an existing debt must synchronize the canonical form mode.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCreditorMode(hasPerson ? 'person' : 'manual')
         reset({
           creditorName: editTarget.creditorName,
@@ -178,24 +189,40 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPe
   const watchedPersonId = useWatch({ control, name: 'personId' })
   const selectedPerson = persons.find((p) => p.id === watchedPersonId)
 
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col sm:max-w-md" showCloseButton>
-        <SheetHeader className="px-6 pt-6 pb-0">
+  const footer = (
+    <SheetFooter className="px-6 pb-6 pt-0">
+      <Button variant="outline" onClick={() => onOpenChange(false)}>
+        Cancelar
+      </Button>
+      <Button type="submit" form="debt-form" disabled={isSubmitting}>
+        {isSubmitting && <Loader2 className="size-4 animate-spin" />}
+        {isEditing ? 'Salvar alterações' : 'Criar dívida'}
+      </Button>
+    </SheetFooter>
+  )
+
+  const content = (
+    <>
+      {!embedded && <SheetHeader className="px-6 pt-6 pb-0">
           <SheetTitle>{isEditing ? 'Editar dívida' : 'Nova dívida'}</SheetTitle>
           <SheetDescription>
             {isEditing
               ? 'Atualize os dados da dívida.'
               : 'Preencha os dados para registrar uma nova dívida externa.'}
           </SheetDescription>
-        </SheetHeader>
+      </SheetHeader>}
 
-        <form
+      <form
           id="debt-form"
           onSubmit={handleSubmit(handleFormSubmit)}
-          className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5"
-        >
-          {/* Creditor field */}
+        className={cn(
+          scrollManagedByParent ? 'flex flex-col gap-4' : DRAWER_SCROLL_REGION_CLASS,
+          'flex flex-col gap-4 px-6 py-5',
+          scrollManagedByParent && 'px-0 py-0',
+        )}
+      >
+        {leadingContent}
+        {/* Creditor field */}
           <div className="space-y-1.5">
             <Label>Credor</Label>
 
@@ -461,17 +488,29 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPe
               )}
             />
           </div>
-        </form>
+      </form>
 
-        <SheetFooter className="px-6 pb-6 pt-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button type="submit" form="debt-form" disabled={isSubmitting}>
-            {isSubmitting && <Loader2 className="size-4 animate-spin" />}
-            {isEditing ? 'Salvar alterações' : 'Criar dívida'}
-          </Button>
-        </SheetFooter>
+      {!scrollManagedByParent && footer}
+    </>
+  )
+
+  if (embedded) {
+    return (
+      <>
+        {scrollManagedByParent
+          ? <div className={PROGRESSIVE_REVEAL_CLASS}>{content}</div>
+          : content}
+        {scrollManagedByParent && embeddedFooterHost
+          ? createPortal(footer, embeddedFooterHost)
+          : null}
+      </>
+    )
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="flex w-full flex-col sm:max-w-md" showCloseButton>
+        {content}
       </SheetContent>
     </Sheet>
   )

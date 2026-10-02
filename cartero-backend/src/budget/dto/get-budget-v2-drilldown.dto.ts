@@ -2,9 +2,13 @@ import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { BudgetV2PeriodPreset } from '../budget-v2.types';
 import { BudgetV2DrilldownBucket } from '../budget-v2-drilldown.types';
+import {
+  DEFAULT_PAGE_LIMIT,
+  MAX_PAGE_LIMIT,
+} from 'src/common/pagination/pagination.constants';
 
-export const BUDGET_V2_DRILLDOWN_DEFAULT_LIMIT = 20;
-export const BUDGET_V2_DRILLDOWN_MAX_LIMIT = 100;
+export const BUDGET_V2_DRILLDOWN_DEFAULT_LIMIT = DEFAULT_PAGE_LIMIT;
+export const BUDGET_V2_DRILLDOWN_MAX_LIMIT = MAX_PAGE_LIMIT;
 
 export class GetBudgetV2DrilldownDto {
   @IsEnum(BudgetV2DrilldownBucket)

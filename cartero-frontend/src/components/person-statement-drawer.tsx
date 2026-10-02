@@ -36,7 +36,6 @@ import {
 } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { ROW_AMOUNT_CLASS } from '@/components/ui/financial-list-row'
-import { ROW_TRAILING_META_CLASS } from '@/components/ui/financial-list-row'
 import { FinancialAvatar } from '@/components/ui/financial-avatar'
 import { FinancialSettlementRow } from '@/components/ui/financial-settlement-row'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -206,7 +205,6 @@ function StatementRow({
             <span className={cn(ROW_AMOUNT_CLASS, item.isPaid && 'text-muted-foreground')}>
               {formatSignedCurrency(Number(item.amount), isReceivable ? 'in' : 'out')}
             </span>
-            <span className={ROW_TRAILING_META_CLASS}>{formatDate(item.dueDate)}</span>
           </>
         }
       />
@@ -1369,7 +1367,7 @@ export function PersonStatementDrawer({
                         variant: 'default',
                         size: 'sm',
                         className:
-                          'h-7 cursor-pointer gap-1 px-2 text-[11px]',
+                          'h-7 cursor-pointer gap-1 px-2',
                       })}
                     >
                       <Plus className="size-3.5" />

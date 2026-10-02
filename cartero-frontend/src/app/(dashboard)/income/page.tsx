@@ -44,6 +44,7 @@ import { useAuth } from '@/providers/auth-provider'
 import { formatCurrency, formatDate, formatSignedCurrency } from '@/lib/formatters'
 import { accountToday, formatDateValue } from '@/lib/date'
 import { syncSettlementEntity } from '@/lib/settlement-cache'
+import { ROW_TRAILING_META_CLASS } from '@/components/ui/financial-list-row'
 import { nextOpenIncomeOccurrence, nextOpenIncomeOccurrenceOnOrAfter, openOneOffIncome, openRecurringIncomeOccurrences, recurringIncomeHistoryOccurrences, recurringIncomeOccurrencePresentation, recurringIncomeStatusPresentation } from '@/lib/income-presentation'
 import { incomeHistoryReceiptLabel, paginateIncomeHistory, settledIncomeHistory } from '@/lib/income-history'
 import type { Receivable, RecurringIncomeRule, TransactionType } from '@/types'
@@ -117,7 +118,7 @@ function HistoryOccurrencesList({ occurrences, timeZone, onSelect, onReverse }: 
                 <span className={cn(ROW_AMOUNT_CLASS, 'text-muted-foreground')}>
                   {formatSignedCurrency(Number(occurrence.amount), 'in')}
                 </span>
-                <span className="text-xs text-muted-foreground">{formatDate(occurrence.dueDate)}</span>
+                <span className={ROW_TRAILING_META_CLASS}>{formatDate(occurrence.dueDate)}</span>
               </>
             }
           />

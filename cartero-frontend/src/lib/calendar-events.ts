@@ -3,6 +3,8 @@ import type { Debt, Invoice, Receivable, Transaction } from '@/types'
 import { INVOICE_STATUS_LABEL } from '@/lib/invoice-status'
 import { expenseSignedAmount } from '@/lib/money-semantics'
 import { settlementStatus } from '@/lib/settlement-status'
+import { obligationHighlightHref } from '@/lib/obligation-highlight'
+import { formatDateValue } from '@/lib/date'
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -142,6 +144,7 @@ export function buildCalendarEvents(
   input: CalendarInput,
 ): Map<number, CalEvent[]> {
   const { year, month, bankNames } = input
+  const today = input.today ?? formatDateValue()
   const map = new Map<number, CalEvent[]>()
   /** Protege contra a mesma entidade entrar duas vezes pelo mesmo tipo. */
   const seen = new Set<string>()
@@ -213,7 +216,7 @@ export function buildCalendarEvents(
     const day = inMonth(debt.dueDate)
     if (day === null) continue
 
-    const status = settlementStatus(debt, input.today)
+    const status = settlementStatus(debt, today)
     push(day, {
       id: `debt:${debt.id}`,
       kind: 'debt',
@@ -226,7 +229,11 @@ export function buildCalendarEvents(
       personName: debt.person?.name,
       entityId: debt.id,
       dueDate: debt.dueDate,
-      href: `/debts?highlight=${debt.id}`,
+      href: obligationHighlightHref(
+        'debt',
+        debt.id,
+        debt.isPaid ? debt.paidAt ?? debt.dueDate : debt.dueDate >= today ? debt.dueDate : null,
+      ),
     })
   }
 
@@ -235,7 +242,7 @@ export function buildCalendarEvents(
     const day = inMonth(receivable.dueDate)
     if (day === null) continue
 
-    const status = settlementStatus(receivable, input.today)
+    const status = settlementStatus(receivable, today)
     push(day, {
       id: `receivable:${receivable.id}`,
       kind: 'receivable',
@@ -254,7 +261,13 @@ export function buildCalendarEvents(
       personName: receivable.person?.name,
       entityId: receivable.id,
       dueDate: receivable.dueDate,
-      href: `/receivables?highlight=${receivable.id}`,
+      href: obligationHighlightHref(
+        'receivable',
+        receivable.id,
+        receivable.isPaid
+          ? receivable.paidAt ?? receivable.dueDate
+          : receivable.dueDate >= today ? receivable.dueDate : null,
+      ),
     })
   }
 

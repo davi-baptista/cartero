@@ -3,9 +3,9 @@ import { cn } from '@/lib/utils'
 /**
  * Shared visual classes for financial drawer rows.
  *
- * The list owns separators and list-level inset. This helper owns row geometry
- * and surface only; the animated wrapper variant keeps motion wrappers on the
- * same radius authority without adding DOM or changing their animation.
+ * The containing list owns separators and inset. This helper owns row geometry
+ * and hover/focus surface; the animated wrapper variant keeps motion wrappers
+ * on the same radius authority without changing their animation.
  */
 const FINANCIAL_DRAWER_ROW_SURFACE_VARIANTS = {
   interactive: cn(
@@ -13,7 +13,16 @@ const FINANCIAL_DRAWER_ROW_SURFACE_VARIANTS = {
     'px-0 py-3.5 text-left outline-none transition-colors hover:bg-muted/30',
     'focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4 sm:px-2 sm:py-4',
   ),
+  pageInteractive: cn(
+    'group flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg',
+    'px-0 py-3.5 text-left outline-none transition-colors hover:bg-muted/30',
+    'focus-visible:ring-3 focus-visible:ring-ring/50 sm:gap-4 sm:px-2 sm:py-4',
+  ),
   withLeadingAction: cn(
+    'group flex w-full min-w-0 items-center gap-3 rounded-lg',
+    'px-0 py-3.5 transition-colors hover:bg-muted/30 sm:gap-4 sm:px-2 sm:py-4',
+  ),
+  pageWithLeadingAction: cn(
     'group flex w-full min-w-0 items-center gap-3 rounded-lg',
     'px-0 py-3.5 transition-colors hover:bg-muted/30 sm:gap-4 sm:px-2 sm:py-4',
   ),

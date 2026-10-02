@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { isNavItemActive } from '@/lib/nav-active-route'
@@ -10,8 +10,6 @@ import {
   ArrowDownUp,
   Landmark,
   Tags,
-  HandCoins,
-  Wallet,
   Users,
   LogOut,
   ChevronLeft,
@@ -150,9 +148,7 @@ function SidebarToggle() {
 const MONTH_SCOPED_ROUTES = [
   '/budget',
   '/overview',
-  '/transactions',
-  '/debts',
-  '/receivables',
+  '/movements/obligations',
   '/persons',
 ]
 
@@ -172,12 +168,29 @@ function HeaderMonthNav({ pathname }: { pathname: string }) {
     MONTH_SCOPED_EXACT.includes(pathname)
   if (!scoped) return null
   if (pathname.startsWith('/budget') && budgetAllTime) return null
+  const handlePeriodChange = (next: { month: number; year: number }) => {
+    const changed = next.month !== period.month || next.year !== period.year
+    setPeriod(next)
+    if (!changed || pathname !== '/movements/obligations') return
+
+    // Deep-link highlight owns its final scroll destination after loading the target row.
+    const params = new URLSearchParams(window.location.search)
+    if (params.has('highlight')) return
+
+    window.requestAnimationFrame(() => {
+      const viewport = document.querySelector<HTMLElement>('[data-slot="dashboard-scroll-viewport"]')
+      const anchor = document.getElementById('obligations-scroll-anchor')
+      if (!viewport || !anchor) return
+      const top = anchor.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
+      viewport.scrollTo({ top, behavior: 'smooth' })
+    })
+  }
   // No mobile o nome da página sai da barra, então o seletor ocupa o espaço
   // livre centralizado; no desktop ele volta a encostar à direita.
   return (
     <MonthNav
       period={period}
-      onChange={setPeriod}
+      onChange={handlePeriodChange}
       compact
       className="mx-auto sm:ml-auto sm:mr-0"
     />
@@ -187,21 +200,19 @@ function HeaderMonthNav({ pathname }: { pathname: string }) {
 const navItems = [
   { href: '/overview', label: 'Visão Geral', icon: LayoutDashboard },
   { href: '/budget', label: 'Orçamento', icon: PiggyBank },
-  { href: '/transactions', label: 'Extrato', icon: ArrowDownUp },
+  { href: '/movements', label: 'Movimentações', icon: ArrowDownUp },
   { href: '/subscriptions', label: 'Assinaturas', icon: Repeat },
   { href: '/commitments', label: 'Parcelas', icon: CalendarClock },
   { href: '/banks', label: 'Bancos', icon: Landmark },
   { href: '/categories', label: 'Categorias', icon: Tags },
-  { href: '/debts', label: 'Dívidas', icon: HandCoins },
-  { href: '/receivables', label: 'A Receber', icon: Wallet },
   { href: '/income', label: 'Renda', headerLabel: 'Planejamento', icon: CircleDollarSign },
   { href: '/persons', label: 'Pessoas', icon: Users },
 ]
 
 const navGroups = [
-  { label: 'GERAL', items: navItems.filter(({ href }) => ['/overview', '/transactions'].includes(href)) },
+  { label: 'GERAL', items: navItems.filter(({ href }) => ['/overview', '/movements'].includes(href)) },
   { label: 'PLANEJAMENTO', items: navItems.filter(({ href }) => ['/budget', '/income', '/commitments', '/subscriptions'].includes(href)) },
-  { label: 'CONTAS', items: navItems.filter(({ href }) => ['/banks', '/debts', '/receivables', '/persons'].includes(href)) },
+  { label: 'CONTAS', items: navItems.filter(({ href }) => ['/banks', '/persons'].includes(href)) },
   { label: 'ORGANIZA\u00c7\u00c3O', items: [navItems[6]] },
 ]
 
@@ -209,12 +220,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, logout, isLoading } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
+  const dashboardScrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!isLoading && !user) {
       router.replace('/login')
     }
   }, [isLoading, user, router])
+
+  useEffect(() => {
+    if (dashboardScrollRef.current) dashboardScrollRef.current.scrollTop = 0
+  }, [pathname])
 
   if (isLoading) {
     return (
@@ -275,7 +291,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     .toUpperCase()
 
   const currentPage = navItems.find((item) => pathname.startsWith(item.href))
-  const currentPageLabel = currentPage?.headerLabel ?? currentPage?.label ?? (pathname === '/profile' ? 'Meu perfil' : undefined)
+  const currentPageLabel = pathname.startsWith('/movements')
+    ? undefined
+    : currentPage?.headerLabel ?? currentPage?.label ?? (pathname === '/profile' ? 'Meu perfil' : undefined)
   const isPlanningHeader = currentPage?.href === '/income'
 
   return (
@@ -283,7 +301,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <SidebarProvider>
       <NavigationProgress />
       <SubscriptionRunner />
-      <div className="flex min-h-screen w-full">
+      <div data-slot="dashboard-root" className="flex h-dvh min-h-0 w-full overflow-hidden">
         <Sidebar collapsible="icon">
           {/* Brand */}
           <SidebarHeader className="px-4 py-5 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-4">
@@ -331,29 +349,35 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </Sidebar>
 
         {/* Content */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          <TimezoneMismatchNotice />
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 sm:gap-3">
-            <SidebarToggle />
-            <Image
-              src="/logo-vertical-sem-nome.png"
-              alt="Cartero"
-              width={28}
-              height={28}
-              className="size-7 shrink-0 object-contain md:hidden"
-              unoptimized
-            />
-            {currentPageLabel && (
-              <>
-                <div className="hidden h-4 w-px shrink-0 bg-border sm:block" aria-hidden />
-                <span className={`hidden truncate text-sm sm:block ${isPlanningHeader ? 'font-normal text-muted-foreground' : 'font-medium'}`}>
-                  {currentPageLabel}
-                </span>
-              </>
-            )}
-            <HeaderMonthNav pathname={pathname} />
-          </header>
-          <main className="min-w-0 flex-1 p-6">{children}</main>
+        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+          <div
+            ref={dashboardScrollRef}
+            data-slot="dashboard-scroll-viewport"
+            className="min-h-0 flex-1 overflow-y-auto"
+          >
+            <TimezoneMismatchNotice />
+            <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 sm:gap-3">
+              <SidebarToggle />
+              <Image
+                src="/logo-vertical-sem-nome.png"
+                alt="Cartero"
+                width={28}
+                height={28}
+                className="size-7 shrink-0 object-contain md:hidden"
+                unoptimized
+              />
+              {currentPageLabel && (
+                <>
+                  <div className="hidden h-4 w-px shrink-0 bg-border sm:block" aria-hidden />
+                  <span className={`hidden truncate text-sm sm:block ${isPlanningHeader ? 'font-normal text-muted-foreground' : 'font-medium'}`}>
+                    {currentPageLabel}
+                  </span>
+                </>
+              )}
+              <HeaderMonthNav pathname={pathname} />
+            </header>
+            <main className="min-w-0 p-6">{children}</main>
+          </div>
         </div>
       </div>
     </SidebarProvider>

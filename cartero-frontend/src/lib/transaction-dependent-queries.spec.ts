@@ -54,6 +54,7 @@ describe('as dependências base de qualquer lançamento', () => {
 
     for (const raiz of [
       'transactions',
+      'movement-statement',
       'bank-invoices',
       'invoices',
       'budget',
@@ -188,7 +189,7 @@ describe('quando a mutação mexe em alguém', () => {
 
 describe('G5: existe UMA política, não nove listas', () => {
   const consumidores = [
-    ['Extrato', '../app/(dashboard)/transactions/page.tsx'],
+    ['Extrato', '../app/(dashboard)/movements/statement/page.tsx'],
     ['painel da fatura', '../components/invoice-details-drawer.tsx'],
     ['lista de faturas', '../app/(dashboard)/banks/[id]/invoices/page.tsx'],
     ['atalho da compra de origem', './use-delete-source-transaction.ts'],
@@ -255,13 +256,14 @@ describe('G5: existe UMA política, não nove listas', () => {
 })
 
 describe('as mutações passam a informação certa', () => {
-  const EXTRATO = code(ler('../app/(dashboard)/transactions/page.tsx'))
+  const EXTRATO = code(ler('../app/(dashboard)/movements/statement/page.tsx'))
+  const CREATE_TRANSACTION = code(ler('./use-create-transaction.ts'))
   const FATURA = code(ler('../components/invoice-details-drawer.tsx'))
   const LISTA = code(ler('../app/(dashboard)/banks/[id]/invoices/page.tsx'))
   const ATALHO = code(ler('./use-delete-source-transaction.ts'))
 
   it('M1: criar deriva de personId do payload', () => {
-    expect(EXTRATO).toContain(
+    expect(CREATE_TRANSACTION).toContain(
       'transactionAffectsPerson(null, variables.personId)',
     )
     expect(FATURA).toContain(

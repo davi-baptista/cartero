@@ -38,7 +38,8 @@ describe('item 38: abrir preserva o resto da query', () => {
       lista por pessoa; em Pessoas, identifica o extrato aberto. Abrir uma
       dívida não pode limpar o filtro.
 
-      `/debts?personId=p1&debtId=d1` = lista filtrada por p1, detalhe d1.
+      `/movements/obligations?personId=p1&domain=debt&debtId=d1` = detalhe
+      dentro da lista unificada, filtrada pela pessoa e domínio.
     */
     const depois = withDetailParam('personId=p1', 'debtId', 'd1')
 
@@ -105,17 +106,17 @@ describe('item 41: fechar remove só o detalhe', () => {
 describe('a URL final', () => {
   it('não deixa interrogação órfã quando nada sobra', () => {
     const params = withoutDetailParams('debtId=d1')
-    expect(detailHref('/debts', params)).toBe('/debts')
+    expect(detailHref('/movements/obligations', params)).toBe('/movements/obligations')
   })
 
   it('mantém a query quando algo sobra', () => {
     const params = withoutDetailParams('period=2026-08&debtId=d1')
-    expect(detailHref('/debts', params)).toBe('/debts?period=2026-08')
+    expect(detailHref('/movements/obligations', params)).toBe('/movements/obligations?period=2026-08')
   })
 
   it('não toca no pathname', () => {
     const params = withDetailParam('', 'debtId', 'd1')
-    expect(detailHref('/debts', params)).toBe('/debts?debtId=d1')
+    expect(detailHref('/movements/obligations', params)).toBe('/movements/obligations?debtId=d1')
   })
 })
 
@@ -152,19 +153,22 @@ describe('itens 8 e 50: a identidade vem da URL', () => {
   const code = (s: string) =>
     s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
+  const OBRIGATIONS = ler('../app/(dashboard)/movements/obligations/obligations-client.tsx')
   const PAGINAS = {
-    Dívidas: { fonte: ler('../app/(dashboard)/debts/page.tsx'), param: 'debtId' },
-    'A Receber': {
-      fonte: ler('../app/(dashboard)/receivables/page.tsx'),
-      param: 'receivableId',
-    },
     Assinaturas: {
       fonte: ler('../app/(dashboard)/subscriptions/page.tsx'),
       param: 'subscriptionId',
     },
   }
 
-  it('cada página usa o seu param canônico', () => {
+  it('a view unificada conserva os dois params canônicos de detalhe', () => {
+    expect(OBRIGATIONS).toContain("useDetailNavigation('debtId')")
+    expect(OBRIGATIONS).toContain("useDetailNavigation('receivableId')")
+    expect(OBRIGATIONS).toContain('DebtDetailDrawer')
+    expect(OBRIGATIONS).toContain('ReceivableDetailDrawer')
+  })
+
+  it('Assinaturas usa o seu param canônico', () => {
     for (const [nome, { fonte, param }] of Object.entries(PAGINAS)) {
       expect(fonte, `${nome} deveria usar ${param}`).toContain(
         `useDetailNavigation('${param}')`,
@@ -200,7 +204,7 @@ describe('itens 8 e 50: a identidade vem da URL', () => {
     }
   })
 
-  it('itens 15 e 17: a lista resolve antes de buscar por id', () => {
+  it('Assinaturas resolve antes de buscar por id', () => {
     /*
       Clicar numa linha não pode disparar requisição para algo que já está na
       tela. A busca por id é fallback de link direto e refresh.
@@ -212,6 +216,8 @@ describe('itens 8 e 50: a identidade vem da URL', () => {
         'onNotFound: detail.close',
       )
     }
+    expect(OBRIGATIONS).toContain('fetchById: getDebt')
+    expect(OBRIGATIONS).toContain('fetchById: getReceivable')
   })
 })
 

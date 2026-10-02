@@ -85,10 +85,9 @@ export function ReceivableDetailDrawer({
   const policy = resolveReceivableDeletePolicy(receivable)
   const counterparty = receivable.person?.name ?? receivable.debtorName
 
-  /** Deep link para a compra de origem, no dia em que ela aconteceu. */
-  const purchaseDay = receivable.occurredAt.slice(0, 10)
+  /** Deep link para a compra de origem no Extrato. */
   const purchaseHref = isAutomatic
-    ? `/transactions?startDate=${purchaseDay}&endDate=${purchaseDay}&highlight=${receivable.transactionId}`
+    ? `/movements/statement?highlight=${receivable.transactionId}`
     : null
 
   return (

@@ -1,7 +1,8 @@
 'use client'
 
 /* eslint-disable react-hooks/refs */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useForm, useWatch, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -28,6 +29,8 @@ import {
 } from '@/components/ui/select'
 import { DatePicker } from '@/components/ui/date-picker'
 import { TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
+import { DRAWER_SCROLL_REGION_CLASS } from '@/components/ui/drawer-layout'
+import { PROGRESSIVE_REVEAL_CLASS } from '@/components/ui/progressive-reveal'
 import {
   KIND_LABELS,
   PAYMENT_METHODS,
@@ -123,6 +126,16 @@ interface TransactionSheetProps {
     type?: TransactionType
     date?: string
   }
+  /** Lock the nature chosen by the Movements add flow while keeping its form canonical. */
+  initialKind?: TransactionKind
+  /** Render the existing form body/footer inside the shared Movements drawer. */
+  embedded?: boolean
+  /** Progressive choices rendered in the same decision surface as payment method. */
+  leadingContent?: ReactNode
+  /** Let the unified drawer own the only scroll viewport in embedded mode. */
+  scrollManagedByParent?: boolean
+  /** Fixed footer host supplied by the unified drawer in parent-scroll mode. */
+  embeddedFooterHost?: HTMLElement | null
   /** Timezone da conta autenticada — authority da data padrão de uma NOVA transação. */
   timeZone: string | null | undefined
 }
@@ -133,6 +146,11 @@ export function TransactionSheet({
   editTarget,
   onSubmit,
   createDefaults,
+  initialKind,
+  embedded = false,
+  leadingContent,
+  scrollManagedByParent = false,
+  embeddedFooterHost,
   timeZone,
 }: TransactionSheetProps) {
   const isEditing = editTarget !== null
@@ -501,9 +519,9 @@ export function TransactionSheet({
       setEntryIntent(
         editTarget
           ? kindOf(editTarget.type)
-          : createDefaults?.type
+          : initialKind ?? (createDefaults?.type
             ? kindOf(createDefaults.type)
-            : null,
+            : null),
       )
       // O toggle de "compra para outra pessoa" acompanha o estado real da
       // transação ao abrir para edição.
@@ -524,7 +542,9 @@ export function TransactionSheet({
         reset({
           bankId: createDefaults?.bankId ?? '',
           categoryId: '',
-          type: createDefaults?.type ?? (undefined as unknown as TransactionType),
+          type: initialKind === 'income'
+            ? TransactionType.INCOME
+            : createDefaults?.type ?? (undefined as unknown as TransactionType),
           title: '',
           amount: 0,
           isRefund: false,
@@ -545,6 +565,7 @@ export function TransactionSheet({
     createDefaults?.bankId,
     createDefaults?.type,
     createDefaults?.date,
+    initialKind,
     timeZone,
   ])
 
@@ -610,74 +631,108 @@ export function TransactionSheet({
   const selectedPerson = persons.find((p) => p.id === selectedPersonId)
   const selectableCategories = categories.filter((c) => !c.isSystem)
 
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col sm:max-w-md" showCloseButton>
-        <SheetHeader className="px-6 pt-6 pb-0">
+  const natureChoice = !initialKind ? (
+    <div className="space-y-1.5">
+      <Label>O que aconteceu?</Label>
+      <div className="grid grid-cols-2 gap-2">
+        {(['expense', 'income'] as const).map((kind) => (
+          <button
+            key={kind}
+            type="button"
+            aria-pressed={selectedKind === kind}
+            onClick={() => handleKindChange(kind)}
+            className={cn(
+              'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+              selectedKind === kind
+                ? 'border-primary bg-primary/10 text-foreground'
+                : 'border-border text-muted-foreground hover:bg-muted/50',
+            )}
+          >
+            {KIND_LABELS[kind]}
+          </button>
+        ))}
+      </div>
+      {errors.type && <p className="text-xs text-destructive">{errors.type.message}</p>}
+    </div>
+  ) : null
+
+  const paymentMethodChoice = selectedKind === 'expense' ? (
+    <div className={cn('space-y-1.5', scrollManagedByParent && PROGRESSIVE_REVEAL_CLASS)}>
+      <Label>Forma de pagamento</Label>
+      <div className="grid grid-cols-2 gap-2">
+        {PAYMENT_METHODS.map((method) => (
+          <button
+            key={method}
+            type="button"
+            aria-pressed={selectedType === method}
+            onClick={() => handleMethodChange(method)}
+            className={cn(
+              'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+              selectedType === method
+                ? 'border-primary bg-primary/10 text-foreground'
+                : 'border-border text-muted-foreground hover:bg-muted/50',
+            )}
+          >
+            {TRANSACTION_TYPE_LABELS[method]}
+          </button>
+        ))}
+      </div>
+      {errors.type && <p className="text-xs text-destructive">{errors.type.message}</p>}
+    </div>
+  ) : null
+
+  const progressiveChoices = leadingContent ? (
+    <div className="space-y-4">
+      {leadingContent}
+      {paymentMethodChoice}
+    </div>
+  ) : (
+    <>
+      {natureChoice}
+      {paymentMethodChoice}
+    </>
+  )
+
+  const footer = (
+    <SheetFooter className="px-6 pb-6 pt-0">
+      <Button variant="outline" onClick={() => onOpenChange(false)}>
+        Cancelar
+      </Button>
+      <Button
+        type="submit"
+        form="transaction-form"
+        disabled={isSubmitting || (!isEditing && !selectedType)}
+        onClick={(e) => { if (submittingRef.current) e.preventDefault() }}
+      >
+        {isSubmitting && <Loader2 className="size-4 animate-spin" />}
+        {isEditing ? 'Salvar alterações' : 'Criar transação'}
+      </Button>
+    </SheetFooter>
+  )
+
+  const content = (
+    <>
+      {!embedded && <SheetHeader className="px-6 pt-6 pb-0">
           <SheetTitle>{isEditing ? 'Editar transação' : 'Nova transação'}</SheetTitle>
           <SheetDescription>
             {isEditing ? 'Atualize os dados da transação.' : 'Preencha os dados para registrar uma nova transação.'}
           </SheetDescription>
-        </SheetHeader>
+      </SheetHeader>}
 
-        <form
+      <form
           id="transaction-form"
           onSubmit={handleSubmit(handleFormSubmit)}
-          className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5"
-        >
-          {/* Natureza — "o que aconteceu". O tipo persistido é derivado desta
-              escolha mais a forma, logo abaixo. */}
-          <div className="space-y-1.5">
-            <Label>O que aconteceu?</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {(['expense', 'income'] as const).map((kind) => (
-                <button
-                  key={kind}
-                  type="button"
-                  aria-pressed={selectedKind === kind}
-                  onClick={() => handleKindChange(kind)}
-                  className={cn(
-                    'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                    selectedKind === kind
-                      ? 'border-primary bg-primary/10 text-foreground'
-                      : 'border-border text-muted-foreground hover:bg-muted/50',
-                  )}
-                >
-                  {KIND_LABELS[kind]}
-                </button>
-              ))}
-            </div>
-            {errors.type && <p className="text-xs text-destructive">{errors.type.message}</p>}
-          </div>
-
-          {/* Forma de pagamento — só existe para gasto. Receita é persistida
-              como INCOME e o schema não separa a forma de recebimento. */}
-          {selectedKind === 'expense' && (
-            <div className="space-y-1.5">
-              <Label>Forma de pagamento</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {PAYMENT_METHODS.map((method) => (
-                  <button
-                    key={method}
-                    type="button"
-                    aria-pressed={selectedType === method}
-                    onClick={() => handleMethodChange(method)}
-                    className={cn(
-                      'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                      selectedType === method
-                        ? 'border-primary bg-primary/10 text-foreground'
-                        : 'border-border text-muted-foreground hover:bg-muted/50',
-                    )}
-                  >
-                    {TRANSACTION_TYPE_LABELS[method]}
-                  </button>
-                ))}
-              </div>
-            </div>
+          className={cn(
+            scrollManagedByParent ? 'flex flex-col gap-4' : DRAWER_SCROLL_REGION_CLASS,
+            'flex flex-col gap-4 px-6 py-5',
+            scrollManagedByParent && 'px-0 py-0',
           )}
+        >
+          {progressiveChoices}
 
           {/* Estorno — só no crédito. Reduz a fatura em vez de somar. */}
-          {selectedType && (<>
+          {selectedType && (
+          <div className={cn('flex flex-col gap-4', scrollManagedByParent && PROGRESSIVE_REVEAL_CLASS)}>
           {selectedType === TransactionType.CREDIT_CARD && (
             <div className="space-y-1.5">
               <Controller
@@ -699,7 +754,7 @@ export function TransactionSheet({
                 )}
               />
               {selectedIsRefund && (
-                <p className="text-xs text-muted-foreground">
+                <p className={cn('text-xs text-muted-foreground', scrollManagedByParent && PROGRESSIVE_REVEAL_CLASS)}>
                   Reduz o total da fatura. Não é receita e não gera cobrança.
                 </p>
               )}
@@ -1028,7 +1083,7 @@ export function TransactionSheet({
               </div>
 
               {isParcelado && (
-                <div className="space-y-1.5 pt-1">
+                <div className={cn('space-y-1.5 pt-1', scrollManagedByParent && PROGRESSIVE_REVEAL_CLASS)}>
                   <Label htmlFor="installments">Número de parcelas</Label>
                   <Input
                     id="installments"
@@ -1071,7 +1126,7 @@ export function TransactionSheet({
                 <span className="text-xs font-medium">Compra para outra pessoa</span>
               </button>
               {forOtherPerson && (
-              <div className="space-y-2">
+              <div className={cn('space-y-2', scrollManagedByParent && PROGRESSIVE_REVEAL_CLASS)}>
                 <Controller
                   control={control}
                   name="personId"
@@ -1173,23 +1228,29 @@ export function TransactionSheet({
             isLoading={previewEnabled && previewLoading}
             isError={previewEnabled && previewFailed}
           />
-          </>)}
-        </form>
+          </div>
+          )}
+      </form>
 
-        <SheetFooter className="px-6 pb-6 pt-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button
-            type="submit"
-            form="transaction-form"
-            disabled={isSubmitting || (!isEditing && !selectedType)}
-            onClick={(e) => { if (submittingRef.current) e.preventDefault() }}
-          >
-            {isSubmitting && <Loader2 className="size-4 animate-spin" />}
-            {isEditing ? 'Salvar alterações' : 'Criar transação'}
-          </Button>
-        </SheetFooter>
+      {!scrollManagedByParent && footer}
+    </>
+  )
+
+  if (embedded) {
+    return (
+      <>
+        {content}
+        {scrollManagedByParent && embeddedFooterHost
+          ? createPortal(footer, embeddedFooterHost)
+          : null}
+      </>
+    )
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="flex w-full flex-col sm:max-w-md" showCloseButton>
+        {content}
       </SheetContent>
     </Sheet>
   )

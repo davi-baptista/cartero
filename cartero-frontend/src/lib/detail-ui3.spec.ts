@@ -182,7 +182,7 @@ describe('parte B: fechar não depende do histórico', () => {
   it('`personId` fica FORA de `DETAIL_PARAMS`, e isso é deliberado', () => {
     /*
       O mesmo nome tem dois significados: em `/persons` identifica o extrato
-      aberto, em `/debts` FILTRA a lista por contraparte. Na lista global, a
+      aberto, em `/movements/obligations?domain=debt` filtra a lista por contraparte. Na lista global, a
       foundation o apagaria ao abrir uma dívida — e o filtro sumiria sozinho.
     */
     const NAV = ler('./detail-navigation.ts')

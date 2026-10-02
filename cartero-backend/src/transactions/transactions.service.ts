@@ -12,6 +12,11 @@ import {
   Receivable,
   Transaction,
 } from '@prisma/client';
+import {
+  DEFAULT_PAGE_LIMIT,
+  MAX_PAGE_LIMIT,
+} from 'src/common/pagination/pagination.constants';
+import { buildCursorPage } from 'src/common/pagination/cursor.helper';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import {
   deleteInvoiceIfEmpty,
@@ -53,6 +58,11 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTransactionDto } from 'src/transactions/dto/create-transaction.dto';
 import { FindTransactionsDto } from 'src/transactions/dto/find-transactions.dto';
+import {
+  decodeTransactionCursor,
+  TRANSACTION_CURSOR_ORDER,
+  transactionCursorWhere,
+} from './transaction-cursor.helper';
 import { UpdateTransactionDto } from 'src/transactions/dto/update-transaction.dto';
 import {
   parseDateFilterEnd,
@@ -873,53 +883,126 @@ export class TransactionsService {
           }
         : { date: dateFilter };
 
-    return await this.prisma.transaction.findMany({
-      where: {
-        userId,
-        categoryId: filters.categoryId,
-        bankId: filters.bankId,
-        type: filters.type,
-        ...(filters.installmentsOnly
-          ? {
-              OR: [
-                {
-                  installmentIndex: { not: null },
-                  installmentCount: { not: null },
-                },
-              ],
-            }
-          : {}),
-        ...periodFilter,
+    const paginated =
+      filters.cursor !== undefined ||
+      filters.limit !== undefined ||
+      filters.search !== undefined ||
+      filters.group !== undefined;
+    const baseWhere: Prisma.TransactionWhereInput = {
+      userId,
+      categoryId: filters.categoryId,
+      bankId: filters.bankId,
+      type: filters.type,
+    };
+    const where: Prisma.TransactionWhereInput = paginated
+      ? { ...baseWhere }
+      : {
+          ...baseWhere,
+          ...(filters.installmentsOnly
+            ? {
+                OR: [
+                  {
+                    installmentIndex: { not: null },
+                    installmentCount: { not: null },
+                  },
+                ],
+              }
+            : {}),
+          ...periodFilter,
+        };
+    const conditions: Prisma.TransactionWhereInput[] = [];
+    if ('OR' in periodFilter) conditions.push({ OR: periodFilter.OR });
+    else if (filters.startDate || filters.endDate) {
+      conditions.push({ date: dateFilter });
+    }
+    if (filters.installmentsOnly) {
+      conditions.push({
+        installmentIndex: { not: null },
+        installmentCount: { not: null },
+      });
+    }
+    if (filters.group === 'direct') {
+      conditions.push({ type: { in: ['DEBIT_CARD', 'PIX', 'BOLETO'] } });
+    }
+    const search = filters.search?.trim();
+    if (search) {
+      const personName = { contains: search, mode: 'insensitive' as const };
+      conditions.push({
+        OR: [
+          { title: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+          { person: { is: { name: personName } } },
+          { receivable: { is: { person: { is: { name: personName } } } } },
+          {
+            paymentReceivable: {
+              is: { person: { is: { name: personName } } },
+            },
+          },
+          { paymentDebt: { is: { person: { is: { name: personName } } } } },
+        ],
+      });
+    }
+    const cursor = filters.cursor
+      ? decodeTransactionCursor(filters.cursor)
+      : null;
+    const cursorWhere = paginated ? transactionCursorWhere(cursor) : null;
+    if (cursorWhere)
+      conditions.push(cursorWhere as Prisma.TransactionWhereInput);
+    if (paginated && conditions.length > 0) where.AND = conditions;
+
+    const include = {
+      // `isArchived` acompanha para o formulário de edição poder exibir
+      // "— Arquivado" no banco atual sem uma consulta extra.
+      bank: {
+        select: {
+          id: true,
+          name: true,
+          isSystem: true,
+          isArchived: true,
+        },
       },
-      include: {
-        // `isArchived` acompanha para o formulário de edição poder exibir
-        // "— Arquivado" no banco atual sem uma consulta extra.
-        bank: {
-          select: {
-            id: true,
-            name: true,
-            isSystem: true,
-            isArchived: true,
-          },
-        },
-        category: { select: { id: true, name: true, color: true, icon: true } },
-        person: { select: { id: true, name: true } },
-        paymentReceivable: {
-          select: {
-            person: { select: { id: true, name: true } },
-          },
-        },
-        paymentDebt: {
-          select: {
-            person: { select: { id: true, name: true } },
-          },
-        },
-        invoice: {
-          select: { id: true, month: true, year: true, status: true },
+      category: { select: { id: true, name: true, color: true, icon: true } },
+      person: { select: { id: true, name: true } },
+      paymentReceivable: {
+        select: {
+          person: { select: { id: true, name: true } },
         },
       },
-      orderBy: { date: 'desc' },
+      paymentDebt: {
+        select: {
+          person: { select: { id: true, name: true } },
+        },
+      },
+      invoice: {
+        select: { id: true, month: true, year: true, status: true },
+      },
+    } satisfies Prisma.TransactionInclude;
+
+    if (!paginated) {
+      return this.prisma.transaction.findMany({
+        where,
+        include,
+        orderBy: { date: 'desc' },
+      });
+    }
+
+    const limit = Math.min(
+      Math.max(filters.limit ?? DEFAULT_PAGE_LIMIT, 1),
+      MAX_PAGE_LIMIT,
+    );
+    const rows = await this.prisma.transaction.findMany({
+      where,
+      include,
+      orderBy: [{ date: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
     });
+
+    return buildCursorPage(rows, limit, (last) => ({
+      version: 1,
+      order: TRANSACTION_CURSOR_ORDER,
+      date: last.date.toISOString(),
+      id: last.id,
+    }));
   }
 
   private getInvoicePeriods(

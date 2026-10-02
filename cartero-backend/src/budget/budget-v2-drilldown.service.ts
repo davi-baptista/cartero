@@ -2,6 +2,10 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
+  buildCursorPage,
+  decodeCursor as decodeOpaqueCursor,
+} from 'src/common/pagination/cursor.helper';
+import {
   deriveBudgetV2MonthBounds,
   deriveBudgetV2PeriodBounds,
 } from 'src/common/helpers/financial-period.helper';
@@ -147,17 +151,16 @@ function iso(value: Date): string {
   return value.toISOString();
 }
 
-function encodeCursor(payload: CursorPayload): string {
-  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-}
-
 function decodeCursor(
   encoded: string,
   expected: Omit<CursorPayload, 'date' | 'kind' | 'id'>,
 ): CursorPayload {
   try {
-    const parsed = JSON.parse(
-      Buffer.from(encoded, 'base64url').toString('utf8'),
+    const parsed = decodeOpaqueCursor(
+      encoded,
+      (value): value is CursorPayload =>
+        !!value && typeof value === 'object' && !Array.isArray(value),
+      'Invalid budget drilldown cursor',
     ) as Partial<CursorPayload>;
 
     if (
@@ -343,9 +346,12 @@ export class BudgetV2DrilldownService {
       cursor,
       dto.limit,
     );
-    const items = result.rows.slice(0, dto.limit);
-    const hasMore = result.rows.length > dto.limit;
-    const last = items[items.length - 1];
+    const page = buildCursorPage(result.rows, dto.limit, (last) => ({
+      ...cursorScope,
+      date: last.date,
+      kind: last.kind,
+      id: last.id,
+    }));
 
     return {
       bucket,
@@ -358,18 +364,8 @@ export class BudgetV2DrilldownService {
               pendingWindow: { startDate: today, endDateExclusive: today },
             }),
       },
-      items: items.map((row) => row.item),
-      pageInfo: {
-        hasMore,
-        nextCursor: hasMore
-          ? encodeCursor({
-              ...cursorScope,
-              date: last.date,
-              kind: last.kind,
-              id: last.id,
-            })
-          : null,
-      },
+      items: page.items.map((row) => row.item),
+      pageInfo: page.pageInfo,
     };
   }
 

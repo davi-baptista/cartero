@@ -32,10 +32,9 @@ const ler = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf-8'
 /** Sem comentários: a prosa explica o bug e casaria com as asserções. */
 const code = (s: string) =>
   s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-
 const FATURAS = code(ler('../app/(dashboard)/banks/[id]/invoices/page.tsx'))
 const PESSOAS = code(ler('../app/(dashboard)/persons/page.tsx'))
-const DIVIDAS = code(ler('../app/(dashboard)/debts/page.tsx'))
+const OBRIGATIONS = code(ler('../app/(dashboard)/movements/obligations/obligations-client.tsx'))
 
 describe('Fatura: a identidade vem da URL', () => {
   it('a linha escreve o param — não só um state local', () => {
@@ -172,7 +171,7 @@ describe('a colisão de personId — o teste obrigatório', () => {
     O mesmo nome, duas semânticas:
 
       /persons?personId=P  → identidade do extrato aberto
-      /debts?personId=P    → FILTRO da lista por contraparte
+      /movements/obligations?domain=debt&personId=P    → filtro da lista unificada
 
     Se `personId` entrasse em `DETAIL_PARAMS`, abrir uma dívida apagaria o
     filtro — a foundation limpa todos os detail params ao abrir um detalhe.
@@ -193,12 +192,13 @@ describe('a colisão de personId — o teste obrigatório', () => {
   })
 
   it('abrir uma dívida PRESERVA o filtro personId', () => {
-    const comFiltro = new URLSearchParams('personId=P1&startDate=2026-08-01')
+    const comFiltro = new URLSearchParams('personId=P1&domain=debt&month=8&year=2026')
     const aberto = withDetailParam(comFiltro, 'debtId', 'D1')
 
     expect(aberto.get('debtId')).toBe('D1')
     expect(aberto.get('personId'), 'o filtro de Dívidas foi apagado').toBe('P1')
-    expect(aberto.get('startDate')).toBe('2026-08-01')
+    expect(aberto.get('month')).toBe('8')
+    expect(aberto.get('year')).toBe('2026')
   })
 
   it('fechar a dívida remove só o debtId; o filtro fica', () => {
@@ -209,10 +209,11 @@ describe('a colisão de personId — o teste obrigatório', () => {
     expect(fechado.get('personId'), 'o filtro de Dívidas foi apagado').toBe('P1')
   })
 
-  it('Dívidas continua lendo personId como filtro, não como detalhe', () => {
-    expect(DIVIDAS).toContain("searchParams.get('personId')")
-    expect(DIVIDAS).toContain("useDetailNavigation('debtId')")
-    expect(DIVIDAS).not.toContain("useDetailNavigation('personId')")
+  it('Movimentações preserva a identidade debtId e receivableId', () => {
+    expect(OBRIGATIONS).toContain("useDetailNavigation('debtId')")
+    expect(OBRIGATIONS).toContain("useDetailNavigation('receivableId')")
+    expect(OBRIGATIONS).toContain('DebtDetailDrawer')
+    expect(OBRIGATIONS).toContain('ReceivableDetailDrawer')
   })
 })
 

@@ -87,7 +87,7 @@ describe('K1/K2/K3: identidade estável por compra e operação', () => {
 
 describe('a política é usada onde os diálogos são irmãos', () => {
   const consumidores = [
-    ['Extrato', '../app/(dashboard)/transactions/page.tsx'],
+    ['Extrato', '../app/(dashboard)/movements/statement/page.tsx'],
     ['painel da fatura', '../components/invoice-details-drawer.tsx'],
   ] as const
 

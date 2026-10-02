@@ -2,6 +2,10 @@
 export const DRAWER_WIDTH_COMPACT = 'sm:max-w-md'
 export const DRAWER_WIDTH_WIDE = 'sm:max-w-lg'
 
+/** One scroll owner with the shared compact scrollbar used across drawers. */
+export const DRAWER_SCROLL_REGION_CLASS =
+  'min-h-0 flex-1 overflow-y-auto overscroll-contain subtle-scrollbar'
+
 /** Shared horizontal axes for wide drawers with edge-to-edge scroll regions. */
 export const DRAWER_WIDE_CONTENT_INSET = 'px-4'
 export const DRAWER_WIDE_CONTENT_GUTTER = 'mx-4'

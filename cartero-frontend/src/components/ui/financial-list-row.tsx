@@ -80,6 +80,9 @@ export const ROW_META_CLASS =
 export const ROW_AMOUNT_CLASS =
   'text-[17px] font-semibold tabular-nums tracking-[-0.02em]'
 
+/** Temporary deep-link highlight shared by list rows that consume `?highlight=`. */
+export const ROW_HIGHLIGHT_CLASS = 'bg-primary/10 ring-2 ring-primary/40'
+
 /** Informação secundária sob o valor — data, período. */
 export const ROW_TRAILING_META_CLASS = 'text-xs text-muted-foreground'
 
@@ -277,6 +280,8 @@ export interface FinancialListRowProps {
    * círculo de fora, como se ele não fizesse parte da mesma linha.
    */
   ref?: React.Ref<HTMLElement>
+  /** Page rows omit the drawer's horizontal inset while keeping shared surface behavior. */
+  variant?: 'drawer' | 'page'
 }
 
 export function FinancialListRow({
@@ -294,6 +299,7 @@ export function FinancialListRow({
   href,
   ariaLabel,
   className,
+  variant = 'drawer',
   ref,
 }: FinancialListRowProps) {
   const conteudo = (
@@ -343,10 +349,14 @@ export function FinancialListRow({
     `group` fica no wrapper para o chevron continuar reagindo ao hover da
     linha inteira.
   */
+  const rowShellClass = variant === 'page'
+    ? financialDrawerRowSurfaceClass('pageInteractive')
+    : ROW_SHELL_CLASS
+  const rowShellOuterClass = variant === 'page'
+    ? financialDrawerRowSurfaceClass('pageWithLeadingAction')
+    : ROW_SHELL_OUTER_CLASS
   const classes = cn(
-    leadingAction
-      ? ROW_SHELL_INNER_CLASS
-      : ROW_SHELL_CLASS,
+    leadingAction ? ROW_SHELL_INNER_CLASS : rowShellClass,
     !interactive && 'cursor-default hover:bg-transparent',
     inactive && ROW_INACTIVE_ROW_CLASS,
     className,
@@ -395,7 +405,7 @@ export function FinancialListRow({
   return (
     <div
       ref={ref as React.Ref<HTMLDivElement>}
-      className={cn(ROW_SHELL_OUTER_CLASS, className)}
+      className={cn(rowShellOuterClass, className)}
     >
       {leadingAction}
       {principal}

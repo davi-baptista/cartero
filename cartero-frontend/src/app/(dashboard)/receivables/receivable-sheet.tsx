@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useForm, useWatch, Controller, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -29,6 +30,8 @@ import {
 } from '@/components/ui/select'
 import { createPerson, getPersons } from '@/services/persons.service'
 import { cn } from '@/lib/utils'
+import { DRAWER_SCROLL_REGION_CLASS } from '@/components/ui/drawer-layout'
+import { PROGRESSIVE_REVEAL_CLASS } from '@/components/ui/progressive-reveal'
 import { accountToday } from '@/lib/date'
 import type { Receivable, InstallmentScope } from '@/types'
 
@@ -65,6 +68,12 @@ interface ReceivableSheetProps {
   timeZone: string | null | undefined
   mode?: 'receivable' | 'income' | 'income-occurrence'
   onSubmit: (data: ReceivableFormData, scope: InstallmentScope | null) => Promise<void>
+  embedded?: boolean
+  leadingContent?: ReactNode
+  /** Let the unified drawer own the only scroll viewport in embedded mode. */
+  scrollManagedByParent?: boolean
+  /** Fixed footer host supplied by the unified drawer in parent-scroll mode. */
+  embeddedFooterHost?: HTMLElement | null
 }
 
 export function ReceivableSheet({
@@ -76,6 +85,10 @@ export function ReceivableSheet({
   timeZone,
   mode = 'receivable',
   onSubmit,
+  embedded = false,
+  leadingContent,
+  scrollManagedByParent = false,
+  embeddedFooterHost,
 }: ReceivableSheetProps) {
   const isEditing = editTarget !== null
   const isIncome = mode !== 'receivable'
@@ -105,17 +118,16 @@ export function ReceivableSheet({
    */
   const purchaseHref = (() => {
     if (!isAutomatic) return null
-    const day = editTarget?.occurredAt?.slice(0, 10)
     const transactionId = editTarget?.transactionId
-    if (!day || !transactionId) return null
+    if (!transactionId) return null
 
     /*
-      A data posiciona o extrato no mês certo; o `highlight` encontra a linha.
+      O `highlight` identifica a compra na rota canônica do Extrato.
 
       Só a data abria a página filtrada e deixava o usuário procurando — pior
       quando a compra é parcelada e a parcela está dentro de um grupo fechado.
     */
-    return `/transactions?startDate=${day}&endDate=${day}&highlight=${transactionId}`
+    return `/movements/statement?highlight=${transactionId}`
   })()
   const [debtorMode, setDebtorMode] = useState<DebtorMode>('manual')
   const [showInlineCreate, setShowInlineCreate] = useState(false)
@@ -164,6 +176,8 @@ export function ReceivableSheet({
     if (open) {
       if (editTarget) {
         const hasPerson = !!editTarget.personId
+        // Opening an existing receivable must synchronize the canonical form mode.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setDebtorMode(hasPerson && !isIncome ? 'person' : 'manual')
         reset({
           debtorName: editTarget.debtorName,
@@ -224,10 +238,21 @@ export function ReceivableSheet({
   const watchedPersonId = useWatch({ control, name: 'personId' })
   const selectedPerson = persons.find((p) => p.id === watchedPersonId)
 
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col sm:max-w-md" showCloseButton>
-        <SheetHeader className="px-6 pt-6 pb-0">
+  const footer = (
+    <SheetFooter className="px-6 pb-6 pt-0">
+      <Button variant="outline" onClick={() => onOpenChange(false)}>
+        Cancelar
+      </Button>
+      <Button type="submit" form="receivable-form" disabled={isSubmitting}>
+        {isSubmitting && <Loader2 className="size-4 animate-spin" />}
+        {isEditing ? 'Salvar alterações' : isIncome ? 'Criar renda' : 'Criar cobrança'}
+      </Button>
+    </SheetFooter>
+  )
+
+  const content = (
+    <>
+      {!embedded && <SheetHeader className="px-6 pt-6 pb-0">
           <SheetTitle>{isOneOffIncome ? (isEditing ? 'Editar renda pontual' : 'Nova renda pontual') : isIncome ? 'Editar recebimento' : (isEditing ? 'Editar cobrança' : 'Nova cobrança')}</SheetTitle>
           <SheetDescription>
             {isOneOffIncome
@@ -238,7 +263,7 @@ export function ReceivableSheet({
                 ? 'Atualize os dados da cobrança.'
                 : 'Registre um valor que você tem a receber.'}
           </SheetDescription>
-        </SheetHeader>
+      </SheetHeader>}
 
         {/*
           Origem automática: a compra é a fonte de verdade.
@@ -302,8 +327,13 @@ export function ReceivableSheet({
         <form
           id="receivable-form"
           onSubmit={handleSubmit(handleFormSubmit)}
-          className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5"
+          className={cn(
+            scrollManagedByParent ? 'flex flex-col gap-4' : DRAWER_SCROLL_REGION_CLASS,
+            'flex flex-col gap-4 px-6 py-5',
+            scrollManagedByParent && 'px-0 py-0',
+          )}
         >
+          {leadingContent}
           {/* Debtor field */}
           <div className="space-y-1.5">
             <Label>{isIncome ? 'Origem / Empresa' : 'Devedor'}</Label>
@@ -550,17 +580,29 @@ export function ReceivableSheet({
               {...register('description')}
             />
           </div>
-        </form>
+      </form>
 
-        <SheetFooter className="px-6 pb-6 pt-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button type="submit" form="receivable-form" disabled={isSubmitting}>
-            {isSubmitting && <Loader2 className="size-4 animate-spin" />}
-            {isEditing ? 'Salvar alterações' : isIncome ? 'Criar renda' : 'Criar cobrança'}
-          </Button>
-        </SheetFooter>
+      {!scrollManagedByParent && footer}
+    </>
+  )
+
+  if (embedded) {
+    return (
+      <>
+        {scrollManagedByParent
+          ? <div className={PROGRESSIVE_REVEAL_CLASS}>{content}</div>
+          : content}
+        {scrollManagedByParent && embeddedFooterHost
+          ? createPortal(footer, embeddedFooterHost)
+          : null}
+      </>
+    )
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="flex w-full flex-col sm:max-w-md" showCloseButton>
+        {content}
       </SheetContent>
     </Sheet>
   )

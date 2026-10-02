@@ -258,12 +258,12 @@ app; o push (`NotificationsService.runDueDateCheck`, disparado por
 
 **Dívidas e A Receber:**
 - Top 3 com `dueDate ≤ hoje+7`, ordenadas por data (inclui vencidas)
-- Clicar navega para `/debts?highlight=<id>` ou `/receivables?highlight=<id>`
-- "Ver X itens a mais" navega para `/debts?endDate=<hoje+7>` (sem startDate)
+- Clicar navega para `/movements/obligations?domain=debt&highlight=<id>` ou `/movements/obligations?domain=receivable&highlight=<id>`
+- "Ver X itens a mais" navega para `/movements/obligations` with entity highlight and month context
 
 ### Gastos por categoria
 
-- Cada linha é clicável e navega para `/transactions?startDate=...&endDate=...&categoryId=...`
+- Cada linha é clicável e navega para `/movements/statement?categoryId=...`
 - O intervalo de datas segue o seletor de mês da visão geral
 - Ícone `ExternalLink` aparece no hover para indicar navegação
 
@@ -279,61 +279,37 @@ app; o push (`NotificationsService.runDueDateCheck`, disparado por
 - **Parsing de data:** sempre usar `.slice(0, 10)` antes de `.split('-')` — `dueDate` pode vir como ISO timestamp (`"2026-06-26T00:00:00.000Z"`), que quebraria a extração do dia
 - Faturas: exibe todas com `status !== PAID` e `totalAmount > 0` dentro do mês/ano — **sem filtro de status adicional**, para mostrar parcelas futuras de meses seguintes corretamente
 
-## URL params — Dívidas e A Receber
+## Movements routes (M7)
 
-| Param | Efeito |
-|---|---|
-| `?highlight=<id>` | Rola até a linha, pulso de destaque índigo, troca aba automaticamente se item estiver em Pagas/Recebidos |
-| `?endDate=<YYYY-MM-DD>` | Inicializa filtro de data fim pela URL; `startDate` fica `undefined` |
+Canonical frontend routes:
+- `/movements/statement`: global transaction history, cursor-paginated; no month filter. Search and supported filters are sent to the server.
+- `/movements/obligations`: unified debt and receivable view. `OVERDUE` is global; `OPEN` and `HISTORY` follow the selected month. Filters include domain, person, and search; highlight can resolve a detail on later cursor pages.
 
-`startDate` padrão é sempre `undefined` nas páginas de Dívidas e A Receber — garante que itens vencidos de meses anteriores sempre apareçam.
+Legacy frontend routes are compatibility redirects only:
+- `/transactions` -> `/movements/statement`
+- `/debts` and `/receivables` -> `/movements/obligations`
 
-## Extrato (`/transactions`) — o histórico global
+The API endpoints `/transactions`, `/debts`, and `/receivables` remain active. Route redirects do not remove those service APIs.
 
-"Histórico do que aconteceu, na data em que aconteceu." É a superfície do
-movimento financeiro consolidado: entradas, saídas, cartão, parcelamentos e
-compras de terceiros, com filtros de período, tipo, banco, categoria e busca.
+### Statement URL params
 
-Não existe `GET /statement`, e nada o espera. O extrato geral é `GET
-/transactions` — a rota nasceu antes do nome que o planejamento tinha imaginado.
+`transactionId`, `highlight`, `bankId`, `categoryId`, `type`, `group`, `search`, and `add` are consumed by the global statement. `add` accepts `expense` or `income` and launches the unified progressive create flow. `invoicePeriod` is not a statement route filter; category drill-through uses `categoryId` alone. The Overview category aggregation still uses the `invoicePeriod` API filter in its own query.
 
-### Histórico, não competência
+The statement is a history of transactions on the dates they happened, not a monthly competency summary. It has no aggregate cards: installment purchases remain transaction history, while "Quanto sai do bolso neste mês" belongs to Budget.
 
-O Extrato **não** tem cards agregados. Uma compra de R$ 122,90 em 5x aparece por
-R$ 122,90 na data em que aconteceu, o que é correto para o histórico — mas sob um
-card "Gastos" afirmaria um desembolso de R$ 122,90 no mês, quando a fatura cobra
-R$ 24,58. O número estava certo; o rótulo é que mentia.
+The global statement is not the Person statement. `/movements/statement` shows the user's transactions; `GET /persons/:id/statement` shows one person's debts and receivables, with an all-time summary and settled history scoped by `paidAt`.
 
-"Quanto sai do bolso neste mês" é pergunta do **Orçamento**. Manter as duas na
-mesma tela convidava a somar universos diferentes. `statement-scope.spec.ts`
-vigia essa ausência.
+### Settlement transactions are opt-in
 
-### Pagamentos de dívida e cobrança são opt-in
+Marking a debt paid or a receivable received creates a Transaction only when `createExpenseOnDebtPaid` or `createIncomeOnReceivablePaid` is enabled in Profile. Both settings default to off. When enabled, those settlement transactions appear in the global statement; creating them is never mandatory.
 
-Marcar uma Debt como paga ou um Receivable como recebido **só** gera Transaction
-quando `createExpenseOnDebtPaid` / `createIncomeOnReceivablePaid` estão ligadas —
-duas caixas no Perfil, desligadas por padrão. Com elas ligadas, os pagamentos
-entram no Extrato como qualquer lançamento.
+### Obligations URL params
 
-É escolha do usuário, nunca comportamento obrigatório: quem controla dívidas fora
-do fluxo de caixa não quer o espelho.
+`domain`, `personId`, `highlight`, `debtId`, `receivableId`, `month`, `year`, and `add` are consumed by the unified obligations route. `add` accepts `debt` or `receivable`. Search is sent to the server from the page input, not stored as a URL param. `OVERDUE` stays global while `OPEN` and `HISTORY` use the selected month. A valid legacy `endDate` may seed the month during route compatibility normalization; `startDate` is not a canonical route param and legacy redirects drop it.
 
-### Não confundir com o extrato de Pessoa
+### Unified create flow
 
-`GET /persons/:id/statement` é outra feature: recorta a relação com **uma
-pessoa** (Debt + Receivable, `summary` all-time e `period` por `paidAt`). O
-Extrato recorta o **período do usuário** sobre Transactions. Nomes parecidos,
-universos distintos.
-
-## URL params — Transações
-
-| Param | Efeito |
-|---|---|
-| `?startDate=<YYYY-MM-DD>` | Inicializa filtro de data início |
-| `?endDate=<YYYY-MM-DD>` | Inicializa filtro de data fim |
-| `?categoryId=<id>` | Inicializa filtro de categoria (pre-seleciona o Select) |
-
-Se qualquer um desses três parâmetros estiver presente na URL, o filtro padrão de "mês atual" é ignorado. Usado pela navegação da visão geral (Gastos por categoria → drill-through).
+The `Adicionar` CTA opens a progressive unified flow. `Already happened` reuses `TransactionSheet` for expense/income; `Upcoming` reuses `ReceivableSheet` or `DebtSheet`. The one-shot `add` trigger is removed after the flow opens; useful filters remain in the URL and the selected form stays in the shared drawer.
 
 ## Cache / React Query
 
@@ -413,16 +389,16 @@ duplicada de Subscription.**
 ### Frontend ✅ Completo
 - Auth (login/registro com auto-login após cadastro)
 - Sidebar colapsável com logout no modo ícone; **fecha automaticamente no mobile ao navegar**
-- Bancos, Categorias, Transações, Faturas, Dívidas, A Receber, Pessoas, Orçamento, Perfil
-- Filtros por pessoa em Dívidas e A Receber (query `personId`)
+- Banks, Categories, invoices, People, Budget, Profile, and Movements (`/movements/statement`, `/movements/obligations`)
+- Person filtering is available in unified obligations (`personId`).
 - Acessibilidade: `sr-only` em StatusDot, `aria-pressed` em tabs de filtro; mobile usa `DropdownMenu` nas páginas de Pessoas
 - Painel "Atenção agora" com janela de 7 dias, urgência por cor, lógica close/due por status
-- Highlight de linha via `?highlight=<id>` com animação de pulso e troca de aba automática
-- Filtro pré-aplicado via `?endDate=` ao clicar em "Ver mais" no painel de atenção
+- Overview/calendar links navigate to the unified obligations route with `domain`, `highlight`, and the target month context.
+- The Overview attention panel links to unified obligations with entity highlight context; overdue remains a global section.
 - Select de pessoa com criar inline nos forms de Dívida, Recebível e Transação (CREDIT_CARD)
 - Faturas vazias ocultadas na listagem do banco ✅
 - Calendário financeiro na visão geral (mês completo, dots por tipo, painel de detalhe) ✅
-- Drill-through de categoria: clicar em gastos por categoria navega para transações filtradas ✅
+- Category drill-through opens `/movements/statement?categoryId=...`; the Overview selector scopes the source aggregation, not the global statement.
 - Página de Perfil (`/profile`) — editar nome, e-mail, senha e salário ✅
 - Página de Orçamento (`/budget`) — visão mensal do salário vs faturas, com breakdown de valor a receber de terceiros ✅
 - `CurrencyInput` em todos os campos de valor monetário (transação, dívida, recebível, salário) ✅
@@ -456,7 +432,7 @@ Quando o usuário paga algo no cartão em nome de outra pessoa (ex: ingresso de 
 - Edição manual do receivable (valor, título) não sincroniza de volta — aviso inline no formulário quando `transactionId` presente
 
 **Visual na UI:**
-- Badge discreto com nome da pessoa nas linhas de transação (`/transactions`) e no detalhe da fatura (`/banks/:id/invoices`)
+- The person badge appears in global statement rows (`/movements/statement`) and invoice details (`/banks/:id/invoices`).
 - Select de Person no formulário de transação, visível só quando tipo = `CREDIT_CARD`, com criação inline
 
 ### Schema (implementado)
@@ -525,11 +501,11 @@ Guardas centralizadas em `common/helpers/settlement.guard.ts` — a mesma fonte 
 
 - `lib/settlement-status.ts` é a fonte única: `settlementStatus` deriva de `isPaid` + `dueDate` (comparação por string ISO, nunca `Date` — evita o off-by-one em fuso negativo). **Sem enum persistido**: o status muda de valor sozinho à meia-noite
 - `components/settlement-status-dot.tsx` substitui as duas cópias byte a byte de `StatusDot`
-- Vocabulário: **"Em atraso"** — nunca "Vencido", "Vencida" ou "Atrasada". Os contadores das duas páginas usavam palavras diferentes para o mesmo estado; agora saem de `overdueCountLabel`
+- Vocabulary: the unified obligations UI uses "Em atraso" and derives status through `overdueCountLabel`.
 - Pendente usa `text-pending` (âmbar). Recebível pendente **não** usa verde só por ser dinheiro entrando — verde é conclusão
-- As duas páginas distinguem `loading` / `error` / `success-empty` / `success-data`; o vazio exige `isSuccess`, e o erro tem `role="alert"` com botão de retry. Antes, API fora do ar exibia "Nenhuma dívida pendente"
+- Each obligations section distinguishes loading, error with retry, empty, and data states; a failed request never appears as an empty list.
 
-**Formulário de cobrança automática:** campos financeiros desabilitados, com link "Ver a compra" (`/transactions?startDate=&endDate=` no dia do `occurredAt`). O aviso anterior dizia que as alterações "não afetam a transação original" — verdade, mas omitia que eram descartadas por `syncLinkedReceivable` sem avisar.
+**Automatic receivable form:** financial fields are disabled. Its "Ver a compra" link targets `/movements/statement?highlight=<transactionId>`.
 
 **Parcelamento:** cada parcela marcada como paga/recebida gera sua própria transação (a lógica roda dentro do loop de scope já existente — funciona corretamente mesmo em teoria com `scope=ALL`, embora a UI hoje só dispare o toggle com `scope=ONE`).
 
@@ -632,7 +608,7 @@ Auditado: não existia e não foi criado. Somar vencimento de fatura (bruto), d�
 - Identidade estável `<kind>:<id>` — antes a key era o índice do array, que impedia detectar a mesma entidade entrando duas vezes
 - Ordem no dia: fatura → dívida → recebível → saída → estorno → receita, com título como desempate. Antes era a ordem incidental dos arrays
 - Linhas são `Link` (teclado + menu de contexto), com `aria-label` completo: tipo, título, valor, status e decomposição
-- Navegação: fatura → `/banks/:id/invoices`; dívida/cobrança → `?highlight=`; transação → o deep-link do Extrato da Fase 8B, sem um segundo mecanismo
+- Navigation: invoice -> `/banks/:id/invoices`; debt/receivable -> unified obligations highlight; transaction -> global statement detail/highlight.
 - Dia civil por string ISO (`formatDateValue`), não `new Date().getDate()`
 - `key={ano-mês}` remonta a seção ao trocar de mês, no lugar do efeito que chamava `setState`
 - Erro **parcial**: o que carregou continua visível com aviso "Alguns eventos não puderam ser carregados" e retry. O vazio só aparece quando todas as fontes tiveram sucesso
@@ -1002,7 +978,7 @@ Auditados na Fase 8C: **nenhum dos dois consome `PersonStatement`**, então a Fa
 
 ### Estados e UX
 
-- Drawer e lista distinguem `loading` / `error` / `success-empty` / `success-data`, com `role="alert"` e retry. Antes, API fora do ar exibia "Nenhuma pessoa cadastrada"
+- The People list and statement drawer distinguish loading, error, empty, and data states. Errors use `role="alert"` and offer retry; a failed request is never presented as an empty list.
 - Pendências ordenadas por vencimento (em atraso primeiro); histórico por `paidAt` desc
 - Cobrança automática recebe badge discreto "Compra no cartão" e a linha linka para a compra
 - `PersonFormSheet`: `sm:max-w-md` + `overflow-y-auto` no form + footer `shrink-0` — sem isso o botão de salvar saía da tela em notebook

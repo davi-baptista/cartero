@@ -24,9 +24,10 @@ describe('overview desktop composition', () => {
 
   it('keeps attention links and existing data sources intact', () => {
     expect(agenda).toContain('banks/${invoice.bankId}/invoices?invoiceId=${invoice.id}')
-    expect(agenda).toContain('/debts?highlight=${debt.id}')
-    expect(agenda).toContain('/receivables?highlight=${receivable.id}')
+    expect(agenda).toMatch(/obligationHighlightHref\(\s*'debt', debt\.id/)
+    expect(agenda).toMatch(/obligationHighlightHref\(\s*'receivable', receivable\.id/)
     expect(overview).toContain("queryKey: ['transactions', { startDate, endDate, invoicePeriod: true }]")
+    expect(overview).toContain('href={`/movements/statement?categoryId=${row.categoryId}`}')
     expect(overview).toContain("queryKey: ['invoices']")
     expect(overview).toContain("queryKey: ['debts']")
     expect(overview).toContain("queryKey: ['receivables']")

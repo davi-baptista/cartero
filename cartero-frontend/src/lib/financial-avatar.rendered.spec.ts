@@ -64,10 +64,9 @@ describe('FinancialAvatar', () => {
 
   it('is used by the approved shared financial surfaces', () => {
     for (const file of [
-      '../app/(dashboard)/receivables/page.tsx',
-      '../app/(dashboard)/debts/page.tsx',
+      '../components/ui/financial-settlement-row.tsx',
       '../app/(dashboard)/income/page.tsx',
-      '../app/(dashboard)/transactions/page.tsx',
+      '../app/(dashboard)/movements/statement/page.tsx',
       '../components/person-statement-drawer.tsx',
       '../components/budget-drilldown-item.tsx',
       '../components/ui/status-list-row.tsx',

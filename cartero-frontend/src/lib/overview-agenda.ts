@@ -4,6 +4,7 @@ import { attentionDueUrgency } from '@/lib/overview-attention'
 import type { CalEvent, CalEventKind } from '@/lib/calendar-events'
 import { formatDateValue } from '@/lib/date'
 import { formatDueTimingFromISO } from '@/lib/invoice-timing'
+import { obligationHighlightHref } from '@/lib/obligation-highlight'
 
 export type AgendaEntry = {
   id: string
@@ -194,7 +195,9 @@ function debtEntry(debt: Debt, today: Date): AgendaEntry {
     amount: Number(debt.amount),
     status: debt.isPaid ? 'Pago' : 'Pendente',
     direction: 'out',
-    href: `/debts?highlight=${debt.id}`,
+    href: obligationHighlightHref(
+      'debt', debt.id, debt.dueDate < formatDateValue(today) ? null : debt.dueDate,
+    ),
     personId: debt.personId,
     personName: debt.person?.name,
     entityId: debt.id,
@@ -212,7 +215,9 @@ function receivableEntry(receivable: Receivable, today: Date): AgendaEntry {
     amount: Number(receivable.amount),
     status: receivable.isPaid ? 'Recebido' : 'Pendente',
     direction: receivable.isPaid ? 'in' : 'neutral',
-    href: `/receivables?highlight=${receivable.id}`,
+    href: obligationHighlightHref(
+      'receivable', receivable.id, receivable.dueDate < formatDateValue(today) ? null : receivable.dueDate,
+    ),
     personId: receivable.personId,
     personName: receivable.person?.name,
     entityId: receivable.id,

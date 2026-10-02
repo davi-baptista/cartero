@@ -14,11 +14,29 @@ const entry = (overrides: Partial<AgendaEntry> = {}): AgendaEntry => ({
   amount: 100,
   status: 'Pendente',
   direction: 'out',
-  href: '/debts?highlight=1',
+  href: '/movements/obligations?domain=debt&highlight=1',
   ...overrides,
 })
 
 describe('overview contextual agenda grouping', () => {
+  it('deep-links attention obligations with temporal context only when the list is month-scoped', () => {
+    const groups = groupAttention({
+      invoices: [],
+      banks: [],
+      debts: [
+        { id: 'late', title: 'Atrasada', amount: 10, dueDate: '2026-09-20', isPaid: false } as never,
+        { id: 'soon', title: 'Próxima', amount: 20, dueDate: '2026-10-08', isPaid: false } as never,
+      ],
+      receivables: [],
+      hiddenIds: new Set(),
+      today: new Date('2026-10-02T12:00:00'),
+    })
+    const urls = groups.flatMap((group) => group.entries.map((item) => item.href))
+
+    expect(urls).toContain('/movements/obligations?domain=debt&highlight=late')
+    expect(urls).toContain('/movements/obligations?domain=debt&highlight=soon&month=10&year=2026')
+  })
+
   it('groups same-person debts but never by display name alone', () => {
     const samePerson = groupAgendaEntries([
       entry({ id: 'debt:1', personId: 'p1', personName: 'Mariana' }),

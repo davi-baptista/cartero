@@ -325,7 +325,7 @@ describe('Chevron unificado', () => {
     bancos: ler('../app/(dashboard)/banks/page.tsx'),
     faturas: ler('../app/(dashboard)/banks/[id]/invoices/page.tsx'),
     orcamento: ler('../components/ui/status-list-row.tsx'),
-    extrato: ler('../app/(dashboard)/transactions/page.tsx'),
+    extrato: ler('../app/(dashboard)/movements/statement/page.tsx'),
     pessoas: ler('../app/(dashboard)/persons/page.tsx'),
     compromissos: ler('../app/(dashboard)/commitments/page.tsx'),
     overview: ler('../app/(dashboard)/overview/page.tsx'),

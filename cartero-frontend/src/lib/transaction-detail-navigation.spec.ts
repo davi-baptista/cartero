@@ -28,7 +28,7 @@ const ler = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf-8'
 const code = (s: string) =>
   s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
-const EXTRATO = code(ler('../app/(dashboard)/transactions/page.tsx'))
+const EXTRATO = code(ler('../app/(dashboard)/movements/statement/page.tsx'))
 const TRANSACTION_DETAILS = code(ler('../components/transaction-details-drawer.tsx'))
 
 /*
@@ -117,21 +117,21 @@ describe('highlight é outra semântica, e continua sendo', () => {
   })
 
   it('abrir o detalhe preserva highlight — e os dois podem ser ids diferentes', () => {
-    const params = new URLSearchParams('highlight=T1&startDate=2026-08-01')
+    const params = new URLSearchParams('highlight=T1&categoryId=C1')
     const aberto = withDetailParam(params, 'transactionId', 'T2')
 
     expect(aberto.get('transactionId')).toBe('T2')
     expect(aberto.get('highlight')).toBe('T1')
-    expect(aberto.get('startDate')).toBe('2026-08-01')
+    expect(aberto.get('categoryId')).toBe('C1')
   })
 
   it('fechar o detalhe remove só o transactionId; highlight fica', () => {
-    const params = new URLSearchParams('highlight=T1&transactionId=T2&endDate=2026-08-31')
+    const params = new URLSearchParams('highlight=T1&transactionId=T2&bankId=B1')
     const fechado = withoutDetailParams(params)
 
     expect(fechado.has('transactionId')).toBe(false)
     expect(fechado.get('highlight')).toBe('T1')
-    expect(fechado.get('endDate')).toBe('2026-08-31')
+    expect(fechado.get('bankId')).toBe('B1')
   })
 
   it('highlight e transactionId no MESMO id é válido e não se anulam', () => {
@@ -149,7 +149,7 @@ describe('highlight é outra semântica, e continua sendo', () => {
 
 describe('período e filtros sobrevivem à navegação do detalhe', () => {
   it('abrir e fechar preservam o recorte temporal e os filtros', () => {
-    const original = 'startDate=2026-08-01&endDate=2026-08-31&categoryId=C1&invoicePeriod=true&group=direct'
+    const original = 'bankId=B1&categoryId=C1&type=expense&group=direct&search=market'
 
     const aberto = withDetailParam(new URLSearchParams(original), 'transactionId', 'T1')
     const fechado = withoutDetailParams(aberto)
@@ -204,35 +204,11 @@ describe('a tarefa nascida do detalhe carrega âncora', () => {
     }
   })
 
-  it('criar é standalone, e é o próprio botão de criar que declara isso', () => {
-    /*
-      A regra ingênua "sumiu o detailId, feche tudo" fecharia "Nova transação"
-      na cara do usuário — foi o motivo de a O4.1.2 precisar da âncora.
-
-      Verifica que a marcação está JUNTO da abertura do formulário vazio
-      (`setEditTx(null)`), não apenas presente em algum lugar do arquivo:
-      trocar o standalone por `beginFromDetail` reintroduziria exatamente o
-      bug que a âncora existe para evitar.
-    */
-    const abrirCriacao = /setEditTx\(null\)\s*setSheetOpen\(true\)/g
-    const pontosDeCriacao = EXTRATO.match(abrirCriacao) ?? []
-    expect(pontosDeCriacao.length, 'nenhum ponto de criação encontrado')
-      .toBeGreaterThan(0)
-
-    /* Cada um deles precisa declarar standalone imediatamente antes. */
-    const standalone =
-      EXTRATO.match(
-        /taskAnchor\.beginStandalone\(\)\s*setEditTx\(null\)\s*setSheetOpen\(true\)/g,
-      ) ?? []
-    expect(
-      standalone.length,
-      'algum ponto de criação não foi marcado como standalone',
-    ).toBe(pontosDeCriacao.length)
-
-    /* E nenhum pode ancorar num detalhe. */
-    expect(EXTRATO).not.toMatch(
-      /taskAnchor\.beginFromDetail\(\)\s*setEditTx\(null\)\s*setSheetOpen\(true\)/,
-    )
+  it('creates through the shared route flow, outside the detail page', () => {
+    expect(EXTRATO).not.toContain('requestedInitialKind')
+    expect(EXTRATO).not.toContain('beginStandaloneTask')
+    expect(readFileSync(new URL('../app/(dashboard)/movements/movements-add-flow.tsx', import.meta.url), 'utf-8'))
+      .toContain('parseMovementAddTarget')
   })
 
   it('a âncora é ligada ao id da URL, e o cleanup só toca em tarefa', () => {
@@ -332,7 +308,7 @@ describe('o Back durante a tarefa fecha a tarefa', () => {
 describe('a exclusão só limpa a URL quando dá certo', () => {
   it('o sucesso fecha o detalhe; o erro não toca no param', () => {
     const inicio = EXTRATO.indexOf('const deleteMut')
-    const mutation = EXTRATO.slice(inicio, EXTRATO.indexOf('const filteredTransactions', inicio))
+    const mutation = EXTRATO.slice(inicio, EXTRATO.indexOf('const displayItems', inicio))
 
     const sucesso = mutation.slice(
       mutation.indexOf('onSuccess'),

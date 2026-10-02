@@ -25,7 +25,7 @@ const ler = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf-8'
 const code = (s: string) =>
   s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 
-const EXTRATO = code(ler('../app/(dashboard)/transactions/page.tsx'))
+const EXTRATO = code(ler('../app/(dashboard)/movements/statement/page.tsx'))
 const DIALOG = code(
   ler('../app/(dashboard)/transactions/installment-delete-dialog.tsx'),
 )
@@ -370,35 +370,31 @@ describe('F9-F12: o painel depois do sucesso', () => {
   })
 })
 
-describe('F15-F17: quem NÃO foi migrado', () => {
-  const DIVIDAS = code(ler('../app/(dashboard)/debts/page.tsx'))
-  const RECEBER = code(ler('../app/(dashboard)/receivables/page.tsx'))
+describe('F15-F17: dialogs compartilhados permanecem dispon?veis', () => {
+  const DEBT_SHEET = code(ler('../app/(dashboard)/debts/debt-sheet.tsx'))
+  const RECEIVABLE_SHEET = code(ler('../app/(dashboard)/receivables/receivable-sheet.tsx'))
+  const OBLIGATIONS = code(ler('../app/(dashboard)/movements/obligations/obligations-client.tsx'))
+  const ADD_FLOW = code(ler('../app/(dashboard)/movements/movements-add-flow.tsx'))
 
-  it('F15/F16: Dívidas e A Receber seguem no domínio próprio', () => {
-    /*
-      Eles usam o diálogo de escopo para séries de Dívida/Cobrança, que têm
-      endpoints próprios e não passam pelo preview de transação.
-    */
-    for (const [nome, fonte] of [
-      ['Dívidas', DIVIDAS],
-      ['A Receber', RECEBER],
-    ] as const) {
-      expect(fonte, nome).not.toContain('deleteOpenInstallments')
-      expect(fonte, nome).not.toContain('previewDeleteTransaction')
-      expect(fonte, nome).not.toContain('InstallmentDeleteDialog')
-      expect(fonte, nome).toContain('InstallmentScopeDialog')
-    }
+  it('o fluxo compartilhado oferece sheets de obriga??o com escopo do dom?nio', () => {
+    expect(ADD_FLOW).toContain('<DebtSheet')
+    expect(ADD_FLOW).toContain('<ReceivableSheet')
+    expect(OBLIGATIONS).not.toContain('<DebtSheet')
+    expect(OBLIGATIONS).not.toContain('<ReceivableSheet')
+    expect(DEBT_SHEET).not.toContain('previewDeleteTransaction')
+    expect(RECEIVABLE_SHEET).not.toContain('previewDeleteTransaction')
   })
 
-  it('F17: a edição de transação continua no escopo legado', () => {
+  it('o Extrato continua authority da exclus?o de parcelas de transa??o', () => {
+    expect(EXTRATO).toContain('InstallmentScopeDialog')
+    expect(EXTRATO).toContain('InstallmentDeleteDialog')
     expect(EXTRATO).toContain("setScopeDialog({ tx: editTx, mode: 'edit' })")
     expect(ESCOPO).not.toContain('OPEN')
   })
 
-  it('compra à vista não passa pela prévia', () => {
+  it('compra ? vista n?o passa pela pr?via', () => {
     const handler = EXTRATO.slice(EXTRATO.indexOf('function handleDelete'))
     const corpo = handler.slice(0, handler.indexOf('\n  }'))
-
     expect(corpo).toContain('setDeleteTarget(tx)')
     expect(EXTRATO).toContain('<ConfirmDialog')
   })

@@ -170,7 +170,8 @@ describe('itens 2, 3 e 4: uma competência só', () => {
       mas ao estado global, e só na chegada (`urlPeriodApplied`): reaplicar a
       cada render prenderia o usuário no mês da URL.
 
-      Mesmo padrão do Extrato, que faz isso com `startDate`/`endDate`.
+      O Extrato global nao recebe competencia por query param; esse recorte
+      pertence somente ao estado mensal de Pessoas.
     */
     expect(PAGINA).toContain('const urlPeriodApplied = useRef(false)')
     expect(PAGINA).toContain('if (urlPeriodApplied.current) return')
