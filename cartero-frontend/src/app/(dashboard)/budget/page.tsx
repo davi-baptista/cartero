@@ -275,20 +275,17 @@ function BudgetContent({
 
   return (
     <div className="space-y-5 sm:space-y-7">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Orçamento</h1>
-        <p className="max-w-2xl text-sm text-muted-foreground">Uma visão do que entrou, saiu e ainda está pendente no Cartero.</p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold tracking-tight">Orçamento</h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">Uma visão do que entrou, saiu e ainda está pendente no Cartero.</p>
+        </div>
+        <Button type="button" variant="default" size="sm" onClick={onAllTimeChange}>
+          {allTime ? 'Ver visão mensal' : 'Ver período completo'}
+        </Button>
       </header>
 
-      <section aria-labelledby="movement-title" className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold" id="movement-title">Movimentação</h2>
-          </div>
-          <Button type="button" variant="default" size="sm" onClick={onAllTimeChange}>
-            {allTime ? 'Voltar para visão mensal' : 'Trocar para período completo'}
-          </Button>
-        </div>
+      <section className="space-y-3">
         <div className="relative grid grid-cols-1 gap-x-3 gap-y-4 pt-2 min-[375px]:grid-cols-2 sm:grid-cols-3 sm:gap-3 sm:pt-3">
           <SummaryCard
             label="Entradas registradas"

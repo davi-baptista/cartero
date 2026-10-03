@@ -16,11 +16,14 @@ const requiredSecret = (name: string) =>
 
 export const envSchema = z.object({
   DATABASE_URL: z.string(),
+  /** Direct PostgreSQL URL for the recurring-income session advisory lock. */
+  RECURRING_INCOME_LOCK_DATABASE_URL: z.string().min(1).optional(),
   JWT_SECRET: z.string(),
   REFRESH_TOKEN_SECRET: z.string(),
   /**
-   * Segredo COMPARTILHADO pelos dois endpoints de cron:
-   * `POST /subscriptions/run-all` e `POST /notifications/run`. Ambos leem esta
+   * Segredo COMPARTILHADO pelos endpoints de cron:
+   * `POST /subscriptions/run-all`, `POST /notifications/run` e
+   * `POST /recurring-incomes/run-all`. Todos leem esta
    * mesma variável — não há segredo por rota.
    */
   CRON_SECRET: requiredSecret('CRON_SECRET'),

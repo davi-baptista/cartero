@@ -46,7 +46,8 @@ model User {
   pushSubscriptions PushSubscription[]
   notificationOccurrences NotificationOccurrence[]
   subscriptions     Subscription[]
-  recurringIncomeRules RecurringIncomeRule[]
+  recurringIncomeRules                RecurringIncomeRule[]
+  recurringIncomeOccurrenceExclusions RecurringIncomeOccurrenceExclusion[]
   salaryHistory     SalaryHistory[]
   personSettlementGroups PersonSettlementGroup[]
 }
@@ -317,11 +318,28 @@ model RecurringIncomeRule {
   createdAt       DateTime                @default(now())
   updatedAt       DateTime                @updatedAt
 
-  user        User         @relation(fields: [userId], references: [id])
-  receivables Receivable[]
+  user                 User                                 @relation(fields: [userId], references: [id])
+  receivables          Receivable[]
+  occurrenceExclusions RecurringIncomeOccurrenceExclusion[]
 
+  @@unique([id, userId])
   @@index([userId, isActive])
   @@index([userId, deletedAt])
+}
+
+/// User intent to omit one competence from a recurring income source.
+/// Soft-deleting or editing the source does not remove this marker.
+model RecurringIncomeOccurrenceExclusion {
+  id                    String   @id @default(uuid())
+  userId                String
+  recurringIncomeRuleId String
+  recurringMonth        String
+  createdAt             DateTime @default(now())
+
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recurringIncomeRule RecurringIncomeRule @relation(fields: [recurringIncomeRuleId, userId], references: [id, userId], onDelete: Cascade)
+
+  @@unique([recurringIncomeRuleId, recurringMonth])
 }
 
 model Invoice {

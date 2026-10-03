@@ -33,6 +33,13 @@ export function obligationsSummaryKey(filters: {
   ] as const
 }
 
+export function recurringIncomeReconcileKey(
+  userId: string,
+  period: { month: number; year: number },
+) {
+  return ['recurring-income-reconcile', userId, period.year, period.month] as const
+}
+
 /** Search-independent overdue totals are shared across month-scoped summaries. */
 export function obligationsOverdueSummaryKey(filters: {
   domain: ObligationDomain

@@ -164,6 +164,13 @@ export function BudgetDrilldownItemRow({
         dueDateLabel(item.dueDate, overdue),
       ])
       break
+    case 'RECURRING_INCOME_PROJECTION':
+      primary = item.title || item.counterparty
+      secondary = metadata([
+        item.title !== item.counterparty ? item.counterparty : null,
+        dueDateLabel(item.dueDate, overdue),
+      ])
+      break
     case 'INVOICE':
       primary = item.bankName
       secondary = metadata([
@@ -192,6 +199,8 @@ export function BudgetDrilldownItemRow({
     ? null
     : item.kind === 'RECEIVABLE'
       ? overdue ? 'EM ATRASO' : 'A RECEBER'
+        : item.kind === 'RECURRING_INCOME_PROJECTION'
+          ? overdue ? 'EM ATRASO' : 'A RECEBER'
       : item.kind === 'DEBT'
         ? overdue ? 'EM ATRASO' : 'A PAGAR'
         : item.kind === 'INVOICE'

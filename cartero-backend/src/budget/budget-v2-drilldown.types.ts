@@ -76,6 +76,14 @@ export type BudgetV2DrilldownItem =
       counterparty: string;
     }
   | {
+      kind: 'RECURRING_INCOME_PROJECTION';
+      id: string;
+      amount: string;
+      dueDate: string;
+      title: string;
+      counterparty: string;
+    }
+  | {
       kind: 'INVOICE';
       id: string;
       amount: string;

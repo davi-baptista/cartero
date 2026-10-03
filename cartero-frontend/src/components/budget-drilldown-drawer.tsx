@@ -333,19 +333,14 @@ export function BudgetDrilldownDrawer({
         <DebtDetailDrawer
           debt={debtQuery.data}
           onOpenChange={(nextOpen) => { if (!nextOpen) setSelectedDebtId(null) }}
-          onEdit={() => undefined}
-          onDelete={() => undefined}
-          onTogglePaid={() => undefined}
-          readOnly
+          mode="readOnly"
         />
       )}
       {selectedReceivableId && receivableQuery.data && (
         <ReceivableDetailDrawer
           receivable={receivableQuery.data}
           onOpenChange={(nextOpen) => { if (!nextOpen) setSelectedReceivableId(null) }}
-          onEdit={() => undefined}
-          onToggleReceived={() => undefined}
-          readOnly
+          mode="readOnly"
         />
       )}
     </DetailDrawer>

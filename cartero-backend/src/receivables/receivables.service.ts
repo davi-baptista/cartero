@@ -32,7 +32,6 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import {
   assertAutomaticReceivableNotDeleted,
   assertRecurringIncomeClassification,
-  assertRecurringIncomeReceivableNotDeleted,
   assertNotAutomaticReceivable,
   assertReceivableNotReceived,
 } from 'src/common/helpers/settlement.guard';
@@ -116,12 +115,10 @@ export class ReceivablesService {
   }
 
   async findOne(id: string, userId: string) {
-    await this.recurringIncomeService?.ensureForUser(userId);
     return await this.entityValidationService.validateReceivable(id, userId);
   }
 
   async findAll(userId: string, filters: FindReceivablesDto = {}) {
-    await this.recurringIncomeService?.ensureForUser(userId);
     const receivables = await this.prisma.receivable.findMany({
       where: {
         userId,
@@ -170,6 +167,7 @@ export class ReceivablesService {
       id,
       userId,
     );
+
     const normalizedScope = this.normalizeScope(scope);
 
     /**
@@ -214,13 +212,12 @@ export class ReceivablesService {
           )
         : null;
 
-    const { paymentBankId, paymentType, paymentDate, ...receivableDto } = dto;
-    const {
-      title: _title,
-      dueDate: _dueDate,
-      occurredAt: _occurredAt,
-      ...installmentSafeDto
-    } = receivableDto;
+    const { paymentType, paymentDate, ...receivableDto } = dto;
+    delete receivableDto.paymentBankId;
+    const installmentSafeDto = { ...receivableDto };
+    delete installmentSafeDto.title;
+    delete installmentSafeDto.dueDate;
+    delete installmentSafeDto.occurredAt;
 
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
@@ -418,6 +415,18 @@ export class ReceivablesService {
       userId,
     );
 
+    // Recurring income occurrences use the same canonical DELETE endpoint,
+    // with their tombstone + row removal owned by the recurring authority.
+    if (existing.recurringIncomeRuleId) {
+      if (!this.recurringIncomeService) {
+        throw new BadRequestException(
+          'Exclusão de renda recorrente indisponível',
+        );
+      }
+      await this.recurringIncomeService.deletePendingOccurrence(userId, id);
+      return;
+    }
+
     /**
      * Cobrança automática não é excluída por aqui.
      *
@@ -427,7 +436,6 @@ export class ReceivablesService {
      * pelo lado desprotegido.
      */
     assertAutomaticReceivableNotDeleted(existing);
-    assertRecurringIncomeReceivableNotDeleted(existing);
 
     const normalizedScope = this.normalizeScope(scope);
 

@@ -32,7 +32,6 @@ import {
   CreditCard,
   CalendarDays,
   Plus,
-  Minus,
 } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { ROW_AMOUNT_CLASS } from '@/components/ui/financial-list-row'
@@ -60,6 +59,7 @@ import {
   type ReceivableFormData,
 } from '@/app/(dashboard)/receivables/receivable-sheet'
 import { SettlePersonDialog } from '@/app/(dashboard)/persons/settle-person-dialog'
+import { PersonContextualCreateFlow } from '@/components/person-contextual-create-flow'
 import { ReceivableDetailDrawer } from '@/app/(dashboard)/receivables/receivable-detail-drawer'
 import { DebtDetailDrawer } from '@/app/(dashboard)/debts/debt-detail-drawer'
 import { settlementStatus } from '@/lib/settlement-status'
@@ -68,14 +68,6 @@ import {
   Sheet,
   SheetContent,
 } from '@/components/ui/sheet'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -385,6 +377,7 @@ export function PersonStatementDrawer({
   const [detailDebt, setDetailDebt] = useState<Debt | null>(null)
 
   const [sheetKind, setSheetKind] = useState<'debt' | 'receivable' | null>(null)
+  const [personCreateOpen, setPersonCreateOpen] = useState(false)
   const [editDebt, setEditDebt] = useState<Debt | null>(null)
   const [editReceivable, setEditReceivable] = useState<Receivable | null>(null)
   const [editScope, setEditScope] = useState<InstallmentScope | null>(null)
@@ -719,18 +712,6 @@ export function PersonStatementDrawer({
     setUnmarkPaidTarget(null)
   }
 
-  function openNewDebt() {
-    setEditDebt(null)
-    setEditScope(null)
-    setSheetKind('debt')
-  }
-
-  function openNewReceivable() {
-    setEditReceivable(null)
-    setEditScope(null)
-    setSheetKind('receivable')
-  }
-
   function handleEditDebt(debt: Debt) {
     if (debt.parentId) {
       setScopeDialog({ kind: 'debt', mode: 'edit', debt })
@@ -753,7 +734,8 @@ export function PersonStatementDrawer({
 
   function handleDeleteDebt(debt: Debt) {
     if (debt.paymentTransactionId && !debt.parentId) {
-      setLinkedWarningTarget({ kind: 'debt', debt })
+      if (debt.isPaid) setDeleteTarget({ kind: 'debt', debt })
+      else setLinkedWarningTarget({ kind: 'debt', debt })
     } else if (debt.parentId) {
       setScopeDialog({ kind: 'debt', mode: 'delete', debt })
     } else {
@@ -776,7 +758,8 @@ export function PersonStatementDrawer({
         setSourceDeleteTarget(receivable)
         return
       case 'linked-payment':
-        setLinkedWarningTarget({ kind: 'receivable', receivable })
+        if (receivable.isPaid) setDeleteTarget({ kind: 'receivable', receivable })
+        else setLinkedWarningTarget({ kind: 'receivable', receivable })
         return
       case 'unmark-first':
       case 'manage-from-source':
@@ -1361,35 +1344,10 @@ export function PersonStatementDrawer({
                         Quitar tudo
                       </Button>
                     )}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      className={buttonVariants({
-                        variant: 'default',
-                        size: 'sm',
-                        className:
-                          'h-7 cursor-pointer gap-1 px-2',
-                      })}
-                    >
-                      <Plus className="size-3.5" />
-                      Adicionar
-                    </DropdownMenuTrigger>
-                    {/*
-                      As DUAS opções sobrevivem: aqui a ação é ambígua por
-                      natureza (cobrança ou dívida), diferente de Fatura, onde
-                      só existe transação. Reduzir a um botão simples obrigaria
-                      a escolher um sentido por padrão.
-                    */}
-                    <DropdownMenuContent align="end" className="w-auto min-w-0">
-                      <DropdownMenuItem onClick={openNewReceivable}>
-                        <Plus className="size-3.5" />
-                        A receber
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={openNewDebt}>
-                        <Minus className="size-3.5" />
-                        A pagar
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <Button size="sm" className="h-7 cursor-pointer gap-1 px-2" onClick={() => setPersonCreateOpen(true)}>
+                    <Plus className="size-3.5" />
+                    Adicionar
+                  </Button>
                   </div>
                   }
                 />
@@ -1666,6 +1624,17 @@ export function PersonStatementDrawer({
         timeZone={user?.timeZone}
         onSubmit={handleReceivableSheetSubmit}
       />
+      {person && (
+        <PersonContextualCreateFlow
+          open={personCreateOpen}
+          onOpenChange={setPersonCreateOpen}
+          personId={person.id}
+          personName={person.name}
+          timeZone={user?.timeZone}
+          onCreateDebt={handleDebtSheetSubmit}
+          onCreateReceivable={handleReceivableSheetSubmit}
+        />
+      )}
 
       <InstallmentScopeDialog
         open={scopeDialog !== null}
@@ -1720,18 +1689,23 @@ export function PersonStatementDrawer({
         onDeleteOnly={confirmLinkedDeleteOnly}
         onCancel={() => setLinkedWarningTarget(null)}
       />
-      <Dialog open={deleteTarget !== null} onOpenChange={(nextOpen) => !nextOpen && setDeleteTarget(null)}>
-        <DialogContent showCloseButton={false} className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Excluir {deleteTarget?.kind === 'debt' ? 'dívida' : 'cobrança'}</DialogTitle>
-            <DialogDescription>Esta ação não pode ser desfeita.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={confirmDelete}>Excluir</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={deleteTarget?.debt?.isPaid || deleteTarget?.receivable?.isPaid
+          ? 'Excluir item do histórico?'
+          : `Excluir ${deleteTarget?.kind === 'debt' ? 'dívida' : 'cobrança'}?`}
+        description={deleteTarget?.debt?.isPaid && deleteTarget.debt.paymentTransactionId
+          ? 'A dívida e o lançamento financeiro associado ao pagamento serão removidos.'
+          : deleteTarget?.receivable?.isPaid && deleteTarget.receivable.paymentTransactionId
+            ? 'A cobrança e o lançamento financeiro associado ao recebimento serão removidos.'
+            : deleteTarget?.debt?.isPaid || deleteTarget?.receivable?.isPaid
+              ? 'Este item do histórico será excluído.'
+              : 'Esta obrigação será excluída.'}
+        confirmLabel="Excluir"
+        isPending={deleteDebtMut.isPending || deleteReceivableMut.isPending}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
     </>
   )
 }

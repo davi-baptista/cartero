@@ -31,6 +31,18 @@ describe('Income settlement and nested detail contracts', () => {
     expect(page).toContain('onOpenChange={(open) => { if (!open) setSelectedReceivable(null) }}')
   })
 
+  it('deletes a pending occurrence from the canonical drawer and keeps its source drawer open', () => {
+    expect(page).toContain('onDelete={(item) => setOccurrenceDeleteTarget(item)}')
+    expect(page).toContain('mutationFn: (id: string) => deleteReceivable(id)')
+    expect(page).toContain('title="Excluir este recebimento?"')
+    expect(page).toContain('Essa ocorrência será removida e não será criada novamente para esta competência.')
+    expect(page).toContain("queryClient.invalidateQueries({ queryKey: ['recurring-incomes'] })")
+    expect(page).toContain("queryClient.invalidateQueries({ queryKey: ['receivables'] })")
+    expect(page).toContain("queryClient.invalidateQueries({ queryKey: ['obligations'] })")
+    expect(page).toContain('setSelectedReceivable(null)')
+    expect(page).toContain('onError: () => toast.error(\'Não foi possível excluir o recebimento\')')
+  })
+
   it('keeps the detail open while MarkAsPaidDialog is the controlled child action', () => {
     const success = page.slice(page.indexOf('const settlementMutation = useMutation'), page.indexOf('function handleSelectedReceivableToggle'))
     expect(page).toContain('<MarkAsPaidDialog open={markPaidTarget !== null}')
@@ -42,6 +54,23 @@ describe('Income settlement and nested detail contracts', () => {
     expect(markAsPaidDialog).toContain('<Dialog open={open} onOpenChange={(value) => !value && !isPending && onCancel()}>')
     expect(markAsPaidDialog).toContain('onConfirm(buildSettlementPayload({ kind, createTransaction, paymentDate, bankId, type }))')
     expect(dialogPrimitive).toContain('z-50')
+  })
+
+  it('edits only the materialized occurrence and refreshes the source and obligation views', () => {
+    const occurrenceEdit = page.slice(page.indexOf('const updateOccurrenceMutation'), page.indexOf('const settlementMutation'))
+    expect(occurrenceEdit).toContain('return updateReceivable(id, rest)')
+    expect(occurrenceEdit).not.toContain('updateRecurringIncome')
+    expect(page).toContain('setOccurrenceEditTarget(receivable)')
+    expect(page).toContain('<ReceivableSheet mode="income-occurrence"')
+    expect(page).toContain("queryClient.invalidateQueries({ queryKey: ['obligations'] })")
+  })
+
+  it('synchronizes settle and reopen mutations across Income, Movements, and transactions', () => {
+    const settlement = page.slice(page.indexOf('const settlementMutation'), page.indexOf('function handleSelectedReceivableToggle'))
+    expect(settlement).toContain("syncSettlementEntity(queryClient, 'receivable', variables.id, result)")
+    expect(settlement).toContain('invalidateIncome()')
+    expect(settlement).toContain('invalidateTransactionDependents(queryClient, { affectsPerson: false })')
+    expect(settlement).toContain('setSelectedReceivable(updated)')
   })
 
   it('passes the chosen receipt date into the normal settlement payload', () => {

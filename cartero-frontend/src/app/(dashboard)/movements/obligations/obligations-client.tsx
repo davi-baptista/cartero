@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { skipToken, useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query'
+import { skipToken, useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Check, Search, Undo2, X } from 'lucide-react'
@@ -19,6 +19,9 @@ import { DebtDetailDrawer } from '@/app/(dashboard)/debts/debt-detail-drawer'
 import { ReceivableDetailDrawer } from '@/app/(dashboard)/receivables/receivable-detail-drawer'
 import { MarkAsPaidDialog } from '@/app/(dashboard)/transactions/mark-as-paid-dialog'
 import { UnmarkPaidWarningDialog } from '@/app/(dashboard)/transactions/unmark-paid-warning-dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { DebtSheet, type DebtFormData } from '@/app/(dashboard)/debts/debt-sheet'
+import { ReceivableSheet, type ReceivableFormData } from '@/app/(dashboard)/receivables/receivable-sheet'
 import { useMonthPeriod } from '@/components/month-nav'
 import { useAuth } from '@/providers/auth-provider'
 import { formatCurrency, formatDate } from '@/lib/formatters'
@@ -34,6 +37,7 @@ import {
   obligationsSectionKey,
   obligationsSummaryKey,
   parseObligationDomain,
+  recurringIncomeReconcileKey,
   type ObligationDomainFilter,
 } from '@/lib/obligations-query'
 import { syncSettlementEntity } from '@/lib/settlement-cache'
@@ -52,8 +56,8 @@ import {
   type ObligationHighlightEntity,
 } from '@/lib/obligation-highlight'
 import { getPersons } from '@/services/persons.service'
-import { getDebt, updateDebt } from '@/services/debts.service'
-import { getReceivable, updateReceivable } from '@/services/receivables.service'
+import { deleteDebt, getDebt, updateDebt } from '@/services/debts.service'
+import { deleteReceivable, getReceivable, updateReceivable } from '@/services/receivables.service'
 import { getTransaction } from '@/services/transactions.service'
 import {
   getObligations,
@@ -66,6 +70,10 @@ import {
 import type { Debt, Receivable } from '@/types'
 import type { TransactionType } from '@/types'
 import { cn } from '@/lib/utils'
+import { resolveReceivableDeletePolicy, canDeleteReceivable } from '@/lib/receivable-delete-policy'
+import { useDeleteSourceTransaction } from '@/lib/use-delete-source-transaction'
+import { invalidateTransactionDependents } from '@/lib/transaction-dependent-queries'
+import { reconcileRecurringIncomePeriod } from '@/services/recurring-income.service'
 
 type SettlementPaymentPayload = {
   paymentBankId?: string
@@ -75,6 +83,36 @@ type SettlementPaymentPayload = {
 
 const OBLIGATIONS_QUERY_STALE_TIME = 30_000
 const OBLIGATIONS_QUERY_GC_TIME = 10 * 60_000
+
+async function reconcileObligationPeriod(
+  queryClient: QueryClient,
+  userId: string,
+  period: { month: number; year: number },
+) {
+  const result = await queryClient.fetchQuery({
+    queryKey: recurringIncomeReconcileKey(userId, period),
+    queryFn: () => reconcileRecurringIncomePeriod(period),
+    staleTime: Infinity,
+    gcTime: OBLIGATIONS_QUERY_GC_TIME,
+  })
+  const overdueRefreshKey = [
+    'recurring-income-overdue-refresh',
+    userId,
+    period.year,
+    period.month,
+  ] as const
+  if (result.created > 0 && !queryClient.getQueryData(overdueRefreshKey)) {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ['obligations', 'section', 'OVERDUE'],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ['obligations', 'summary-overdue'],
+      }),
+    ])
+    queryClient.setQueryData(overdueRefreshKey, true)
+  }
+}
 
 const SECTION_CONFIG: Array<{
   section: ObligationSection
@@ -155,6 +193,7 @@ function useObligationSectionQuery({
   personId,
   month,
   year,
+  userId,
 }: {
   section: ObligationSection
   domain: ReturnType<typeof apiObligationDomain>
@@ -162,22 +201,30 @@ function useObligationSectionQuery({
   personId?: string
   month: number
   year: number
+  userId?: string
 }) {
+  const queryClient = useQueryClient()
   return useInfiniteQuery({
     queryKey: obligationsSectionKey({ section, domain, search, personId, month, year }),
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) => getObligations({
-      section,
-      domain,
-      search: search || undefined,
-      personId,
-      ...(section === 'OVERDUE' ? {} : { month, year }),
-      cursor: pageParam ?? undefined,
-      limit: 30,
-    }),
+    queryFn: async ({ pageParam }) => {
+      if (section === 'OPEN' && userId) {
+        await reconcileObligationPeriod(queryClient, userId, { month, year })
+      }
+      return getObligations({
+        section,
+        domain,
+        search: search || undefined,
+        personId,
+        ...(section === 'OVERDUE' ? {} : { month, year }),
+        cursor: pageParam ?? undefined,
+        limit: 30,
+      })
+    },
     getNextPageParam: (lastPage) => lastPage.pageInfo.hasMore
       ? lastPage.pageInfo.nextCursor ?? undefined
       : undefined,
+    enabled: section !== 'OPEN' || Boolean(userId),
     staleTime: OBLIGATIONS_QUERY_STALE_TIME,
     gcTime: OBLIGATIONS_QUERY_GC_TIME,
   })
@@ -361,10 +408,16 @@ export function ObligationsClient() {
   const searchParams = useSearchParams()
   const { period, setPeriod } = useMonthPeriod()
   const { user } = useAuth()
+  const today = user?.timeZone ? accountToday(user.timeZone) : formatDateValue()
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search.trim(), 350)
   const [markTarget, setMarkTarget] = useState<{ row: ObligationRow; section: ObligationSection } | null>(null)
   const [unmarkTarget, setUnmarkTarget] = useState<{ row: ObligationRow; section: ObligationSection } | null>(null)
+  const [editTarget, setEditTarget] = useState<{ kind: 'debt'; item: Debt } | { kind: 'receivable'; item: Receivable } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ kind: 'debt'; item: Debt } | { kind: 'receivable'; item: Receivable } | null>(null)
+  const [sourceDeleteTarget, setSourceDeleteTarget] = useState<Receivable | null>(null)
+  const debtNavigation = useDetailNavigation('debtId')
+  const receivableNavigation = useDetailNavigation('receivableId')
   const normalizedIncomingUrl = useRef<string | null>(null)
 
   const domain = parseObligationDomain(searchParams.get('domain'))
@@ -381,7 +434,12 @@ export function ObligationsClient() {
   const personQuery = useQuery({ queryKey: ['persons'], queryFn: getPersons })
   const summaryQuery = useQuery({
     queryKey: obligationsSummaryKey({ ...period, domain: apiDomain, personId }),
-    queryFn: () => getObligationsSummary({ ...period, domain: apiDomain, personId }),
+    queryFn: async () => {
+      if (!user?.id) throw new Error('A conta ainda está carregando')
+      await reconcileObligationPeriod(queryClient, user.id, period)
+      return getObligationsSummary({ ...period, domain: apiDomain, personId })
+    },
+    enabled: Boolean(user?.id),
     staleTime: OBLIGATIONS_QUERY_STALE_TIME,
     gcTime: OBLIGATIONS_QUERY_GC_TIME,
   })
@@ -401,13 +459,13 @@ export function ObligationsClient() {
     queryClient.setQueryData(overdueSummaryKey, summaryQuery.data.overdue)
   }, [overdueSummaryKey, queryClient, summaryQuery.data])
   const overdueQuery = useObligationSectionQuery({
-    section: 'OVERDUE', domain: apiDomain, search: debouncedSearch, personId, ...period,
+    section: 'OVERDUE', domain: apiDomain, search: debouncedSearch, personId, userId: user?.id, ...period,
   })
   const openQuery = useObligationSectionQuery({
-    section: 'OPEN', domain: apiDomain, search: debouncedSearch, personId, ...period,
+    section: 'OPEN', domain: apiDomain, search: debouncedSearch, personId, userId: user?.id, ...period,
   })
   const historyQuery = useObligationSectionQuery({
-    section: 'HISTORY', domain: apiDomain, search: debouncedSearch, personId, ...period,
+    section: 'HISTORY', domain: apiDomain, search: debouncedSearch, personId, userId: user?.id, ...period,
   })
   useEffect(() => {
     const incomingUrl = `${pathname}?${searchParams.toString()}`
@@ -508,7 +566,59 @@ export function ObligationsClient() {
       toast.success(variables.nextResolved
         ? variables.row.domain === 'RECEIVABLE' ? 'Recebimento marcado como recebido' : 'Dívida marcada como paga'
         : 'Obrigação marcada como pendente')
+      invalidateTransactionDependents(queryClient, { affectsPerson: Boolean(variables.row.personId) })
       await queryClient.invalidateQueries({ queryKey: ['obligations'] })
+    },
+  })
+
+  const detailDeleteMutation = useMutation({
+    mutationFn: (target: NonNullable<typeof deleteTarget>) => target.kind === 'debt'
+      ? deleteDebt(target.item.id)
+      : deleteReceivable(target.item.id),
+    onSuccess: async (_result, target) => {
+      setDeleteTarget(null)
+      if (target.kind === 'debt') debtNavigation.close()
+      else receivableNavigation.close()
+      invalidateTransactionDependents(queryClient, { affectsPerson: Boolean(target.item.personId) })
+      if (target.kind === 'receivable') {
+        await queryClient.invalidateQueries({ queryKey: ['receivables'] })
+      }
+      await queryClient.invalidateQueries({ queryKey: ['obligations'] })
+      toast.success(target.kind === 'debt' ? 'Dívida excluída' : 'Recebimento excluído')
+    },
+    onError: () => toast.error('Não foi possível excluir a obrigação.'),
+  })
+
+  const detailEditMutation = useMutation({
+    mutationFn: async ({ target, data }: {
+      target: NonNullable<typeof editTarget>
+      data: DebtFormData | ReceivableFormData
+    }) => {
+      if (target.kind === 'debt') {
+        const payload = { ...(data as DebtFormData) }
+        delete payload.installments
+        await updateDebt(target.item.id, payload)
+        return
+      }
+      const payload = { ...(data as ReceivableFormData) }
+      delete payload.installments
+      await updateReceivable(target.item.id, payload)
+    },
+    onSuccess: async (_result, { target }) => {
+      setEditTarget(null)
+      if (target.kind === 'debt') debtNavigation.close()
+      else receivableNavigation.close()
+      await queryClient.invalidateQueries({ queryKey: ['obligations'] })
+      toast.success(target.kind === 'debt' ? 'Dívida atualizada' : 'Cobrança atualizada')
+    },
+    onError: () => toast.error('Não foi possível atualizar a obrigação.'),
+  })
+
+  const sourceDeleteMutation = useDeleteSourceTransaction({
+    onSuccess: () => {
+      setSourceDeleteTarget(null)
+      receivableNavigation.close()
+      void queryClient.invalidateQueries({ queryKey: ['obligations'] })
     },
   })
 
@@ -523,6 +633,40 @@ export function ObligationsClient() {
       return
     }
     setMarkTarget({ row, section })
+  }
+
+  const handleDetailSettle = (item: Debt | Receivable, kind: 'debt' | 'receivable') => {
+    const isDebt = kind === 'debt'
+    const section: ObligationSection = item.isPaid
+      ? 'HISTORY'
+      : item.dueDate.slice(0, 10) < today ? 'OVERDUE' : 'OPEN'
+    const row: ObligationRow = {
+      domain: isDebt ? 'DEBT' : 'RECEIVABLE',
+      id: item.id,
+      title: item.title,
+      amount: String(item.amount),
+      description: item.description ?? null,
+      personId: item.personId ?? null,
+      personName: item.person?.name ?? null,
+      counterpartyName: isDebt ? (item as Debt).creditorName : (item as Receivable).debtorName,
+      dueDate: item.dueDate,
+      isResolved: item.isPaid,
+      resolvedAt: item.paidAt ?? null,
+      paymentTransactionId: item.paymentTransactionId ?? null,
+    }
+    handleSettle(row, section)
+  }
+
+  const handleDetailDelete = (item: Debt | Receivable, kind: 'debt' | 'receivable') => {
+    if (kind === 'debt') {
+      setDeleteTarget({ kind, item: item as Debt })
+      return
+    }
+    const receivable = item as Receivable
+    const policy = resolveReceivableDeletePolicy(receivable)
+    if (!canDeleteReceivable(policy)) return
+    if (policy.mode === 'source-transaction') setSourceDeleteTarget(receivable)
+    else setDeleteTarget({ kind, item: receivable })
   }
 
   const handleMarkConfirm = (payload: SettlementPaymentPayload) => {
@@ -545,8 +689,6 @@ export function ObligationsClient() {
     })
   }
 
-  const debtNavigation = useDetailNavigation('debtId')
-  const receivableNavigation = useDetailNavigation('receivableId')
   const debtId = debtNavigation.openId
   const receivableId = debtId ? null : receivableNavigation.openId
   const debtDetail = useDetailEntity<Debt>({
@@ -564,7 +706,6 @@ export function ObligationsClient() {
     onNotFound: receivableNavigation.close,
   })
 
-  const today = user?.timeZone ? accountToday(user.timeZone) : formatDateValue()
   const highlightSection = highlightTarget
     ? obligationHighlightSection(highlightTarget, today)
     : null
@@ -780,18 +921,19 @@ export function ObligationsClient() {
 
       <DebtDetailDrawer
         debt={debtDetail.entity}
-        readOnly
+        mode="operational"
         onOpenChange={(open) => { if (!open) debtNavigation.close() }}
-        onEdit={() => undefined}
-        onDelete={() => undefined}
-        onTogglePaid={() => undefined}
+        onEdit={(item) => { setEditTarget({ kind: 'debt', item }); debtNavigation.close() }}
+        onDelete={(item) => handleDetailDelete(item, 'debt')}
+        onTogglePaid={(item) => handleDetailSettle(item, 'debt')}
       />
       <ReceivableDetailDrawer
         receivable={receivableDetail.entity}
-        readOnly
+        mode="operational"
         onOpenChange={(open) => { if (!open) receivableNavigation.close() }}
-        onEdit={() => undefined}
-        onToggleReceived={() => undefined}
+        onEdit={(item) => { setEditTarget({ kind: 'receivable', item }); receivableNavigation.close() }}
+        onDelete={(item) => handleDetailDelete(item, 'receivable')}
+        onToggleReceived={(item) => handleDetailSettle(item, 'receivable')}
       />
 
       <MarkAsPaidDialog
@@ -808,6 +950,54 @@ export function ObligationsClient() {
         isPending={mutation.isPending}
         onConfirm={handleUnmarkConfirm}
         onCancel={() => setUnmarkTarget(null)}
+      />
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={deleteTarget?.kind === 'receivable' && deleteTarget.item.recurringIncomeRuleId
+          ? 'Excluir este recebimento?'
+          : deleteTarget?.item.isPaid ? 'Excluir item do histórico?' : 'Excluir obrigação?'}
+        description={deleteTarget?.kind === 'receivable' && deleteTarget.item.recurringIncomeRuleId
+          ? 'Essa ocorrência será removida e não será criada novamente para esta competência.'
+          : deleteTarget?.item.paymentTransactionId
+          ? deleteTarget.kind === 'debt'
+            ? 'A dívida e o lançamento financeiro associado ao pagamento serão removidos.'
+            : 'A cobrança e o lançamento financeiro associado ao recebimento serão removidos.'
+          : deleteTarget?.item.isPaid
+            ? 'Este item do histórico será excluído.'
+            : 'Esta obrigação será excluída.'}
+        confirmLabel="Excluir"
+        isPending={detailDeleteMutation.isPending}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && detailDeleteMutation.mutate(deleteTarget)}
+      />
+      <ConfirmDialog
+        open={sourceDeleteTarget !== null}
+        title="Excluir compra e cobrança?"
+        description="A compra de origem e a cobrança associada serão removidas. A ação será validada pelo servidor conforme as proteções da fatura e do recebimento."
+        confirmLabel="Excluir compra"
+        isPending={sourceDeleteMutation.isPending}
+        onCancel={() => setSourceDeleteTarget(null)}
+        onConfirm={() => sourceDeleteTarget?.transactionId && sourceDeleteMutation.mutate(sourceDeleteTarget.transactionId)}
+      />
+      <DebtSheet
+        open={editTarget?.kind === 'debt'}
+        onOpenChange={(open) => !open && setEditTarget(null)}
+        editTarget={editTarget?.kind === 'debt' ? editTarget.item : null}
+        editScope={null}
+        timeZone={user?.timeZone}
+        onSubmit={async (data) => {
+          if (editTarget?.kind === 'debt') await detailEditMutation.mutateAsync({ target: editTarget, data })
+        }}
+      />
+      <ReceivableSheet
+        open={editTarget?.kind === 'receivable'}
+        onOpenChange={(open) => !open && setEditTarget(null)}
+        editTarget={editTarget?.kind === 'receivable' ? editTarget.item : null}
+        editScope={null}
+        timeZone={user?.timeZone}
+        onSubmit={async (data) => {
+          if (editTarget?.kind === 'receivable') await detailEditMutation.mutateAsync({ target: editTarget, data })
+        }}
       />
     </div>
   )

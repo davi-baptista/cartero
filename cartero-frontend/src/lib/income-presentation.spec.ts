@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextOpenIncomeOccurrenceOnOrAfter, openOneOffIncome, openRecurringIncomeOccurrences, recurringIncomeStatusPresentation } from './income-presentation'
+import { nextOpenIncomeOccurrenceOnOrAfter, openRecurringIncomeOccurrences, recurringIncomeStatusPresentation, splitRecurringIncomeOpenOccurrences } from './income-presentation'
 import type { Receivable, RecurringIncomeRule } from '@/types'
 
 const receivable = (overrides: Partial<Receivable> = {}): Receivable => ({
@@ -15,15 +15,41 @@ const rule: RecurringIncomeRule = {
 }
 
 describe('income presentation', () => {
-  it('mantém somente renda pontual aberta', () => {
-    expect(openOneOffIncome([
-      receivable({ id: 'one-off-open', recurringIncomeRuleId: undefined }),
-      receivable({ id: 'one-off-paid', recurringIncomeRuleId: undefined, isPaid: true }),
-      receivable({ id: 'other', incomeClassification: 'OTHER', recurringIncomeRuleId: undefined }),
-    ]).map((item) => item.id)).toEqual(['one-off-open'])
-  })
   it('mantém a fonte e oculta ocorrências recorrentes recebidas', () => {
     expect(openRecurringIncomeOccurrences(rule, [receivable({ id: 'open' }), receivable({ id: 'paid', isPaid: true })]).map((item) => item.id)).toEqual(['open'])
+  })
+  it('separates four overdue occurrences, one open occurrence, and excludes received rows', () => {
+    const occurrences = [
+      receivable({ id: 'overdue-1', dueDate: '2026-06-01' }),
+      receivable({ id: 'overdue-2', dueDate: '2026-07-01' }),
+      receivable({ id: 'overdue-3', dueDate: '2026-08-01' }),
+      receivable({ id: 'overdue-4', dueDate: '2026-09-01' }),
+      receivable({ id: 'future', dueDate: '2026-09-25' }),
+      receivable({ id: 'paid', isPaid: true, dueDate: '2026-09-10' }),
+    ]
+
+    const groups = splitRecurringIncomeOpenOccurrences(occurrences, '2026-09-24')
+    expect(groups.overdue.map(({ id }) => id)).toEqual([
+      'overdue-1', 'overdue-2', 'overdue-3', 'overdue-4',
+    ])
+    expect(groups.open.map(({ id }) => id)).toEqual(['future'])
+    expect([...groups.overdue, ...groups.open].map(({ id }) => id)).toHaveLength(5)
+  })
+  it('supports empty overdue and open groups without inventing rows', () => {
+    const future = splitRecurringIncomeOpenOccurrences([
+      receivable({ id: 'future-1', dueDate: '2026-09-25' }),
+      receivable({ id: 'future-2', dueDate: '2026-10-01' }),
+    ], '2026-09-24')
+    const overdue = splitRecurringIncomeOpenOccurrences([
+      receivable({ id: 'late-1', dueDate: '2026-09-01' }),
+      receivable({ id: 'late-2', dueDate: '2026-09-02' }),
+      receivable({ id: 'late-3', dueDate: '2026-09-03' }),
+    ], '2026-09-24')
+
+    expect(future.overdue).toHaveLength(0)
+    expect(future.open).toHaveLength(2)
+    expect(overdue.overdue).toHaveLength(3)
+    expect(overdue.open).toHaveLength(0)
   })
   it('escolhe a primeira ocorrência aberta de hoje ou futura', () => {
     const selected = nextOpenIncomeOccurrenceOnOrAfter([

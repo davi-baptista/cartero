@@ -126,6 +126,10 @@ interface TransactionSheetProps {
     type?: TransactionType
     date?: string
   }
+  /** Contexto de uma fatura: esconde decisões e banco já definidos pela origem. */
+  contextualTitle?: string
+  hideContextualQuestions?: boolean
+  hideBankField?: boolean
   /** Lock the nature chosen by the Movements add flow while keeping its form canonical. */
   initialKind?: TransactionKind
   /** Render the existing form body/footer inside the shared Movements drawer. */
@@ -146,6 +150,9 @@ export function TransactionSheet({
   editTarget,
   onSubmit,
   createDefaults,
+  contextualTitle,
+  hideContextualQuestions = false,
+  hideBankField = false,
   initialKind,
   embedded = false,
   leadingContent,
@@ -626,7 +633,7 @@ export function TransactionSheet({
 
   const selectedBank = bankOptions.find((b) => b.id === selectedBankId)
   const bankIsRequired = selectedType === TransactionType.CREDIT_CARD
-  const showBankSelector = bankIsRequired || showOptionalBank || Boolean(selectedBankId)
+  const showBankSelector = !hideBankField && (bankIsRequired || showOptionalBank || Boolean(selectedBankId))
   const selectedCategory = categories.find((c) => c.id === selectedCategoryId)
   const selectedPerson = persons.find((p) => p.id === selectedPersonId)
   const selectableCategories = categories.filter((c) => !c.isSystem)
@@ -681,7 +688,7 @@ export function TransactionSheet({
     </div>
   ) : null
 
-  const progressiveChoices = leadingContent ? (
+  const progressiveChoices = hideContextualQuestions ? null : leadingContent ? (
     <div className="space-y-4">
       {leadingContent}
       {paymentMethodChoice}
@@ -712,8 +719,8 @@ export function TransactionSheet({
 
   const content = (
     <>
-      {!embedded && <SheetHeader className="px-6 pt-6 pb-0">
-          <SheetTitle>{isEditing ? 'Editar transação' : 'Nova transação'}</SheetTitle>
+      {!embedded && <SheetHeader className="shrink-0 gap-1 border-b border-border px-6 py-5 pr-14">
+          <SheetTitle>{isEditing ? 'Editar transação' : contextualTitle ?? 'Nova transação'}</SheetTitle>
           <SheetDescription>
             {isEditing ? 'Atualize os dados da transação.' : 'Preencha os dados para registrar uma nova transação.'}
           </SheetDescription>
@@ -730,38 +737,9 @@ export function TransactionSheet({
         >
           {progressiveChoices}
 
-          {/* Estorno — só no crédito. Reduz a fatura em vez de somar. */}
+          {/* Title */}
           {selectedType && (
           <div className={cn('flex flex-col gap-4', scrollManagedByParent && PROGRESSIVE_REVEAL_CLASS)}>
-          {selectedType === TransactionType.CREDIT_CARD && (
-            <div className="space-y-1.5">
-              <Controller
-                control={control}
-                name="isRefund"
-                render={({ field }) => (
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={Boolean(field.value)}
-                    onClick={() => handleRefundToggle(!field.value)}
-                    className="flex w-fit items-center gap-2 rounded-md py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    <span className={cn('flex size-4 items-center justify-center rounded border transition-colors', field.value ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/50 bg-transparent')}>
-                      {field.value && <Check className="size-3" />}
-                    </span>
-                    <span className="text-xs font-medium">Registrar como estorno</span>
-                  </button>
-                )}
-              />
-              {selectedIsRefund && (
-                <p className={cn('text-xs text-muted-foreground', scrollManagedByParent && PROGRESSIVE_REVEAL_CLASS)}>
-                  Reduz o total da fatura. Não é receita e não gera cobrança.
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Title */}
           <div className="space-y-1.5">
             <Label htmlFor="title">Título</Label>
             <Input
@@ -821,7 +799,7 @@ export function TransactionSheet({
           </div>
 
           {/* Bank */}
-          <div className={cn('space-y-1.5', !bankIsRequired && 'order-last')}>
+          {!hideBankField && <div className={cn('space-y-1.5', !bankIsRequired && 'order-last')}>
             {showBankSelector && <Label>Banco</Label>}
             <div className="space-y-2">
               {!showBankSelector && (
@@ -951,7 +929,7 @@ export function TransactionSheet({
               ))}
             </div>
             {errors.bankId && <p className="text-xs text-destructive">{errors.bankId.message}</p>}
-          </div>
+          </div>}
 
           {/* Category */}
           <div className="space-y-1.5">
@@ -1097,6 +1075,35 @@ export function TransactionSheet({
                     <p className="text-xs text-destructive">{errors.installments.message}</p>
                   )}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Estorno — só no crédito. Reduz a fatura em vez de somar. */}
+          {selectedType === TransactionType.CREDIT_CARD && (
+            <div className={cn('space-y-1.5', scrollManagedByParent && PROGRESSIVE_REVEAL_CLASS)}>
+              <Controller
+                control={control}
+                name="isRefund"
+                render={({ field }) => (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={Boolean(field.value)}
+                    onClick={() => handleRefundToggle(!field.value)}
+                    className="flex w-fit items-center gap-2 rounded-md py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <span className={cn('flex size-4 items-center justify-center rounded border transition-colors', field.value ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/50 bg-transparent')}>
+                      {field.value && <Check className="size-3" />}
+                    </span>
+                    <span className="text-xs font-medium">Registrar como estorno</span>
+                  </button>
+                )}
+              />
+              {selectedIsRefund && (
+                <p className={cn('text-xs text-muted-foreground', scrollManagedByParent && PROGRESSIVE_REVEAL_CLASS)}>
+                  Reduz o total da fatura. Não é receita e não gera cobrança.
+                </p>
               )}
             </div>
           )}
@@ -1249,7 +1256,7 @@ export function TransactionSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col sm:max-w-md" showCloseButton>
+      <SheetContent side="right" className="flex w-full flex-col gap-0 sm:max-w-md" showCloseButton>
         {content}
       </SheetContent>
     </Sheet>

@@ -57,7 +57,7 @@ import {
   invoiceBreakdown,
   invoiceComposition,
 } from '@/lib/invoice-composition'
-import { accountCivilDayOf, accountToday, parseDateOnly, formatDateValue, todayDateValue } from '@/lib/date'
+import { accountCivilDayOf, accountToday, parseDateOnly, todayDateValue } from '@/lib/date'
 import { parseInvoiceDate } from '@/lib/invoice-dates'
 import { formatDate } from '@/lib/formatters'
 import { SettlementPaymentFields } from '@/components/settlement-payment-fields'
@@ -565,11 +565,9 @@ export function InvoiceDetailsDrawer({
    */
   const createDefaults = useMemo(() => {
     if (!invoice) return undefined
-    const period = new Date(invoice.year, invoice.month - 2, 15)
     return {
       bankId: invoice.bankId,
       type: TransactionType.CREDIT_CARD,
-      date: formatDateValue(period),
     }
   }, [invoice])
 
@@ -769,7 +767,7 @@ export function InvoiceDetailsDrawer({
                     <Button
                       variant="default"
                       size="sm"
-                      className="h-7 cursor-pointer gap-1 px-2 text-[11px]"
+                      className="cursor-pointer gap-1 px-2"
                       onClick={() => { setEditTx(null); setTxSheetOpen(true) }}
                     >
                       <Plus className="size-3.5" />
@@ -875,6 +873,10 @@ export function InvoiceDetailsDrawer({
         editTarget={editTx}
         onSubmit={handleTxSubmit}
         createDefaults={createDefaults}
+        initialKind="expense"
+        hideContextualQuestions
+        hideBankField
+        contextualTitle={`Nova transação · ${invoice?.bank ? bankDisplayName(invoice.bank, 'Cartão') : 'Cartão'}`}
         timeZone={user?.timeZone}
       />
 

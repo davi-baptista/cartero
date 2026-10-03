@@ -1,10 +1,17 @@
 import { Module } from '@nestjs/common';
 import { RecurringIncomeController } from './recurring-income.controller';
 import { RecurringIncomeService } from './recurring-income.service';
+import { RecurringIncomeCronController } from './recurring-income-cron.controller';
+import { RecurringIncomeJobService } from './recurring-income-job.service';
+import { CronSecretGuard } from 'src/auth/cron-secret.guard';
 
 @Module({
-  controllers: [RecurringIncomeController],
-  providers: [RecurringIncomeService],
+  controllers: [RecurringIncomeController, RecurringIncomeCronController],
+  providers: [
+    RecurringIncomeService,
+    RecurringIncomeJobService,
+    CronSecretGuard,
+  ],
   exports: [RecurringIncomeService],
 })
 export class RecurringIncomeModule {}

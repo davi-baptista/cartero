@@ -30,6 +30,7 @@ import {
   resolveReceivableDeletePolicy,
 } from '@/lib/receivable-delete-policy'
 import { useAuth } from '@/providers/auth-provider'
+import type { ObligationDetailMode } from '@/lib/obligation-detail-mode'
 import type { Receivable } from '@/types'
 
 /**
@@ -62,16 +63,16 @@ export function ReceivableDetailDrawer({
   onDelete,
   onToggleReceived,
   onEditSettlementDate,
-  readOnly = false,
+  mode = 'operational',
 }: {
   /** `null` mantém o drawer fechado. */
   receivable: Receivable | null
   onOpenChange: (open: boolean) => void
-  onEdit: (receivable: Receivable) => void
+  onEdit?: (receivable: Receivable) => void
   onDelete?: (receivable: Receivable) => void
-  onToggleReceived: (receivable: Receivable) => void
+  onToggleReceived?: (receivable: Receivable) => void
   onEditSettlementDate?: (receivable: Receivable) => void
-  readOnly?: boolean
+  mode?: ObligationDetailMode
 }) {
   const { user } = useAuth()
 
@@ -96,10 +97,10 @@ export function ReceivableDetailDrawer({
       onOpenChange={onOpenChange}
       title={receivable.title}
       description={`Cobrança · vence em ${formatDate(receivable.dueDate)}`}
-      footer={readOnly ? undefined : (
+      footer={mode === 'readOnly' || (!onToggleReceived && !onEdit && !onDelete && !onEditSettlementDate) ? undefined : (
         <>
-        <DetailFooter className={DETAIL_ACTION_STACK_CLASS}>
-          <Button
+        {(onToggleReceived || (canEditSettlementDate(receivable) && onEditSettlementDate)) && <DetailFooter className={DETAIL_ACTION_STACK_CLASS}>
+          {onToggleReceived && <Button
             variant="outline"
             className={DETAIL_ACTION_CLASS}
             onClick={() => onToggleReceived(receivable)}
@@ -110,7 +111,7 @@ export function ReceivableDetailDrawer({
               <Check className="size-4" />
             )}
             {receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
-          </Button>
+          </Button>}
           {canEditSettlementDate(receivable) && onEditSettlementDate && (
             <Button
               variant="outline"
@@ -121,17 +122,17 @@ export function ReceivableDetailDrawer({
               {settlementDateActionLabel('receivable')}
             </Button>
           )}
-        </DetailFooter>
+        </DetailFooter>}
 
-        <DetailFooter className="border-t-0 pt-0">
-          <Button
+        {(onEdit || (onDelete && canDeleteReceivable(policy))) && <DetailFooter className="border-t-0 pt-0">
+          {onEdit && <Button
             variant="outline"
             className={DETAIL_ACTION_CLASS}
             onClick={() => onEdit(receivable)}
           >
             <Pencil className="size-4" />
             Editar
-          </Button>
+          </Button>}
           {/*
             Quem decide é o resolver canônico, não `isAutomatic`: uma cobrança
             automática simples e pendente PODE ser excluída — pela compra de
@@ -148,7 +149,7 @@ export function ReceivableDetailDrawer({
               Excluir
             </Button>
           )}
-        </DetailFooter>
+        </DetailFooter>}
         </>
       )}
     >

@@ -24,11 +24,11 @@ describe('Budget V2 contract and movement', () => {
     expect(types).not.toContain('bankBalance')
   })
 
-  it('keeps the period selector inside Movement and the three realized authorities', () => {
-    expect(page).toContain('Movimentação')
+  it('keeps period authority and the three realized authorities without a redundant heading', () => {
+    expect(page).not.toContain('id="movement-title"')
     expect(page).toContain('useMonthPeriod')
-    expect(page).toContain('Trocar para período completo')
-    expect(page).toContain('Voltar para visão mensal')
+    expect(page).toContain('Ver período completo')
+    expect(page).toContain('Ver visão mensal')
     expect(page).toContain('variant="default"')
     expect(page).toContain('budgetAllTime: allTime, setBudgetAllTime: setAllTime')
     expect(page).not.toContain('useEffect')
@@ -44,7 +44,7 @@ describe('Budget V2 contract and movement', () => {
     for (const field of ['budget.realized.inflow', 'budget.realized.outflow', 'budget.realized.balance']) {
       expect(page).toContain(field)
     }
-    expect(page).toContain('flex flex-wrap items-center justify-between gap-3')
+    expect(page).toContain('flex flex-wrap items-start justify-between gap-3')
     expect(page).not.toContain('PeriodSelector')
     expect(page).not.toContain('w-full sm:w-44')
     expect(page).not.toContain('w-[72%]')

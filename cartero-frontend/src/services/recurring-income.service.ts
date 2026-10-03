@@ -18,12 +18,25 @@ export interface RecurringIncomePreview {
   horizonDate: string
   occurrenceCount: number
   overdueCount: number
-  upcomingCount: number
+  notOverdueCount: number
+  currentMonthCount: number
+  nextOccurrenceDate: string | null
   totalAmount: number
 }
 
 export async function getRecurringIncomes(): Promise<RecurringIncomeRule[]> {
   const { data } = await api.get<RecurringIncomeRule[]>('/recurring-incomes')
+  return data
+}
+
+export async function reconcileRecurringIncomePeriod(period: {
+  month: number
+  year: number
+}): Promise<{ month: string; created: number }> {
+  const { data } = await api.post<{ month: string; created: number }>(
+    '/recurring-incomes/reconcile',
+    period,
+  )
   return data
 }
 

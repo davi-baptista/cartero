@@ -1,6 +1,7 @@
 import type { Receivable, RecurringIncomeRule } from '@/types'
 import { compareIncomeHistoryItems, isResolvedIncomeHistoryItem } from '@/lib/income-history'
 import { formatDate } from '@/lib/formatters'
+import { settlementStatus } from '@/lib/settlement-status'
 
 export type RecurringIncomeOccurrencePresentation = {
   label: string
@@ -64,16 +65,18 @@ export function nextOpenIncomeOccurrenceOnOrAfter(occurrences: Receivable[], tod
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]
 }
 
-export function isOneOffIncome(receivable: Receivable) {
-  return receivable.incomeClassification === 'INCOME' && !receivable.recurringIncomeRuleId
-}
-
-export function openOneOffIncome(receivables: Receivable[]) {
-  return receivables.filter((item) => !item.isPaid && isOneOffIncome(item))
-}
-
 export function openRecurringIncomeOccurrences(rule: RecurringIncomeRule, receivables: Receivable[]) {
   return recurringIncomeOccurrences(rule, receivables).filter((item) => !item.isPaid)
+}
+
+export function splitRecurringIncomeOpenOccurrences(
+  occurrences: Receivable[],
+  today: string,
+) {
+  return {
+    overdue: occurrences.filter((item) => settlementStatus(item, today) === 'overdue'),
+    open: occurrences.filter((item) => settlementStatus(item, today) === 'pending'),
+  }
 }
 
 /** Occorrências recebidas, ordenadas pela data efetiva do recebimento. */

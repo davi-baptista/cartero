@@ -6,8 +6,18 @@ import { BudgetV2PeriodPreset } from './budget-v2.types';
 describe('recurring income compatibility with existing Budget V2', () => {
   function buildHarness() {
     const state: { settled: boolean } = { settled: false };
-    const ensureForUser = vi.fn(async () => undefined);
+    const projectMissingOccurrencesForMonth = vi.fn(async () =>
+      state.settled
+        ? []
+        : [
+            {
+              amount: new Prisma.Decimal(500),
+              dueDate: new Date('2026-09-20T12:00:00Z'),
+            },
+          ],
+    );
     const prisma: any = {
+      $transaction: vi.fn(async (callback: any) => callback(prisma)),
       user: {
         findUniqueOrThrow: vi.fn(async () => ({
           timeZone: 'America/Sao_Paulo',
@@ -30,26 +40,17 @@ describe('recurring income compatibility with existing Budget V2', () => {
       },
       invoiceSettlement: { findMany: vi.fn(async () => []) },
       personSettlementGroup: { findMany: vi.fn(async () => []) },
-      receivable: {
-        findMany: vi.fn(async () =>
-          state.settled
-            ? []
-            : [
-                {
-                  amount: new Prisma.Decimal(500),
-                  dueDate: new Date('2026-09-20T12:00:00Z'),
-                },
-              ],
-        ),
-      },
+      receivable: { findMany: vi.fn(async () => []) },
       debt: { findMany: vi.fn(async () => []) },
       invoice: { findMany: vi.fn(async () => []) },
     };
 
     return {
       state,
-      ensureForUser,
-      service: new BudgetV2Service(prisma, { ensureForUser } as any),
+      projectMissingOccurrencesForMonth,
+      service: new BudgetV2Service(prisma, {
+        projectMissingOccurrencesForMonth,
+      } as any),
     };
   }
 
@@ -73,6 +74,6 @@ describe('recurring income compatibility with existing Budget V2', () => {
     );
     expect(after.pending.inflow).toBe('0.00');
     expect(after.realized.inflow).toBe('500.00');
-    expect(harness.ensureForUser).toHaveBeenCalledTimes(2);
+    expect(harness.projectMissingOccurrencesForMonth).toHaveBeenCalledTimes(2);
   });
 });

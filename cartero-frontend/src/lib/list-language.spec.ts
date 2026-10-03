@@ -46,10 +46,10 @@ describe('contratos de linguagem das superficies atuais', () => {
     }
   })
 
-  it('as superficies de d?vida e receb?vel usam drawers can?nicos read-only em Movimenta??es', () => {
+  it('as superfícies de dívida e recebível usam drawers canônicos operacionais em Movimentações', () => {
     expect(OBLIGATIONS).toContain('<DebtDetailDrawer')
     expect(OBLIGATIONS).toContain('<ReceivableDetailDrawer')
-    expect(OBLIGATIONS).toContain('readOnly')
+    expect(OBLIGATIONS).toContain('mode="operational"')
   })
 
   it('os drawers mant?m a origem e a pol?tica de exclus?o vigente', () => {

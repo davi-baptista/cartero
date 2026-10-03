@@ -364,3 +364,25 @@ describe('item 40: a copy antiga descrevia a cascata invertida', () => {
     expect(DRAWER).toContain('compra de origem também será excluída')
   })
 })
+
+
+describe('recurring income occurrence delete gate', () => {
+  it('allows deleting a pending occurrence, but blocks a paid one', () => {
+    const pending = receivable({
+      recurringIncomeRuleId: 'rule-1',
+      isPaid: false,
+    })
+    const paid = receivable({
+      recurringIncomeRuleId: 'rule-1',
+      isPaid: true,
+      paymentTransactionId: 'payment-1',
+    })
+
+    const pendingPolicy = resolveReceivableDeletePolicy(pending)
+    const paidPolicy = resolveReceivableDeletePolicy(paid)
+    expect(pendingPolicy).toEqual({ mode: 'direct' })
+    expect(canDeleteReceivable(pendingPolicy)).toBe(true)
+    expect(paidPolicy).toEqual({ mode: 'recurring-income' })
+    expect(canDeleteReceivable(paidPolicy)).toBe(false)
+  })
+})

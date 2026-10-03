@@ -16,11 +16,12 @@ import type { Request } from 'express';
  * assinaturas atravessando o de notificações para pegar algo que não pertence
  * a nenhum dos dois.
  *
- * Protege dois endpoints, ambos chamados por cron externo e ambos lendo o
+ * Protege os endpoints chamados por cron externo, todos lendo o
  * MESMO `CRON_SECRET`:
  *
  *   POST /subscriptions/run-all   — geração mensal de assinaturas
  *   POST /notifications/run       — alerta de vencimentos
+ *   POST /recurring-incomes/run-all — materialização de renda recorrente
  *
  * O contrato é header `x-cron-secret` com o valor CRU. Não é
  * `Authorization: Bearer` — a comparação é estrita, e um prefixo faria a

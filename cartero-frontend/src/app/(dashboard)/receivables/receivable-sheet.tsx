@@ -74,6 +74,7 @@ interface ReceivableSheetProps {
   scrollManagedByParent?: boolean
   /** Fixed footer host supplied by the unified drawer in parent-scroll mode. */
   embeddedFooterHost?: HTMLElement | null
+  hidePersonSelector?: boolean
 }
 
 export function ReceivableSheet({
@@ -89,6 +90,7 @@ export function ReceivableSheet({
   leadingContent,
   scrollManagedByParent = false,
   embeddedFooterHost,
+  hidePersonSelector = false,
 }: ReceivableSheetProps) {
   const isEditing = editTarget !== null
   const isIncome = mode !== 'receivable'
@@ -334,7 +336,7 @@ export function ReceivableSheet({
           )}
         >
           {leadingContent}
-          {/* Debtor field */}
+          {!hidePersonSelector && <>{/* Debtor field */}
           <div className="space-y-1.5">
             <Label>{isIncome ? 'Origem / Empresa' : 'Devedor'}</Label>
 
@@ -458,7 +460,7 @@ export function ReceivableSheet({
             {errors.debtorName && (
               <p className="text-xs text-destructive">{errors.debtorName.message}</p>
             )}
-          </div>
+          </div></>}
 
           {/* Title */}
           <div className="space-y-1.5">

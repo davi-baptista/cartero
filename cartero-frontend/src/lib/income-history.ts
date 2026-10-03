@@ -2,8 +2,6 @@ import type { Receivable } from '@/types'
 import { accountCivilDayOf, civilDayOf } from '@/lib/date'
 import { formatDate } from '@/lib/formatters'
 
-export const INCOME_HISTORY_PAGE_SIZE = 5
-
 export function incomeHistoryReceiptDay(
   item: Pick<Receivable, 'paidAt'>,
   timeZone: string | null | undefined,
@@ -42,17 +40,4 @@ export function settledIncomeHistory(receivables: Receivable[]) {
   return receivables
     .filter((item) => item.incomeClassification === 'INCOME' && isResolvedIncomeHistoryItem(item))
     .sort(compareIncomeHistoryItems)
-}
-
-export function paginateIncomeHistory<T>(items: T[], requestedPage: number, pageSize = INCOME_HISTORY_PAGE_SIZE) {
-  const pageCount = Math.ceil(items.length / pageSize)
-  const page = pageCount === 0 ? 0 : Math.min(Math.max(0, requestedPage), pageCount - 1)
-  const start = page * pageSize
-
-  return {
-    items: items.slice(start, start + pageSize),
-    page,
-    pageCount,
-    hasPagination: pageCount > 1,
-  }
 }

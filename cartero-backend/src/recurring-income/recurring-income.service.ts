@@ -1,21 +1,59 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, RecurringIncomeRule } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { parseDateOnly } from 'src/common/helpers/date-only.helper';
+import { financialCivilParts } from 'src/common/helpers/financial-timezone.helper';
 import { requireAccountTimeZone } from 'src/common/helpers/timezone.helper';
+import { acquireTransactionAdvisoryLock } from 'src/common/helpers/advisory-lock.helper';
+import { assertNotActivePersonSettlementMember } from 'src/common/helpers/person-settlement.guard';
 import { CreateRecurringIncomeDto } from './dto/create-recurring-income.dto';
 import { UpdateRecurringIncomeDto } from './dto/update-recurring-income.dto';
 import { PreviewRecurringIncomeDto } from './dto/preview-recurring-income.dto';
 import {
-  addRecurringMonths,
-  compareRecurringMonths,
-  materializationHorizon,
-  occurrenceDateForMonth,
   previewRecurringIncome,
+  isRecurringMonth,
+  occurrenceDateForMonth,
+  recurringIncomeOccurrenceDates,
 } from './recurring-income.helper';
+
+export const RECURRING_INCOME_USER_BATCH_SIZE = 100;
+
+export type RecurringIncomeReconciliationSummary = {
+  usersScanned: number;
+  usersSucceeded: number;
+  usersFailed: number;
+  rulesReconciled: number;
+  occurrencesAttempted: number;
+  occurrencesCreated: number;
+  occurrencesSkipped: number;
+  batchesProcessed: number;
+};
+
+type UserReconciliationResult = Pick<
+  RecurringIncomeReconciliationSummary,
+  | 'rulesReconciled'
+  | 'occurrencesAttempted'
+  | 'occurrencesCreated'
+  | 'occurrencesSkipped'
+>;
+
+function safeErrorSummary(error: unknown): string {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return `Prisma:${error.code}`;
+  }
+  return error instanceof Error ? error.name : 'UnknownError';
+}
 
 @Injectable()
 export class RecurringIncomeService {
+  private readonly logger = new Logger(RecurringIncomeService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async create(userId: string, dto: CreateRecurringIncomeDto) {
@@ -44,7 +82,6 @@ export class RecurringIncomeService {
   }
 
   async findAll(userId: string) {
-    await this.ensureForUser(userId);
     const rules = await this.prisma.recurringIncomeRule.findMany({
       where: { userId, deletedAt: null },
       orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
@@ -68,7 +105,6 @@ export class RecurringIncomeService {
   }
 
   async findOne(id: string, userId: string) {
-    await this.ensureForUser(userId);
     const rule = await this.prisma.recurringIncomeRule.findUnique({
       where: { id, userId },
     });
@@ -76,6 +112,126 @@ export class RecurringIncomeService {
       throw new NotFoundException('Regra de renda não encontrada');
     }
     return this.serializeRule(rule);
+  }
+
+  /** Reconcile one civil month on an explicit, authenticated command. */
+  async reconcileForUserPeriod(
+    userId: string,
+    month: number,
+    year: number,
+    now = new Date(),
+  ): Promise<{ month: string; created: number }> {
+    if (
+      !Number.isInteger(month) ||
+      month < 1 ||
+      month > 12 ||
+      !Number.isInteger(year) ||
+      year < 1900 ||
+      year > 9999
+    ) {
+      throw new BadRequestException('Período inválido');
+    }
+
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { timeZone: true },
+    });
+    const timeZone = requireAccountTimeZone(
+      user.timeZone,
+      'recurring income account timezone',
+    );
+    const targetMonth = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;
+    const current = financialCivilParts(now, timeZone);
+    const monthsAhead = (year - current.year) * 12 + (month - current.month);
+    if (monthsAhead > 12) {
+      throw new BadRequestException(
+        'O período solicitado está além do limite de 12 meses futuros',
+      );
+    }
+
+    const rules = await this.prisma.recurringIncomeRule.findMany({
+      where: { userId, isActive: true, deletedAt: null },
+    });
+    let created = 0;
+    for (const rule of rules) {
+      if (targetMonth < rule.firstOccurrence) continue;
+      created += await this.materializeOccurrences(rule, [
+        {
+          month: targetMonth,
+          dueDate: occurrenceDateForMonth(targetMonth, rule.dayOfMonth),
+        },
+      ]);
+    }
+    return { month: targetMonth, created };
+  }
+
+  /** Read-only Budget projection for an unmaterialized month snapshot. */
+  async projectMissingOccurrencesForMonth(
+    userId: string,
+    month: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<
+    Array<{
+      recurringIncomeRuleId: string;
+      amount: Prisma.Decimal;
+      dueDate: Date;
+      title: string;
+      counterpartyName: string | null;
+    }>
+  > {
+    if (!isRecurringMonth(month)) {
+      throw new BadRequestException('Competência inválida');
+    }
+    const db = tx ?? this.prisma;
+    const rules = await db.recurringIncomeRule.findMany({
+      where: {
+        userId,
+        isActive: true,
+        deletedAt: null,
+        firstOccurrence: { lte: month },
+      },
+      select: {
+        id: true,
+        amount: true,
+        dayOfMonth: true,
+        title: true,
+        counterpartyName: true,
+      },
+    });
+    if (rules.length === 0) return [];
+
+    const ruleIds = rules.map(({ id }) => id);
+    const [existing, exclusions] = await Promise.all([
+      db.receivable.findMany({
+        where: {
+          userId,
+          recurringIncomeRuleId: { in: ruleIds },
+          recurringMonth: month,
+        },
+        select: { recurringIncomeRuleId: true },
+      }),
+      db.recurringIncomeOccurrenceExclusion.findMany({
+        where: {
+          userId,
+          recurringIncomeRuleId: { in: ruleIds },
+          recurringMonth: month,
+        },
+        select: { recurringIncomeRuleId: true },
+      }),
+    ]);
+    const represented = new Set([
+      ...existing.map(({ recurringIncomeRuleId }) => recurringIncomeRuleId),
+      ...exclusions.map(({ recurringIncomeRuleId }) => recurringIncomeRuleId),
+    ]);
+    return rules
+      .filter(({ id }) => !represented.has(id))
+      .map(({ id, amount, dayOfMonth, title, counterpartyName }) => ({
+        recurringIncomeRuleId: id,
+        amount,
+        dueDate: parseDateOnly(occurrenceDateForMonth(month, dayOfMonth)),
+        title,
+        counterpartyName,
+      }));
   }
 
   async update(id: string, userId: string, dto: UpdateRecurringIncomeDto) {
@@ -143,13 +299,154 @@ export class RecurringIncomeService {
     });
   }
 
-  /** Idempotent lazy/cron entry point. */
-  async ensureForUser(userId: string, now = new Date()): Promise<void> {
+  /** Persist user intent for a competence; materialization skips this month. */
+  async suppressOccurrence(
+    userId: string,
+    recurringIncomeRuleId: string,
+    recurringMonth: string,
+  ): Promise<void> {
+    const rule = await this.findOwnedRule(recurringIncomeRuleId, userId);
+    this.validateOccurrenceMonth(recurringMonth, rule.firstOccurrence);
+
+    await this.prisma.$transaction(async (tx) => {
+      await acquireTransactionAdvisoryLock(
+        tx,
+        this.occurrenceLockKey(userId, recurringIncomeRuleId),
+      );
+      await tx.recurringIncomeOccurrenceExclusion.createMany({
+        data: [{ userId, recurringIncomeRuleId, recurringMonth }],
+        skipDuplicates: true,
+      });
+    });
+  }
+
+  /** Remove only the exclusion marker; does not materialize a Receivable. */
+  async restoreOccurrence(
+    userId: string,
+    recurringIncomeRuleId: string,
+    recurringMonth: string,
+  ): Promise<void> {
+    const rule = await this.findOwnedRule(recurringIncomeRuleId, userId);
+    this.validateOccurrenceMonth(recurringMonth, rule.firstOccurrence);
+
+    await this.prisma.$transaction(async (tx) => {
+      await acquireTransactionAdvisoryLock(
+        tx,
+        this.occurrenceLockKey(userId, recurringIncomeRuleId),
+      );
+      await tx.recurringIncomeOccurrenceExclusion.deleteMany({
+        where: { userId, recurringIncomeRuleId, recurringMonth },
+      });
+    });
+  }
+
+  /** Atomically remember a pending occurrence deletion and remove only its row. */
+  async deletePendingOccurrence(
+    userId: string,
+    receivableId: string,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const initial = await tx.receivable.findUnique({
+        where: { id: receivableId, userId },
+      });
+      if (!initial) throw new NotFoundException('Recebimento não encontrado');
+      if (!initial.recurringIncomeRuleId || !initial.recurringMonth) {
+        throw new BadRequestException(
+          'Este recebimento não é uma ocorrência recorrente válida',
+        );
+      }
+
+      await acquireTransactionAdvisoryLock(
+        tx,
+        this.occurrenceLockKey(userId, initial.recurringIncomeRuleId),
+      );
+
+      // Re-read after waiting for the materializer/suppression lock.
+      const occurrence = await tx.receivable.findUnique({
+        where: { id: receivableId, userId },
+      });
+      if (!occurrence)
+        throw new NotFoundException('Recebimento não encontrado');
+      if (
+        occurrence.recurringIncomeRuleId !== initial.recurringIncomeRuleId ||
+        !occurrence.recurringMonth
+      ) {
+        throw new BadRequestException(
+          'Este recebimento não é uma ocorrência recorrente válida',
+        );
+      }
+      if (occurrence.isPaid) {
+        throw new ConflictException({
+          message: 'Desmarque o recebimento antes de excluí-lo.',
+          code: 'RECURRING_INCOME_RECEIVABLE_DELETE_BLOCKED',
+        });
+      }
+      if (occurrence.transactionId || occurrence.paymentTransactionId) {
+        throw new ConflictException({
+          message:
+            'Este recebimento está vinculado a uma movimentação protegida.',
+          code: 'RECURRING_INCOME_RECEIVABLE_DELETE_BLOCKED',
+        });
+      }
+
+      const rule = await tx.recurringIncomeRule.findUnique({
+        where: { id: occurrence.recurringIncomeRuleId, userId },
+      });
+      if (!rule) throw new NotFoundException('Regra de renda não encontrada');
+      this.validateOccurrenceMonth(
+        occurrence.recurringMonth,
+        rule.firstOccurrence,
+      );
+      await assertNotActivePersonSettlementMember(
+        tx,
+        'receivable',
+        occurrence.id,
+        userId,
+      );
+
+      await tx.recurringIncomeOccurrenceExclusion.createMany({
+        data: [
+          {
+            userId,
+            recurringIncomeRuleId: rule.id,
+            recurringMonth: occurrence.recurringMonth,
+          },
+        ],
+        skipDuplicates: true,
+      });
+      await tx.receivable.delete({ where: { id: occurrence.id, userId } });
+    });
+  }
+
+  private occurrenceLockKey(userId: string, recurringIncomeRuleId: string) {
+    return `recurring-income-occurrences:${userId}:${recurringIncomeRuleId}`;
+  }
+
+  private validateOccurrenceMonth(
+    recurringMonth: string,
+    firstOccurrence: string,
+  ) {
+    if (!isRecurringMonth(recurringMonth) || recurringMonth < firstOccurrence) {
+      throw new BadRequestException(
+        'Competência inválida para esta regra de renda recorrente',
+      );
+    }
+  }
+
+  /** Idempotent reconciliation for one account. */
+  async ensureForUser(
+    userId: string,
+    now = new Date(),
+    knownTimeZone?: string,
+    onRuleReconciled?: (result: UserReconciliationResult) => void,
+  ): Promise<UserReconciliationResult> {
     const [user, rules] = await Promise.all([
-      this.prisma.user.findUniqueOrThrow({
-        where: { id: userId },
-        select: { timeZone: true },
-      }),
+      knownTimeZone === undefined
+        ? this.prisma.user.findUniqueOrThrow({
+            where: { id: userId },
+            select: { timeZone: true },
+          })
+        : Promise.resolve({ timeZone: knownTimeZone }),
       this.prisma.recurringIncomeRule.findMany({
         where: { userId, isActive: true, deletedAt: null },
       }),
@@ -159,57 +456,165 @@ export class RecurringIncomeService {
       'recurring income account timezone',
     );
 
+    const result: UserReconciliationResult = {
+      rulesReconciled: 0,
+      occurrencesAttempted: 0,
+      occurrencesCreated: 0,
+      occurrencesSkipped: 0,
+    };
     for (const rule of rules) {
-      await this.materializeRule(rule, now, timeZone);
+      const materialized = await this.materializeRule(rule, now, timeZone);
+      result.rulesReconciled += 1;
+      result.occurrencesAttempted += materialized.attempted;
+      result.occurrencesCreated += materialized.created;
+      result.occurrencesSkipped +=
+        materialized.attempted - materialized.created;
+      onRuleReconciled?.({
+        rulesReconciled: 1,
+        occurrencesAttempted: materialized.attempted,
+        occurrencesCreated: materialized.created,
+        occurrencesSkipped: materialized.attempted - materialized.created,
+      });
     }
+    return result;
   }
 
-  async ensureAll(now = new Date()) {
-    const users = await this.prisma.user.findMany({
-      where: {
-        recurringIncomeRules: {
-          some: { isActive: true, deletedAt: null },
-        },
-      },
-      select: { id: true, timeZone: true },
-    });
-    for (const user of users) {
-      await this.ensureForUser(user.id, now);
+  /** Keyset scan; a failed account does not stop later accounts. */
+  async ensureAll(
+    now = new Date(),
+    batchSize = RECURRING_INCOME_USER_BATCH_SIZE,
+    assertLockHeld?: () => Promise<void>,
+    reportProgress?: (summary: RecurringIncomeReconciliationSummary) => void,
+  ): Promise<RecurringIncomeReconciliationSummary> {
+    if (!Number.isInteger(batchSize) || batchSize < 1) {
+      throw new Error('Recurring income batch size must be positive');
     }
+    const summary: RecurringIncomeReconciliationSummary = {
+      usersScanned: 0,
+      usersSucceeded: 0,
+      usersFailed: 0,
+      rulesReconciled: 0,
+      occurrencesAttempted: 0,
+      occurrencesCreated: 0,
+      occurrencesSkipped: 0,
+      batchesProcessed: 0,
+    };
+    reportProgress?.({ ...summary });
+    let lastUserId: string | undefined;
+
+    while (true) {
+      await assertLockHeld?.();
+      const users = await this.prisma.user.findMany({
+        where: {
+          ...(lastUserId ? { id: { gt: lastUserId } } : {}),
+          recurringIncomeRules: {
+            some: { isActive: true, deletedAt: null },
+          },
+        },
+        select: { id: true, timeZone: true },
+        orderBy: { id: 'asc' },
+        take: batchSize,
+      });
+      if (users.length === 0) break;
+      summary.batchesProcessed += 1;
+
+      for (const user of users) {
+        lastUserId = user.id;
+        summary.usersScanned += 1;
+        const startedAt = Date.now();
+        try {
+          await this.ensureForUser(user.id, now, user.timeZone, (result) => {
+            summary.rulesReconciled += result.rulesReconciled;
+            summary.occurrencesAttempted += result.occurrencesAttempted;
+            summary.occurrencesCreated += result.occurrencesCreated;
+            summary.occurrencesSkipped += result.occurrencesSkipped;
+          });
+          summary.usersSucceeded += 1;
+        } catch (error) {
+          summary.usersFailed += 1;
+          this.logger.error(
+            JSON.stringify({
+              event: 'recurring-income-user-failed',
+              userId: user.id,
+              durationMs: Date.now() - startedAt,
+              error: safeErrorSummary(error),
+            }),
+          );
+        }
+      }
+      reportProgress?.({ ...summary });
+      if (users.length < batchSize) break;
+    }
+    return summary;
   }
 
   private async materializeRule(
     rule: RecurringIncomeRule,
     now: Date,
     timeZone: string,
-  ) {
-    if (!rule.isActive || rule.deletedAt) return;
-    const horizon = materializationHorizon(now, timeZone);
-    let month = rule.firstOccurrence;
-    const horizonMonth = horizon.slice(0, 7);
+  ): Promise<{ attempted: number; created: number }> {
+    if (!rule.isActive || rule.deletedAt) return { attempted: 0, created: 0 };
+    const occurrences = recurringIncomeOccurrenceDates(
+      {
+        firstOccurrence: rule.firstOccurrence,
+        dayOfMonth: rule.dayOfMonth,
+      },
+      now,
+      timeZone,
+    );
+    if (occurrences.length === 0) return { attempted: 0, created: 0 };
 
-    while (compareRecurringMonths(month, horizonMonth) <= 0) {
-      const dueDate = occurrenceDateForMonth(month, rule.dayOfMonth);
-      if (dueDate <= horizon) {
-        await this.prisma.receivable.createMany({
-          data: {
-            userId: rule.userId,
-            title: rule.title,
-            debtorName: rule.counterpartyName ?? rule.title,
-            amount: rule.amount,
-            description: null,
-            occurredAt: parseDateOnly(dueDate),
-            dueDate: parseDateOnly(dueDate),
-            isPaid: false,
-            incomeClassification: 'INCOME',
-            recurringIncomeRuleId: rule.id,
-            recurringMonth: month,
-          },
-          skipDuplicates: true,
-        });
-      }
-      month = addRecurringMonths(month, 1);
-    }
+    return {
+      attempted: occurrences.length,
+      created: await this.materializeOccurrences(rule, occurrences),
+    };
+  }
+
+  private async materializeOccurrences(
+    rule: RecurringIncomeRule,
+    occurrences: Array<{ month: string; dueDate: string }>,
+  ): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      // Suppress/restore take this same per-rule lock, so no marker can commit
+      // between the exclusion read and the inserts for this rule.
+      await acquireTransactionAdvisoryLock(
+        tx,
+        this.occurrenceLockKey(rule.userId, rule.id),
+      );
+      const exclusions = await tx.recurringIncomeOccurrenceExclusion.findMany({
+        where: {
+          userId: rule.userId,
+          recurringIncomeRuleId: rule.id,
+          recurringMonth: { in: occurrences.map(({ month }) => month) },
+        },
+        select: { recurringMonth: true },
+      });
+      const excludedMonths = new Set(
+        exclusions.map(({ recurringMonth }) => recurringMonth),
+      );
+      const rows = occurrences
+        .filter(({ month }) => !excludedMonths.has(month))
+        .map(({ month, dueDate }) => ({
+          userId: rule.userId,
+          title: rule.title,
+          debtorName: rule.counterpartyName ?? rule.title,
+          amount: rule.amount,
+          description: null,
+          occurredAt: parseDateOnly(dueDate),
+          dueDate: parseDateOnly(dueDate),
+          isPaid: false,
+          incomeClassification: 'INCOME' as const,
+          recurringIncomeRuleId: rule.id,
+          recurringMonth: month,
+        }));
+
+      if (rows.length === 0) return 0;
+      const result = await tx.receivable.createMany({
+        data: rows,
+        skipDuplicates: true,
+      });
+      return result.count;
+    });
   }
 
   private async findOwnedRule(id: string, userId: string) {

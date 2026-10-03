@@ -451,7 +451,7 @@ function createPrisma() {
     },
   ];
 
-  return {
+  const prisma = {
     user: {
       findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Sao_Paulo' })),
     },
@@ -462,9 +462,81 @@ function createPrisma() {
     debt: model(debts),
     invoice: model(invoices),
   } as any;
+  prisma.$transaction = vi.fn(async (callback: (tx: any) => Promise<unknown>) =>
+    callback(prisma),
+  );
+  return prisma;
 }
 
 describe('BudgetV2DrilldownService', () => {
+  it('includes a read-only missing recurring occurrence in the upcoming drilldown total and rows', async () => {
+    const projection = vi.fn(async () => [
+      {
+        recurringIncomeRuleId: 'rule-projected',
+        amount: money('50.00'),
+        dueDate: date('2026-09-25'),
+        title: 'Renda recorrente',
+        counterpartyName: 'Empresa',
+      },
+    ]);
+    const service = new BudgetV2DrilldownService(createPrisma(), {
+      projectMissingOccurrencesForMonth: projection,
+    } as any);
+
+    const result = await service.getDrilldown(
+      'user-a',
+      {
+        bucket: BudgetV2Bucket.UPCOMING_RECEIVABLES,
+        preset: BudgetV2PeriodPreset.MONTH,
+        month: 9,
+        year: 2026,
+        limit: 10,
+      },
+      new Date('2026-09-23T12:00:00.000Z'),
+    );
+
+    expect(projection).toHaveBeenCalledWith(
+      'user-a',
+      '2026-09',
+      expect.anything(),
+    );
+    expect(result.total).toBe('140.00');
+    expect(result.items).toContainEqual({
+      kind: 'RECURRING_INCOME_PROJECTION',
+      id: 'rule-projected',
+      amount: '50.00',
+      dueDate: '2026-09-25T12:00:00.000Z',
+      title: 'Renda recorrente',
+      counterparty: 'Empresa',
+    });
+  });
+
+  it('includes overdue projection rows only in the global overdue drilldown', async () => {
+    const projection = vi.fn(async () => [
+      {
+        recurringIncomeRuleId: 'rule-overdue',
+        amount: money('50.00'),
+        dueDate: date('2026-09-09'),
+        title: 'Renda recorrente',
+        counterpartyName: null,
+      },
+    ]);
+    const service = new BudgetV2DrilldownService(createPrisma(), {
+      projectMissingOccurrencesForMonth: projection,
+    } as any);
+
+    const result = await service.getDrilldown(
+      'user-a',
+      { bucket: BudgetV2Bucket.OVERDUE_RECEIVABLES, limit: 10 },
+      new Date('2026-09-23T12:00:00.000Z'),
+    );
+
+    expect(result.total).toBe('130.00');
+    expect(
+      result.items.some((item) => item.kind === 'RECURRING_INCOME_PROJECTION'),
+    ).toBe(true);
+  });
+
   it('rejects MONTH without month/year as a client error', async () => {
     await expect(
       new BudgetV2DrilldownService(createPrisma()).getDrilldown('user-a', {

@@ -11,8 +11,7 @@ describe('BudgetV2Service', () => {
     const prisma = {
       user: { findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'UTC' })) },
     } as any;
-    const ensureForUser = vi.fn();
-    const service = new BudgetV2Service(prisma, { ensureForUser } as any);
+    const service = new BudgetV2Service(prisma);
     await expect(
       service.getBudget(
         'user-a',
@@ -20,7 +19,6 @@ describe('BudgetV2Service', () => {
         new Date('2026-09-10T12:00:00Z'),
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
-    expect(ensureForUser).not.toHaveBeenCalled();
     expect(prisma.user.findUniqueOrThrow).not.toHaveBeenCalled();
   });
 
@@ -30,8 +28,7 @@ describe('BudgetV2Service', () => {
   ])(
     'rejects incomplete month/year pair %s/%s before side effects',
     async (month, year) => {
-      const ensureForUser = vi.fn();
-      const service = new BudgetV2Service({} as any, { ensureForUser } as any);
+      const service = new BudgetV2Service({} as any);
       await expect(
         service.getBudget(
           'user-a',
@@ -41,7 +38,6 @@ describe('BudgetV2Service', () => {
           year,
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(ensureForUser).not.toHaveBeenCalled();
     },
   );
 

@@ -75,8 +75,37 @@ export interface RecurringIncomePreview {
   horizonDate: string;
   occurrenceCount: number;
   overdueCount: number;
-  upcomingCount: number;
+  notOverdueCount: number;
+  currentMonthCount: number;
+  nextOccurrenceDate: string | null;
   totalAmount: number;
+}
+
+export interface RecurringIncomeOccurrenceDate {
+  month: string;
+  dueDate: string;
+}
+
+/** Shared preview/materialization sequence; all dates use the account civil calendar. */
+export function recurringIncomeOccurrenceDates(
+  input: { firstOccurrence: string; dayOfMonth: number },
+  now: Date,
+  timeZone: string,
+): RecurringIncomeOccurrenceDate[] {
+  const horizonDate = materializationHorizon(now, timeZone);
+  const horizonMonth = horizonDate.slice(0, 7);
+  let month = input.firstOccurrence;
+  const occurrences: RecurringIncomeOccurrenceDate[] = [];
+
+  while (compareRecurringMonths(month, horizonMonth) <= 0) {
+    const dueDate = occurrenceDateForMonth(month, input.dayOfMonth);
+    if (dueDate <= horizonDate) {
+      occurrences.push({ month, dueDate });
+    }
+    month = addRecurringMonths(month, 1);
+  }
+
+  return occurrences;
 }
 
 /** Preview authority shared with materialization; it does not write data. */
@@ -86,27 +115,30 @@ export function previewRecurringIncome(
   timeZone: string,
 ): RecurringIncomePreview {
   const today = financialCivilDay(now, timeZone);
+  const currentMonth = formatRecurringMonth(financialCivilParts(now, timeZone));
   const horizonDate = materializationHorizon(now, timeZone);
-  const horizonMonth = horizonDate.slice(0, 7);
-  let month = input.firstOccurrence;
-  let occurrenceCount = 0;
-  let overdueCount = 0;
-
-  while (compareRecurringMonths(month, horizonMonth) <= 0) {
-    const dueDate = occurrenceDateForMonth(month, input.dayOfMonth);
-    if (dueDate <= horizonDate) {
-      occurrenceCount += 1;
-      if (dueDate < today) overdueCount += 1;
-    }
-    month = addRecurringMonths(month, 1);
-  }
+  const occurrences = recurringIncomeOccurrenceDates(
+    { firstOccurrence: input.firstOccurrence, dayOfMonth: input.dayOfMonth },
+    now,
+    timeZone,
+  );
+  const occurrenceCount = occurrences.length;
+  const overdueCount = occurrences.filter(
+    ({ dueDate }) => dueDate < today,
+  ).length;
+  const currentMonthCount = occurrences.filter(
+    ({ month }) => month === currentMonth,
+  ).length;
 
   return {
     firstOccurrence: input.firstOccurrence,
     horizonDate,
     occurrenceCount,
     overdueCount,
-    upcomingCount: occurrenceCount - overdueCount,
+    notOverdueCount: occurrenceCount - overdueCount,
+    currentMonthCount,
+    nextOccurrenceDate:
+      occurrences.find(({ dueDate }) => dueDate > today)?.dueDate ?? null,
     totalAmount: occurrenceCount * input.amount,
   };
 }

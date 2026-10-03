@@ -26,6 +26,7 @@ interface Setup {
   failDebtUpdate?: boolean;
   invoiceId?: string | null;
   invoiceStatus?: string;
+  failTransactionDelete?: boolean;
 }
 
 function buildHarness(setup: Setup = {}) {
@@ -100,6 +101,8 @@ function buildHarness(setup: Setup = {}) {
         return { id: 'tx-new', ...data };
       }),
       delete: vi.fn(async ({ where }: any) => {
+        if (setup.failTransactionDelete)
+          throw new Error('falha ao excluir a transação');
         writes.transactionDeletes.push(where.id);
         return { id: where.id };
       }),
@@ -115,7 +118,17 @@ function buildHarness(setup: Setup = {}) {
     },
     person: { findUnique: vi.fn(async () => ({ id: 'p1', name: 'Ana' })) },
   };
-  prisma.$transaction = vi.fn(async (fn: any) => fn(prisma));
+  prisma.$transaction = vi.fn(async (fn: any) => {
+    const debtDeleteCount = writes.debtDeletes.length;
+    const transactionDeleteCount = writes.transactionDeletes.length;
+    try {
+      return await fn(prisma);
+    } catch (error) {
+      writes.debtDeletes.length = debtDeleteCount;
+      writes.transactionDeletes.length = transactionDeleteCount;
+      throw error;
+    }
+  });
 
   const validation = new EntityValidationService(prisma as PrismaService);
 
@@ -356,6 +369,58 @@ describe('Desfazer pagamento', () => {
 
     expect(harness.writes.transactionDeletes).toHaveLength(0);
     expect(harness.writes.debtUpdates.at(-1).paidAt).toBeNull();
+  });
+});
+
+describe('Exclusão de dívida histórica', () => {
+  it('exclui dívida pendente sem comprovante sem remover transação', async () => {
+    const harness = buildHarness({
+      debt: {
+        ...paidDebt(),
+        isPaid: false,
+        paidAt: null,
+        paymentTransactionId: null,
+      },
+    });
+
+    await harness.service.remove('debt-1', USER_ID);
+
+    expect(harness.writes.debtDeletes).toEqual(['debt-1']);
+    expect(harness.writes.transactionDeletes).toHaveLength(0);
+  });
+
+  it('exclui dívida histórica sem comprovante sem inventar transação', async () => {
+    const harness = buildHarness({
+      debt: paidDebt({ paymentTransactionId: null }),
+    });
+
+    await harness.service.remove('debt-1', USER_ID);
+
+    expect(harness.writes.debtDeletes).toEqual(['debt-1']);
+    expect(harness.writes.transactionDeletes).toHaveLength(0);
+  });
+
+  it('remove a dívida e o pagamento vinculado dentro da mesma transação', async () => {
+    const harness = buildHarness({ debt: paidDebt() });
+
+    await harness.service.remove('debt-1', USER_ID);
+
+    expect(harness.prisma.$transaction).toHaveBeenCalledOnce();
+    expect(harness.writes.debtDeletes).toEqual(['debt-1']);
+    expect(harness.writes.transactionDeletes).toEqual(['tx-pay']);
+  });
+
+  it('reverte a exclusão da dívida se a transação vinculada não puder ser removida', async () => {
+    const harness = buildHarness({
+      debt: paidDebt(),
+      failTransactionDelete: true,
+    });
+
+    await expect(harness.service.remove('debt-1', USER_ID)).rejects.toThrow(
+      'falha ao excluir a transação',
+    );
+    expect(harness.writes.debtDeletes).toHaveLength(0);
+    expect(harness.writes.transactionDeletes).toHaveLength(0);
   });
 });
 

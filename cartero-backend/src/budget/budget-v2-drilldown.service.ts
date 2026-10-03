@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
@@ -20,6 +20,7 @@ import {
   transactionBucketWhere,
 } from './budget-v2-predicates.helper';
 import { BudgetV2PeriodPreset } from './budget-v2.types';
+import { RecurringIncomeService } from 'src/recurring-income/recurring-income.service';
 import type { GetBudgetV2DrilldownDto } from './dto/get-budget-v2-drilldown.dto';
 import type {
   BudgetV2DrilldownItem,
@@ -151,6 +152,20 @@ function iso(value: Date): string {
   return value.toISOString();
 }
 
+function matchesDateFilter(
+  value: Date,
+  filter: Prisma.DateTimeFilter,
+): boolean {
+  const instant = value.getTime();
+  if (filter.gte && instant < new Date(filter.gte).getTime()) return false;
+  if (filter.gt && instant <= new Date(filter.gt).getTime()) return false;
+  if (filter.lte && instant > new Date(filter.lte).getTime()) return false;
+  if (filter.lt && instant >= new Date(filter.lt).getTime()) return false;
+  if (filter.equals && instant !== new Date(filter.equals).getTime())
+    return false;
+  return true;
+}
+
 function decodeCursor(
   encoded: string,
   expected: Omit<CursorPayload, 'date' | 'kind' | 'id'>,
@@ -279,7 +294,11 @@ function assertNever(value: never): never {
 
 @Injectable()
 export class BudgetV2DrilldownService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly recurringIncomeService?: RecurringIncomeService,
+  ) {}
 
   async getDrilldown(
     userId: string,
@@ -386,6 +405,7 @@ export class BudgetV2DrilldownService {
         { lt: new Date(`${today}T00:00:00.000Z`) },
         cursor,
         limit,
+        today.slice(0, 7),
       );
     }
 
@@ -433,8 +453,17 @@ export class BudgetV2DrilldownService {
           cursor,
           limit,
         );
-      case BudgetV2Bucket.UPCOMING_RECEIVABLES:
-        return this.loadReceivablePageAndTotal(userId, date, cursor, limit);
+      case BudgetV2Bucket.UPCOMING_RECEIVABLES: {
+        const projectionMonth =
+          periodBounds?.period.startDate?.slice(0, 7) ?? today.slice(0, 7);
+        return this.loadReceivablePageAndTotal(
+          userId,
+          date,
+          cursor,
+          limit,
+          projectionMonth,
+        );
+      }
       case BudgetV2Bucket.UPCOMING_DEBTS:
         return this.loadDebtPageAndTotal(userId, date, cursor, limit);
       case BudgetV2Bucket.UPCOMING_INVOICES:
@@ -653,36 +682,114 @@ export class BudgetV2DrilldownService {
     dueDate: Prisma.DateTimeFilter,
     cursor: CursorPayload | null,
     limit: number,
+    projectionMonth?: string,
+  ): Promise<PageResult> {
+    if (projectionMonth && this.recurringIncomeService) {
+      return this.prisma.$transaction(
+        async (tx) => {
+          const projections =
+            await this.recurringIncomeService!.projectMissingOccurrencesForMonth(
+              userId,
+              projectionMonth,
+              tx,
+            );
+          return this.readReceivablePageAndTotal(
+            tx,
+            userId,
+            dueDate,
+            cursor,
+            limit,
+            projections,
+          );
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      );
+    }
+    return this.readReceivablePageAndTotal(
+      this.prisma,
+      userId,
+      dueDate,
+      cursor,
+      limit,
+      [],
+    );
+  }
+
+  private async readReceivablePageAndTotal(
+    db: Prisma.TransactionClient | PrismaService,
+    userId: string,
+    dueDate: Prisma.DateTimeFilter,
+    cursor: CursorPayload | null,
+    limit: number,
+    projections: Awaited<
+      ReturnType<RecurringIncomeService['projectMissingOccurrencesForMonth']>
+    >,
   ): Promise<PageResult> {
     const where = receivableBucketWhere(userId, dueDate);
     const pageWhere = withContinuation(where, dueDateIdCursorWhere(cursor));
     const [receivables, aggregate] = await Promise.all([
-      this.prisma.receivable.findMany({
+      db.receivable.findMany({
         where: pageWhere,
         select: receivableSelect,
         orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
         take: limit + 1,
       }),
-      this.prisma.receivable.aggregate({ where, _sum: { amount: true } }),
+      db.receivable.aggregate({ where, _sum: { amount: true } }),
     ]);
 
-    return {
-      rows: receivables.map((receivable) => ({
-        amount: receivable.amount,
-        date: iso(receivable.dueDate),
+    const rows: SortableItem[] = receivables.map((receivable) => ({
+      amount: receivable.amount,
+      date: iso(receivable.dueDate),
+      kind: 'RECEIVABLE',
+      id: receivable.id,
+      item: {
         kind: 'RECEIVABLE',
         id: receivable.id,
-        item: {
+        amount: serializeMoney(receivable.amount),
+        dueDate: iso(receivable.dueDate),
+        title: receivable.title,
+        description: receivable.description,
+        counterparty: receivable.person?.name ?? receivable.debtorName,
+      },
+    }));
+    const matchingProjections = projections.filter((projection) =>
+      matchesDateFilter(projection.dueDate, dueDate),
+    );
+    rows.push(
+      ...matchingProjections
+        .filter(
+          (projection) =>
+            !cursor ||
+            projection.dueDate.toISOString() > cursor.date ||
+            (projection.dueDate.toISOString() === cursor.date &&
+              projection.recurringIncomeRuleId > cursor.id),
+        )
+        .map((projection) => ({
+          amount: projection.amount,
+          date: iso(projection.dueDate),
           kind: 'RECEIVABLE',
-          id: receivable.id,
-          amount: serializeMoney(receivable.amount),
-          dueDate: iso(receivable.dueDate),
-          title: receivable.title,
-          description: receivable.description,
-          counterparty: receivable.person?.name ?? receivable.debtorName,
-        },
-      })),
-      total: aggregate._sum.amount ?? ZERO,
+          id: projection.recurringIncomeRuleId,
+          item: {
+            kind: 'RECURRING_INCOME_PROJECTION' as const,
+            id: projection.recurringIncomeRuleId,
+            amount: serializeMoney(projection.amount),
+            dueDate: iso(projection.dueDate),
+            title: projection.title,
+            counterparty: projection.counterpartyName ?? projection.title,
+          },
+        })),
+    );
+    rows.sort(
+      (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
+    );
+
+    const projectedTotal = matchingProjections.reduce(
+      (sum, projection) => sum.add(projection.amount),
+      ZERO,
+    );
+    return {
+      rows: rows.slice(0, limit + 1),
+      total: (aggregate._sum.amount ?? ZERO).add(projectedTotal),
     };
   }
 

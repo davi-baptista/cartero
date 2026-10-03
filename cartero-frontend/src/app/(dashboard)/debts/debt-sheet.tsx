@@ -73,9 +73,10 @@ interface DebtSheetProps {
   scrollManagedByParent?: boolean
   /** Fixed footer host supplied by the unified drawer in parent-scroll mode. */
   embeddedFooterHost?: HTMLElement | null
+  hidePersonSelector?: boolean
 }
 
-export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPersonId, timeZone, onSubmit, embedded = false, leadingContent, scrollManagedByParent = false, embeddedFooterHost }: DebtSheetProps) {
+export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPersonId, timeZone, onSubmit, embedded = false, leadingContent, scrollManagedByParent = false, embeddedFooterHost, hidePersonSelector = false }: DebtSheetProps) {
   const isEditing = editTarget !== null
   const [creditorMode, setCreditorMode] = useState<CreditorMode>('manual')
   const [showInlineCreate, setShowInlineCreate] = useState(false)
@@ -222,7 +223,7 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPe
         )}
       >
         {leadingContent}
-        {/* Creditor field */}
+        {!hidePersonSelector && <>{/* Creditor field */}
           <div className="space-y-1.5">
             <Label>Credor</Label>
 
@@ -339,7 +340,7 @@ export function DebtSheet({ open, onOpenChange, editTarget, editScope, initialPe
             {errors.creditorName && (
               <p className="text-xs text-destructive">{errors.creditorName.message}</p>
             )}
-          </div>
+          </div></>}
 
           {/* Title */}
           <div className="space-y-1.5">

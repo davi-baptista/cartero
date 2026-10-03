@@ -129,9 +129,9 @@ describe('recurring income delete lifecycle', () => {
     await harness.service.remove('rule-1', USER_ID);
 
     expect(await harness.service.findAll(USER_ID)).toEqual([]);
-    expect(harness.prisma.recurringIncomeRule.findMany).toHaveBeenCalledWith({
-      where: { userId: USER_ID, isActive: true, deletedAt: null },
-    });
+    expect(harness.prisma.recurringIncomeRule.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: USER_ID, deletedAt: null } }),
+    );
     expect(harness.prisma.receivable.create).not.toHaveBeenCalled();
   });
 

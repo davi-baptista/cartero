@@ -79,11 +79,14 @@ describe('Movements unified add flow', () => {
       .toBe('/movements/statement?add=expense')
   })
 
-  it('keeps all canonical create forms inside M6 and removes the route-local duplicate surface', () => {
+  it('keeps canonical creation in M6 and route-local sheets limited to detail editing', () => {
     expect(flow).toContain('<DebtSheet')
     expect(flow).toContain('<ReceivableSheet')
-    expect(obligationsClient).not.toContain('<DebtSheet')
-    expect(obligationsClient).not.toContain('<ReceivableSheet')
+    expect(flow).toContain("{ target: 'receivable', title: 'A receber' }")
+    expect(flow).toContain('<ReceivableSheet')
+    expect(flow).toContain('mode="receivable"')
+    expect(flow).toContain('handleReceivableSubmit(data)')
+    expect(obligationsClient).toContain('editTarget={editTarget?.kind === \'receivable\' ? editTarget.item : null}')
     expect(obligationsClient).not.toContain('debtCreateOpen')
     expect(obligationsClient).not.toContain('receivableCreateOpen')
     expect(createObligations).toContain("queryKey: ['obligations']")
@@ -154,7 +157,7 @@ describe('Movements unified add flow', () => {
     expect(flow).toContain('{decisionQuestions}')
     expect(flow).toContain('scrollManagedByParent')
     expect(flow).toContain('embeddedFooterHost={footerHost}')
-    expect(transactionSheet).toContain('const progressiveChoices = leadingContent ? (')
+    expect(transactionSheet).toContain('const progressiveChoices = hideContextualQuestions ? null : leadingContent ? (')
     expect(transactionSheet).toContain('<Label>Forma de pagamento</Label>')
     expect(flow).toContain('O que você quer registrar?')
     expect(flow).toContain("intent === 'happened' ? 'O que aconteceu?' : 'O que vai acontecer?'")

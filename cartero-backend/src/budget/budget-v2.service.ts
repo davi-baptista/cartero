@@ -86,7 +86,6 @@ export class BudgetV2Service {
     ) {
       throw new BadRequestException('MONTH preset requires month and year');
     }
-    await this.recurringIncomeService?.ensureForUser(userId, now);
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: { timeZone: true },
@@ -100,7 +99,7 @@ export class BudgetV2Service {
       ? { gte: bounds.startInclusive, lt: bounds.endExclusive }
       : { lt: bounds.endExclusive };
 
-    const [transactions, settlements, groups, receivables, debts, invoices] =
+    const [transactions, settlements, groups, debts, invoices] =
       await Promise.all([
         this.prisma.transaction.findMany({
           where: { userId, date, personSettlementGroupId: null },
@@ -127,13 +126,6 @@ export class BudgetV2Service {
           where: { userId, status: 'ACTIVE', settledAt: date },
           select: { direction: true, paymentType: true, netAmount: true },
         }),
-        this.prisma.receivable.findMany({
-          where: {
-            ...unresolvedDueDateWhere(userId, bounds.period, todayCivil),
-            isPaid: false,
-          },
-          select: { amount: true, dueDate: true },
-        }),
         this.prisma.debt.findMany({
           where: {
             ...unresolvedDueDateWhere(userId, bounds.period, todayCivil),
@@ -149,6 +141,41 @@ export class BudgetV2Service {
           select: { totalAmount: true, status: true, dueDate: true },
         }),
       ]);
+
+    const receivableWhere = {
+      ...unresolvedDueDateWhere(userId, bounds.period, todayCivil),
+      isPaid: false,
+    };
+    let receivables: Array<{ amount: Prisma.Decimal; dueDate: Date }>;
+    let projectedRecurringIncome: Array<{
+      amount: Prisma.Decimal;
+      dueDate: Date;
+    }> = [];
+    if (this.recurringIncomeService && bounds.period.startDate) {
+      const result = await this.prisma.$transaction(
+        async (tx) => {
+          const pending = await tx.receivable.findMany({
+            where: receivableWhere,
+            select: { amount: true, dueDate: true },
+          });
+          const projections =
+            await this.recurringIncomeService!.projectMissingOccurrencesForMonth(
+              userId,
+              bounds.period.startDate!.slice(0, 7),
+              tx,
+            );
+          return { pending, projections };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      );
+      receivables = result.pending;
+      projectedRecurringIncome = result.projections;
+    } else {
+      receivables = await this.prisma.receivable.findMany({
+        where: receivableWhere,
+        select: { amount: true, dueDate: true },
+      });
+    }
 
     const composition: Record<
       keyof BudgetV2RealizedComposition,
@@ -215,18 +242,26 @@ export class BudgetV2Service {
       composition.personSettlementDirectOutflows,
     ]);
 
-    const upcomingReceivables = sumDecimal(
-      receivables
+    const upcomingReceivables = sumDecimal([
+      ...receivables
         .filter((receivable) =>
           isPendingNormal(receivable.dueDate, bounds.period, todayCivil),
         )
         .map((receivable) => receivable.amount),
-    );
-    const overdueReceivables = sumDecimal(
-      receivables
+      ...projectedRecurringIncome
+        .filter((receivable) =>
+          isPendingNormal(receivable.dueDate, bounds.period, todayCivil),
+        )
+        .map((receivable) => receivable.amount),
+    ]);
+    const overdueReceivables = sumDecimal([
+      ...receivables
         .filter((receivable) => isOverdue(receivable.dueDate, todayCivil))
         .map((receivable) => receivable.amount),
-    );
+      ...projectedRecurringIncome
+        .filter((receivable) => isOverdue(receivable.dueDate, todayCivil))
+        .map((receivable) => receivable.amount),
+    ]);
     const upcomingDebts = sumDecimal(
       debts
         .filter((debt) =>

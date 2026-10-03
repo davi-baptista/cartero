@@ -17,10 +17,12 @@ describe('handoff atual de tarefas ligadas a detalhe', () => {
     expect(SUBSCRIPTIONS).toContain('taskAnchor.beginStandalone()')
   })
 
-  it('Movimenta??es abre drawers de d?vida/receb?vel em modo de leitura', () => {
+  it('Movimentações abre os drawers operacionais com ações conectadas', () => {
     expect(OBLIGATIONS).toContain('<DebtDetailDrawer')
     expect(OBLIGATIONS).toContain('<ReceivableDetailDrawer')
-    expect(OBLIGATIONS).toContain('readOnly')
+    expect(OBLIGATIONS).toContain('mode="operational"')
+    expect(OBLIGATIONS).toContain('onDelete={(item) => handleDetailDelete(item,')
+    expect(OBLIGATIONS).toContain('onTogglePaid={(item) => handleDetailSettle(item,')
   })
 
   it('a tarefa perde contexto ao sair do detalhe e cria??o continua standalone', () => {

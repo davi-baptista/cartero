@@ -12,7 +12,6 @@ import {
 } from 'src/common/pagination/cursor.helper';
 import { deriveBudgetV2MonthBounds } from 'src/common/helpers/financial-period.helper';
 import { financialCivilDay } from 'src/common/helpers/financial-timezone.helper';
-import { RecurringIncomeService } from 'src/recurring-income/recurring-income.service';
 import {
   GetObligationsDto,
   GetObligationsSummaryDto,
@@ -202,10 +201,7 @@ function obligationBranch(
 
 @Injectable()
 export class ObligationsService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly recurringIncomeService: RecurringIncomeService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async findAll(
     userId: string,
@@ -215,7 +211,6 @@ export class ObligationsService {
   ): Promise<ObligationPage> {
     this.validateMonth(dto.section, dto.month, dto.year);
     await this.validatePerson(dto.personId, userId);
-    await this.recurringIncomeService.ensureForUser(userId, now);
 
     const today = financialCivilDay(now, timeZone);
     const todayStart = new Date(`${today}T00:00:00.000Z`);
@@ -325,7 +320,6 @@ export class ObligationsService {
     now = new Date(),
   ): Promise<ObligationSummary> {
     await this.validatePerson(dto.personId, userId);
-    await this.recurringIncomeService.ensureForUser(userId, now);
     const today = financialCivilDay(now, timeZone);
     const todayStart = new Date(`${today}T00:00:00.000Z`);
     const bounds = deriveBudgetV2MonthBounds(dto.month, dto.year, timeZone);

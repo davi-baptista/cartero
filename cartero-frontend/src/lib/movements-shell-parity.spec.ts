@@ -9,6 +9,9 @@ const select = readFileSync(new URL('../components/ui/select.tsx', import.meta.u
 const drawer = readFileSync(new URL('../components/person-statement-drawer.tsx', import.meta.url), 'utf8')
 const addFlow = readFileSync(new URL('../app/(dashboard)/movements/movements-add-flow.tsx', import.meta.url), 'utf8')
 
+const componentInvocation = (source: string, name: string) =>
+  source.match(new RegExp(`<${name}\\b[\\s\\S]*?\\n\\s*\\/>`))?.[0] ?? ''
+
 describe('Movements shell and obligations presentation parity', () => {
   it('keeps one shell authority for title, subtitle, CTA target, switch, divider, and vertical rhythm', () => {
     expect(shell.match(/<h1 /g)).toHaveLength(1)
@@ -27,10 +30,12 @@ describe('Movements shell and obligations presentation parity', () => {
     expect(addFlow).toContain('onOpenChangeComplete={handleOpenChangeComplete}')
     expect(statement).not.toContain('sheetInitialKind')
     expect(addFlow).toContain('initialKind={activeTarget}')
-    expect(addFlow).toContain('<DebtSheet')
-    expect(addFlow).toContain('<ReceivableSheet')
-    expect(obligations).not.toContain('<DebtSheet')
-    expect(obligations).not.toContain('<ReceivableSheet')
+    expect(componentInvocation(addFlow, 'DebtSheet')).toContain('editTarget={null}')
+    expect(componentInvocation(addFlow, 'ReceivableSheet')).toContain('editTarget={null}')
+    expect(componentInvocation(obligations, 'DebtSheet')).toContain("open={editTarget?.kind === 'debt'}")
+    expect(componentInvocation(obligations, 'ReceivableSheet')).toContain("open={editTarget?.kind === 'receivable'}")
+    expect(obligations).toContain("setEditTarget({ kind: 'debt', item })")
+    expect(obligations).toContain("setEditTarget({ kind: 'receivable', item })")
   })
 
   it('uses the same filter chip and input classes in both views', () => {

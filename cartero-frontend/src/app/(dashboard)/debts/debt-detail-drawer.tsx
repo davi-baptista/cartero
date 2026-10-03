@@ -25,6 +25,7 @@ import {
 import { settlementStatus } from '@/lib/settlement-status'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/providers/auth-provider'
+import type { ObligationDetailMode } from '@/lib/obligation-detail-mode'
 import type { Debt } from '@/types'
 
 /**
@@ -50,16 +51,16 @@ export function DebtDetailDrawer({
   onDelete,
   onTogglePaid,
   onEditSettlementDate,
-  readOnly = false,
+  mode = 'operational',
 }: {
   /** `null` mantém o drawer fechado. */
   debt: Debt | null
   onOpenChange: (open: boolean) => void
-  onEdit: (debt: Debt) => void
-  onDelete: (debt: Debt) => void
-  onTogglePaid: (debt: Debt) => void
+  onEdit?: (debt: Debt) => void
+  onDelete?: (debt: Debt) => void
+  onTogglePaid?: (debt: Debt) => void
   onEditSettlementDate?: (debt: Debt) => void
-  readOnly?: boolean
+  mode?: ObligationDetailMode
 }) {
   const { user } = useAuth()
 
@@ -76,15 +77,15 @@ export function DebtDetailDrawer({
       onOpenChange={onOpenChange}
       title={debt.title}
       description={`Dívida · vence em ${formatDate(debt.dueDate)}`}
-      footer={readOnly ? undefined : (
+      footer={mode === 'readOnly' || (!onTogglePaid && !onEdit && !onDelete && !onEditSettlementDate) ? undefined : (
         <>
           {/*
             Marcar/desmarcar era a ação do ícone de status na row — que saiu
             junto com o resto. Ela reaparece aqui, antes das administrativas:
             é a que o usuário mais usa.
           */}
-        <DetailFooter className={DETAIL_ACTION_STACK_CLASS}>
-          <Button
+        {(onTogglePaid || (canEditSettlementDate(debt) && onEditSettlementDate)) && <DetailFooter className={DETAIL_ACTION_STACK_CLASS}>
+          {onTogglePaid && <Button
             variant="outline"
             className={DETAIL_ACTION_CLASS}
             onClick={() => onTogglePaid(debt)}
@@ -95,7 +96,7 @@ export function DebtDetailDrawer({
               <Check className="size-4" />
             )}
             {debt.isPaid ? 'Marcar como pendente' : 'Marcar como paga'}
-          </Button>
+          </Button>}
           {canEditSettlementDate(debt) && onEditSettlementDate && (
             <Button
               variant="outline"
@@ -106,26 +107,26 @@ export function DebtDetailDrawer({
               {settlementDateActionLabel('debt')}
             </Button>
           )}
-        </DetailFooter>
+        </DetailFooter>}
 
-        <DetailFooter className="border-t-0 pt-0">
-          <Button
+        {(onEdit || onDelete) && <DetailFooter className="border-t-0 pt-0">
+          {onEdit && <Button
             variant="outline"
             className={DETAIL_ACTION_CLASS}
             onClick={() => onEdit(debt)}
           >
             <Pencil className="size-4" />
             Editar
-          </Button>
-          <Button
+          </Button>}
+          {onDelete && <Button
             variant="destructive"
             className={DETAIL_ACTION_CLASS}
             onClick={() => onDelete(debt)}
           >
             <Trash2 className="size-4" />
             Excluir
-          </Button>
-        </DetailFooter>
+          </Button>}
+        </DetailFooter>}
         </>
       )}
     >

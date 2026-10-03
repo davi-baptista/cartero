@@ -24,6 +24,8 @@ const ler = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf-8'
 /** Sem comentários: a prosa explica o bug e casaria com as asserções. */
 const code = (s: string) =>
   s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+const componentInvocation = (source: string, name: string) =>
+  source.match(new RegExp(`<${name}\\b[\\s\\S]*?\\n\\s*\\/>`))?.[0] ?? ''
 
 const EXTRATO = code(ler('../app/(dashboard)/movements/statement/page.tsx'))
 const DIALOG = code(
@@ -377,10 +379,21 @@ describe('F15-F17: dialogs compartilhados permanecem dispon?veis', () => {
   const ADD_FLOW = code(ler('../app/(dashboard)/movements/movements-add-flow.tsx'))
 
   it('o fluxo compartilhado oferece sheets de obriga??o com escopo do dom?nio', () => {
-    expect(ADD_FLOW).toContain('<DebtSheet')
-    expect(ADD_FLOW).toContain('<ReceivableSheet')
-    expect(OBLIGATIONS).not.toContain('<DebtSheet')
-    expect(OBLIGATIONS).not.toContain('<ReceivableSheet')
+    const createDebtSheet = componentInvocation(ADD_FLOW, 'DebtSheet')
+    const createReceivableSheet = componentInvocation(ADD_FLOW, 'ReceivableSheet')
+    const editDebtSheet = componentInvocation(OBLIGATIONS, 'DebtSheet')
+    const editReceivableSheet = componentInvocation(OBLIGATIONS, 'ReceivableSheet')
+
+    expect(createDebtSheet).toContain('editTarget={null}')
+    expect(createReceivableSheet).toContain('editTarget={null}')
+    expect(createDebtSheet).toContain('open={open}')
+    expect(createReceivableSheet).toContain('open={open}')
+    expect(editDebtSheet).toContain("open={editTarget?.kind === 'debt'}")
+    expect(editDebtSheet).toContain("editTarget?.kind === 'debt' ? editTarget.item : null")
+    expect(editReceivableSheet).toContain("open={editTarget?.kind === 'receivable'}")
+    expect(editReceivableSheet).toContain("editTarget?.kind === 'receivable' ? editTarget.item : null")
+    expect(OBLIGATIONS).toContain("setEditTarget({ kind: 'debt', item })")
+    expect(OBLIGATIONS).toContain("setEditTarget({ kind: 'receivable', item })")
     expect(DEBT_SHEET).not.toContain('previewDeleteTransaction')
     expect(RECEIVABLE_SHEET).not.toContain('previewDeleteTransaction')
   })

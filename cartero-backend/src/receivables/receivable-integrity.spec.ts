@@ -26,6 +26,7 @@ interface Setup {
   receivable?: Record<string, unknown>;
   /** Faz o update do receivable falhar, para testar rollback. */
   failReceivableUpdate?: boolean;
+  failTransactionDelete?: boolean;
   /** Faz duas chamadas chegarem juntas à reivindicação condicional. */
   claimBarrier?: boolean;
 }
@@ -135,6 +136,8 @@ function buildHarness(setup: Setup = {}) {
         return { id: 'tx-new', ...data };
       }),
       delete: vi.fn(async ({ where }: any) => {
+        if (setup.failTransactionDelete)
+          throw new Error('falha ao excluir a transação');
         writes.transactionDeletes.push(where.id);
         return { id: where.id };
       }),
@@ -160,6 +163,7 @@ function buildHarness(setup: Setup = {}) {
       receivableUpdates: writes.receivableUpdates.length,
       transactionCreates: writes.transactionCreates.length,
       transactionDeletes: writes.transactionDeletes.length,
+      receivableDeletes: writes.receivableDeletes.length,
     };
     try {
       return await fn(prisma);
@@ -168,17 +172,27 @@ function buildHarness(setup: Setup = {}) {
       writes.receivableUpdates.length = writeLengths.receivableUpdates;
       writes.transactionCreates.length = writeLengths.transactionCreates;
       writes.transactionDeletes.length = writeLengths.transactionDeletes;
+      writes.receivableDeletes.length = writeLengths.receivableDeletes;
       throw error;
     }
   });
 
   const validation = new EntityValidationService(prisma as PrismaService);
 
+  const recurringIncomeService = {
+    ensureForUser: vi.fn(),
+    deletePendingOccurrence: vi.fn().mockResolvedValue(undefined),
+  };
   return {
-    service: new ReceivablesService(prisma as PrismaService, validation),
+    service: new ReceivablesService(
+      prisma as PrismaService,
+      validation,
+      recurringIncomeService as any,
+    ),
     prisma,
     writes,
     receivable,
+    recurringIncomeService,
   };
 }
 
@@ -298,6 +312,16 @@ describe('Ocorrência de renda recorrente — snapshot', () => {
     ...extra,
   });
 
+  it('keeps receivable list and detail reads pure', async () => {
+    const harness = buildHarness({ receivable: recurring() });
+    await harness.service.findOne('recurring-1', USER_ID);
+    await harness.service.findAll(USER_ID);
+    expect(harness.recurringIncomeService.ensureForUser).not.toHaveBeenCalled();
+    expect(harness.prisma.receivable.findMany).toHaveBeenCalledOnce();
+    expect(harness.writes.receivableUpdates).toHaveLength(0);
+    expect(harness.writes.receivableDeletes).toHaveLength(0);
+  });
+
   it('permite editar valor e vencimento do snapshot individual', async () => {
     const harness = buildHarness({ receivable: recurring() });
 
@@ -313,17 +337,11 @@ describe('Ocorrência de renda recorrente — snapshot', () => {
     expect(harness.receivable.recurringIncomeRuleId).toBe('rule-1');
   });
 
-  it('não permite excluir a ocorrência diretamente', async () => {
+  it('encaminha a exclusão da ocorrência à authority recorrente', async () => {
     const harness = buildHarness({ receivable: recurring() });
 
-    await expect(
-      harness.service.remove('recurring-1', USER_ID),
-    ).rejects.toMatchObject({
-      response: expect.objectContaining({
-        code: 'RECURRING_INCOME_RECEIVABLE_DELETE_BLOCKED',
-      }),
-    });
-
+    await harness.service.remove('recurring-1', USER_ID);
+    expect(harness.prisma.receivable.delete).not.toHaveBeenCalled();
     expect(harness.writes.receivableDeletes).toHaveLength(0);
   });
 
@@ -414,6 +432,60 @@ describe('Cobrança automática — exclusão direta', () => {
     await harness.service.remove('rec-1', USER_ID);
 
     expect(harness.writes.receivableDeletes).toEqual(['rec-1']);
+  });
+
+  it('exclui recebimento histórico sem comprovante sem inventar transação', async () => {
+    const harness = buildHarness({
+      receivable: automatic({
+        transactionId: null,
+        recurringIncomeRuleId: null,
+        personId: null,
+        isPaid: true,
+        paymentTransactionId: null,
+      }),
+    });
+
+    await harness.service.remove('rec-auto', USER_ID);
+
+    expect(harness.writes.receivableDeletes).toEqual(['rec-auto']);
+    expect(harness.writes.transactionDeletes).toHaveLength(0);
+  });
+
+  it('exclui recebimento e transação vinculada na mesma transação', async () => {
+    const harness = buildHarness({
+      receivable: automatic({
+        transactionId: null,
+        recurringIncomeRuleId: null,
+        personId: null,
+        isPaid: true,
+        paymentTransactionId: 'tx-pay',
+      }),
+    });
+
+    await harness.service.remove('rec-auto', USER_ID);
+
+    expect(harness.prisma.$transaction).toHaveBeenCalledOnce();
+    expect(harness.writes.receivableDeletes).toEqual(['rec-auto']);
+    expect(harness.writes.transactionDeletes).toEqual(['tx-pay']);
+  });
+
+  it('reverte a exclusão do recebimento se a transação vinculada não puder ser removida', async () => {
+    const harness = buildHarness({
+      failTransactionDelete: true,
+      receivable: automatic({
+        transactionId: null,
+        recurringIncomeRuleId: null,
+        personId: null,
+        isPaid: true,
+        paymentTransactionId: 'tx-pay',
+      }),
+    });
+
+    await expect(harness.service.remove('rec-auto', USER_ID)).rejects.toThrow(
+      'falha ao excluir a transação',
+    );
+    expect(harness.writes.receivableDeletes).toHaveLength(0);
+    expect(harness.writes.transactionDeletes).toHaveLength(0);
   });
 });
 

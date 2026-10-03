@@ -36,7 +36,7 @@ import type { Receivable } from '@/types'
 export type ReceivableDeletePolicy =
   /** Manual: some sozinha. */
   | { mode: 'direct' }
-  /** Ocorrência de renda: permanece ligada à regra e não some individualmente. */
+  /** Ocorrência de renda recebida: preserva o histórico financeiro. */
   | { mode: 'recurring-income' }
   /** Manual com comprovante: o aviso de vínculo decide o que fazer com ele. */
   | { mode: 'linked-payment' }
@@ -87,7 +87,9 @@ export function resolveReceivableDeletePolicy(
   const isAutomatic = Boolean(receivable.transactionId)
 
   if (receivable.recurringIncomeRuleId) {
-    return { mode: 'recurring-income' }
+    return receivable.isPaid
+      ? { mode: 'recurring-income' }
+      : { mode: 'direct' }
   }
 
   if (!isAutomatic) {

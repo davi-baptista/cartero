@@ -83,66 +83,42 @@ describe('objetivo 1: a seção "Em aberto" segue o padrão de Fatura', () => {
     expect(DRAWER).toContain('className="text-sm font-medium text-foreground"')
   })
 
-  it('a ação vive no cabeçalho, não no topo do painel', () => {
-    /*
-      Ela opera sobre a LISTA. No topo ocupava uma faixa inteira do painel
-      para algo que a seção já contextualiza.
-    */
-    expect(DRAWER).not.toContain('Adicionar dívida ou cobrança')
-    expect(DRAWER).toContain('Adicionar')
-
-    const titleIndex = DRAWER.indexOf('title="Em aberto"')
-    const cabecalho = DRAWER.slice(titleIndex, titleIndex + 2200)
-    expect(cabecalho).toContain('Quitar tudo')
-    expect(cabecalho).toContain('Adicionar')
-    expect(cabecalho).toContain('openNewReceivable')
-    expect(cabecalho).toContain('openNewDebt')
-    expect(DRAWER.slice(0, titleIndex)).not.toContain('Adicionar dívida ou cobrança')
+  it('Adicionar abre o fluxo contextual diretamente, com as duas escolhas no drawer', () => {
+    const flow = ler('../components/person-contextual-create-flow.tsx')
+    expect(DRAWER).toContain('onClick={() => setPersonCreateOpen(true)}')
+    expect(DRAWER).not.toContain('openNewReceivable')
+    expect(DRAWER).not.toContain('openNewDebt')
+    expect(flow).toContain('O que você quer registrar?')
+    expect(flow).toContain('grid grid-cols-2 gap-2')
+    expect(flow).toContain('Nova cobrança · ${personName}')
+    expect(flow).toContain('Nova dívida · ${personName}')
+    expect(flow).toContain('Adicionar movimentação · ${personName}')
+    expect(flow).toContain('PROGRESSIVE_REVEAL_CLASS')
   })
 
-  it('as DUAS opções sobrevivem', () => {
-    /*
-      Diferente de Fatura, onde só existe transação: aqui a ação é ambígua por
-      natureza, e um botão simples obrigaria a escolher um sentido por padrão.
-    */
-    expect(DRAWER).toContain('A receber')
-    expect(DRAWER).toContain('A pagar')
-  })
-
-  it('usa Plus para receber e Minus para pagar', () => {
-    const cabecalho = DRAWER.slice(
-      DRAWER.indexOf('DropdownMenuContent align="end" className="w-auto min-w-0"'),
-      DRAWER.indexOf('DropdownMenuContent align="end" className="w-auto min-w-0"') + 500,
-    )
-    expect(cabecalho).toContain('Plus className="size-3.5"')
-    expect(cabecalho).toContain('Minus className="size-3.5"')
+  it('reutiliza os forms canônicos sem pedir pessoa novamente', () => {
+    const flow = ler('../components/person-contextual-create-flow.tsx')
+    expect(flow).toContain('<DebtSheet')
+    expect(flow).toContain('<ReceivableSheet')
+    expect(flow).toContain('initialPersonId={personId}')
+    expect(flow).toContain('hidePersonSelector')
+    expect(DRAWER).toContain('personId: person?.id')
   })
 
   it('o botão usa a escala de Fatura', () => {
-    const escala = "h-7 cursor-pointer gap-1 px-2"
-
-    expect(DRAWER).toContain(escala)
-    expect(DRAWER).toContain("variant: 'default'")
-    /* O CTA da Fatura usa a mesma escala, com o cursor do Button primitivo. */
-    expect(FATURA).toContain('h-7 cursor-pointer gap-1 px-2 text-[11px]')
+    expect(DRAWER).toContain('className="h-7 cursor-pointer gap-1 px-2"')
+    const addAction = FATURA.slice(FATURA.indexOf('title="Transações"'), FATURA.indexOf('title="Transações"') + 900)
+    expect(addAction).toContain('size="sm"')
+    expect(addAction).toContain('className="cursor-pointer gap-1 px-2"')
+    expect(addAction).not.toContain('text-[11px]')
   })
 
   it('Quitar tudo e Adicionar consomem a mesma autoridade tipográfica', () => {
-    const adicionar = DRAWER.slice(
-      DRAWER.indexOf("buttonVariants({\n                        variant: 'default'"),
-      DRAWER.indexOf("buttonVariants({\n                        variant: 'default'") + 420,
-    )
-
     expect(DRAWER).toContain('<Button\n                        size="sm"\n                        className="gap-1.5"')
-    expect(adicionar).toContain("variant: 'default'")
-    expect(adicionar).toContain("size: 'sm'")
-    expect(adicionar).not.toContain('text-[11px]')
-    expect(adicionar).not.toContain('font-')
-    expect(adicionar).not.toContain('leading-')
+    expect(DRAWER).toContain('<Button size="sm" className="h-7 cursor-pointer gap-1 px-2"')
   })
 
   it('mantém o menu compacto e os dois CTAs superiores em primary', () => {
-    expect(DRAWER).toContain('className="w-auto min-w-0"')
     expect(DRAWER).toContain('variant="default"')
     expect(IDENTITY_HEADER).toContain('flex min-w-0 items-start gap-3')
     expect(IDENTITY_HEADER).toContain('ml-auto flex shrink-0 items-start gap-2')

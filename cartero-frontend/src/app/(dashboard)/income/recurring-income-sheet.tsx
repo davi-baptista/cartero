@@ -61,10 +61,18 @@ export function recurringIncomeFormIsValid(state: RecurringIncomeFormState, edit
   return validCore && (editing || validFirstOccurrence)
 }
 
-export function recurringIncomePreviewCopy(preview: RecurringIncomePreview, amount: number) {
+export function recurringIncomePreviewCopy(preview: RecurringIncomePreview) {
   return {
-    summary: `Isso vai criar ${preview.occurrenceCount} ${preview.occurrenceCount === 1 ? 'recebimento' : 'recebimentos'} de ${formatCurrency(amount)}.`,
-    timing: `${preview.overdueCount === 0 ? 'Nenhum estará vencido' : preview.overdueCount === 1 ? '1 estará vencido' : `${preview.overdueCount} estarão vencidos`} e ${preview.upcomingCount === 0 ? 'nenhum será próximo' : preview.upcomingCount === 1 ? '1 será o próximo' : `${preview.upcomingCount} serão próximos`}.`,
+    summary: `Isso vai gerar ${preview.occurrenceCount} ${preview.occurrenceCount === 1 ? 'recebimento' : 'recebimentos'}.`,
+    overdue: preview.overdueCount > 0
+      ? `${preview.overdueCount} ${preview.overdueCount === 1 ? 'já estará vencido' : 'já estarão vencidos'}`
+      : null,
+    currentMonth: preview.currentMonthCount > 0
+      ? `${preview.currentMonthCount} neste mês`
+      : null,
+    nextOccurrence: preview.nextOccurrenceDate
+      ? `Próxima ocorrência: ${new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${preview.nextOccurrenceDate}T12:00:00Z`))}.`
+      : null,
     total: `Total esperado: ${formatCurrency(preview.totalAmount)}.`,
   }
 }
@@ -91,7 +99,7 @@ export function RecurringIncomeSheet({ open, onOpenChange, editTarget, isPending
   })
 
   function submit() {
-    if (!valid) return
+    if (!valid || (!editing && (!previewQuery.isSuccess || !previewQuery.data))) return
     onSubmit(recurringIncomePayload({ title, amount, dayOfMonth, firstOccurrence: selectedFirstOccurrence, counterpartyName }, editing))
   }
 
@@ -133,7 +141,29 @@ export function RecurringIncomeSheet({ open, onOpenChange, editTarget, isPending
                 <Input aria-label="Ano da renda desde" type="number" min={1900} max={9999} placeholder="Ano" value={firstYear} onChange={(event) => setFirstYear(event.target.value.replace(/\D/g, '').slice(0, 4))} />
               </div>
               <p className="text-xs text-muted-foreground">A competência inicial define quais recebimentos elegíveis serão materializados.</p>
-              {previewQuery.data ? <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground"><p className="text-foreground">Isso vai criar {previewQuery.data.occurrenceCount} {previewQuery.data.occurrenceCount === 1 ? 'recebimento' : 'recebimentos'} de {formatCurrency(amount)}.</p><p className="mt-1">{previewQuery.data.overdueCount === 0 ? 'Nenhum estará vencido' : previewQuery.data.overdueCount === 1 ? '1 estará vencido' : `${previewQuery.data.overdueCount} estarão vencidos`} e {previewQuery.data.upcomingCount === 0 ? 'nenhum será próximo' : previewQuery.data.upcomingCount === 1 ? '1 será o próximo' : `${previewQuery.data.upcomingCount} serão próximos`}.</p><p className="mt-1 text-foreground/80">Total esperado: {formatCurrency(previewQuery.data.totalAmount)}.</p></div> : null}
+              {previewQuery.isError ? (
+                <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground" role="status">
+                  <span>N&#227;o foi poss&#237;vel calcular os recebimentos.</span>
+                  <Button type="button" variant="ghost" size="sm" className="h-auto px-2 py-1" onClick={() => void previewQuery.refetch()}>
+                    Tentar novamente
+                  </Button>
+                </div>
+              ) : previewQuery.isLoading ? (
+                <p className="text-xs text-muted-foreground" aria-live="polite">Calculando recebimentos...</p>
+              ) : previewQuery.data ? (
+                (() => {
+                  const copy = recurringIncomePreviewCopy(previewQuery.data)
+                  return (
+                    <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
+                      <p className="text-foreground">{copy.summary}</p>
+                      {copy.overdue ? <p className="mt-1">{copy.overdue}</p> : null}
+                      {copy.currentMonth ? <p className="mt-1">{copy.currentMonth}</p> : null}
+                      {copy.nextOccurrence ? <p className="mt-1">{copy.nextOccurrence}</p> : null}
+                      <p className="mt-1 text-foreground/80">{copy.total}</p>
+                    </div>
+                  )
+                })()
+              ) : null}
             </div>
           ) : null}
           <div className="grid gap-2">
@@ -143,7 +173,7 @@ export function RecurringIncomeSheet({ open, onOpenChange, editTarget, isPending
         </div>
         <SheetFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>Cancelar</Button>
-          <Button onClick={submit} disabled={!valid || isPending}>
+          <Button onClick={submit} disabled={!valid || isPending || (!editing && (!previewQuery.isSuccess || !previewQuery.data))}>
             {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
             {editing ? 'Salvar alterações' : 'Criar renda'}
           </Button>

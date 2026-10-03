@@ -15,12 +15,21 @@ import type { AuthenticatedUser } from 'src/auth/authenticated-user';
 import { CreateRecurringIncomeDto } from './dto/create-recurring-income.dto';
 import { UpdateRecurringIncomeDto } from './dto/update-recurring-income.dto';
 import { PreviewRecurringIncomeDto } from './dto/preview-recurring-income.dto';
+import { ReconcileRecurringIncomeDto } from './dto/reconcile-recurring-income.dto';
 import { RecurringIncomeService } from './recurring-income.service';
 
 @Controller('recurring-incomes')
 @UseGuards(JwtAuthGuard)
 export class RecurringIncomeController {
   constructor(private readonly service: RecurringIncomeService) {}
+
+  @Post('reconcile')
+  reconcile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ReconcileRecurringIncomeDto,
+  ) {
+    return this.service.reconcileForUserPeriod(user.id, dto.month, dto.year);
+  }
 
   @Get()
   findAll(@CurrentUser() user: AuthenticatedUser) {

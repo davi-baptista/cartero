@@ -42,15 +42,11 @@ function row(
 function setup(rawPages: unknown[][] = []) {
   const raw = vi.fn(async () => rawPages.shift() ?? []);
   const personFindFirst = vi.fn(async () => ({ id: PERSON_ID }));
-  const ensureForUser = vi.fn(async () => undefined);
-  const service = new ObligationsService(
-    {
-      $queryRaw: raw,
-      person: { findFirst: personFindFirst },
-    } as never,
-    { ensureForUser } as never,
-  );
-  return { service, raw, personFindFirst, ensureForUser };
+  const service = new ObligationsService({
+    $queryRaw: raw,
+    person: { findFirst: personFindFirst },
+  } as never);
+  return { service, raw, personFindFirst };
 }
 
 function dto(overrides: Partial<GetObligationsDto> = {}): GetObligationsDto {
@@ -506,10 +502,21 @@ describe('ObligationsService unified read model', () => {
     expect(raw).toHaveBeenCalledTimes(1);
   });
 
-  it('materializes recurring income through its existing authority', async () => {
-    const { service, ensureForUser } = setup([[]]);
+  it('keeps obligations reads pure without materializing recurring income', async () => {
+    const { service, raw } = setup([[], []]);
     await service.findAll(USER_ID, 'America/Sao_Paulo', dto(), NOW);
-    expect(ensureForUser).toHaveBeenCalledWith(USER_ID, NOW);
+    expect(raw).toHaveBeenCalledOnce();
+    await service.getSummary(
+      USER_ID,
+      'America/Sao_Paulo',
+      {
+        month: 10,
+        year: 2026,
+        domain: ObligationDomain.ALL,
+      },
+      NOW,
+    );
+    expect(raw).toHaveBeenCalledTimes(2);
   });
 
   it('keeps credit card debt inside the debt domain without invoice rows', async () => {
