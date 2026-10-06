@@ -65,20 +65,33 @@ export class RecurringIncomeService {
       user.timeZone,
       'recurring income account timezone',
     );
-    const rule = await this.prisma.recurringIncomeRule.create({
-      data: {
-        userId,
-        title: dto.title,
-        amount: dto.amount,
-        frequency: 'MONTHLY',
-        dayOfMonth: dto.dayOfMonth,
-        firstOccurrence: dto.firstOccurrence,
-        counterpartyName: dto.counterpartyName,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const rule = await tx.recurringIncomeRule.create({
+        data: {
+          userId,
+          title: dto.title,
+          amount: dto.amount,
+          frequency: 'MONTHLY',
+          dayOfMonth: dto.dayOfMonth,
+          firstOccurrence: dto.firstOccurrence,
+          counterpartyName: dto.counterpartyName,
+        },
+      });
+      // A new rule has no lockable ID until INSERT. It is invisible to other
+      // transactions before commit, so acquire the canonical lock immediately
+      // after INSERT and keep creation plus initial occurrences in this tx.
+      await acquireTransactionAdvisoryLock(
+        tx,
+        this.occurrenceLockKey(userId, rule.id),
+      );
+      const created = await this.materializeRuleWithTx(
+        tx,
+        rule,
+        new Date(),
+        timeZone,
+      );
+      return this.serializeRule(created.rule);
     });
-
-    await this.materializeRule(rule, new Date(), timeZone);
-    return this.serializeRule(rule);
   }
 
   async findAll(userId: string) {
@@ -151,16 +164,11 @@ export class RecurringIncomeService {
 
     const rules = await this.prisma.recurringIncomeRule.findMany({
       where: { userId, isActive: true, deletedAt: null },
+      select: { id: true },
     });
     let created = 0;
-    for (const rule of rules) {
-      if (targetMonth < rule.firstOccurrence) continue;
-      created += await this.materializeOccurrences(rule, [
-        {
-          month: targetMonth,
-          dueDate: occurrenceDateForMonth(targetMonth, rule.dayOfMonth),
-        },
-      ]);
+    for (const { id } of rules) {
+      created += await this.materializeRuleForMonth(id, userId, targetMonth);
     }
     return { month: targetMonth, created };
   }
@@ -235,52 +243,86 @@ export class RecurringIncomeService {
   }
 
   async update(id: string, userId: string, dto: UpdateRecurringIncomeDto) {
-    const existing = await this.findOwnedRule(id, userId);
-    const rule = await this.prisma.recurringIncomeRule.update({
-      where: { id },
-      data: {
-        title: dto.title,
-        amount: dto.amount,
-        dayOfMonth: dto.dayOfMonth,
-        counterpartyName: dto.counterpartyName,
-        isActive: dto.isActive,
-      },
-    });
-
-    if (rule.isActive) {
-      const user = await this.prisma.user.findUniqueOrThrow({
-        where: { id: userId },
-        select: { timeZone: true },
-      });
-      await this.materializeRule(
-        rule,
-        new Date(),
-        requireAccountTimeZone(
-          user.timeZone,
-          'recurring income account timezone',
-        ),
+    return this.prisma.$transaction(async (tx) => {
+      await acquireTransactionAdvisoryLock(
+        tx,
+        this.occurrenceLockKey(userId, id),
       );
-    }
+      const existing = await tx.recurringIncomeRule.findUnique({
+        where: { id, userId },
+      });
+      if (!existing || existing.deletedAt) {
+        throw new NotFoundException('Regra de renda não encontrada');
+      }
+      const rule = await tx.recurringIncomeRule.update({
+        where: { id, userId },
+        data: {
+          title: dto.title,
+          amount: dto.amount,
+          dayOfMonth: dto.dayOfMonth,
+          counterpartyName: dto.counterpartyName,
+          isActive: dto.isActive,
+        },
+      });
 
-    // `existing` proves ownership before update; this assignment documents that
-    // firstOccurrence is deliberately immutable in V1.
-    void existing;
-    return this.serializeRule(rule);
+      if (rule.isActive) {
+        const user = await tx.user.findUniqueOrThrow({
+          where: { id: userId },
+          select: { timeZone: true },
+        });
+        await this.materializeRuleWithTx(
+          tx,
+          rule,
+          new Date(),
+          requireAccountTimeZone(
+            user.timeZone,
+            'recurring income account timezone',
+          ),
+        );
+      }
+
+      // firstOccurrence remains immutable in V1. Existing Receivables are
+      // snapshots; materialization only inserts missing unique occurrences.
+      return this.serializeRule(rule);
+    });
   }
 
   async deactivate(id: string, userId: string) {
-    await this.findOwnedRule(id, userId);
-    const rule = await this.prisma.recurringIncomeRule.update({
-      where: { id },
-      data: { isActive: false },
+    return this.prisma.$transaction(async (tx) => {
+      await acquireTransactionAdvisoryLock(
+        tx,
+        this.occurrenceLockKey(userId, id),
+      );
+      const existing = await tx.recurringIncomeRule.findUnique({
+        where: { id, userId },
+      });
+      if (!existing || existing.deletedAt) {
+        throw new NotFoundException('Regra de renda não encontrada');
+      }
+      const rule = await tx.recurringIncomeRule.update({
+        where: { id, userId },
+        data: { isActive: false },
+      });
+      return this.serializeRule(rule);
     });
-    return this.serializeRule(rule);
   }
 
   async remove(id: string, userId: string) {
+    // Preserve the early ownership rejection; the authoritative row is still
+    // re-read below after acquiring the rule lock.
     await this.findOwnedRule(id, userId);
-
     return this.prisma.$transaction(async (tx) => {
+      await acquireTransactionAdvisoryLock(
+        tx,
+        this.occurrenceLockKey(userId, id),
+      );
+      const existing = await tx.recurringIncomeRule.findUnique({
+        where: { id, userId },
+      });
+      if (!existing || existing.deletedAt) {
+        throw new NotFoundException('Regra de renda não encontrada');
+      }
+
       await tx.receivable.deleteMany({
         where: {
           userId,
@@ -449,6 +491,7 @@ export class RecurringIncomeService {
         : Promise.resolve({ timeZone: knownTimeZone }),
       this.prisma.recurringIncomeRule.findMany({
         where: { userId, isActive: true, deletedAt: null },
+        select: { id: true },
       }),
     ]);
     const timeZone = requireAccountTimeZone(
@@ -462,8 +505,13 @@ export class RecurringIncomeService {
       occurrencesCreated: 0,
       occurrencesSkipped: 0,
     };
-    for (const rule of rules) {
-      const materialized = await this.materializeRule(rule, now, timeZone);
+    for (const { id } of rules) {
+      const materialized = await this.materializeRule(
+        id,
+        userId,
+        now,
+        timeZone,
+      );
       result.rulesReconciled += 1;
       result.occurrencesAttempted += materialized.attempted;
       result.occurrencesCreated += materialized.created;
@@ -549,11 +597,69 @@ export class RecurringIncomeService {
   }
 
   private async materializeRule(
-    rule: RecurringIncomeRule,
+    ruleId: string,
+    userId: string,
     now: Date,
     timeZone: string,
   ): Promise<{ attempted: number; created: number }> {
-    if (!rule.isActive || rule.deletedAt) return { attempted: 0, created: 0 };
+    return this.prisma.$transaction(async (tx) => {
+      await acquireTransactionAdvisoryLock(
+        tx,
+        this.occurrenceLockKey(userId, ruleId),
+      );
+      const rule = await tx.recurringIncomeRule.findUnique({
+        where: { id: ruleId, userId },
+      });
+      if (!rule || !rule.isActive || rule.deletedAt) {
+        return { attempted: 0, created: 0 };
+      }
+      return this.materializeRuleWithTx(tx, rule, now, timeZone);
+    });
+  }
+
+  private async materializeRuleForMonth(
+    ruleId: string,
+    userId: string,
+    month: string,
+  ): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      await acquireTransactionAdvisoryLock(
+        tx,
+        this.occurrenceLockKey(userId, ruleId),
+      );
+      const rule = await tx.recurringIncomeRule.findUnique({
+        where: { id: ruleId, userId },
+      });
+      if (
+        !rule ||
+        !rule.isActive ||
+        rule.deletedAt ||
+        month < rule.firstOccurrence
+      ) {
+        return 0;
+      }
+      return this.materializeOccurrencesWithTx(tx, rule, [
+        {
+          month,
+          dueDate: occurrenceDateForMonth(month, rule.dayOfMonth),
+        },
+      ]);
+    });
+  }
+
+  private async materializeRuleWithTx(
+    tx: Prisma.TransactionClient,
+    rule: RecurringIncomeRule,
+    now: Date,
+    timeZone: string,
+  ): Promise<{
+    rule: RecurringIncomeRule;
+    attempted: number;
+    created: number;
+  }> {
+    if (!rule.isActive || rule.deletedAt) {
+      return { rule, attempted: 0, created: 0 };
+    }
     const occurrences = recurringIncomeOccurrenceDates(
       {
         firstOccurrence: rule.firstOccurrence,
@@ -562,59 +668,54 @@ export class RecurringIncomeService {
       now,
       timeZone,
     );
-    if (occurrences.length === 0) return { attempted: 0, created: 0 };
+    if (occurrences.length === 0) return { rule, attempted: 0, created: 0 };
 
     return {
+      rule,
       attempted: occurrences.length,
-      created: await this.materializeOccurrences(rule, occurrences),
+      created: await this.materializeOccurrencesWithTx(tx, rule, occurrences),
     };
   }
 
-  private async materializeOccurrences(
+  private async materializeOccurrencesWithTx(
+    tx: Prisma.TransactionClient,
     rule: RecurringIncomeRule,
     occurrences: Array<{ month: string; dueDate: string }>,
   ): Promise<number> {
-    return this.prisma.$transaction(async (tx) => {
-      // Suppress/restore take this same per-rule lock, so no marker can commit
-      // between the exclusion read and the inserts for this rule.
-      await acquireTransactionAdvisoryLock(
-        tx,
-        this.occurrenceLockKey(rule.userId, rule.id),
-      );
-      const exclusions = await tx.recurringIncomeOccurrenceExclusion.findMany({
-        where: {
-          userId: rule.userId,
-          recurringIncomeRuleId: rule.id,
-          recurringMonth: { in: occurrences.map(({ month }) => month) },
-        },
-        select: { recurringMonth: true },
-      });
-      const excludedMonths = new Set(
-        exclusions.map(({ recurringMonth }) => recurringMonth),
-      );
-      const rows = occurrences
-        .filter(({ month }) => !excludedMonths.has(month))
-        .map(({ month, dueDate }) => ({
-          userId: rule.userId,
-          title: rule.title,
-          debtorName: rule.counterpartyName ?? rule.title,
-          amount: rule.amount,
-          description: null,
-          occurredAt: parseDateOnly(dueDate),
-          dueDate: parseDateOnly(dueDate),
-          isPaid: false,
-          incomeClassification: 'INCOME' as const,
-          recurringIncomeRuleId: rule.id,
-          recurringMonth: month,
-        }));
-
-      if (rows.length === 0) return 0;
-      const result = await tx.receivable.createMany({
-        data: rows,
-        skipDuplicates: true,
-      });
-      return result.count;
+    // Callers own the canonical per-rule lock before loading the rule state.
+    const exclusions = await tx.recurringIncomeOccurrenceExclusion.findMany({
+      where: {
+        userId: rule.userId,
+        recurringIncomeRuleId: rule.id,
+        recurringMonth: { in: occurrences.map(({ month }) => month) },
+      },
+      select: { recurringMonth: true },
     });
+    const excludedMonths = new Set(
+      exclusions.map(({ recurringMonth }) => recurringMonth),
+    );
+    const rows = occurrences
+      .filter(({ month }) => !excludedMonths.has(month))
+      .map(({ month, dueDate }) => ({
+        userId: rule.userId,
+        title: rule.title,
+        debtorName: rule.counterpartyName ?? rule.title,
+        amount: rule.amount,
+        description: null,
+        occurredAt: parseDateOnly(dueDate),
+        dueDate: parseDateOnly(dueDate),
+        isPaid: false,
+        incomeClassification: 'INCOME' as const,
+        recurringIncomeRuleId: rule.id,
+        recurringMonth: month,
+      }));
+
+    if (rows.length === 0) return 0;
+    const result = await tx.receivable.createMany({
+      data: rows,
+      skipDuplicates: true,
+    });
+    return result.count;
   }
 
   private async findOwnedRule(id: string, userId: string) {

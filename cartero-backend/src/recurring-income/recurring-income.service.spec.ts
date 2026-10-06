@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { acquireTransactionAdvisoryLock } from 'src/common/helpers/advisory-lock.helper';
 import { RecurringIncomeService } from './recurring-income.service';
 
 const USER_ID = 'user-1';
@@ -142,6 +143,9 @@ function buildHarness() {
       deleteMany: vi.fn(async () => ({ count: 0 })),
     },
     $transaction: vi.fn(async (callback: any) => {
+      const ruleSnapshot = new Map(
+        [...rules].map(([key, value]) => [key, { ...value }]),
+      );
       const receivableSnapshot = new Map(receivables);
       const exclusionSnapshot = new Map(exclusions);
       const releases: Array<() => void> = [];
@@ -167,6 +171,8 @@ function buildHarness() {
       try {
         return await callback(tx);
       } catch (error) {
+        rules.clear();
+        ruleSnapshot.forEach((value, key) => rules.set(key, value));
         receivables.clear();
         receivableSnapshot.forEach((value, key) => receivables.set(key, value));
         exclusions.clear();
@@ -190,6 +196,157 @@ function buildHarness() {
 }
 
 describe('RecurringIncomeService', () => {
+  it('rolls back create and every occurrence when initial materialization fails', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-23T12:00:00Z'));
+    try {
+      const harness = buildHarness();
+      vi.spyOn(harness.prisma.receivable, 'createMany').mockRejectedValueOnce(
+        new Error('materialization failed'),
+      );
+
+      await expect(
+        harness.service.create(USER_ID, {
+          title: 'Salário',
+          amount: 5000,
+          dayOfMonth: 5,
+          firstOccurrence: '2026-09',
+          counterpartyName: 'Empresa',
+        }),
+      ).rejects.toThrow('materialization failed');
+      expect(harness.rules.size).toBe(0);
+      expect(harness.receivables.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rolls back an active edit and batch occurrences when materialization fails', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-23T12:00:00Z'));
+    try {
+      const harness = buildHarness();
+      const source = rule({ firstOccurrence: '2026-03', dayOfMonth: 1 });
+      harness.rules.set(source.id, source);
+      vi.spyOn(harness.prisma.receivable, 'createMany').mockRejectedValueOnce(
+        new Error('materialization failed'),
+      );
+
+      await expect(
+        harness.service.update(source.id, USER_ID, { amount: 6000 }),
+      ).rejects.toThrow('materialization failed');
+      expect(harness.rules.get(source.id).amount.toString()).toBe('5000');
+      expect(harness.receivables.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rolls back reactivation when its required materialization fails', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-23T12:00:00Z'));
+    try {
+      const harness = buildHarness();
+      const source = rule({ isActive: false, firstOccurrence: '2026-03' });
+      harness.rules.set(source.id, source);
+      vi.spyOn(harness.prisma.receivable, 'createMany').mockRejectedValueOnce(
+        new Error('materialization failed'),
+      );
+
+      await expect(
+        harness.service.update(source.id, USER_ID, { isActive: true }),
+      ).rejects.toThrow('materialization failed');
+      expect(harness.rules.get(source.id).isActive).toBe(false);
+      expect(harness.receivables.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('materialization waiting behind an edit rereads the rule after acquiring its lock', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-23T12:00:00Z'));
+    try {
+      const harness = buildHarness();
+      harness.rules.set(
+        'rule-1',
+        rule({ amount: new Prisma.Decimal(5000), firstOccurrence: '2026-10' }),
+      );
+      let unblock!: () => void;
+      let signalAcquired!: () => void;
+      const held = new Promise<void>((resolve) => (unblock = resolve));
+      const acquired = new Promise<void>(
+        (resolve) => (signalAcquired = resolve),
+      );
+      const lockHolder = harness.prisma.$transaction(async (tx: any) => {
+        await acquireTransactionAdvisoryLock(
+          tx,
+          `recurring-income-occurrences:${USER_ID}:rule-1`,
+        );
+        signalAcquired();
+        await held;
+      });
+      await acquired;
+
+      const edit = harness.service.update('rule-1', USER_ID, { amount: 6000 });
+      // ensureForUser reads the ID while the edit owns the lock. The snapshot
+      // must be based on the post-lock state when its turn arrives.
+      const materialize = harness.service.ensureForUser(
+        USER_ID,
+        new Date('2026-09-23T12:00:00Z'),
+      );
+      unblock();
+      await Promise.all([lockHolder, edit, materialize]);
+
+      expect(harness.receivables.get('rule-1:2026-10').amount.toString()).toBe(
+        '6000',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('serializes two edits on one rule in advisory-lock order', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-23T12:00:00Z'));
+    try {
+      const harness = buildHarness();
+      harness.rules.set(
+        'rule-1',
+        rule({ firstOccurrence: '2026-10', amount: new Prisma.Decimal(5000) }),
+      );
+      let unblock!: () => void;
+      let signalAcquired!: () => void;
+      const held = new Promise<void>((resolve) => (unblock = resolve));
+      const acquired = new Promise<void>(
+        (resolve) => (signalAcquired = resolve),
+      );
+      const lockHolder = harness.prisma.$transaction(async (tx: any) => {
+        await acquireTransactionAdvisoryLock(
+          tx,
+          `recurring-income-occurrences:${USER_ID}:rule-1`,
+        );
+        signalAcquired();
+        await held;
+      });
+      await acquired;
+
+      const editA = harness.service.update('rule-1', USER_ID, { amount: 6000 });
+      const editB = harness.service.update('rule-1', USER_ID, { amount: 7000 });
+      unblock();
+      await Promise.all([lockHolder, editA, editB]);
+
+      expect(harness.rules.get('rule-1').amount.toString()).toBe('7000');
+      // A created the first snapshot; B was serialized after A and correctly
+      // left that already materialized occurrence unchanged.
+      expect(harness.receivables.get('rule-1:2026-10').amount.toString()).toBe(
+        '6000',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps recurring rule list and detail reads pure', async () => {
     const harness = buildHarness();
     const source = rule();
