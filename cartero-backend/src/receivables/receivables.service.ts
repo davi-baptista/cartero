@@ -4,6 +4,7 @@ import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
 import {
   SOURCE_INVOICE_SELECT,
+  serializeReceivableSource,
   resolveSourceDeleteBlockReason,
 } from 'src/common/helpers/receivable-source-capability';
 import {
@@ -115,7 +116,11 @@ export class ReceivablesService {
   }
 
   async findOne(id: string, userId: string) {
-    return await this.entityValidationService.validateReceivable(id, userId);
+    const receivable = await this.prisma.receivable.findFirstOrThrow({
+      where: { id, userId },
+      include: { person: true, transaction: SOURCE_INVOICE_SELECT },
+    });
+    return serializeReceivableSource(receivable);
   }
 
   async findAll(userId: string, filters: FindReceivablesDto = {}) {
@@ -146,6 +151,10 @@ export class ReceivablesService {
 
     return receivables.map(({ transaction, ...receivable }) => ({
       ...receivable,
+      sourceTransaction: serializeReceivableSource({
+        ...receivable,
+        transaction,
+      }).sourceTransaction,
       /*
         Só a capability sai; a transação carregada fica no servidor. O
         frontend não precisa da compra para saber que não pode excluí-la.
@@ -487,26 +496,11 @@ export class ReceivablesService {
           }
 
           if (receivable.paymentTransactionId && !preserveTransaction) {
-            const paymentTransaction = await tx.transaction.findUnique({
-              where: { id: receivable.paymentTransactionId, userId },
-            });
-
-            if (paymentTransaction) {
-              await tx.transaction.delete({
-                where: { id: paymentTransaction.id, userId },
-              });
-
-              if (paymentTransaction.invoiceId) {
-                const invoice = await tx.invoice.update({
-                  where: { id: paymentTransaction.invoiceId, userId },
-                  data: {
-                    totalAmount: { decrement: paymentTransaction.amount },
-                  },
-                });
-
-                await deleteInvoiceIfEmpty(tx, userId, invoice);
-              }
-            }
+            await removeSettlementTransaction(
+              tx,
+              userId,
+              receivable.paymentTransactionId,
+            );
           }
         }
 

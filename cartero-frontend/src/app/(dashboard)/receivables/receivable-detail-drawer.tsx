@@ -25,6 +25,10 @@ import {
 } from '@/lib/settlement-date-action'
 import { settlementStatus } from '@/lib/settlement-status'
 import { cn } from '@/lib/utils'
+import { useState } from 'react'
+import { UserRoundMinus } from 'lucide-react'
+import { ReceivableUnlinkDialog } from './receivable-unlink-dialog'
+import { SourceTransactionDeleteDialog } from './source-transaction-delete-dialog'
 import {
   canDeleteReceivable,
   resolveReceivableDeletePolicy,
@@ -75,6 +79,8 @@ export function ReceivableDetailDrawer({
   mode?: ObligationDetailMode
 }) {
   const { user } = useAuth()
+  const [unlinkOpen, setUnlinkOpen] = useState(false)
+  const [sourceDeleteOpen, setSourceDeleteOpen] = useState(false)
 
   if (!receivable) return null
 
@@ -83,6 +89,10 @@ export function ReceivableDetailDrawer({
   const overdue = status === 'overdue'
   const isAutomatic = Boolean(receivable.transactionId)
   const isRecurringIncome = Boolean(receivable.recurringIncomeRuleId)
+  const sourcePerson = receivable.sourceTransaction?.personName ?? receivable.person?.name ?? receivable.debtorName
+  const canUnlink = Boolean(
+    mode === 'operational' && receivable.transactionId && receivable.sourceTransaction?.personId,
+  )
   const policy = resolveReceivableDeletePolicy(receivable)
   const counterparty = receivable.person?.name ?? receivable.debtorName
 
@@ -92,6 +102,7 @@ export function ReceivableDetailDrawer({
     : null
 
   return (
+    <>
     <DetailDrawer
       open
       onOpenChange={onOpenChange}
@@ -124,7 +135,7 @@ export function ReceivableDetailDrawer({
           )}
         </DetailFooter>}
 
-        {(onEdit || (onDelete && canDeleteReceivable(policy))) && <DetailFooter className="border-t-0 pt-0">
+        {(onEdit || (onDelete && (canDeleteReceivable(policy) || isAutomatic)) || canUnlink) && <DetailFooter className="border-t-0 pt-0">
           {onEdit && <Button
             variant="outline"
             className={DETAIL_ACTION_CLASS}
@@ -139,16 +150,31 @@ export function ReceivableDetailDrawer({
             origem. Os modos orientativos escondem o botão, e o aviso acima diz
             o que destrava.
           */}
-          {onDelete && canDeleteReceivable(policy) && (
+          {onDelete && (canDeleteReceivable(policy) || isAutomatic) && (
             <Button
               variant="destructive"
               className={DETAIL_ACTION_CLASS}
-              onClick={() => onDelete(receivable)}
+              onClick={() => isAutomatic ? setSourceDeleteOpen(true) : onDelete(receivable)}
             >
               <Trash2 className="size-4" />
               Excluir
             </Button>
           )}
+          {canUnlink && (receivable.isPaid ? <Button
+            variant="outline"
+            className={DETAIL_ACTION_CLASS}
+            disabled
+          >
+            <UserRoundMinus className="size-4" />
+            Desvincular de {sourcePerson}
+          </Button> : <Button
+            variant="outline"
+            className={DETAIL_ACTION_CLASS}
+            onClick={() => setUnlinkOpen(true)}
+          >
+            <UserRoundMinus className="size-4" />
+            Desvincular de {sourcePerson}
+          </Button>)}
         </DetailFooter>}
         </>
       )}
@@ -221,6 +247,10 @@ export function ReceivableDetailDrawer({
         )}
       </DetailList>
 
+      {canUnlink && receivable.isPaid && <DetailNotice>
+        Este valor já foi recebido. Desfaça o recebimento antes de desvincular a compra.
+      </DetailNotice>}
+
       {isAutomatic && (
         /*
           A frase antiga dizia que "apagar só a cobrança removeria as duas" —
@@ -260,5 +290,18 @@ export function ReceivableDetailDrawer({
         </DetailNotice>
       )}
     </DetailDrawer>
+    {canUnlink && <ReceivableUnlinkDialog
+      receivable={receivable}
+      open={unlinkOpen}
+      onClose={() => setUnlinkOpen(false)}
+      onSuccess={() => onOpenChange(false)}
+    />}
+    {isAutomatic && mode === 'operational' && <SourceTransactionDeleteDialog
+      receivable={receivable}
+      open={sourceDeleteOpen}
+      onClose={() => setSourceDeleteOpen(false)}
+      onSuccess={() => onOpenChange(false)}
+    />}
+    </>
   )
 }

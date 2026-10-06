@@ -45,7 +45,9 @@ export type InstallmentPreservationReason =
   /** A cobrança derivada já foi recebida — apagá-la deixaria a entrada órfã. */
   | 'RECEIVABLE_ALREADY_PAID'
   /** É o comprovante de uma dívida ou cobrança quitada. */
-  | 'PAYMENT_TRANSACTION_LINKED';
+  | 'PAYMENT_TRANSACTION_LINKED'
+  | 'PERSON_SETTLEMENT_LINKED'
+  | 'INVOICE_SETTLEMENT_LINKED';
 
 /** O mínimo que o plano precisa saber sobre cada parcela. */
 export interface InstallmentCandidate {
@@ -68,6 +70,8 @@ export interface InstallmentProtectionFacts {
   paymentTransactionIds: ReadonlySet<string>;
   /** Ids de transação com cobrança derivada AINDA pendente. */
   pendingReceivableSourceIds: ReadonlySet<string>;
+  personSettlementIds?: ReadonlySet<string>;
+  invoiceSettlementIds?: ReadonlySet<string>;
 }
 
 export interface PreservedInstallment {
@@ -113,6 +117,12 @@ export function resolvePreservationReason(
 
   if (facts.paymentTransactionIds.has(transaction.id)) {
     return 'PAYMENT_TRANSACTION_LINKED';
+  }
+  if (facts.personSettlementIds?.has(transaction.id)) {
+    return 'PERSON_SETTLEMENT_LINKED';
+  }
+  if (facts.invoiceSettlementIds?.has(transaction.id)) {
+    return 'INVOICE_SETTLEMENT_LINKED';
   }
 
   return null;

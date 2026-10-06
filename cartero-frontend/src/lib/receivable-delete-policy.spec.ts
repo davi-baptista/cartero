@@ -35,6 +35,12 @@ const receivable = (over: Partial<Receivable> = {}): Receivable =>
     ...over,
   }) as Receivable
 
+const installmentSource = {
+  id: 'tx-1', personId: 'p1', personName: 'Mariana', parentId: null,
+  installmentIndex: 1, installmentCount: 10, isInstallment: true,
+  invoiceId: 'invoice-1', invoiceStatus: 'OPEN' as const,
+}
+
 describe('item 70: os modos', () => {
   it('manual → exclusão direta', () => {
     expect(resolveReceivableDeletePolicy(receivable())).toEqual({
@@ -66,7 +72,7 @@ describe('item 70: os modos', () => {
   })
 
   it('automática parcelada → gerenciar pela origem', () => {
-    const r = receivable({ transactionId: 'tx-1', title: 'Jantar 2/10' })
+    const r = receivable({ transactionId: 'tx-1', sourceTransaction: installmentSource })
     expect(resolveReceivableDeletePolicy(r)).toEqual({
       mode: 'manage-from-source',
     })
@@ -109,14 +115,14 @@ describe('item 24: a série é reconhecida sem buscar a transação', () => {
       identifica. Olhar apenas `parentId` deixaria justamente ela oferecendo
       um botão que a política proíbe.
     */
-    const primeira = receivable({ transactionId: 'tx-1', title: 'Jantar 1/10' })
+    const primeira = receivable({ transactionId: 'tx-1', sourceTransaction: installmentSource })
     expect(resolveReceivableDeletePolicy(primeira)).toEqual({
       mode: 'manage-from-source',
     })
   })
 
   it('parcela do meio, pelo parentId', () => {
-    const meio = receivable({ transactionId: 'tx-1', parentId: 'r0' })
+    const meio = receivable({ transactionId: 'tx-1', sourceTransaction: { ...installmentSource, parentId: 'tx-1', installmentIndex: 5 } })
     expect(resolveReceivableDeletePolicy(meio).mode).toBe('manage-from-source')
   })
 
@@ -140,8 +146,8 @@ describe('item 71: precedência — nunca mandar o usuário a um beco', () => {
     */
     const r = receivable({
       transactionId: 'tx-1',
-      title: 'Jantar 3/10',
       isPaid: true,
+      sourceTransaction: installmentSource,
     })
     expect(resolveReceivableDeletePolicy(r)).toEqual({
       mode: 'manage-from-source',
@@ -315,16 +321,13 @@ describe('itens 11, 12 e 36: a exclusão opera na compra', () => {
 })
 
 describe('itens 8, 9 e 44: a confirmação diz a consequência', () => {
-  it('avisa que a compra também será excluída', () => {
+  it('apresenta a prévia OPEN com exclusão parcial e preservações', () => {
     for (const [nome, fonte] of [['Pessoa', PESSOA]] as const) {
-      expect(fonte, `${nome}: título`).toContain('Excluir compra e cobrança?')
-      expect(fonte, `${nome}: consequência`).toContain(
-        'a compra de origem também será excluída',
-      )
-      expect(fonte, `${nome}: CTA`).toContain(
-        'confirmLabel="Excluir compra e cobrança"',
-      )
+      expect(fonte, `${nome}: dialog compartilhado`).toContain('SourceTransactionDeleteDialog')
     }
+    const sourceDialog = ler('../app/(dashboard)/receivables/source-transaction-delete-dialog.tsx')
+    expect(sourceDialog).toContain('Excluir parcelas disponíveis?')
+    expect(sourceDialog).toContain('preview.preserved.map')
   })
 
   it('item 69: automática nunca cai no aviso de vínculo', () => {

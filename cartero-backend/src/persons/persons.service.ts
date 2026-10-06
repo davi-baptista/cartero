@@ -18,7 +18,10 @@ import {
 } from 'src/common/constants/system-categories';
 import { findOrCreateSystemBank } from 'src/common/helpers/invoice.helper';
 import { acquireTransactionAdvisoryLock } from 'src/common/helpers/advisory-lock.helper';
-import { resolveSourceDeleteBlockReason } from 'src/common/helpers/receivable-source-capability';
+import {
+  SOURCE_INVOICE_SELECT,
+  serializeReceivableSource,
+} from 'src/common/helpers/receivable-source-capability';
 import {
   buildPersonSummary,
   HISTORY_ORDER,
@@ -651,11 +654,7 @@ export class PersonsService {
             recusar. Só as PENDÊNCIAS precisam dele — o histórico já está
             resolvido e não tem essa ação.
           */
-        include: {
-          transaction: {
-            select: { date: true, invoice: { select: { status: true } } },
-          },
-        },
+        include: { transaction: SOURCE_INVOICE_SELECT },
       }),
       this.prisma.debt.findMany({
         where: historyWhere,
@@ -733,10 +732,7 @@ export class PersonsService {
           A capability acompanha cada cobrança: é a partir desta lista que o
           drawer decide se oferece a exclusão pela compra de origem.
         */
-        receivables: pendingReceivables.map((receivable) => ({
-          ...receivable,
-          sourceDeleteBlockReason: resolveSourceDeleteBlockReason(receivable),
-        })),
+        receivables: pendingReceivables.map(serializeReceivableSource),
       },
 
       /**

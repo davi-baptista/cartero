@@ -19,6 +19,7 @@ import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { PreviewTransactionDto } from './dto/preview-transaction.dto';
 import { PreviewUpdateTransactionDto } from './dto/preview-update-transaction.dto';
 import { DeleteTransactionDto } from './dto/delete-transaction.dto';
+import { UnlinkTransactionDto } from './dto/unlink-transaction.dto';
 
 @Controller('transactions')
 @UseGuards(JwtAuthGuard)
@@ -75,6 +76,25 @@ export class TransactionsController {
   @Post(':id/preview-delete')
   previewDelete(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.transactionsService.previewDelete(id, user.id);
+  }
+
+  @Post(':id/preview-unlink')
+  previewUnlink(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('scope') scope?: string,
+  ) {
+    return this.transactionsService.previewUnlink(id, user.id, scope);
+  }
+
+  @Post(':id/unlink-person')
+  unlinkPerson(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('scope') scope: string | undefined,
+    @Body() dto: UnlinkTransactionDto,
+  ) {
+    return this.transactionsService.unlinkPerson(id, user.id, scope, dto);
   }
 
   /**

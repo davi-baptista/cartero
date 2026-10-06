@@ -60,7 +60,7 @@ function InstallmentSection({
           const positionText = next ? `Próxima ${next.index}/${item.totalCount}` : `${item.totalCount} parcelas no total`
 
           return (
-            <div key={item.id} className="px-4 py-3.5">
+            <div key={`${item.id}:${item.personId ?? 'own'}`} className="px-4 py-3.5">
               <div className="flex items-center gap-3">
                 <div className="min-w-0 flex-1">
                   <span className="truncate text-[13px] font-medium">{item.title}</span>

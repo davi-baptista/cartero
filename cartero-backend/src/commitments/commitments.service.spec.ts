@@ -34,6 +34,7 @@ function row(options: {
       installmentIndex: options.index,
       installmentCount: options.count,
       isRefund: options.isRefund ?? false,
+      personId: options.person?.id ?? null,
     }),
     invoice: {
       month: options.month,
@@ -265,6 +266,52 @@ describe('CommitmentsService — Parcelas', () => {
     expect(result.totals).toEqual({
       installmentsOutstanding: 300,
       othersRemaining: 200,
+    });
+  });
+
+  it('classifica cada parcela da série mista e mantém os cards por pessoa econômica', async () => {
+    const forecastMonth = (
+      await new CommitmentsService(prisma()).getCommitments(USER_ID)
+    ).forecast[0];
+    const transactions = Array.from({ length: 10 }, (_, index) =>
+      row({
+        id: index === 0 ? 'root' : `child-${index + 1}`,
+        parentId: index === 0 ? null : 'root',
+        title: `Notebook ${index + 1}/10`,
+        amount: '100',
+        index: index + 1,
+        count: 10,
+        person: index === 9 ? { id: 'p1', name: 'Eva' } : null,
+        ...FUTURE,
+      }),
+    );
+    const ownForecast = Array.from({ length: 9 }, (_, index) => ({
+      amount: money('100'),
+      personId: null,
+      installmentIndex: index + 1,
+      installmentCount: 10,
+      invoice: forecastMonth,
+    }));
+    const db = prisma(transactions, ownForecast);
+    const result = await new CommitmentsService(db).getCommitments(USER_ID);
+
+    expect(result.installments).toHaveLength(1);
+    expect(result.installments[0].outstandingAmount).toBe(900);
+    expect(result.othersInstallments).toHaveLength(1);
+    expect(result.othersInstallments[0]).toMatchObject({
+      personId: 'p1',
+      personName: 'Eva',
+      outstandingAmount: 100,
+    });
+    expect(result.totals).toEqual({
+      installmentsOutstanding: 900,
+      othersRemaining: 100,
+    });
+    expect(result.forecast[0].installments).toBe(900);
+    expect(
+      (db.transaction.findMany as any).mock.calls[1][0].where,
+    ).toMatchObject({
+      personId: null,
     });
   });
 

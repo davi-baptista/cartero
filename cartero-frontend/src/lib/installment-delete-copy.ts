@@ -44,6 +44,14 @@ const MOTIVOS: Record<
     n === 1
       ? '1 parcela será preservada porque registra o pagamento de uma dívida ou cobrança.'
       : `${n} parcelas serão preservadas porque registram pagamentos de dívidas ou cobranças.`,
+  PERSON_SETTLEMENT_LINKED: (n) =>
+    n === 1
+      ? '1 parcela será preservada porque pertence a um acerto com uma pessoa.'
+      : `${n} parcelas serão preservadas porque pertencem a acertos com pessoas.`,
+  INVOICE_SETTLEMENT_LINKED: (n) =>
+    n === 1
+      ? '1 parcela será preservada porque registra o pagamento de uma fatura.'
+      : `${n} parcelas serão preservadas porque registram pagamentos de faturas.`,
 }
 
 /**
@@ -59,6 +67,8 @@ const ORDEM: InstallmentPreservationReason[] = [
   'PAID_INVOICE',
   'RECEIVABLE_ALREADY_PAID',
   'PAYMENT_TRANSACTION_LINKED',
+  'PERSON_SETTLEMENT_LINKED',
+  'INVOICE_SETTLEMENT_LINKED',
 ]
 
 export function preservationLines(

@@ -7,6 +7,81 @@ import { BudgetV2PeriodPreset } from './budget-v2.types';
 const money = (value: string) => new Prisma.Decimal(value);
 
 describe('BudgetV2Service', () => {
+  it('mantém o pagamento bruto da fatura e só reconhece o recebimento preservado', async () => {
+    const queries: Array<{ source: string; args: any }> = [];
+    const prisma = {
+      user: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          timeZone: 'America/Sao_Paulo',
+        })),
+      },
+      transaction: {
+        findMany: vi.fn(async (args: any) => {
+          queries.push({ source: 'transactions', args });
+          return [
+            {
+              type: 'INCOME',
+              amount: money('100.00'),
+              isRefund: false,
+              paymentDebt: null,
+              paymentReceivable: {
+                userId: 'user-a',
+                personId: 'person-1',
+                incomeClassification: null,
+                recurringIncomeRuleId: null,
+              },
+            },
+          ];
+        }),
+      },
+      invoiceSettlement: {
+        findMany: vi.fn(async (args: any) => {
+          queries.push({ source: 'settlements', args });
+          return [{ amount: money('1000.00') }];
+        }),
+      },
+      personSettlementGroup: { findMany: vi.fn(async () => []) },
+      debt: { findMany: vi.fn(async () => []) },
+      invoice: {
+        findMany: vi.fn(async (args: any) => {
+          queries.push({ source: 'invoices', args });
+          return [];
+        }),
+      },
+      receivable: {
+        findMany: vi.fn(async (args: any) => {
+          queries.push({ source: 'receivables', args });
+          // Os 9 automáticos pendentes foram removidos; o 10º foi recebido.
+          return [];
+        }),
+      },
+    } as any;
+
+    const result = await new BudgetV2Service(prisma).getBudget(
+      'user-a',
+      BudgetV2PeriodPreset.THIS_MONTH,
+      new Date('2026-09-16T12:00:00.000Z'),
+    );
+
+    expect(result.composition.realized).toMatchObject({
+      receivableReceipts: '100.00',
+      invoiceSettlements: '1000.00',
+    });
+    expect(result.realized.outflow).toBe('1000.00');
+    expect(result.composition.upcoming.receivables).toBe('0.00');
+    expect(result.pending.inflow).toBe('0.00');
+    expect(
+      queries.find(({ source }) => source === 'invoices')?.args.where,
+    ).toMatchObject({
+      status: { in: ['OPEN', 'CLOSED', 'OVERDUE'] },
+    });
+    expect(
+      queries.find(({ source }) => source === 'receivables')?.args.where,
+    ).toMatchObject({
+      isPaid: false,
+    });
+  });
+
   it('rejects an explicit MONTH preset without its month/year pair as a client error', async () => {
     const prisma = {
       user: { findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'UTC' })) },

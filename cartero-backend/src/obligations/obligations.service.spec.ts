@@ -72,6 +72,74 @@ function hasDate(query: Prisma.Sql, iso: string) {
 }
 
 describe('ObligationsService unified read model', () => {
+  it('mantém o recebível preservado no histórico de obrigações', async () => {
+    const preserved = row(
+      ObligationDomain.RECEIVABLE,
+      'r-10',
+      '2026-08-10',
+      '2026-08-20',
+    );
+    const { service } = setup([[preserved]]);
+
+    const page = await service.findAll(
+      USER_ID,
+      'America/Sao_Paulo',
+      dto({ section: ObligationSection.HISTORY }),
+      NOW,
+    );
+
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]).toMatchObject({
+      id: 'r-10',
+      domain: ObligationDomain.RECEIVABLE,
+      isResolved: true,
+    });
+  });
+
+  it('não inclui recebíveis removidos nem o recebido nas consultas de aberto, vencido ou totais', async () => {
+    const { service, raw } = setup([
+      [],
+      [
+        {
+          overdueReceivableAmount: '0',
+          overdueDebtAmount: '0',
+          overdueNetAmount: '0',
+          openReceivableAmount: '0',
+          openDebtAmount: '0',
+          openNetAmount: '0',
+        },
+      ],
+    ]);
+
+    const page = await service.findAll(
+      USER_ID,
+      'America/Sao_Paulo',
+      dto({ domain: ObligationDomain.RECEIVABLE }),
+      NOW,
+    );
+    const summary = await service.getSummary(
+      USER_ID,
+      'America/Sao_Paulo',
+      {
+        month: 10,
+        year: 2026,
+        domain: ObligationDomain.RECEIVABLE,
+      } as GetObligationsSummaryDto,
+      NOW,
+    );
+
+    expect(page.items).toEqual([]);
+    expect(summary.open.receivable).toBe('0');
+    expect(summary.overdue.receivable).toBe('0');
+    const listSql = sqlOf(raw.mock.calls[0] as unknown[]).sql;
+    const summarySql = sqlOf(raw.mock.calls[1] as unknown[]).sql;
+    expect(listSql).toContain('r."isPaid" = FALSE');
+    expect(summarySql).toContain('r."isPaid" = FALSE');
+    expect(summarySql).toContain(
+      "SUM(amount) FILTER (WHERE section = 'OPEN' AND domain = 'RECEIVABLE')",
+    );
+  });
+
   it('uses a DB-bounded UNION ALL and user scoping in both branches', async () => {
     const { service, raw } = setup();
     await service.findAll(USER_ID, 'America/Sao_Paulo', dto(), NOW);

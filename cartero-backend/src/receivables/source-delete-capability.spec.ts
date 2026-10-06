@@ -118,7 +118,8 @@ describe('item 4: nenhuma consulta por item', () => {
       recebível automático. O `status` da fatura entrou nela — não numa
       consulta nova.
     */
-    expect(PERSONS).toContain('invoice: { select: { status: true } }');
+    expect(PERSONS).toContain('transaction: SOURCE_INVOICE_SELECT');
+    expect(PERSONS).toContain('serializeReceivableSource');
   });
 
   it('só o `status` atravessa — nunca a fatura ou a transação inteiras', () => {
@@ -127,7 +128,9 @@ describe('item 4: nenhuma consulta por item', () => {
       que a tela não usa.
     */
     const helper = ler('src/common/helpers/receivable-source-capability.ts');
-    expect(helper).toContain('invoice: { select: { status: true } }');
+    expect(helper).toContain('invoice: { select: { id: true, status: true } }');
+    expect(helper).toContain('installmentIndex: true');
+    expect(helper).toContain('installmentCount: true');
     expect(helper).not.toContain('include: { invoice: true }');
   });
 });

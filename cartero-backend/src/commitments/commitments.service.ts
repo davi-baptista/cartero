@@ -99,11 +99,15 @@ export class CommitmentsService {
       const month = tx.invoice.month;
       const isFuture =
         year > currentYear || (year === currentYear && month > currentMonth);
-      const key = tx.parentId ?? tx.id;
+      // One purchase series may now contain several economic owners after a
+      // partial unlink. Aggregate by both lineage and owner, never by whichever
+      // row Prisma returned first.
+      const seriesId = tx.parentId ?? tx.id;
+      const key = `${seriesId}:${tx.personId ?? 'OWN'}`;
       const amount = Number(tx.amount);
       const competenceKey = year * 100 + month;
       const entry = groups.get(key) ?? {
-        id: key,
+        id: seriesId,
         title: titleWithoutGeneratedSuffix(
           tx.title,
           metadata.index,

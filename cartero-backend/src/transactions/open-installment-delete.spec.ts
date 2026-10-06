@@ -99,15 +99,17 @@ function montar(cenario: Cenario) {
   const client = {
     transaction: {
       findMany: vi.fn(async ({ where }: any) =>
-        state.transactions.filter((tx) =>
-          where.OR
-            ? where.OR.some(
-                (c: any) =>
-                  (c.id !== undefined && tx.id === c.id) ||
-                  (c.parentId !== undefined && tx.parentId === c.parentId),
-              )
-            : true,
-        ),
+        where.personSettlementGroupId
+          ? []
+          : state.transactions.filter((tx) =>
+              where.OR
+                ? where.OR.some(
+                    (c: any) =>
+                      (c.id !== undefined && tx.id === c.id) ||
+                      (c.parentId !== undefined && tx.parentId === c.parentId),
+                  )
+                : true,
+            ),
       ),
       findFirst: vi.fn(
         async ({ where }: any) =>

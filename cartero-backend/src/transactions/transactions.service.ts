@@ -43,6 +43,7 @@ import { PreviewTransactionDto } from './dto/preview-transaction.dto';
 import { PreviewUpdateTransactionDto } from './dto/preview-update-transaction.dto';
 import type { TransactionUpdatePreview } from './transaction-update-preview.types';
 import type { TransactionPreview } from './transaction-preview.types';
+import type { UnlinkPreview } from './unlink-preview.types';
 import {
   serializeDeletePlan,
   type TransactionDeletePreview,
@@ -64,6 +65,7 @@ import {
   transactionCursorWhere,
 } from './transaction-cursor.helper';
 import { UpdateTransactionDto } from 'src/transactions/dto/update-transaction.dto';
+import { UnlinkTransactionDto } from './dto/unlink-transaction.dto';
 import {
   parseDateFilterEnd,
   parseDateFilterStart,
@@ -1440,29 +1442,47 @@ export class TransactionsService {
       ),
     ];
 
-    const [invoices, receivables, paidDebts, paidReceivables] =
-      await Promise.all([
-        invoiceIds.length
-          ? tx.invoice.findMany({
-              where: { id: { in: invoiceIds }, userId },
-              select: { id: true, status: true, totalAmount: true },
-            })
-          : Promise.resolve(
-              [] as { id: string; status: string; totalAmount: unknown }[],
-            ),
-        tx.receivable.findMany({
-          where: { userId, transactionId: { in: transactionIds } },
-          select: { transactionId: true, isPaid: true },
-        }),
-        tx.debt.findMany({
-          where: { userId, paymentTransactionId: { in: transactionIds } },
-          select: { paymentTransactionId: true },
-        }),
-        tx.receivable.findMany({
-          where: { userId, paymentTransactionId: { in: transactionIds } },
-          select: { paymentTransactionId: true },
-        }),
-      ]);
+    const [
+      invoices,
+      receivables,
+      paidDebts,
+      paidReceivables,
+      personSettlements,
+      invoiceSettlements,
+    ] = await Promise.all([
+      invoiceIds.length
+        ? tx.invoice.findMany({
+            where: { id: { in: invoiceIds }, userId },
+            select: { id: true, status: true, totalAmount: true },
+          })
+        : Promise.resolve(
+            [] as { id: string; status: string; totalAmount: unknown }[],
+          ),
+      tx.receivable.findMany({
+        where: { userId, transactionId: { in: transactionIds } },
+        select: { transactionId: true, isPaid: true },
+      }),
+      tx.debt.findMany({
+        where: { userId, paymentTransactionId: { in: transactionIds } },
+        select: { paymentTransactionId: true },
+      }),
+      tx.receivable.findMany({
+        where: { userId, paymentTransactionId: { in: transactionIds } },
+        select: { paymentTransactionId: true },
+      }),
+      tx.transaction.findMany({
+        where: {
+          userId,
+          id: { in: transactionIds },
+          personSettlementGroupId: { not: null },
+        },
+        select: { id: true },
+      }),
+      tx.invoiceSettlement?.findMany({
+        where: { invoice: { userId }, transactionId: { in: transactionIds } },
+        select: { transactionId: true },
+      }) ?? Promise.resolve([]),
+    ]);
 
     const paidInvoiceIds = new Set(
       invoices
@@ -1500,6 +1520,14 @@ export class TransactionsService {
         receivedReceivableSourceIds,
         paymentTransactionIds,
         pendingReceivableSourceIds,
+        personSettlementIds: new Set(personSettlements.map(({ id }) => id)),
+        invoiceSettlementIds: new Set(
+          invoiceSettlements
+            .map(({ transactionId }) => transactionId)
+            .filter((transactionId): transactionId is string =>
+              Boolean(transactionId),
+            ),
+        ),
       },
       invoiceTotals,
     };
@@ -1552,6 +1580,171 @@ export class TransactionsService {
     );
 
     return serializeDeletePlan(plan, isInstallment);
+  }
+
+  private async resolveUnlinkPreview(
+    tx: Prisma.TransactionClient | PrismaService,
+    id: string,
+    userId: string,
+    scope?: string,
+  ): Promise<UnlinkPreview> {
+    const source = await tx.transaction.findFirstOrThrow({
+      where: { id, userId },
+    });
+    if (!source.personId) {
+      throw new ConflictException({
+        message:
+          'Esta compra j\u00e1 n\u00e3o est\u00e1 vinculada a uma pessoa.',
+        code: 'TRANSACTION_ALREADY_UNLINKED',
+      });
+    }
+    const targetPerson = await tx.person.findFirstOrThrow({
+      where: { id: source.personId, userId },
+      select: { name: true },
+    });
+    const normalizedScope = this.normalizeScope(scope);
+    const series = await this.getTransactionsByScope(
+      tx,
+      source,
+      userId,
+      normalizedScope,
+    );
+    const ids = series.map(({ id: transactionId }) => transactionId);
+    const [receivables, invoices] = await Promise.all([
+      tx.receivable.findMany({
+        where: { userId, transactionId: { in: ids } },
+        select: { transactionId: true, personId: true, isPaid: true },
+      }),
+      tx.invoice.findMany({
+        where: {
+          userId,
+          id: {
+            in: series.flatMap((item) =>
+              item.invoiceId ? [item.invoiceId] : [],
+            ),
+          },
+        },
+        select: { id: true, status: true },
+      }),
+    ]);
+    const receivableBySource = new Map(
+      receivables.map((item) => [item.transactionId, item]),
+    );
+    const invoiceById = new Map(invoices.map((item) => [item.id, item]));
+    const eligibleIds: string[] = [];
+    const preserved: UnlinkPreview['preserved'] = [];
+    let paidInvoiceEligibleCount = 0;
+
+    for (const transaction of series) {
+      if (!transaction.personId) {
+        preserved.push({ id: transaction.id, reason: 'ALREADY_UNLINKED' });
+      } else if (transaction.personId !== source.personId) {
+        preserved.push({ id: transaction.id, reason: 'DIFFERENT_PERSON_LINK' });
+      } else if (
+        receivableBySource.get(transaction.id) &&
+        receivableBySource.get(transaction.id)!.personId !==
+          transaction.personId
+      ) {
+        preserved.push({ id: transaction.id, reason: 'DIFFERENT_PERSON_LINK' });
+      } else if (receivableBySource.get(transaction.id)?.isPaid) {
+        preserved.push({
+          id: transaction.id,
+          reason: 'RECEIVABLE_ALREADY_PAID',
+        });
+      } else {
+        eligibleIds.push(transaction.id);
+        if (
+          transaction.invoiceId &&
+          invoiceById.get(transaction.invoiceId)?.status === 'PAID'
+        ) {
+          paidInvoiceEligibleCount += 1;
+        }
+      }
+    }
+
+    return {
+      scope: normalizedScope,
+      isInstallment: belongsToInstallmentSeries(source),
+      targetPersonId: source.personId,
+      targetPersonName: targetPerson.name,
+      seriesTotal: series.length,
+      eligibleIds,
+      eligibleCount: eligibleIds.length,
+      preservedCount: preserved.length,
+      preserved,
+      paidInvoiceEligibleCount,
+    };
+  }
+
+  async previewUnlink(id: string, userId: string, scope?: string) {
+    return this.resolveUnlinkPreview(this.prisma, id, userId, scope);
+  }
+
+  async unlinkPerson(
+    id: string,
+    userId: string,
+    scope: string | undefined,
+    dto: UnlinkTransactionDto,
+  ) {
+    try {
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const plan = await this.resolveUnlinkPreview(tx, id, userId, scope);
+          if (
+            (dto.expectedPersonId &&
+              dto.expectedPersonId !== plan.targetPersonId) ||
+            (dto.expectedEligibleIds &&
+              deletableSetChanged(dto.expectedEligibleIds, plan.eligibleIds))
+          ) {
+            throw new ConflictException({
+              message:
+                'As parcelas eleg\u00edveis mudaram. Confira novamente antes de confirmar.',
+              code: 'UNLINK_SET_CHANGED',
+              preview: plan,
+            });
+          }
+
+          for (const transactionId of plan.eligibleIds) {
+            const transaction = await tx.transaction.findUniqueOrThrow({
+              where: { id: transactionId, userId },
+            });
+            const updated = await tx.transaction.update({
+              where: { id: transactionId, userId },
+              data: { personId: null },
+            });
+            // Reuse the same linked-receivable authority as Transaction.update.
+            await this.syncLinkedReceivable(
+              tx,
+              userId,
+              transaction,
+              updated,
+              null,
+              true,
+              null,
+              null,
+            );
+          }
+          return { ...plan, unlinkedIds: plan.eligibleIds };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2034'
+      ) {
+        const preview = await this.previewUnlink(id, userId, scope).catch(
+          () => null,
+        );
+        throw new ConflictException({
+          message:
+            'A situação das parcelas mudou. Confira novamente antes de confirmar.',
+          code: 'UNLINK_SET_CHANGED',
+          preview,
+        });
+      }
+      throw error;
+    }
   }
 
   /**

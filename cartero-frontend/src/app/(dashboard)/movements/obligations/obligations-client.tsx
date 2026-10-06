@@ -71,7 +71,7 @@ import type { Debt, Receivable } from '@/types'
 import type { TransactionType } from '@/types'
 import { cn } from '@/lib/utils'
 import { resolveReceivableDeletePolicy, canDeleteReceivable } from '@/lib/receivable-delete-policy'
-import { useDeleteSourceTransaction } from '@/lib/use-delete-source-transaction'
+import { SourceTransactionDeleteDialog } from '@/app/(dashboard)/receivables/source-transaction-delete-dialog'
 import { invalidateTransactionDependents } from '@/lib/transaction-dependent-queries'
 import { reconcileRecurringIncomePeriod } from '@/services/recurring-income.service'
 
@@ -614,13 +614,6 @@ export function ObligationsClient() {
     onError: () => toast.error('Não foi possível atualizar a obrigação.'),
   })
 
-  const sourceDeleteMutation = useDeleteSourceTransaction({
-    onSuccess: () => {
-      setSourceDeleteTarget(null)
-      receivableNavigation.close()
-      void queryClient.invalidateQueries({ queryKey: ['obligations'] })
-    },
-  })
 
   const pendingRowKey = mutation.isPending && mutation.variables
     ? `${mutation.variables.row.domain}:${mutation.variables.row.id}`
@@ -970,15 +963,11 @@ export function ObligationsClient() {
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => deleteTarget && detailDeleteMutation.mutate(deleteTarget)}
       />
-      <ConfirmDialog
-        open={sourceDeleteTarget !== null}
-        title="Excluir compra e cobrança?"
-        description="A compra de origem e a cobrança associada serão removidas. A ação será validada pelo servidor conforme as proteções da fatura e do recebimento."
-        confirmLabel="Excluir compra"
-        isPending={sourceDeleteMutation.isPending}
-        onCancel={() => setSourceDeleteTarget(null)}
-        onConfirm={() => sourceDeleteTarget?.transactionId && sourceDeleteMutation.mutate(sourceDeleteTarget.transactionId)}
-      />
+      {sourceDeleteTarget && <SourceTransactionDeleteDialog receivable={sourceDeleteTarget} open onClose={() => {
+        setSourceDeleteTarget(null)
+        receivableNavigation.close()
+        void queryClient.invalidateQueries({ queryKey: ['obligations'] })
+      }} />}
       <DebtSheet
         open={editTarget?.kind === 'debt'}
         onOpenChange={(open) => !open && setEditTarget(null)}

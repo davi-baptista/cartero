@@ -32,6 +32,7 @@ function espionar() {
     invalidateQueries: vi.fn(({ queryKey }: { queryKey: unknown[] }) => {
       chaves.push(queryKey)
     }),
+    removeQueries: vi.fn(),
   } as unknown as QueryClient
 
   return {
@@ -58,7 +59,13 @@ describe('as dependências base de qualquer lançamento', () => {
       'bank-invoices',
       'invoices',
       'budget',
+      'budget-v2',
+      'budget-v2-drilldown',
+      'obligations',
+      'commitments',
       'receivables',
+      'invoice',
+      'transaction',
     ]) {
       expect(s.raizes(), `faltou ${raiz}`).toContain(raiz)
     }
@@ -74,6 +81,14 @@ describe('as dependências base de qualquer lançamento', () => {
         ['bank-invoices', 'b1'],
       ]),
     )
+  })
+
+  it('refreshes exact transaction/receivable details and removes deleted receivable cache', () => {
+    const s = espionar()
+    invalidateTransactionDependents(s.qc, { transactionId: 'tx-1', receivableId: 'r-1' })
+    expect(s.chaves).toContainEqual(['transaction', 'tx-1'])
+    const removed = s.qc.removeQueries as unknown as { mock: { calls: unknown[][] } }
+    expect(removed.mock.calls[0]).toEqual([{ queryKey: ['receivable', 'r-1'], exact: true }])
   })
 
   it('sem bankId, a família inteira de bank-invoices é invalidada', () => {

@@ -341,9 +341,6 @@ export function InvoiceDetailsDrawer({
     invoiceId: string
     key: string
   } | null>(null)
-  const selectedCategory =
-    categoryFilter && categoryFilter.invoiceId === invoiceId ? categoryFilter.key : null
-
   function handleSelectCategory(key: string | null) {
     setCategoryFilter(key && invoiceId ? { invoiceId, key } : null)
   }
@@ -354,6 +351,15 @@ export function InvoiceDetailsDrawer({
     enabled: !!invoiceId,
   })
   const invoice = invoiceForDetailId(invoiceQueryData, invoiceId)
+  const availableCompositionKeys = new Set(
+    invoiceComposition(invoiceQueryData?.transactions ?? []).map(({ key }) => key),
+  )
+  const selectedCategory =
+    categoryFilter &&
+    categoryFilter.invoiceId === invoiceId &&
+    availableCompositionKeys.has(categoryFilter.key)
+      ? categoryFilter.key
+      : null
 
   const markPaidMut = useMutation({
     mutationFn: () => markManyInvoicesPaid({ ids: [invoiceId!], paymentDate, ...(paymentBankId ? { bankId: paymentBankId } : {}) }),

@@ -62,6 +62,8 @@ export interface TransactionDependentScope {
    * está montada, porque o React Query só refaz o que está sendo observado.
    */
   affectsPerson?: boolean
+  transactionId?: string | null
+  receivableId?: string | null
 }
 
 export function invalidateTransactionDependents(
@@ -81,6 +83,7 @@ export function invalidateTransactionDependents(
   if (scope.invoiceId) {
     qc.invalidateQueries({ queryKey: ['invoice', scope.invoiceId] })
   }
+  qc.invalidateQueries({ queryKey: ['invoice'] })
   if (scope.bankId) {
     qc.invalidateQueries({ queryKey: ['bank-invoices', scope.bankId] })
   } else {
@@ -90,13 +93,25 @@ export function invalidateTransactionDependents(
 
   /* O comprometido do mês acompanha qualquer lançamento. */
   qc.invalidateQueries({ queryKey: ['budget'] })
+  qc.invalidateQueries({ queryKey: ['budget-v2'] })
+  qc.invalidateQueries({ queryKey: ['budget-v2-drilldown'] })
+  qc.invalidateQueries({ queryKey: ['obligations'] })
+  qc.invalidateQueries({ queryKey: ['commitments'] })
 
   /*
     Cobranças automáticas são derivadas da compra: nascem, mudam de valor e
     desaparecem junto com ela.
   */
   qc.invalidateQueries({ queryKey: ['receivables'] })
-
+  if (scope.receivableId) {
+    qc.removeQueries({ queryKey: ['receivable', scope.receivableId], exact: true })
+  } else {
+    qc.invalidateQueries({ queryKey: ['receivable'] })
+  }
+  qc.invalidateQueries({ queryKey: ['transaction'] })
+  if (scope.transactionId) {
+    qc.invalidateQueries({ queryKey: ['transaction', scope.transactionId] })
+  }
   /*
     As superfícies de pessoa só quando a mutação pode tê-las tocado.
 

@@ -58,9 +58,7 @@ export type ReceivableDeletePolicy =
  * nulo: só o título a identifica.
  */
 function belongsToInstallmentSeries(receivable: Receivable): boolean {
-  const declared = receivable.title.match(/\s\d+\/(\d+)$/)
-  if (declared) return Number(declared[1]) > 1
-  return Boolean(receivable.parentId)
+  return Boolean(receivable.sourceTransaction?.isInstallment)
 }
 
 /**

@@ -87,6 +87,8 @@ export const PRESERVATION_MESSAGES: Record<
   RECEIVABLE_ALREADY_PAID: 'A cobrança desta parcela já foi recebida.',
   PAYMENT_TRANSACTION_LINKED:
     'Esta parcela registra o pagamento de uma dívida ou cobrança.',
+  PERSON_SETTLEMENT_LINKED: 'Esta parcela pertence a um acerto com uma pessoa.',
+  INVOICE_SETTLEMENT_LINKED: 'Esta parcela registra o pagamento de uma fatura.',
 };
 
 /**

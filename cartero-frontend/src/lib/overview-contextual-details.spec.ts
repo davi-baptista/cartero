@@ -15,6 +15,14 @@ const details = readFileSync(
   resolve(__dirname, '../components/overview-contextual-details.tsx'),
   'utf8',
 )
+const receivableDrawer = readFileSync(
+  resolve(__dirname, '../app/(dashboard)/receivables/receivable-detail-drawer.tsx'),
+  'utf8',
+)
+const sourceDeleteDialog = readFileSync(
+  resolve(__dirname, '../app/(dashboard)/receivables/source-transaction-delete-dialog.tsx'),
+  'utf8',
+)
 const agenda = readFileSync(resolve(__dirname, './overview-agenda.ts'), 'utf8')
 
 describe('overview contextual detail URL contract', () => {
@@ -52,6 +60,18 @@ describe('overview contextual detail URL contract', () => {
     expect(details).toContain('ReceivableDetailDrawer')
     expect(details).toContain('key={`invoice:${invoiceId}`}')
     expect(details).toContain("activeParam === 'debtId' && debtId")
+  })
+
+  it('Overview routes automatic Receivable deletion through its source Transaction', () => {
+    // Overview still provides the manual/ordinary fallback callback.
+    expect(details).toContain('onDelete={(item) => deleteReceivableMut.mutate(item.id)}')
+    // The operational drawer intercepts source-backed items before that callback.
+    expect(receivableDrawer).toContain('onClick={() => isAutomatic ? setSourceDeleteOpen(true) : onDelete(receivable)}')
+    expect(receivableDrawer).toContain('{isAutomatic && mode === \'operational\' && <SourceTransactionDeleteDialog')
+    // The confirmation calls only the canonical Transaction deletion endpoints.
+    expect(sourceDeleteDialog).toContain('deleteOpenInstallments(transactionId!, preview.deletable.map(({ id }) => id))')
+    expect(sourceDeleteDialog).toContain(': deleteTransaction(transactionId!)')
+    expect(sourceDeleteDialog).not.toContain('deleteReceivable(')
   })
 
   it('keeps grouped person authority separate from individual entity identity', () => {

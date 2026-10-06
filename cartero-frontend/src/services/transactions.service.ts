@@ -245,6 +245,8 @@ export type InstallmentPreservationReason =
   | 'PAID_INVOICE'
   | 'RECEIVABLE_ALREADY_PAID'
   | 'PAYMENT_TRANSACTION_LINKED'
+  | 'PERSON_SETTLEMENT_LINKED'
+  | 'INVOICE_SETTLEMENT_LINKED'
 
 export interface DeletePreviewInstallment {
   id: string
@@ -280,6 +282,33 @@ export interface TransactionDeleteResult {
   preservedIds: string[]
   receivablesRemoved: number
   invoicesEmptied: number
+}
+
+export interface UnlinkPreview {
+  scope: 'ONE' | 'NEXT' | 'ALL'
+  isInstallment: boolean
+  targetPersonId: string
+  targetPersonName: string
+  seriesTotal: number
+  eligibleIds: string[]
+  eligibleCount: number
+  preservedCount: number
+  preserved: Array<{ id: string; reason: 'ALREADY_UNLINKED' | 'DIFFERENT_PERSON_LINK' | 'RECEIVABLE_ALREADY_PAID' }>
+  paidInvoiceEligibleCount: number
+}
+
+export async function previewUnlinkTransaction(id: string, scope: 'ONE' | 'NEXT' | 'ALL' = 'ONE') {
+  const { data } = await api.post<UnlinkPreview>(`/transactions/${id}/preview-unlink`, null, { params: { scope } })
+  return data
+}
+
+export async function unlinkTransactionPerson(id: string, scope: 'ONE' | 'NEXT' | 'ALL', expectedEligibleIds: string[], expectedPersonId: string) {
+  const { data } = await api.post<UnlinkPreview & { unlinkedIds: string[] }>(
+    `/transactions/${id}/unlink-person`,
+    { expectedEligibleIds, expectedPersonId },
+    { params: { scope } },
+  )
+  return data
 }
 
 export async function previewDeleteTransaction(

@@ -149,8 +149,13 @@ function buildHarness() {
     validation as unknown as EntityValidationService,
   );
   const update = service.update.bind(service);
-  (service as any).update = (id: string, userId: string, dto: any, scope?: string, timeZone?: string) =>
-    update(id, userId, dto, scope, timeZone ?? 'America/Fortaleza');
+  (service as any).update = (
+    id: string,
+    userId: string,
+    dto: any,
+    scope?: string,
+    timeZone?: string,
+  ) => update(id, userId, dto, scope, timeZone ?? 'America/Fortaleza');
 
   return { service, prisma, invoiceDeletes, invoiceUpdates, transaction };
 }
@@ -214,10 +219,22 @@ describe('a limpeza tem uma dona só', () => {
     readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 
   const CONSUMIDORES = [
-    ['transações', 'src/transactions/transactions.service.ts'],
-    ['dívidas', 'src/debts/debts.service.ts'],
-    ['cobranças', 'src/receivables/receivables.service.ts'],
-    ['quitação', 'src/common/helpers/settlement.core.ts'],
+    [
+      'transações',
+      'src/transactions/transactions.service.ts',
+      'deleteInvoiceIfEmpty',
+    ],
+    ['dívidas', 'src/debts/debts.service.ts', 'removeSettlementTransaction'],
+    [
+      'cobranças',
+      'src/receivables/receivables.service.ts',
+      'removeSettlementTransaction',
+    ],
+    [
+      'quitação',
+      'src/common/helpers/settlement.core.ts',
+      'deleteInvoiceIfEmpty',
+    ],
   ] as const;
 
   it('ninguém repete a condição à mão', () => {
@@ -226,14 +243,12 @@ describe('a limpeza tem uma dona só', () => {
       fluxos, todos corretos, e o quinto — a reatribuição do `update` — foi
       escrito sem ela. Com uma dona só, esquecer deixa de ser possível.
     */
-    for (const [nome, caminho] of CONSUMIDORES) {
+    for (const [nome, caminho, helper] of CONSUMIDORES) {
       const fonte = ler(caminho);
       expect(fonte, `${nome} voltou a decidir por conta própria`).not.toMatch(
         /Number\(\s*invoice\.totalAmount\s*\)\s*===\s*0/,
       );
-      expect(fonte, `${nome} não usa a política`).toContain(
-        'deleteInvoiceIfEmpty',
-      );
+      expect(fonte, `${nome} não usa a autoridade central`).toContain(helper);
     }
   });
 

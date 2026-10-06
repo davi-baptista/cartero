@@ -51,7 +51,7 @@ import {
   canDeleteReceivable,
   resolveReceivableDeletePolicy,
 } from '@/lib/receivable-delete-policy'
-import { useDeleteSourceTransaction } from '@/lib/use-delete-source-transaction'
+import { SourceTransactionDeleteDialog } from '@/app/(dashboard)/receivables/source-transaction-delete-dialog'
 import { SettlementDateDialog } from '@/app/(dashboard)/transactions/settlement-date-dialog'
 import { DebtSheet, type DebtFormData } from '@/app/(dashboard)/debts/debt-sheet'
 import {
@@ -394,9 +394,6 @@ export function PersonStatementDrawer({
   } | null>(null)
   /** Cobrança automática cuja COMPRA de origem será excluída. */
   const [sourceDeleteTarget, setSourceDeleteTarget] = useState<Receivable | null>(null)
-  const sourceDeleteMut = useDeleteSourceTransaction({
-    onSuccess: () => setSourceDeleteTarget(null),
-  })
 
   const [linkedWarningTarget, setLinkedWarningTarget] = useState<{
     kind: 'debt' | 'receivable'
@@ -1651,29 +1648,11 @@ export function PersonStatementDrawer({
         Mesma confirmação da página de A Receber. O drawer de Pessoa
         permanece aberto: só a linha desaparece quando a lista revalida.
       */}
-      <ConfirmDialog
-        open={sourceDeleteTarget !== null}
-        title="Excluir compra e cobrança?"
-        description={
-          <>
-            Esta cobrança foi gerada pela compra{' '}
-            <strong className="text-foreground">
-              {sourceDeleteTarget?.title}
-            </strong>
-            . Para excluir a cobrança, a compra de origem também será excluída.
-            Esta ação não pode ser desfeita.
-          </>
-        }
-        confirmLabel="Excluir compra e cobrança"
-        variant="destructive"
-        isPending={sourceDeleteMut.isPending}
-        onCancel={() => setSourceDeleteTarget(null)}
-        onConfirm={() => {
-          if (sourceDeleteTarget?.transactionId) {
-            sourceDeleteMut.mutate(sourceDeleteTarget.transactionId)
-          }
-        }}
-      />
+      {sourceDeleteTarget && <SourceTransactionDeleteDialog
+        receivable={sourceDeleteTarget}
+        open
+        onClose={() => setSourceDeleteTarget(null)}
+      />}
 
       <DeleteLinkedWarningDialog
         open={linkedWarningTarget !== null}

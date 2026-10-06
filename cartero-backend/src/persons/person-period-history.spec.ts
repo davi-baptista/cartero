@@ -127,7 +127,9 @@ function build({ persons = [], debts = [], receivables = [] }: Cenario) {
     debt: { findMany: debtFind },
     receivable: { findMany: receivableFind },
     user: {
-      findUniqueOrThrow: vi.fn().mockResolvedValue({ timeZone: 'America/Fortaleza' }),
+      findUniqueOrThrow: vi
+        .fn()
+        .mockResolvedValue({ timeZone: 'America/Fortaleza' }),
     },
   } as unknown as PrismaService;
 
@@ -140,6 +142,33 @@ function build({ persons = [], debts = [], receivables = [] }: Cenario) {
 }
 
 describe('H1-H5: settlement não zera o histórico', () => {
+  it('após unlink 9/10, preserva a pessoa e a única cobrança recebida no histórico', async () => {
+    const pessoaExistente = pessoa('p1', 'João');
+    const preservada = resolvida(
+      cobranca('r-10', 'p1', 100, '2026-08-10', {
+        date: new Date('2026-08-01T12:00:00.000Z'),
+      }),
+    );
+    const { service, receivableFind } = build({
+      persons: [pessoaExistente],
+      receivables: [preservada],
+    });
+
+    const [summary] = await service.monthlySummary(USER_ID, COMPETENCIA);
+
+    expect(summary).toMatchObject({
+      id: 'p1',
+      name: 'João',
+      periodReceivableTotal: 100,
+      receivablePending: 0,
+      settledReceivablesCount: 1,
+    });
+    expect(receivableFind).toHaveBeenCalledWith({
+      where: { userId: USER_ID, personId: { not: null } },
+      include: { transaction: { select: { date: true } } },
+    });
+  });
+
   it('H1/H2: cobrança recebida CONTINUA no total do período', async () => {
     const aberta = cobranca('r1', 'p1', 350, '2026-08-10');
 
@@ -454,7 +483,11 @@ describe('H17-H21: `settledAt` chega à lista de Pessoas', () => {
       persons: [pessoa('p1', 'Eva')],
       debts: [
         resolvidaEm(divida('d1', 'p1', 100, '2026-08-05'), '2026-08-18'),
-        { ...divida('d2', 'p1', 200, '2026-08-07'), isPaid: true, paidAt: null },
+        {
+          ...divida('d2', 'p1', 200, '2026-08-07'),
+          isPaid: true,
+          paidAt: null,
+        },
       ],
     }).service.monthlySummary(USER_ID, COMPETENCIA);
 

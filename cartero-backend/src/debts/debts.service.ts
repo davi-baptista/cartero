@@ -1,8 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import {
-  deleteInvoiceIfEmpty,
-  findOrCreateSystemBank,
-} from 'src/common/helpers/invoice.helper';
+import { findOrCreateSystemBank } from 'src/common/helpers/invoice.helper';
 import { Prisma, Debt, TransactionType } from '@prisma/client';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import { getInstallmentDate } from 'src/common/helpers/get-installment-date.helper';
@@ -372,24 +369,11 @@ export class DebtsService {
           });
 
           if (debt.paymentTransactionId && !preserveTransaction) {
-            const transaction = await tx.transaction.findUnique({
-              where: { id: debt.paymentTransactionId, userId },
-            });
-
-            if (transaction) {
-              await tx.transaction.delete({
-                where: { id: transaction.id, userId },
-              });
-
-              if (transaction.invoiceId) {
-                const invoice = await tx.invoice.update({
-                  where: { id: transaction.invoiceId, userId },
-                  data: { totalAmount: { decrement: transaction.amount } },
-                });
-
-                await deleteInvoiceIfEmpty(tx, userId, invoice);
-              }
-            }
+            await removeSettlementTransaction(
+              tx,
+              userId,
+              debt.paymentTransactionId,
+            );
           }
         }
 

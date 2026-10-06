@@ -399,6 +399,17 @@ export interface Receivable {
    * resolvido e não tem essa ação.
    */
   sourceDeleteBlockReason?: 'PAID_INVOICE' | null
+  sourceTransaction?: {
+    id: string
+    personId: string | null
+    personName: string | null
+    parentId: string | null
+    installmentIndex: number | null
+    installmentCount: number | null
+    isInstallment: boolean
+    invoiceId: string | null
+    invoiceStatus: 'OPEN' | 'CLOSED' | 'PAID' | null
+  } | null
   debtorName: string
   title: string
   amount: number

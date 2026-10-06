@@ -1,4 +1,5 @@
 import { InvoiceStatus } from '@prisma/client';
+import { belongsToInstallmentSeries } from './installment.helper';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -53,8 +54,54 @@ export interface ReceivableWithSourceInvoice {
  * exporia o modelo para responder um enum.
  */
 export const SOURCE_INVOICE_SELECT = {
-  select: { invoice: { select: { status: true } } },
+  select: {
+    id: true,
+    date: true,
+    personId: true,
+    parentId: true,
+    installmentIndex: true,
+    installmentCount: true,
+    person: { select: { name: true } },
+    invoice: { select: { id: true, status: true } },
+  },
 } as const;
+
+export function serializeReceivableSource<
+  T extends {
+    transactionId: string | null;
+    transaction?: {
+      id: string;
+      personId: string | null;
+      parentId: string | null;
+      installmentIndex: number | null;
+      installmentCount: number | null;
+      person: { name: string } | null;
+      invoice: { id: string; status: InvoiceStatus } | null;
+    } | null;
+  },
+>(receivable: T) {
+  const { transaction, ...data } = receivable;
+  return {
+    ...data,
+    sourceTransaction: transaction
+      ? {
+          id: transaction.id,
+          personId: transaction.personId,
+          personName: transaction.person?.name ?? null,
+          parentId: transaction.parentId,
+          installmentIndex: transaction.installmentIndex,
+          installmentCount: transaction.installmentCount,
+          isInstallment: belongsToInstallmentSeries(transaction),
+          invoiceId: transaction.invoice?.id ?? null,
+          invoiceStatus: transaction.invoice?.status ?? null,
+        }
+      : null,
+    sourceDeleteBlockReason: resolveSourceDeleteBlockReason({
+      transactionId: receivable.transactionId,
+      transaction,
+    }),
+  };
+}
 
 /**
  * `null` quando a exclusão pela origem está liberada — ou quando a cobrança
