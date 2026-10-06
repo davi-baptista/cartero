@@ -37,7 +37,7 @@ import { ReceivableSheet, type ReceivableFormData } from '../receivables/receiva
 import { MarkAsPaidDialog } from '../transactions/mark-as-paid-dialog'
 import { UnmarkPaidWarningDialog } from '../transactions/unmark-paid-warning-dialog'
 import { RecurringIncomeSheet } from './recurring-income-sheet'
-import { deleteReceivable, getReceivables, updateReceivable } from '@/services/receivables.service'
+import { deleteReceivable, getReceivables, undoAndDeleteRecurringIncomeReceived, updateReceivable } from '@/services/receivables.service'
 import { createRecurringIncome, deleteRecurringIncome, getRecurringIncomes, updateRecurringIncome, type CreateRecurringIncomePayload, type UpdateRecurringIncomePayload } from '@/services/recurring-income.service'
 import { useAuth } from '@/providers/auth-provider'
 import { formatCurrency, formatDate, formatSignedCurrency } from '@/lib/formatters'
@@ -93,7 +93,7 @@ function HistoryOccurrencesList({ occurrences, timeZone, onSelect, onReverse }: 
             key={occurrence.id}
             resolved
             onToggleStatus={() => onReverse(occurrence)}
-            statusActionLabel={`Marcar ${occurrence.title} como pendente`}
+            statusActionLabel={`Desfazer recebimento de ${occurrence.title}`}
             ariaLabel={`Abrir ${occurrence.title}: ${receiptLabel}`}
             onView={() => onSelect(occurrence)}
             title={formatDate(occurrence.dueDate)}
@@ -171,6 +171,16 @@ export default function IncomePage() {
     },
     onError: () => toast.error('Não foi possível excluir o recebimento'),
   })
+  const deleteReceivedOccurrenceMutation = useMutation({
+    mutationFn: undoAndDeleteRecurringIncomeReceived,
+    onSuccess: () => {
+      invalidateIncome(true)
+      invalidateTransactionDependents(queryClient, { affectsPerson: false })
+      setSelectedReceivable(null)
+      toast.success('Recebimento desfeito e excluído')
+    },
+    onError: () => toast.error('Não foi possível desfazer o recebimento e excluir'),
+  })
   const updateOccurrenceMutation = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: ReceivableFormData }) => {
       const rest = { ...payload }
@@ -189,9 +199,9 @@ export default function IncomePage() {
       const updated = Array.isArray(result) ? result.find((item) => item.id === variables.id) : result
       if (updated && selectedReceivable?.id === updated.id) setSelectedReceivable(updated)
       if (variables.isPaid) setMarkPaidTarget(null)
-      toast.success(variables.isPaid ? 'Recebimento marcado como recebido' : 'Recebimento marcado como pendente')
+      toast.success(variables.isPaid ? 'Recebimento registrado' : 'Recebimento desfeito')
     },
-    onError: (_error, variables) => toast.error(variables.isPaid ? 'Não foi possível marcar o recebimento' : 'Não foi possível marcar o recebimento como pendente'),
+    onError: (_error, variables) => toast.error(variables.isPaid ? 'Não foi possível registrar o recebimento' : 'Não foi possível desfazer o recebimento'),
   })
 
   function handleSelectedReceivableToggle(item: Receivable) {
@@ -303,7 +313,7 @@ export default function IncomePage() {
           ) : null}
         </SheetContent>
       </Sheet>
-      <ReceivableDetailDrawer receivable={selectedReceivable} mode="operational" onOpenChange={(open) => { if (!open) setSelectedReceivable(null) }} onEdit={openReceivableEdit} onToggleReceived={handleSelectedReceivableToggle} onDelete={(item) => setOccurrenceDeleteTarget(item)} />
+      <ReceivableDetailDrawer receivable={selectedReceivable} mode="operational" onOpenChange={(open) => { if (!open) setSelectedReceivable(null) }} onEdit={openReceivableEdit} onToggleReceived={handleSelectedReceivableToggle} onDelete={(item) => setOccurrenceDeleteTarget(item)} onDeleteFlowStart={() => setOccurrenceDeleteTarget(null)} onDeleteRecurringReceived={(item) => deleteReceivedOccurrenceMutation.mutateAsync(item.id)} />
       <RecurringIncomeSheet key={`${editingRule?.id ?? 'new'}-${recurringSheetOpen}`} open={recurringSheetOpen} onOpenChange={(open) => { setRecurringSheetOpen(open); if (!open) setEditingRule(null) }} editTarget={editingRule} isPending={recurringCreateMutation.isPending || recurringUpdateMutation.isPending} onSubmit={(payload) => editingRule ? recurringUpdateMutation.mutate({ id: editingRule.id, payload }) : recurringCreateMutation.mutate(payload)} />
       <ReceivableSheet mode="income-occurrence" open={occurrenceEditTarget !== null} onOpenChange={(open) => { if (!open) setOccurrenceEditTarget(null) }} editTarget={occurrenceEditTarget} editScope={null} timeZone={user?.timeZone} onSubmit={async (data) => { if (occurrenceEditTarget) await updateOccurrenceMutation.mutateAsync({ id: occurrenceEditTarget.id, payload: data }) }} />
       <MarkAsPaidDialog open={markPaidTarget !== null} kind="receivable" createTransaction onConfirm={(payload) => markPaidTarget && settlementMutation.mutate({ id: markPaidTarget.id, isPaid: true, payload })} onCancel={() => setMarkPaidTarget(null)} isPending={settlementMutation.isPending} />

@@ -62,6 +62,12 @@ export async function deleteReceivable(
   })
 }
 
+export async function undoAndDeleteRecurringIncomeReceived(
+  id: string,
+): Promise<void> {
+  await api.post(`/receivables/${id}/undo-and-delete-recurring-income`)
+}
+
 /**
  * Corrige a data real do recebimento de um item JÁ resolvido.
  *

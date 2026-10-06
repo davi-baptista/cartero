@@ -30,7 +30,7 @@ describe('Movements filter and motion parity', () => {
     expect(statement).toContain('import { MotionRow }')
     expect(obligations).toContain('import { MotionRow }')
     expect(obligations).toContain('rows.map((row, index) => {')
-    expect(obligations).toContain('key={rowKey}\n                index={index}\n                separator={false}')
+    expect(obligations.replace(/\r\n/g, '\n')).toContain('key={rowKey}\n                index={index}\n                separator={false}')
     expect(obligations).toContain("financialDrawerRowSurfaceClass('animatedWrapper')")
     expect(motionRow).toContain('initial={{ opacity: 0, y: 8 }}')
     expect(motionRow).toContain('animate={{ opacity: 1, y: 0 }}')

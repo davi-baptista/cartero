@@ -66,8 +66,9 @@ describe('overview contextual detail URL contract', () => {
     // Overview still provides the manual/ordinary fallback callback.
     expect(details).toContain('onDelete={(item) => deleteReceivableMut.mutate(item.id)}')
     // The operational drawer intercepts source-backed items before that callback.
-    expect(receivableDrawer).toContain('onClick={() => isAutomatic ? setSourceDeleteOpen(true) : onDelete(receivable)}')
-    expect(receivableDrawer).toContain('{isAutomatic && mode === \'operational\' && <SourceTransactionDeleteDialog')
+    expect(receivableDrawer).toContain('onClick={handleDelete}')
+    expect(receivableDrawer).toContain("activeDeleteFlow === 'delete-source' && isAutomatic")
+    expect(receivableDrawer).toContain("activeDeleteFlow === 'choose-source-action'")
     // The confirmation calls only the canonical Transaction deletion endpoints.
     expect(sourceDeleteDialog).toContain('deleteOpenInstallments(transactionId!, preview.deletable.map(({ id }) => id))')
     expect(sourceDeleteDialog).toContain(': deleteTransaction(transactionId!)')

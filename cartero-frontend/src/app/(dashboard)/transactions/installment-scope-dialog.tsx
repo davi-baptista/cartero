@@ -18,6 +18,11 @@ import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/formatters'
 import { installmentPosition, selectSeries } from '@/lib/installment-series'
 import {
+  InstallmentScopeSelector,
+  INSTALLMENT_SCOPE_LABELS,
+  installmentScopeDescription,
+} from '@/components/ui/installment-scope-selector'
+import {
   previewUpdateTransaction,
   type PreviewUpdatePayload,
   type TransactionUpdatePreview,
@@ -68,35 +73,11 @@ interface InstallmentScopeDialogProps {
   linkedWarning?: boolean
 }
 
-const OPTIONS: {
-  scope: InstallmentScope
-  label: string
-  /** Rótulo com a contagem real, quando a série é conhecida. */
-  hint: (count: number, position: number | null) => string
-  /** Rótulo genérico, para as telas que não carregam a série. */
-  fallbackHint: string
-}[] = [
-  {
-    scope: InstallmentScope.ONE,
-    label: 'Apenas esta',
-    hint: (_, position) =>
-      position ? `Somente a parcela ${position}` : 'Somente esta parcela',
-    fallbackHint: 'Afeta somente esta parcela',
-  },
-  {
-    scope: InstallmentScope.NEXT,
-    label: 'Esta e as próximas',
-    hint: (count) => `${count} ${count === 1 ? 'parcela' : 'parcelas'}`,
-    fallbackHint: 'Afeta esta e todas as próximas parcelas',
-  },
-  {
-    scope: InstallmentScope.ALL,
-    label: 'Todas as parcelas',
-    hint: (count) =>
-      `A série inteira · ${count} ${count === 1 ? 'parcela' : 'parcelas'}`,
-    fallbackHint: 'Afeta todas as parcelas da série',
-  },
-]
+const SCOPES = [
+  InstallmentScope.ONE,
+  InstallmentScope.NEXT,
+  InstallmentScope.ALL,
+] as const
 
 export function InstallmentScopeDialog({
   open,
@@ -185,63 +166,45 @@ export function InstallmentScopeDialog({
           <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
             <Lock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
             <div className="text-sm">
-              <p className="font-medium">Todas as parcelas</p>
+              <p className="font-medium">
+                {INSTALLMENT_SCOPE_LABELS[InstallmentScope.ALL]}
+              </p>
               <p className="text-xs text-muted-foreground">
                 Mudar a data recalcula a fatura de cada parcela.
               </p>
             </div>
           </div>
         ) : (
-          <div
-            role="radiogroup"
-            aria-label={`Alcance da ${isEdit ? 'edição' : 'exclusão'}`}
-            className="flex flex-col gap-2 py-1"
-          >
-            {OPTIONS.map((option) => {
-              // Sem transação (Dívidas, A Receber…) não há série para contar:
-              // a opção mostra só o rótulo, como antes.
+          <InstallmentScopeSelector
+            value={scope}
+            ariaLabel={`Alcance da ${isEdit ? 'edição' : 'exclusão'}`}
+            disabled={isPending}
+            tone={isEdit ? 'default' : 'destructive'}
+            onChange={setScope}
+            options={SCOPES.map((optionScope) => {
+              // Sem transação (Dívidas, A Receber…) não há série para contar.
               const projection = transaction
-                ? selectSeries(transaction, siblings, option.scope)
+                ? selectSeries(transaction, siblings, optionScope)
                 : null
-              const selected = scope === option.scope
-              const destructive = !isEdit && option.scope !== InstallmentScope.ONE
-
-              return (
-                <button
-                  key={option.scope}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  disabled={isPending}
-                  onClick={() => setScope(option.scope)}
-                  className={cn(
-                    'flex flex-col items-start rounded-lg border px-3 py-2.5 text-left transition-colors',
-                    selected
-                      ? 'border-primary bg-primary/10'
-                      : destructive
-                        ? 'border-destructive/30 bg-destructive/5 hover:bg-destructive/10'
-                        : 'border-border hover:bg-muted',
-                    isPending && 'pointer-events-none opacity-50',
-                  )}
-                >
-                  <span className="flex w-full items-baseline justify-between gap-2">
-                    <span className="text-sm font-medium">{option.label}</span>
-                    {projection && (
-                      <span className="tabular-nums text-xs text-muted-foreground">
-                        {formatCurrency(projection.affectedTotal)}
-                        {projection.partial && '+'}
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {projection
-                      ? option.hint(projection.affected.length, position)
-                      : option.fallbackHint}
-                  </span>
-                </button>
-              )
+              return {
+                scope: optionScope,
+                description: projection
+                  ? installmentScopeDescription(optionScope, {
+                      count: projection.affected.length,
+                      position,
+                    })
+                  : optionScope === InstallmentScope.ONE
+                    ? 'Afeta somente esta parcela'
+                    : installmentScopeDescription(optionScope),
+                ...(projection
+                  ? {
+                      affectedTotal: projection.affectedTotal,
+                      partialTotal: projection.partial,
+                    }
+                  : {}),
+              }
             })}
-          </div>
+          />
         )}
 
         {local ? (

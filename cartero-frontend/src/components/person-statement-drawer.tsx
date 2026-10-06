@@ -86,6 +86,7 @@ import {
   createReceivable,
   updateReceivable,
   deleteReceivable,
+  undoAndDeleteRecurringIncomeReceived,
   updateReceivableSettlementDate,
 } from '@/services/receivables.service'
 import { getPersonStatement, settlePerson, undoPersonSettlement } from '@/services/persons.service'
@@ -181,7 +182,7 @@ function StatementRow({
         onToggleStatus={onToggle}
         onView={onView}
         ariaLabel={`Ver detalhes de ${item.title}`}
-        statusActionLabel={item.isPaid ? 'Marcar como pendente' : isReceivable ? 'Marcar como recebido' : 'Marcar como paga'}
+        statusActionLabel={item.isPaid ? isReceivable ? 'Desfazer recebimento' : 'Desfazer pagamento' : isReceivable ? 'Marcar como recebido' : 'Marcar como paga'}
         title={item.title}
         meta={
           dueLabelText ? (
@@ -221,7 +222,7 @@ function StatementRow({
         onClick={onToggle}
         ariaLabel={
           item.isPaid
-            ? 'Marcar como pendente'
+            ? isReceivable ? 'Desfazer recebimento' : 'Desfazer pagamento'
             : isReceivable
               ? 'Marcar como recebido'
               : 'Marcar como paga'
@@ -578,6 +579,16 @@ export function PersonStatementDrawer({
     onError: () => toast.error('Erro ao excluir cobrança'),
   })
 
+  const deleteReceivedRecurringMut = useMutation({
+    mutationFn: undoAndDeleteRecurringIncomeReceived,
+    onSuccess: async () => {
+      await invalidateStatement()
+      setDetailReceivable(null)
+      toast.success('Recebimento desfeito e excluído')
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, 'Não foi possível desfazer o recebimento e excluir')),
+  })
+
   const toggleDebtMut = useMutation({
     mutationFn: ({ id, isPaid, paymentBankId, paymentType, paymentDate }: {
       id: string
@@ -593,7 +604,7 @@ export function PersonStatementDrawer({
     onSuccess: async (result, variables) => {
       syncSettlementEntity(qc, 'debt', variables.id, result)
       await invalidateStatement()
-      toast.success(variables.isPaid ? 'Dívida marcada como paga' : 'Dívida marcada como pendente')
+      toast.success(variables.isPaid ? 'Pagamento registrado' : 'Pagamento desfeito')
     },
     onError: (error) => {
       if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
@@ -612,7 +623,7 @@ export function PersonStatementDrawer({
     onSuccess: async (result, variables) => {
       syncSettlementEntity(qc, 'receivable', variables.id, result)
       await invalidateStatement()
-      toast.success(variables.isPaid ? 'Cobrança marcada como recebida' : 'Cobrança marcada como pendente')
+      toast.success(variables.isPaid ? 'Recebimento registrado' : 'Recebimento desfeito')
     },
     onError: (error) => {
       if (isApiErrorCode(error, 'PERSON_SETTLEMENT_GROUP_UNDO_REQUIRED')) setGroupUndoId(apiErrorDetail<string>(error, 'settlementGroupId') ?? null)
@@ -1477,6 +1488,12 @@ export function PersonStatementDrawer({
         onOpenChange={(nextOpen) => !nextOpen && setDetailReceivable(null)}
         onEdit={handleEditReceivable}
         onDelete={handleDeleteReceivable}
+        onDeleteFlowStart={() => {
+          setDeleteTarget(null)
+          setLinkedWarningTarget(null)
+          setSourceDeleteTarget(null)
+        }}
+        onDeleteRecurringReceived={(item) => deleteReceivedRecurringMut.mutateAsync(item.id)}
         onToggleReceived={handleReceivableToggle}
         onEditSettlementDate={(receivable) =>
           setSettlementDateItem({ kind: 'receivable', item: receivable })

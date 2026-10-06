@@ -12,6 +12,7 @@ import { financialCivilParts } from 'src/common/helpers/financial-timezone.helpe
 import { requireAccountTimeZone } from 'src/common/helpers/timezone.helper';
 import { acquireTransactionAdvisoryLock } from 'src/common/helpers/advisory-lock.helper';
 import { assertNotActivePersonSettlementMember } from 'src/common/helpers/person-settlement.guard';
+import { removeSettlementTransaction } from 'src/common/helpers/settlement.core';
 import { CreateRecurringIncomeDto } from './dto/create-recurring-income.dto';
 import { UpdateRecurringIncomeDto } from './dto/update-recurring-income.dto';
 import { PreviewRecurringIncomeDto } from './dto/preview-recurring-income.dto';
@@ -407,11 +408,12 @@ export class RecurringIncomeService {
       const occurrence = await tx.receivable.findUnique({
         where: { id: receivableId, userId },
       });
+      const recurringMonth = occurrence?.recurringMonth;
       if (!occurrence)
         throw new NotFoundException('Recebimento não encontrado');
       if (
         occurrence.recurringIncomeRuleId !== initial.recurringIncomeRuleId ||
-        !occurrence.recurringMonth
+        !recurringMonth
       ) {
         throw new BadRequestException(
           'Este recebimento não é uma ocorrência recorrente válida',
@@ -435,10 +437,7 @@ export class RecurringIncomeService {
         where: { id: occurrence.recurringIncomeRuleId, userId },
       });
       if (!rule) throw new NotFoundException('Regra de renda não encontrada');
-      this.validateOccurrenceMonth(
-        occurrence.recurringMonth,
-        rule.firstOccurrence,
-      );
+      this.validateOccurrenceMonth(recurringMonth, rule.firstOccurrence);
       await assertNotActivePersonSettlementMember(
         tx,
         'receivable',
@@ -446,18 +445,108 @@ export class RecurringIncomeService {
         userId,
       );
 
-      await tx.recurringIncomeOccurrenceExclusion.createMany({
-        data: [
-          {
-            userId,
-            recurringIncomeRuleId: rule.id,
-            recurringMonth: occurrence.recurringMonth,
-          },
-        ],
-        skipDuplicates: true,
-      });
-      await tx.receivable.delete({ where: { id: occurrence.id, userId } });
+      await this.suppressAndDeleteOccurrence(
+        tx,
+        { id: occurrence.id, recurringMonth },
+        rule.id,
+        userId,
+      );
     });
+  }
+
+  /** Undo settlement, suppress the competence, and remove a received occurrence atomically. */
+  async undoAndDeleteReceivedOccurrence(
+    userId: string,
+    receivableId: string,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const initial = await tx.receivable.findUnique({
+        where: { id: receivableId, userId },
+      });
+      if (!initial) throw new NotFoundException('Recebimento não encontrado');
+      if (!initial.recurringIncomeRuleId || !initial.recurringMonth) {
+        throw new BadRequestException(
+          'Este recebimento não é uma ocorrência recorrente válida',
+        );
+      }
+
+      await acquireTransactionAdvisoryLock(
+        tx,
+        this.occurrenceLockKey(userId, initial.recurringIncomeRuleId),
+      );
+
+      const occurrence = await tx.receivable.findUnique({
+        where: { id: receivableId, userId },
+      });
+      const recurringMonth = occurrence?.recurringMonth;
+      if (
+        !occurrence ||
+        occurrence.recurringIncomeRuleId !== initial.recurringIncomeRuleId ||
+        !recurringMonth
+      ) {
+        throw new NotFoundException('Recebimento recorrente não encontrado');
+      }
+      if (!occurrence.isPaid) {
+        throw new ConflictException({
+          message: 'Este recebimento já está pendente.',
+          code: 'RECURRING_INCOME_RECEIVABLE_NOT_RECEIVED',
+        });
+      }
+      if (occurrence.transactionId) {
+        throw new ConflictException({
+          message: 'Este recebimento está vinculado a uma compra protegida.',
+          code: 'RECURRING_INCOME_RECEIVABLE_DELETE_BLOCKED',
+        });
+      }
+
+      const rule = await tx.recurringIncomeRule.findUnique({
+        where: { id: occurrence.recurringIncomeRuleId, userId },
+      });
+      if (!rule) throw new NotFoundException('Regra de renda não encontrada');
+      this.validateOccurrenceMonth(recurringMonth, rule.firstOccurrence);
+      await assertNotActivePersonSettlementMember(
+        tx,
+        'receivable',
+        occurrence.id,
+        userId,
+      );
+
+      const paymentTransactionId = occurrence.paymentTransactionId;
+      if (paymentTransactionId) {
+        // Clear the FK first, following the existing receivable unmark authority.
+        await tx.receivable.update({
+          where: { id: occurrence.id, userId },
+          data: { paymentTransactionId: null, isPaid: false, paidAt: null },
+        });
+        await removeSettlementTransaction(tx, userId, paymentTransactionId);
+      }
+
+      await this.suppressAndDeleteOccurrence(
+        tx,
+        { id: occurrence.id, recurringMonth },
+        rule.id,
+        userId,
+      );
+    });
+  }
+
+  private async suppressAndDeleteOccurrence(
+    tx: Prisma.TransactionClient,
+    occurrence: { id: string; recurringMonth: string },
+    ruleId: string,
+    userId: string,
+  ): Promise<void> {
+    await tx.recurringIncomeOccurrenceExclusion.createMany({
+      data: [
+        {
+          userId,
+          recurringIncomeRuleId: ruleId,
+          recurringMonth: occurrence.recurringMonth,
+        },
+      ],
+      skipDuplicates: true,
+    });
+    await tx.receivable.delete({ where: { id: occurrence.id, userId } });
   }
 
   private occurrenceLockKey(userId: string, recurringIncomeRuleId: string) {

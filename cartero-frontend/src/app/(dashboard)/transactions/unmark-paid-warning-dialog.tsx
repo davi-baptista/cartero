@@ -19,7 +19,7 @@ export function UnmarkPaidWarningDialog({
   onCancel,
 }: UnmarkPaidWarningDialogProps) {
   const noun = kind === 'debt' ? 'dívida' : 'cobrança'
-  const verb = kind === 'debt' ? 'paga' : 'recebida'
+  const action = kind === 'debt' ? 'Desfazer pagamento' : 'Desfazer recebimento'
 
   /*
     Adapter sobre `ConfirmDialog` — a casca canônica de decisão binária.
@@ -34,9 +34,9 @@ export function UnmarkPaidWarningDialog({
   return (
     <ConfirmDialog
       open={open}
-      title={`Desmarcar como ${verb}`}
+      title={`${action}?`}
       description={`Isso vai excluir a transação de pagamento vinculada a esta ${noun}, incluindo a data original do pagamento. Esta ação não pode ser desfeita.`}
-      confirmLabel="Desmarcar"
+      confirmLabel={action}
       variant="destructive"
       isPending={isPending}
       onConfirm={onConfirm}

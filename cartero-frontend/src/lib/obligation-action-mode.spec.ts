@@ -33,7 +33,7 @@ describe('obligation detail action mode', () => {
   it('offers the shared recurring delete action in Movements with occurrence-specific confirmation and refresh', () => {
     expect(deletePolicy).toContain("? { mode: 'recurring-income' }")
     expect(deletePolicy).toContain(": { mode: 'direct' }")
-    expect(obligations).toContain('deleteReceivable(target.item.id)')
+    expect(obligations).toContain('deleteReceivable(intent.target.item.id)')
     expect(obligations).toContain("queryKey: ['receivables']")
     expect(obligations).toContain("queryKey: ['obligations']")
     expect(obligations).toContain("'Excluir este recebimento?'")

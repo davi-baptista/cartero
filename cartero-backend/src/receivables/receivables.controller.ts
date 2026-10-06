@@ -29,12 +29,18 @@ export class ReceivablesController {
   }
 
   @Get()
-  findAll(@CurrentUser() user: AuthenticatedUser, @Query() filters: FindReceivablesDto) {
+  findAll(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() filters: FindReceivablesDto,
+  ) {
     return this.receivablesService.findAll(user.id, filters);
   }
 
   @Post()
-  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateReceivableDto) {
+  create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateReceivableDto,
+  ) {
     return this.receivablesService.create(user.id, dto);
   }
 
@@ -74,6 +80,17 @@ export class ReceivablesController {
       user.id,
       scope,
       preserveTransaction === 'true',
+    );
+  }
+
+  @Post(':id/undo-and-delete-recurring-income')
+  undoAndDeleteRecurringIncomeReceived(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.receivablesService.undoAndDeleteRecurringIncomeReceived(
+      id,
+      user.id,
     );
   }
 }

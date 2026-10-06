@@ -18,7 +18,8 @@ describe('Income settlement and nested detail contracts', () => {
     expect(page).toContain('<UnmarkPaidWarningDialog open={unmarkPaidTarget !== null}')
     expect(page).toContain('onConfirm={handleUnmarkPaidConfirm}')
     expect(page).toContain('onCancel={() => setUnmarkPaidTarget(null)}')
-    expect(unmarkWarning).toContain('confirmLabel="Desmarcar"')
+    expect(unmarkWarning).toContain('confirmLabel={action}')
+    expect(unmarkWarning).toContain('Desfazer recebimento')
     expect(unmarkWarning).toContain('onConfirm={onConfirm}')
   })
 

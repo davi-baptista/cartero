@@ -361,10 +361,11 @@ describe('item 40: a copy antiga descrevia a cascata invertida', () => {
       O JSX quebra linha no meio das frases, então a asserção mira trechos
       que não atravessam a quebra — não a frase inteira.
     */
-    expect(DRAWER).toContain('escolha o escopo da exclusão')
-    expect(DRAWER).toContain('desmarque o')
-    expect(DRAWER).toContain('compra parcelada')
-    expect(DRAWER).toContain('compra de origem também será excluída')
+    expect(DRAWER).toContain('Cobrança gerada por uma compra parcelada.')
+    expect(DRAWER).not.toContain('escolha o escopo da exclusão')
+    expect(DRAWER).toContain('onUndoReceipt')
+    expect(DRAWER).toContain('Desfazer recebimento')
+    expect(DRAWER).not.toContain('compra de origem também será excluída')
   })
 })
 

@@ -50,6 +50,13 @@ export function installmentPosition(tx: Transaction): number | null {
   return installmentMetadata(tx)?.index ?? null
 }
 
+/** Original 1-based installment number supplied by the structural source metadata. */
+export function originalInstallmentNumber(
+  tx: Pick<Transaction, 'installmentIndex'>,
+): number | null {
+  return tx.installmentIndex ?? null
+}
+
 /** A transação pertence a um parcelamento, em qualquer posição. */
 export function belongsToSeries(tx: Transaction): boolean {
   return installmentMetadata(tx) !== null

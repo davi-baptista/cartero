@@ -509,6 +509,18 @@ export class ReceivablesService {
     );
   }
 
+  async undoAndDeleteRecurringIncomeReceived(id: string, userId: string) {
+    if (!this.recurringIncomeService) {
+      throw new BadRequestException(
+        'Exclusão de renda recorrente indisponível',
+      );
+    }
+    await this.recurringIncomeService.undoAndDeleteReceivedOccurrence(
+      userId,
+      id,
+    );
+  }
+
   private normalizeScope(scope?: string): ReceivableScope {
     if (scope === 'NEXT' || scope === 'ALL') {
       return scope;

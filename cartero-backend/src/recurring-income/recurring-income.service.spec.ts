@@ -30,6 +30,9 @@ function buildHarness() {
   const rules = new Map<string, any>();
   const receivables = new Map<string, any>();
   const exclusions = new Map<string, any>();
+  const transactions = new Map<string, any>();
+  const invoices = new Map<string, any>();
+  const activePersonSettlements = new Set<string>();
   const lockTails = new Map<string, Promise<void>>();
   const lockKeys: string[] = [];
   let ruleSequence = 1;
@@ -124,6 +127,14 @@ function buildHarness() {
         receivables.delete(entry[0]);
         return entry[1];
       }),
+      update: vi.fn(async ({ where, data }: any) => {
+        const item = [...receivables.values()].find(
+          (value) => value.id === where.id && value.userId === where.userId,
+        );
+        if (!item) throw new Error('missing receivable');
+        Object.assign(item, data);
+        return item;
+      }),
       createMany: vi.fn(async ({ data }: any) => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         let count = 0;
@@ -142,12 +153,58 @@ function buildHarness() {
       }),
       deleteMany: vi.fn(async () => ({ count: 0 })),
     },
+    transaction: {
+      findUnique: vi.fn(async ({ where }: any) =>
+        transactions.get(where.id)?.userId === where.userId
+          ? transactions.get(where.id)
+          : null,
+      ),
+      delete: vi.fn(async ({ where }: any) => {
+        const item = transactions.get(where.id);
+        if (!item || item.userId !== where.userId)
+          throw new Error('missing transaction');
+        transactions.delete(where.id);
+        return item;
+      }),
+    },
+    invoice: {
+      findUnique: vi.fn(
+        async ({ where }: any) => invoices.get(where.id) ?? null,
+      ),
+      update: vi.fn(async ({ where, data }: any) => {
+        const item = invoices.get(where.id);
+        if (!item) throw new Error('missing invoice');
+        if (data.totalAmount?.decrement !== undefined) {
+          item.totalAmount -= data.totalAmount.decrement;
+        }
+        return item;
+      }),
+      delete: vi.fn(async ({ where }: any) => invoices.delete(where.id)),
+    },
+    personSettlementReceivable: {
+      findFirst: vi.fn(async ({ where }: any) =>
+        activePersonSettlements.has(where.receivableId)
+          ? { groupId: 'settlement-group' }
+          : null,
+      ),
+    },
     $transaction: vi.fn(async (callback: any) => {
       const ruleSnapshot = new Map(
         [...rules].map(([key, value]) => [key, { ...value }]),
       );
-      const receivableSnapshot = new Map(receivables);
+      const receivableSnapshot = new Map(
+        [...receivables].map(([key, value]) => [
+          key,
+          { reference: value, state: { ...value } },
+        ]),
+      );
       const exclusionSnapshot = new Map(exclusions);
+      const transactionSnapshot = new Map(
+        [...transactions].map(([key, value]) => [key, { ...value }]),
+      );
+      const invoiceSnapshot = new Map(
+        [...invoices].map(([key, value]) => [key, { ...value }]),
+      );
       const releases: Array<() => void> = [];
       const tx = Object.create(prisma);
       tx.$executeRaw = vi.fn(
@@ -174,9 +231,18 @@ function buildHarness() {
         rules.clear();
         ruleSnapshot.forEach((value, key) => rules.set(key, value));
         receivables.clear();
-        receivableSnapshot.forEach((value, key) => receivables.set(key, value));
+        receivableSnapshot.forEach(({ reference, state }, key) => {
+          Object.assign(reference, state);
+          receivables.set(key, reference);
+        });
         exclusions.clear();
         exclusionSnapshot.forEach((value, key) => exclusions.set(key, value));
+        transactions.clear();
+        transactionSnapshot.forEach((value, key) =>
+          transactions.set(key, value),
+        );
+        invoices.clear();
+        invoiceSnapshot.forEach((value, key) => invoices.set(key, value));
         throw error;
       } finally {
         for (const release of releases.reverse()) release();
@@ -190,6 +256,9 @@ function buildHarness() {
     rules,
     receivables,
     exclusions,
+    transactions,
+    invoices,
+    activePersonSettlements,
     lockKeys,
     service: new RecurringIncomeService(prisma),
   };
@@ -1123,6 +1192,162 @@ describe('recurring income global reconciliation scan', () => {
 
     expect(harness.exclusions.has('rule-1:2026-10')).toBe(true);
     expect(harness.receivables.has('rule-1:2026-10')).toBe(false);
+  });
+
+  it('undoes settlement, deletes a received occurrence, and suppresses only its competence atomically', async () => {
+    const harness = buildHarness();
+    harness.rules.set('rule-1', rule({ firstOccurrence: '2026-10' }));
+    harness.receivables.set('rule-1:2026-10', {
+      id: 'received-october',
+      userId: USER_ID,
+      recurringIncomeRuleId: 'rule-1',
+      recurringMonth: '2026-10',
+      transactionId: null,
+      isPaid: true,
+      paidAt: new Date('2026-10-05T12:00:00Z'),
+      paymentTransactionId: 'receipt-1',
+    });
+    harness.transactions.set('receipt-1', {
+      id: 'receipt-1',
+      userId: USER_ID,
+      invoiceId: 'invoice-received',
+      amount: 5000,
+    });
+    harness.invoices.set('invoice-received', {
+      id: 'invoice-received',
+      status: 'OPEN',
+      totalAmount: 5000,
+    });
+
+    await harness.service.undoAndDeleteReceivedOccurrence(
+      USER_ID,
+      'received-october',
+    );
+
+    expect(harness.receivables.has('rule-1:2026-10')).toBe(false);
+    expect(harness.transactions.has('receipt-1')).toBe(false);
+    expect(harness.invoices.has('invoice-received')).toBe(false);
+    expect(harness.exclusions.has('rule-1:2026-10')).toBe(true);
+    expect(harness.prisma.$transaction).toHaveBeenCalledTimes(1);
+
+    expect(
+      await harness.service.reconcileForUserPeriod(USER_ID, 10, 2026),
+    ).toEqual({
+      month: '2026-10',
+      created: 0,
+    });
+    expect(
+      await harness.service.reconcileForUserPeriod(USER_ID, 11, 2026),
+    ).toEqual({
+      month: '2026-11',
+      created: 1,
+    });
+    expect(harness.receivables.has('rule-1:2026-11')).toBe(true);
+  });
+
+  it('rolls back the settlement reversal and exclusion when occurrence deletion fails', async () => {
+    const harness = buildHarness();
+    harness.rules.set('rule-1', rule({ firstOccurrence: '2026-10' }));
+    const occurrence = {
+      id: 'received-october',
+      userId: USER_ID,
+      recurringIncomeRuleId: 'rule-1',
+      recurringMonth: '2026-10',
+      transactionId: null,
+      isPaid: true,
+      paidAt: new Date('2026-10-05T12:00:00Z'),
+      paymentTransactionId: 'receipt-1',
+    };
+    harness.receivables.set('rule-1:2026-10', occurrence);
+    harness.transactions.set('receipt-1', {
+      id: 'receipt-1',
+      userId: USER_ID,
+      invoiceId: null,
+    });
+    vi.spyOn(harness.prisma.receivable, 'delete').mockRejectedValueOnce(
+      new Error('occurrence delete failed'),
+    );
+
+    await expect(
+      harness.service.undoAndDeleteReceivedOccurrence(USER_ID, occurrence.id),
+    ).rejects.toThrow('occurrence delete failed');
+
+    expect(harness.receivables.get('rule-1:2026-10')).toMatchObject({
+      isPaid: true,
+      paymentTransactionId: 'receipt-1',
+    });
+    expect(harness.transactions.has('receipt-1')).toBe(true);
+    expect(harness.exclusions.has('rule-1:2026-10')).toBe(false);
+  });
+
+  it('preserves a received occurrence when settlement removal is blocked by a paid invoice', async () => {
+    const harness = buildHarness();
+    harness.rules.set('rule-1', rule({ firstOccurrence: '2026-10' }));
+    const occurrence = {
+      id: 'received-october',
+      userId: USER_ID,
+      recurringIncomeRuleId: 'rule-1',
+      recurringMonth: '2026-10',
+      transactionId: null,
+      isPaid: true,
+      paidAt: new Date('2026-10-05T12:00:00Z'),
+      paymentTransactionId: 'receipt-1',
+    };
+    harness.receivables.set('rule-1:2026-10', occurrence);
+    harness.transactions.set('receipt-1', {
+      id: 'receipt-1',
+      userId: USER_ID,
+      invoiceId: 'invoice-1',
+    });
+    harness.invoices.set('invoice-1', {
+      id: 'invoice-1',
+      status: 'PAID',
+      totalAmount: 5000,
+    });
+
+    await expect(
+      harness.service.undoAndDeleteReceivedOccurrence(USER_ID, occurrence.id),
+    ).rejects.toThrow(/fatura/);
+
+    expect(harness.receivables.get('rule-1:2026-10')).toMatchObject({
+      isPaid: true,
+      paymentTransactionId: 'receipt-1',
+    });
+    expect(harness.transactions.has('receipt-1')).toBe(true);
+    expect(harness.exclusions.has('rule-1:2026-10')).toBe(false);
+  });
+
+  it('preserves a received occurrence protected by an active PersonSettlement', async () => {
+    const harness = buildHarness();
+    harness.rules.set('rule-1', rule({ firstOccurrence: '2026-10' }));
+    const occurrence = {
+      id: 'received-october',
+      userId: USER_ID,
+      recurringIncomeRuleId: 'rule-1',
+      recurringMonth: '2026-10',
+      transactionId: null,
+      isPaid: true,
+      paidAt: new Date('2026-10-05T12:00:00Z'),
+      paymentTransactionId: 'receipt-1',
+    };
+    harness.receivables.set('rule-1:2026-10', occurrence);
+    harness.transactions.set('receipt-1', {
+      id: 'receipt-1',
+      userId: USER_ID,
+      invoiceId: null,
+    });
+    harness.activePersonSettlements.add(occurrence.id);
+
+    await expect(
+      harness.service.undoAndDeleteReceivedOccurrence(USER_ID, occurrence.id),
+    ).rejects.toThrow('Desfaça o acerto inteiro');
+
+    expect(harness.receivables.get('rule-1:2026-10')).toMatchObject({
+      isPaid: true,
+      paymentTransactionId: 'receipt-1',
+    });
+    expect(harness.transactions.has('receipt-1')).toBe(true);
+    expect(harness.exclusions.has('rule-1:2026-10')).toBe(false);
   });
 
   it('selects active sources only and respects tombstones after reactivation', async () => {

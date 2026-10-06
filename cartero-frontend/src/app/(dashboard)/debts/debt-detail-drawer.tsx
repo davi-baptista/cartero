@@ -95,7 +95,7 @@ export function DebtDetailDrawer({
             ) : (
               <Check className="size-4" />
             )}
-            {debt.isPaid ? 'Marcar como pendente' : 'Marcar como paga'}
+            {debt.isPaid ? 'Desfazer pagamento' : 'Marcar como paga'}
           </Button>}
           {canEditSettlementDate(debt) && onEditSettlementDate && (
             <Button
@@ -184,7 +184,7 @@ export function DebtDetailDrawer({
 
       {debt.paymentTransactionId && (
         <DetailNotice>
-          O pagamento gerou uma transação vinculada. Desmarcar a dívida
+          O pagamento gerou uma transação vinculada. Desfazer o pagamento
           exclui essa transação, junto com a data original do pagamento.
         </DetailNotice>
       )}

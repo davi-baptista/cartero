@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Pencil, Trash2, CalendarDays, Check, Undo2, ShoppingBag } from 'lucide-react'
+import { Pencil, Trash2, CalendarDays, Check, Undo2, ShoppingBag, UserRoundMinus, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DetailAmount,
@@ -26,7 +26,16 @@ import {
 import { settlementStatus } from '@/lib/settlement-status'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
-import { UserRoundMinus } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { DIALOG_ROOMY_CLASS } from '@/components/ui/confirm-dialog'
+import { apiErrorMessage } from '@/lib/api-error'
 import { ReceivableUnlinkDialog } from './receivable-unlink-dialog'
 import { SourceTransactionDeleteDialog } from './source-transaction-delete-dialog'
 import {
@@ -36,6 +45,18 @@ import {
 import { useAuth } from '@/providers/auth-provider'
 import type { ObligationDetailMode } from '@/lib/obligation-detail-mode'
 import type { Receivable } from '@/types'
+
+type ReceivableDeleteFlowKind =
+  | 'choose-source-action'
+  | 'delete-source'
+  | 'unlink'
+  | 'protected-received'
+  | 'delete-recurring-received'
+
+type ReceivableDeleteFlow = {
+  receivableId: string
+  kind: ReceivableDeleteFlowKind
+} | null
 
 /**
  * ══════════════════════════════════════════════════════════════════════════
@@ -53,9 +74,8 @@ import type { Receivable } from '@/types'
  *                `syncLinkedReceivable`, e excluir isolado apagaria a compra
  *                junto.
  *
- * Por isso a automática NÃO recebe o botão Excluir, e o Editar abre o mesmo
- * formulário de sempre — que já desabilita os campos financeiros
- * (`financialLocked`) e permanece útil para título e descrição.
+ * A compra continua sendo a origem da verdade. O usuário inicia a ação pelo
+ * recebível e escolhe excluir a compra ou mantê-la e desvincular a pessoa.
  *
  * Nada disso é regra nova: é a regra que já existia, agora visível em vez de
  * descoberta ao esbarrar num aviso.
@@ -65,6 +85,8 @@ export function ReceivableDetailDrawer({
   onOpenChange,
   onEdit,
   onDelete,
+  onDeleteRecurringReceived,
+  onDeleteFlowStart,
   onToggleReceived,
   onEditSettlementDate,
   mode = 'operational',
@@ -74,13 +96,15 @@ export function ReceivableDetailDrawer({
   onOpenChange: (open: boolean) => void
   onEdit?: (receivable: Receivable) => void
   onDelete?: (receivable: Receivable) => void
+  onDeleteRecurringReceived?: (receivable: Receivable) => Promise<void>
+  /** Clears any page-owned fallback confirmation before the drawer opens its intent. */
+  onDeleteFlowStart?: (receivable: Receivable) => void
   onToggleReceived?: (receivable: Receivable) => void
   onEditSettlementDate?: (receivable: Receivable) => void
   mode?: ObligationDetailMode
 }) {
   const { user } = useAuth()
-  const [unlinkOpen, setUnlinkOpen] = useState(false)
-  const [sourceDeleteOpen, setSourceDeleteOpen] = useState(false)
+  const [deleteFlow, setDeleteFlow] = useState<ReceivableDeleteFlow>(null)
 
   if (!receivable) return null
 
@@ -95,6 +119,32 @@ export function ReceivableDetailDrawer({
   )
   const policy = resolveReceivableDeletePolicy(receivable)
   const counterparty = receivable.person?.name ?? receivable.debtorName
+  const activeDeleteFlow = mode === 'operational' && deleteFlow?.receivableId === receivable.id
+    ? deleteFlow.kind
+    : null
+  const recurringIncomeReceived = isRecurringIncome && receivable.isPaid
+  const showDeleteAction = Boolean(
+    onDelete &&
+      (canDeleteReceivable(policy) || isAutomatic || recurringIncomeReceived) &&
+      (!recurringIncomeReceived || onDeleteRecurringReceived),
+  )
+
+  const openDeleteFlow = (kind: ReceivableDeleteFlowKind) => {
+    setDeleteFlow({ receivableId: receivable.id, kind })
+  }
+
+  const handleDelete = () => {
+    onDeleteFlowStart?.(receivable)
+    if (recurringIncomeReceived) {
+      openDeleteFlow('delete-recurring-received')
+    } else if (receivable.isPaid && isAutomatic) {
+      openDeleteFlow('protected-received')
+    } else if (isAutomatic) {
+      openDeleteFlow(canUnlink ? 'choose-source-action' : 'delete-source')
+    } else {
+      onDelete?.(receivable)
+    }
+  }
 
   /** Deep link para a compra de origem no Extrato. */
   const purchaseHref = isAutomatic
@@ -105,7 +155,10 @@ export function ReceivableDetailDrawer({
     <>
     <DetailDrawer
       open
-      onOpenChange={onOpenChange}
+      onOpenChange={(open) => {
+        if (!open) setDeleteFlow(null)
+        onOpenChange(open)
+      }}
       title={receivable.title}
       description={`Cobrança · vence em ${formatDate(receivable.dueDate)}`}
       footer={mode === 'readOnly' || (!onToggleReceived && !onEdit && !onDelete && !onEditSettlementDate) ? undefined : (
@@ -121,7 +174,7 @@ export function ReceivableDetailDrawer({
             ) : (
               <Check className="size-4" />
             )}
-            {receivable.isPaid ? 'Marcar como pendente' : 'Marcar como recebido'}
+            {receivable.isPaid ? 'Desfazer recebimento' : 'Marcar como recebido'}
           </Button>}
           {canEditSettlementDate(receivable) && onEditSettlementDate && (
             <Button
@@ -135,7 +188,7 @@ export function ReceivableDetailDrawer({
           )}
         </DetailFooter>}
 
-        {(onEdit || (onDelete && (canDeleteReceivable(policy) || isAutomatic)) || canUnlink) && <DetailFooter className="border-t-0 pt-0">
+        {(onEdit || showDeleteAction) && <DetailFooter className="border-t-0 pt-0">
           {onEdit && <Button
             variant="outline"
             className={DETAIL_ACTION_CLASS}
@@ -150,31 +203,16 @@ export function ReceivableDetailDrawer({
             origem. Os modos orientativos escondem o botão, e o aviso acima diz
             o que destrava.
           */}
-          {onDelete && (canDeleteReceivable(policy) || isAutomatic) && (
+          {showDeleteAction && (
             <Button
               variant="destructive"
               className={DETAIL_ACTION_CLASS}
-              onClick={() => isAutomatic ? setSourceDeleteOpen(true) : onDelete(receivable)}
+              onClick={handleDelete}
             >
               <Trash2 className="size-4" />
               Excluir
             </Button>
           )}
-          {canUnlink && (receivable.isPaid ? <Button
-            variant="outline"
-            className={DETAIL_ACTION_CLASS}
-            disabled
-          >
-            <UserRoundMinus className="size-4" />
-            Desvincular de {sourcePerson}
-          </Button> : <Button
-            variant="outline"
-            className={DETAIL_ACTION_CLASS}
-            onClick={() => setUnlinkOpen(true)}
-          >
-            <UserRoundMinus className="size-4" />
-            Desvincular de {sourcePerson}
-          </Button>)}
         </DetailFooter>}
         </>
       )}
@@ -247,10 +285,6 @@ export function ReceivableDetailDrawer({
         )}
       </DetailList>
 
-      {canUnlink && receivable.isPaid && <DetailNotice>
-        Este valor já foi recebido. Desfaça o recebimento antes de desvincular a compra.
-      </DetailNotice>}
-
       {isAutomatic && (
         /*
           A frase antiga dizia que "apagar só a cobrança removeria as duas" —
@@ -270,38 +304,187 @@ export function ReceivableDetailDrawer({
               origem não pode mais ser excluída.
             </>
           ) : policy.mode === 'manage-from-source' ? (
-            <>
-              Cobrança gerada por uma compra parcelada. Para excluir, abra a
-              compra de origem e escolha o escopo da exclusão.
-            </>
+            <>Cobrança gerada por uma compra parcelada.</>
           ) : policy.mode === 'unmark-first' ? (
-            <>
-              Cobrança gerada por uma compra. Para excluí-la, desmarque o
-              recebimento primeiro — depois a compra de origem também poderá
-              ser excluída.
-            </>
+            <>Cobrança gerada por uma compra.</>
           ) : (
             <>
               Cobrança gerada por uma compra. Valor, contraparte e datas são
-              definidos pela compra de origem. Ao excluir esta cobrança, a
-              compra de origem também será excluída.
+              definidos pela compra de origem.
             </>
           )}
         </DetailNotice>
       )}
     </DetailDrawer>
-    {canUnlink && <ReceivableUnlinkDialog
+    {activeDeleteFlow === 'choose-source-action' && isAutomatic && canUnlink && (
+      <ReceivableDeleteChoiceDialog
+        open
+        personName={sourcePerson}
+        onClose={() => setDeleteFlow(null)}
+        onDeletePurchase={() => openDeleteFlow('delete-source')}
+        onUnlink={() => openDeleteFlow('unlink')}
+      />
+    )}
+    {activeDeleteFlow === 'protected-received' && (
+      <ReceivedReceivableDeleteDialog
+        open
+        onClose={() => setDeleteFlow(null)}
+        onUndoReceipt={onToggleReceived ? () => {
+          setDeleteFlow(null)
+          onToggleReceived(receivable)
+        } : undefined}
+      />
+    )}
+    {activeDeleteFlow === 'delete-recurring-received' && (
+      <ReceivedRecurringIncomeDeleteDialog
+        open
+        onClose={() => setDeleteFlow(null)}
+        onConfirm={async () => {
+          await onDeleteRecurringReceived?.(receivable)
+          setDeleteFlow(null)
+        }}
+      />
+    )}
+    {activeDeleteFlow === 'unlink' && canUnlink && <ReceivableUnlinkDialog
       receivable={receivable}
-      open={unlinkOpen}
-      onClose={() => setUnlinkOpen(false)}
+      open
+      onClose={() => setDeleteFlow(null)}
       onSuccess={() => onOpenChange(false)}
     />}
-    {isAutomatic && mode === 'operational' && <SourceTransactionDeleteDialog
+    {activeDeleteFlow === 'delete-source' && isAutomatic && mode === 'operational' && <SourceTransactionDeleteDialog
       receivable={receivable}
-      open={sourceDeleteOpen}
-      onClose={() => setSourceDeleteOpen(false)}
+      open
+      onClose={() => setDeleteFlow(null)}
       onSuccess={() => onOpenChange(false)}
     />}
     </>
+  )
+}
+
+function ReceivableDeleteChoiceDialog({
+  open,
+  personName,
+  onClose,
+  onDeletePurchase,
+  onUnlink,
+}: {
+  open: boolean
+  personName: string
+  onClose: () => void
+  onDeletePurchase: () => void
+  onUnlink: () => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className={DIALOG_ROOMY_CLASS}>
+        <DialogHeader>
+          <DialogTitle>Excluir cobrança?</DialogTitle>
+          <DialogDescription>O que você quer fazer com a compra de origem?</DialogDescription>
+        </DialogHeader>
+        <div className="grid min-w-0 gap-2">
+          <button
+            type="button"
+            className="flex min-w-0 items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            onClick={onDeletePurchase}
+          >
+            <ShoppingBag className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">Excluir compra</span>
+              <span className="mt-0.5 block break-words text-xs text-muted-foreground">
+                Remove a compra e as cobranças correspondentes que puderem ser excluídas.
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="flex min-w-0 items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            onClick={onUnlink}
+          >
+            <UserRoundMinus className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="min-w-0">
+              <span className="block break-words text-sm font-medium">Manter compra e desvincular de {personName}</span>
+              <span className="mt-0.5 block break-words text-xs text-muted-foreground">
+                Remove esta cobrança, mantém a compra e passa os valores elegíveis para seus gastos.
+              </span>
+            </span>
+          </button>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ReceivedReceivableDeleteDialog({
+  open,
+  onClose,
+  onUndoReceipt,
+}: {
+  open: boolean
+  onClose: () => void
+  onUndoReceipt?: () => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className={DIALOG_ROOMY_CLASS}>
+        <DialogHeader>
+          <DialogTitle>Não é possível excluir ainda</DialogTitle>
+          <DialogDescription>{'Este valor j\u00e1 foi recebido. Desfa\u00e7a o recebimento antes de excluir ou desvincular a compra.'}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Fechar</Button>
+          {onUndoReceipt && <Button onClick={onUndoReceipt}>Desfazer recebimento</Button>}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ReceivedRecurringIncomeDeleteDialog({
+  open,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean
+  onClose: () => void
+  onConfirm: () => Promise<void>
+}) {
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const busy = submitting
+
+  const confirm = async () => {
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onConfirm()
+    } catch (cause) {
+      setError(apiErrorMessage(cause, 'Não foi possível desfazer o recebimento e excluir a cobrança.'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && !busy && onClose()}>
+      <DialogContent className={DIALOG_ROOMY_CLASS}>
+        <DialogHeader>
+          <DialogTitle>Excluir recebimento?</DialogTitle>
+          <DialogDescription>
+            Este recebimento já foi registrado. Ao continuar, o lançamento financeiro do recebimento e esta cobrança serão removidos.
+          </DialogDescription>
+        </DialogHeader>
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy}>Fechar</Button>
+          <Button variant="destructive" onClick={() => void confirm()} disabled={busy}>
+            {busy && <Loader2 className="size-4 animate-spin" />}
+            Desfazer recebimento e excluir
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

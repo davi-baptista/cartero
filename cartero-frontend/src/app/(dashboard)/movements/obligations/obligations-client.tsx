@@ -57,7 +57,7 @@ import {
 } from '@/lib/obligation-highlight'
 import { getPersons } from '@/services/persons.service'
 import { deleteDebt, getDebt, updateDebt } from '@/services/debts.service'
-import { deleteReceivable, getReceivable, updateReceivable } from '@/services/receivables.service'
+import { deleteReceivable, getReceivable, undoAndDeleteRecurringIncomeReceived, updateReceivable } from '@/services/receivables.service'
 import { getTransaction } from '@/services/transactions.service'
 import {
   getObligations,
@@ -71,7 +71,6 @@ import type { Debt, Receivable } from '@/types'
 import type { TransactionType } from '@/types'
 import { cn } from '@/lib/utils'
 import { resolveReceivableDeletePolicy, canDeleteReceivable } from '@/lib/receivable-delete-policy'
-import { SourceTransactionDeleteDialog } from '@/app/(dashboard)/receivables/source-transaction-delete-dialog'
 import { invalidateTransactionDependents } from '@/lib/transaction-dependent-queries'
 import { reconcileRecurringIncomePeriod } from '@/services/recurring-income.service'
 
@@ -325,7 +324,7 @@ function ObligationSectionView({
               ? `${row.domain === 'RECEIVABLE' ? '+' : '−'}${formatCurrency(Number(row.amount))}`
               : formatCurrency(Number(row.amount))
             const actionLabel = section === 'HISTORY'
-              ? 'Marcar como pendente'
+              ? row.domain === 'RECEIVABLE' ? 'Desfazer recebimento' : 'Desfazer pagamento'
               : row.domain === 'RECEIVABLE'
                 ? 'Marcar como recebido'
                 : 'Marcar como pago'
@@ -401,6 +400,13 @@ function ObligationSectionView({
   )
 }
 
+type DetailDeleteTarget =
+  | { kind: 'debt'; item: Debt }
+  | { kind: 'receivable'; item: Receivable }
+
+type DetailDeleteIntent =
+  | { kind: 'confirm'; target: DetailDeleteTarget }
+
 export function ObligationsClient() {
   const queryClient = useQueryClient()
   const router = useRouter()
@@ -414,8 +420,7 @@ export function ObligationsClient() {
   const [markTarget, setMarkTarget] = useState<{ row: ObligationRow; section: ObligationSection } | null>(null)
   const [unmarkTarget, setUnmarkTarget] = useState<{ row: ObligationRow; section: ObligationSection } | null>(null)
   const [editTarget, setEditTarget] = useState<{ kind: 'debt'; item: Debt } | { kind: 'receivable'; item: Receivable } | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<{ kind: 'debt'; item: Debt } | { kind: 'receivable'; item: Receivable } | null>(null)
-  const [sourceDeleteTarget, setSourceDeleteTarget] = useState<Receivable | null>(null)
+  const [deleteIntent, setDeleteIntent] = useState<DetailDeleteIntent | null>(null)
   const debtNavigation = useDetailNavigation('debtId')
   const receivableNavigation = useDetailNavigation('receivableId')
   const normalizedIncomingUrl = useRef<string | null>(null)
@@ -564,19 +569,20 @@ export function ObligationsClient() {
       setMarkTarget(null)
       setUnmarkTarget(null)
       toast.success(variables.nextResolved
-        ? variables.row.domain === 'RECEIVABLE' ? 'Recebimento marcado como recebido' : 'Dívida marcada como paga'
-        : 'Obrigação marcada como pendente')
+        ? variables.row.domain === 'RECEIVABLE' ? 'Recebimento registrado' : 'Pagamento registrado'
+        : variables.row.domain === 'RECEIVABLE' ? 'Recebimento desfeito' : 'Pagamento desfeito')
       invalidateTransactionDependents(queryClient, { affectsPerson: Boolean(variables.row.personId) })
       await queryClient.invalidateQueries({ queryKey: ['obligations'] })
     },
   })
 
   const detailDeleteMutation = useMutation({
-    mutationFn: (target: NonNullable<typeof deleteTarget>) => target.kind === 'debt'
-      ? deleteDebt(target.item.id)
-      : deleteReceivable(target.item.id),
-    onSuccess: async (_result, target) => {
-      setDeleteTarget(null)
+    mutationFn: (intent: Extract<DetailDeleteIntent, { kind: 'confirm' }>) => intent.target.kind === 'debt'
+      ? deleteDebt(intent.target.item.id)
+      : deleteReceivable(intent.target.item.id),
+    onSuccess: async (_result, intent) => {
+      const target = intent.target
+      setDeleteIntent(null)
       if (target.kind === 'debt') debtNavigation.close()
       else receivableNavigation.close()
       invalidateTransactionDependents(queryClient, { affectsPerson: Boolean(target.item.personId) })
@@ -587,6 +593,20 @@ export function ObligationsClient() {
       toast.success(target.kind === 'debt' ? 'Dívida excluída' : 'Recebimento excluído')
     },
     onError: () => toast.error('Não foi possível excluir a obrigação.'),
+  })
+
+  const deleteReceivedRecurringMutation = useMutation({
+    mutationFn: undoAndDeleteRecurringIncomeReceived,
+    onSuccess: async (_result, id) => {
+      receivableNavigation.close()
+      invalidateTransactionDependents(queryClient, { affectsPerson: false, receivableId: id })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['receivables'] }),
+        queryClient.invalidateQueries({ queryKey: ['obligations'] }),
+      ])
+      toast.success('Recebimento desfeito e excluído')
+    },
+    onError: () => toast.error('Não foi possível desfazer o recebimento e excluir'),
   })
 
   const detailEditMutation = useMutation({
@@ -652,14 +672,13 @@ export function ObligationsClient() {
 
   const handleDetailDelete = (item: Debt | Receivable, kind: 'debt' | 'receivable') => {
     if (kind === 'debt') {
-      setDeleteTarget({ kind, item: item as Debt })
+      setDeleteIntent({ kind: 'confirm', target: { kind, item: item as Debt } })
       return
     }
     const receivable = item as Receivable
     const policy = resolveReceivableDeletePolicy(receivable)
     if (!canDeleteReceivable(policy)) return
-    if (policy.mode === 'source-transaction') setSourceDeleteTarget(receivable)
-    else setDeleteTarget({ kind, item: receivable })
+    setDeleteIntent({ kind: 'confirm', target: { kind, item: receivable } })
   }
 
   const handleMarkConfirm = (payload: SettlementPaymentPayload) => {
@@ -926,6 +945,8 @@ export function ObligationsClient() {
         onOpenChange={(open) => { if (!open) receivableNavigation.close() }}
         onEdit={(item) => { setEditTarget({ kind: 'receivable', item }); receivableNavigation.close() }}
         onDelete={(item) => handleDetailDelete(item, 'receivable')}
+        onDeleteFlowStart={() => setDeleteIntent(null)}
+        onDeleteRecurringReceived={(item) => deleteReceivedRecurringMutation.mutateAsync(item.id)}
         onToggleReceived={(item) => handleDetailSettle(item, 'receivable')}
       />
 
@@ -945,29 +966,24 @@ export function ObligationsClient() {
         onCancel={() => setUnmarkTarget(null)}
       />
       <ConfirmDialog
-        open={deleteTarget !== null}
-        title={deleteTarget?.kind === 'receivable' && deleteTarget.item.recurringIncomeRuleId
+        open={deleteIntent?.kind === 'confirm'}
+        title={deleteIntent?.kind === 'confirm' && deleteIntent.target.kind === 'receivable' && deleteIntent.target.item.recurringIncomeRuleId
           ? 'Excluir este recebimento?'
-          : deleteTarget?.item.isPaid ? 'Excluir item do histórico?' : 'Excluir obrigação?'}
-        description={deleteTarget?.kind === 'receivable' && deleteTarget.item.recurringIncomeRuleId
+          : deleteIntent?.kind === 'confirm' && deleteIntent.target.item.isPaid ? 'Excluir item do histórico?' : 'Excluir obrigação?'}
+        description={deleteIntent?.kind === 'confirm' && deleteIntent.target.kind === 'receivable' && deleteIntent.target.item.recurringIncomeRuleId
           ? 'Essa ocorrência será removida e não será criada novamente para esta competência.'
-          : deleteTarget?.item.paymentTransactionId
-          ? deleteTarget.kind === 'debt'
+          : deleteIntent?.kind === 'confirm' && deleteIntent.target.item.paymentTransactionId
+          ? deleteIntent.target.kind === 'debt'
             ? 'A dívida e o lançamento financeiro associado ao pagamento serão removidos.'
             : 'A cobrança e o lançamento financeiro associado ao recebimento serão removidos.'
-          : deleteTarget?.item.isPaid
+          : deleteIntent?.kind === 'confirm' && deleteIntent.target.item.isPaid
             ? 'Este item do histórico será excluído.'
             : 'Esta obrigação será excluída.'}
         confirmLabel="Excluir"
         isPending={detailDeleteMutation.isPending}
-        onCancel={() => setDeleteTarget(null)}
-        onConfirm={() => deleteTarget && detailDeleteMutation.mutate(deleteTarget)}
+        onCancel={() => setDeleteIntent(null)}
+        onConfirm={() => deleteIntent?.kind === 'confirm' && detailDeleteMutation.mutate(deleteIntent)}
       />
-      {sourceDeleteTarget && <SourceTransactionDeleteDialog receivable={sourceDeleteTarget} open onClose={() => {
-        setSourceDeleteTarget(null)
-        receivableNavigation.close()
-        void queryClient.invalidateQueries({ queryKey: ['obligations'] })
-      }} />}
       <DebtSheet
         open={editTarget?.kind === 'debt'}
         onOpenChange={(open) => !open && setEditTarget(null)}
