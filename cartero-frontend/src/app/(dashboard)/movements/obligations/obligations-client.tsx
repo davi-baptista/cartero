@@ -43,6 +43,7 @@ import {
 import { syncSettlementEntity } from '@/lib/settlement-cache'
 import { timingUrgency } from '@/lib/invoice-timing'
 import { movementFilterChipClass, MOVEMENT_SEARCH_INPUT_CLASS } from '@/lib/movement-filter-styles'
+import { MovementContextHeading } from '../movement-context-heading'
 import { formatObligationSectionNet, isZeroObligationAmount } from '@/lib/obligations-presentation'
 import { useHighlight } from '@/lib/use-highlight'
 import {
@@ -848,6 +849,11 @@ export function ObligationsClient() {
   const overdueSummaryError = !overdueSummary && Boolean(summaryQuery.error && !summaryQuery.isLoading)
   return (
     <div className="flex min-w-0 flex-col gap-4">
+      <MovementContextHeading
+        title="A pagar e receber"
+        subtitle="Valores que ainda precisam ser pagos ou recebidos."
+        explanation="Cadastre contas e cobranças antes de acontecerem, acompanhe os vencimentos e veja o que ainda falta pagar ou receber."
+      />
       <div id="obligations-scroll-anchor" className="flex flex-col gap-2">
       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
         <Select value={personId ?? ''} onValueChange={(value) => updateUrlParam('personId', value || undefined)}>

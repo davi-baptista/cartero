@@ -61,6 +61,7 @@ import { TransactionType, InstallmentScope } from '@/types'
 import { TRANSACTION_TYPE_ICONS } from '@/lib/transaction-icons'
 import { financialDrawerRowSurfaceClass } from '@/components/ui/financial-drawer-row-surface'
 import { movementFilterChipClass, MOVEMENT_SEARCH_INPUT_CLASS } from '@/lib/movement-filter-styles'
+import { MovementContextHeading } from '../movement-context-heading'
 
 // ?? Constants ???????????????????????????????????????????????????????????????
 
@@ -902,8 +903,11 @@ export default function TransactionsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-
-
+      <MovementContextHeading
+        title="Extrato"
+        subtitle="Tudo o que já aconteceu nas suas finanças."
+        explanation="Aqui ficam as movimentações já realizadas, como receitas, gastos e compras no cartão, na data em que aconteceram."
+      />
       {/* Filter bar */}
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">

@@ -158,7 +158,7 @@ describe('global movement statement page contract', () => {
   it('shows the shared divider between the view switch and either view content', () => {
     expect(SHELL).toContain('className="space-y-2"')
     expect(SHELL).toContain('<div className="pt-1">\n            <div aria-hidden className="border-t border-border/60" />\n          </div>')
-    expect(SHELL).toMatch(/\{children\}\s*<\/section>/)
+    expect(SHELL).toMatch(/<div className="pt-2">\{children\}<\/div>\s*<\/section>/)
   })
 
   it('keeps page rows full width while padding leading and trailing content inside the shared row', () => {

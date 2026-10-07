@@ -21,6 +21,21 @@ const invoiceDrawer = readFileSync(new URL('../components/invoice-details-drawer
 const detailDrawer = readFileSync(new URL('../components/ui/detail-drawer.tsx', import.meta.url), 'utf8')
 
 describe('Movements unified add flow', () => {
+  it('reveals only the selected decision descriptions within the existing drawer', () => {
+    expect(flow).toContain("intent ? <p className=\"text-xs text-muted-foreground\">{INTENT_DESCRIPTIONS[intent]}</p> : null")
+    expect(flow).toContain("const activeChoice = intent === 'happened' ? transactionKind : selectedTarget")
+    expect(flow).toContain('{activeChoice ? (')
+    expect(flow).toContain('{TARGET_DESCRIPTIONS[activeChoice]}')
+    expect(flow).toContain("happened: 'Registre algo que já entrou ou saiu.'")
+    expect(flow).toContain("upcoming: 'Deixe salvo o que ainda precisa ser pago ou recebido.'")
+    expect(flow).toContain("expense: 'Registre uma saída que já aconteceu.'")
+    expect(flow).toContain("income: 'Registre uma entrada que já aconteceu.'")
+    expect(flow).toContain("receivable: 'Registre um valor que você ainda vai receber.'")
+    expect(flow).toContain("debt: 'Registre uma conta que você ainda precisa pagar.'")
+    expect(flow).toContain('setTransactionKind(null)\n      setSelectedTarget(null)')
+    expect(flow.match(/<Sheet\s/g)).toHaveLength(1)
+  })
+
   it('routes each target to its canonical form route', () => {
     expect(movementAddDestination('expense', '/movements/obligations', '')).toBe('/movements/statement?add=expense')
     expect(movementAddDestination('income', '/movements/statement', '')).toBe('/movements/statement?add=income')

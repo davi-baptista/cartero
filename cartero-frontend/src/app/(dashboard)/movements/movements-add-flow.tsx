@@ -38,6 +38,18 @@ const INTENT_OPTIONS: Array<{ value: AddIntent; label: string }> = [
   { value: 'upcoming', label: 'Vai acontecer' },
 ]
 
+const INTENT_DESCRIPTIONS: Record<AddIntent, string> = {
+  happened: 'Registre algo que já entrou ou saiu.',
+  upcoming: 'Deixe salvo o que ainda precisa ser pago ou recebido.',
+}
+
+const TARGET_DESCRIPTIONS: Record<MovementAddTarget, string> = {
+  expense: 'Registre uma saída que já aconteceu.',
+  income: 'Registre uma entrada que já aconteceu.',
+  receivable: 'Registre um valor que você ainda vai receber.',
+  debt: 'Registre uma conta que você ainda precisa pagar.',
+}
+
 const TARGETS: Record<AddIntent, Array<{ target: MovementAddTarget; title: string }>> = {
   happened: [
     { target: 'expense', title: 'Gasto' },
@@ -71,6 +83,7 @@ function DecisionQuestions({
       : 'border-border text-muted-foreground hover:bg-muted/50',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
   )
+  const activeChoice = intent === 'happened' ? transactionKind : selectedTarget
 
   return (
     <div className="space-y-4">
@@ -89,6 +102,7 @@ function DecisionQuestions({
             </button>
           ))}
         </div>
+        {intent ? <p className="text-xs text-muted-foreground">{INTENT_DESCRIPTIONS[intent]}</p> : null}
       </section>
 
       {intent && (
@@ -117,6 +131,11 @@ function DecisionQuestions({
               )
             })}
           </div>
+          {activeChoice ? (
+            <p className="text-xs text-muted-foreground">
+              {TARGET_DESCRIPTIONS[activeChoice]}
+            </p>
+          ) : null}
         </section>
       )}
     </div>

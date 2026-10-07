@@ -52,7 +52,7 @@ export function MovementsShell({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        {children}
+        <div className="pt-2">{children}</div>
     </section>
   )
 }

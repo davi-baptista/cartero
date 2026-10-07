@@ -8,11 +8,39 @@ const filterStyles = readFileSync(new URL('./movement-filter-styles.ts', import.
 const select = readFileSync(new URL('../components/ui/select.tsx', import.meta.url), 'utf8')
 const drawer = readFileSync(new URL('../components/person-statement-drawer.tsx', import.meta.url), 'utf8')
 const addFlow = readFileSync(new URL('../app/(dashboard)/movements/movements-add-flow.tsx', import.meta.url), 'utf8')
+const contextualHeading = readFileSync(new URL('../app/(dashboard)/movements/movement-context-heading.tsx', import.meta.url), 'utf8')
+const recurring = readFileSync(new URL('../app/(dashboard)/recurring/recurring-client.tsx', import.meta.url), 'utf8')
 
 const componentInvocation = (source: string, name: string) =>
   source.match(new RegExp(`<${name}\\b[\\s\\S]*?\\n\\s*\\/>`))?.[0] ?? ''
 
 describe('Movements shell and obligations presentation parity', () => {
+  it('gives both views the Recorrentes post-divider rhythm through the same shell spacing', () => {
+    expect(recurring).toContain('className="pt-4"')
+    expect(shell).toContain('<section className="space-y-4">')
+    expect(shell).toContain('<div className="pt-2">{children}</div>')
+    expect(shell.indexOf('<div className="pt-2">{children}</div>')).toBeGreaterThan(shell.indexOf('border-t border-border/60'))
+  })
+
+  it('shares one accessible contextual heading across both views, outside the navigation tabs', () => {
+    expect(statement).toContain('<MovementContextHeading')
+    expect(obligations).toContain('<MovementContextHeading')
+    expect(shell).not.toContain('<MovementContextHeading')
+    expect(contextualHeading).toContain('<h2')
+    expect(contextualHeading).toContain('<p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>')
+    expect(contextualHeading).toContain('aria-label={`Sobre ${title.toLocaleLowerCase(\'pt-BR\')}`}')
+    expect(contextualHeading).toContain('<PopoverTrigger')
+    expect(contextualHeading).toContain('<PopoverContent')
+    expect(statement).toContain('title="Extrato"')
+    expect(statement).toContain('subtitle="Tudo o que já aconteceu nas suas finanças."')
+    expect(statement).toContain('compras no cartão, na data em que aconteceram.')
+    expect(obligations).toContain('title="A pagar e receber"')
+    expect(obligations).toContain('subtitle="Valores que ainda precisam ser pagos ou recebidos."')
+    expect(obligations).toContain('Cadastre contas e cobranças antes de acontecerem')
+    expect(statement.indexOf('<MovementContextHeading')).toBeLessThan(statement.indexOf('{/* Filter bar */}'))
+    expect(obligations.indexOf('<MovementContextHeading')).toBeLessThan(obligations.indexOf('id="obligations-scroll-anchor"'))
+  })
+
   it('keeps one shell authority for title, subtitle, CTA target, switch, divider, and vertical rhythm', () => {
     expect(shell.match(/<h1 /g)).toHaveLength(1)
     expect(shell.match(/Acompanhe o que aconteceu/g)).toHaveLength(1)
