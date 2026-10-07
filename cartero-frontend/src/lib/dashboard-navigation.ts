@@ -10,11 +10,14 @@ import {
 } from 'lucide-react'
 import { isNavItemActive } from '@/lib/nav-active-route'
 
-export const navGroups = [
+export const navSections = [
   {
-    label: 'Geral',
+    label: undefined,
+    items: [{ href: '/overview', label: 'Visão Geral', icon: LayoutDashboard }],
+  },
+  {
+    label: 'Operações',
     items: [
-      { href: '/overview', label: 'Visão Geral', icon: LayoutDashboard },
       { href: '/movements', label: 'Movimentações', icon: ArrowDownUp },
       { href: '/recurring', label: 'Recorrentes', icon: Repeat },
     ],
@@ -40,7 +43,7 @@ export const navGroups = [
 ] as const
 
 export function getNavigationGroup(pathname: string): string | undefined {
-  return navGroups.find((group) =>
-    group.items.some((item) => isNavItemActive(item.href, pathname)),
+  return navSections.find((section) =>
+    section.items.some((item) => isNavItemActive(item.href, pathname)),
   )?.label
 }

@@ -28,7 +28,7 @@ import { TimezoneMismatchNotice } from '@/components/timezone-mismatch-notice'
 import { NavigationProgress } from '@/components/ui/navigation-progress'
 import { MonthNav, MonthPeriodProvider, useMonthPeriod } from '@/components/month-nav'
 import { SubscriptionRunner } from '@/components/subscription-runner'
-import { getNavigationGroup, navGroups } from '@/lib/dashboard-navigation'
+import { getNavigationGroup, navSections } from '@/lib/dashboard-navigation'
 import Image from 'next/image'
 
 function SidebarNav({ pathname }: { pathname: string }) {
@@ -36,9 +36,11 @@ function SidebarNav({ pathname }: { pathname: string }) {
 
   return (
     <SidebarContent>
-      {navGroups.map(({ label: groupLabel, items }) => (
-        <SidebarGroup key={groupLabel} className="py-1.5">
-          <SidebarGroupLabel>{groupLabel.toLocaleUpperCase('pt-BR')}</SidebarGroupLabel>
+      {navSections.map(({ label: groupLabel, items }) => (
+        <SidebarGroup key={items[0].href} className="py-1.5">
+          {groupLabel && (
+            <SidebarGroupLabel>{groupLabel.toLocaleUpperCase('pt-BR')}</SidebarGroupLabel>
+          )}
           <SidebarGroupContent>
           <SidebarMenu className="gap-0.5">
             {items.map(({ href, label, icon: Icon }) => {

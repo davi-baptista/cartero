@@ -1,32 +1,39 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { navGroups, getNavigationGroup } from './dashboard-navigation'
+import { navSections, getNavigationGroup } from './dashboard-navigation'
 
 const layout = readFileSync(new URL('../app/(dashboard)/layout.tsx', import.meta.url), 'utf8')
 
 describe('dashboard navigation grouping', () => {
   it('uses the approved taxonomy as one sidebar authority', () => {
-    expect(navGroups.map(({ label, items }) => [label, items.map(({ href }) => href)])).toEqual([
-      ['Geral', ['/overview', '/movements', '/recurring']],
+    expect(navSections.map(({ label, items }) => [label, items.map(({ href }) => href)])).toEqual([
+      [undefined, ['/overview']],
+      ['Operações', ['/movements', '/recurring']],
       ['Acompanhamento', ['/budget', '/commitments']],
       ['Contas', ['/banks', '/persons']],
       ['Organização', ['/categories']],
     ])
+    expect(navSections[0].items[0].label).toBe('Visão Geral')
 
-    expect(layout).toContain('navGroups.map(')
+    expect(layout).toContain('navSections.map(')
+    expect(layout).toContain('groupLabel && (')
+    expect(layout).toContain('<SidebarGroupLabel>{groupLabel.toLocaleUpperCase(')
     expect(layout).toContain('isNavItemActive(href, pathname)')
+    expect(layout).toContain('tooltip={label}')
+    expect(layout).toContain('<Icon className="size-4" />')
     expect(layout).toContain('setOpenMobile(false)')
     expect(layout).toContain('getNavigationGroup(pathname)')
+    expect(layout).toContain('{currentPageLabel && (')
   })
 
   it.each([
-    ['/overview', 'Geral'],
-    ['/movements', 'Geral'],
-    ['/movements/statement', 'Geral'],
-    ['/movements/obligations', 'Geral'],
-    ['/recurring', 'Geral'],
-    ['/recurring?tab=income', 'Geral'],
-    ['/recurring?tab=expenses', 'Geral'],
+    ['/overview', undefined],
+    ['/movements', 'Operações'],
+    ['/movements/statement', 'Operações'],
+    ['/movements/obligations', 'Operações'],
+    ['/recurring', 'Operações'],
+    ['/recurring?tab=income', 'Operações'],
+    ['/recurring?tab=expenses', 'Operações'],
     ['/budget', 'Acompanhamento'],
     ['/commitments', 'Acompanhamento'],
     ['/banks', 'Contas'],
