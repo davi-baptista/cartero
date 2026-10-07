@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { buildSettlementPayload } from '@/app/(dashboard)/transactions/mark-as-paid-dialog'
 
-const page = readFileSync(new URL('../app/(dashboard)/income/page.tsx', import.meta.url), 'utf-8')
+const page = readFileSync(new URL('../app/(dashboard)/recurring/income-panel.tsx', import.meta.url), 'utf-8')
 const markAsPaidDialog = readFileSync(new URL('../app/(dashboard)/transactions/mark-as-paid-dialog.tsx', import.meta.url), 'utf-8')
 const unmarkWarning = readFileSync(new URL('../app/(dashboard)/transactions/unmark-paid-warning-dialog.tsx', import.meta.url), 'utf-8')
 const detailDrawer = readFileSync(new URL('../app/(dashboard)/receivables/receivable-detail-drawer.tsx', import.meta.url), 'utf-8')
@@ -37,9 +37,7 @@ describe('Income settlement and nested detail contracts', () => {
     expect(page).toContain('mutationFn: (id: string) => deleteReceivable(id)')
     expect(page).toContain('title="Excluir este recebimento?"')
     expect(page).toContain('Essa ocorrência será removida e não será criada novamente para esta competência.')
-    expect(page).toContain("queryClient.invalidateQueries({ queryKey: ['recurring-incomes'] })")
-    expect(page).toContain("queryClient.invalidateQueries({ queryKey: ['receivables'] })")
-    expect(page).toContain("queryClient.invalidateQueries({ queryKey: ['obligations'] })")
+    expect(page).toContain("invalidateRecurringDependents(queryClient, 'income')")
     expect(page).toContain('setSelectedReceivable(null)')
     expect(page).toContain('onError: () => toast.error(\'Não foi possível excluir o recebimento\')')
   })
@@ -63,7 +61,7 @@ describe('Income settlement and nested detail contracts', () => {
     expect(occurrenceEdit).not.toContain('updateRecurringIncome')
     expect(page).toContain('setOccurrenceEditTarget(receivable)')
     expect(page).toContain('<ReceivableSheet mode="income-occurrence"')
-    expect(page).toContain("queryClient.invalidateQueries({ queryKey: ['obligations'] })")
+    expect(page).toContain("invalidateRecurringDependents(queryClient, 'income')")
   })
 
   it('synchronizes settle and reopen mutations across Income, Movements, and transactions', () => {

@@ -894,6 +894,7 @@ export class TransactionsService {
       userId,
       categoryId: filters.categoryId,
       bankId: filters.bankId,
+      subscriptionId: filters.subscriptionId,
       type: filters.type,
     };
     const where: Prisma.TransactionWhereInput = paginated

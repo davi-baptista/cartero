@@ -21,6 +21,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { CommitmentsModule } from './commitments/commitments.module';
 import { RecurringIncomeModule } from './recurring-income/recurring-income.module';
+import { RecurringExpenseModule } from './recurring-expense/recurring-expense.module';
 import { ObligationsModule } from './obligations/obligations.module';
 
 @Module({
@@ -47,6 +48,7 @@ import { ObligationsModule } from './obligations/obligations.module';
     SubscriptionsModule,
     CommitmentsModule,
     RecurringIncomeModule,
+    RecurringExpenseModule,
     ObligationsModule,
     ScheduleModule.forRoot(),
   ],

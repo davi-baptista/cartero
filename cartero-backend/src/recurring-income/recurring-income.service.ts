@@ -8,7 +8,10 @@ import {
 import { Prisma, RecurringIncomeRule } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { parseDateOnly } from 'src/common/helpers/date-only.helper';
-import { financialCivilParts } from 'src/common/helpers/financial-timezone.helper';
+import {
+  financialCivilDay,
+  financialCivilParts,
+} from 'src/common/helpers/financial-timezone.helper';
 import { requireAccountTimeZone } from 'src/common/helpers/timezone.helper';
 import { acquireTransactionAdvisoryLock } from 'src/common/helpers/advisory-lock.helper';
 import { assertNotActivePersonSettlementMember } from 'src/common/helpers/person-settlement.guard';
@@ -21,6 +24,7 @@ import {
   isRecurringMonth,
   occurrenceDateForMonth,
   recurringIncomeOccurrenceDates,
+  resumeRecurringMonth,
 } from './recurring-income.helper';
 
 export const RECURRING_INCOME_USER_BATCH_SIZE = 100;
@@ -198,6 +202,7 @@ export class RecurringIncomeService {
         isActive: true,
         deletedAt: null,
         firstOccurrence: { lte: month },
+        OR: [{ activeSince: null }, { activeSince: { lte: month } }],
       },
       select: {
         id: true,
@@ -255,6 +260,17 @@ export class RecurringIncomeService {
       if (!existing || existing.deletedAt) {
         throw new NotFoundException('Regra de renda não encontrada');
       }
+      const now = new Date();
+      const pausing = dto.isActive === false && existing.isActive;
+      const resuming = dto.isActive === true && !existing.isActive;
+      const user = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { timeZone: true },
+      });
+      const timeZone = requireAccountTimeZone(
+        user.timeZone,
+        'recurring income account timezone',
+      );
       const rule = await tx.recurringIncomeRule.update({
         where: { id, userId },
         data: {
@@ -263,23 +279,30 @@ export class RecurringIncomeService {
           dayOfMonth: dto.dayOfMonth,
           counterpartyName: dto.counterpartyName,
           isActive: dto.isActive,
+          activeSince: resuming
+            ? resumeRecurringMonth(
+                dto.dayOfMonth ?? existing.dayOfMonth,
+                now,
+                timeZone,
+              )
+            : undefined,
         },
       });
 
-      if (rule.isActive) {
-        const user = await tx.user.findUniqueOrThrow({
-          where: { id: userId },
-          select: { timeZone: true },
+      if (pausing) {
+        await tx.receivable.deleteMany({
+          where: {
+            userId,
+            recurringIncomeRuleId: id,
+            isPaid: false,
+            paymentTransactionId: null,
+            dueDate: { gt: parseDateOnly(financialCivilDay(now, timeZone)) },
+          },
         });
-        await this.materializeRuleWithTx(
-          tx,
-          rule,
-          new Date(),
-          requireAccountTimeZone(
-            user.timeZone,
-            'recurring income account timezone',
-          ),
-        );
+      }
+
+      if (rule.isActive) {
+        await this.materializeRuleWithTx(tx, rule, now, timeZone);
       }
 
       // firstOccurrence remains immutable in V1. Existing Receivables are
@@ -289,23 +312,7 @@ export class RecurringIncomeService {
   }
 
   async deactivate(id: string, userId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      await acquireTransactionAdvisoryLock(
-        tx,
-        this.occurrenceLockKey(userId, id),
-      );
-      const existing = await tx.recurringIncomeRule.findUnique({
-        where: { id, userId },
-      });
-      if (!existing || existing.deletedAt) {
-        throw new NotFoundException('Regra de renda não encontrada');
-      }
-      const rule = await tx.recurringIncomeRule.update({
-        where: { id, userId },
-        data: { isActive: false },
-      });
-      return this.serializeRule(rule);
-    });
+    return this.update(id, userId, { isActive: false });
   }
 
   async remove(id: string, userId: string) {
@@ -723,7 +730,8 @@ export class RecurringIncomeService {
         !rule ||
         !rule.isActive ||
         rule.deletedAt ||
-        month < rule.firstOccurrence
+        month < rule.firstOccurrence ||
+        (rule.activeSince && month < rule.activeSince)
       ) {
         return 0;
       }
@@ -756,7 +764,7 @@ export class RecurringIncomeService {
       },
       now,
       timeZone,
-    );
+    ).filter(({ month }) => !rule.activeSince || month >= rule.activeSince);
     if (occurrences.length === 0) return { rule, attempted: 0, created: 0 };
 
     return {

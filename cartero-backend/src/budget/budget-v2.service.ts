@@ -18,6 +18,7 @@ import {
   classifyBudgetV2Transaction,
 } from './budget-v2-classification.helper';
 import { RecurringIncomeService } from 'src/recurring-income/recurring-income.service';
+import { RecurringExpenseService } from 'src/recurring-expense/recurring-expense.service';
 import { unresolvedDueDateWhere } from './budget-v2-predicates.helper';
 
 const ZERO = new Prisma.Decimal(0);
@@ -57,6 +58,8 @@ export class BudgetV2Service {
     private readonly prisma: PrismaService,
     @Optional()
     private readonly recurringIncomeService?: RecurringIncomeService,
+    @Optional()
+    private readonly recurringExpenseService?: RecurringExpenseService,
   ) {}
 
   async getPeriod(
@@ -99,7 +102,7 @@ export class BudgetV2Service {
       ? { gte: bounds.startInclusive, lt: bounds.endExclusive }
       : { lt: bounds.endExclusive };
 
-    const [transactions, settlements, groups, debts, invoices] =
+    const [transactions, settlements, groups, initialDebts, invoices] =
       await Promise.all([
         this.prisma.transaction.findMany({
           where: { userId, date, personSettlementGroupId: null },
@@ -151,6 +154,11 @@ export class BudgetV2Service {
       amount: Prisma.Decimal;
       dueDate: Date;
     }> = [];
+    let debts = initialDebts;
+    let projectedRecurringExpense: Array<{
+      amount: Prisma.Decimal;
+      dueDate: Date;
+    }> = [];
     if (this.recurringIncomeService && bounds.period.startDate) {
       const result = await this.prisma.$transaction(
         async (tx) => {
@@ -175,6 +183,30 @@ export class BudgetV2Service {
         where: receivableWhere,
         select: { amount: true, dueDate: true },
       });
+    }
+
+    if (this.recurringExpenseService && bounds.period.startDate) {
+      const result = await this.prisma.$transaction(
+        async (tx) => {
+          const pending = await tx.debt.findMany({
+            where: {
+              ...unresolvedDueDateWhere(userId, bounds.period, todayCivil),
+              isPaid: false,
+            },
+            select: { amount: true, dueDate: true },
+          });
+          const projections =
+            await this.recurringExpenseService!.projectMissingOccurrencesForMonth(
+              userId,
+              bounds.period.startDate!.slice(0, 7),
+              tx,
+            );
+          return { pending, projections };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      );
+      debts = result.pending;
+      projectedRecurringExpense = result.projections;
     }
 
     const composition: Record<
@@ -263,14 +295,14 @@ export class BudgetV2Service {
         .map((receivable) => receivable.amount),
     ]);
     const upcomingDebts = sumDecimal(
-      debts
+      [...debts, ...projectedRecurringExpense]
         .filter((debt) =>
           isPendingNormal(debt.dueDate, bounds.period, todayCivil),
         )
         .map((debt) => debt.amount),
     );
     const overdueDebts = sumDecimal(
-      debts
+      [...debts, ...projectedRecurringExpense]
         .filter((debt) => isOverdue(debt.dueDate, todayCivil))
         .map((debt) => debt.amount),
     );

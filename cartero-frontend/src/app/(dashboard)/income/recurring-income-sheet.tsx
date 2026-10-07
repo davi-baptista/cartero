@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Loader2 } from 'lucide-react'
 import type { RecurringIncomeRule } from '@/types'
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -12,6 +13,7 @@ import { Label } from '@/components/ui/label'
 import { previewRecurringIncome, type CreateRecurringIncomePayload, type RecurringIncomePreview, type UpdateRecurringIncomePayload } from '@/services/recurring-income.service'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatCurrency } from '@/lib/formatters'
+import { PROGRESSIVE_REVEAL_CLASS } from '@/components/ui/progressive-reveal'
 
 type Props = {
   open: boolean
@@ -19,6 +21,8 @@ type Props = {
   editTarget: RecurringIncomeRule | null
   isPending: boolean
   onSubmit: (payload: CreateRecurringIncomePayload | UpdateRecurringIncomePayload) => void
+  embedded?: boolean
+  embeddedFooterHost?: HTMLElement | null
 }
 
 export type RecurringIncomeFormState = {
@@ -77,7 +81,7 @@ export function recurringIncomePreviewCopy(preview: RecurringIncomePreview) {
   }
 }
 
-export function RecurringIncomeSheet({ open, onOpenChange, editTarget, isPending, onSubmit }: Props) {
+export function RecurringIncomeSheet({ open, onOpenChange, editTarget, isPending, onSubmit, embedded = false, embeddedFooterHost }: Props) {
   const initial = recurringIncomeFormState(editTarget)
   const [title, setTitle] = useState(initial.title)
   const [amount, setAmount] = useState(initial.amount)
@@ -103,16 +107,8 @@ export function RecurringIncomeSheet({ open, onOpenChange, editTarget, isPending
     onSubmit(recurringIncomePayload({ title, amount, dayOfMonth, firstOccurrence: selectedFirstOccurrence, counterpartyName }, editing))
   }
 
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>{editing ? 'Editar renda' : 'Nova renda recorrente'}</SheetTitle>
-          <SheetDescription>
-            Configure a fonte esperada. Banco e pessoa entram apenas quando o recebimento acontecer.
-          </SheetDescription>
-        </SheetHeader>
-        <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-4 pb-4">
+  const fields = (
+        <div className={embedded ? `flex flex-col gap-5 ${PROGRESSIVE_REVEAL_CLASS}` : 'flex flex-1 flex-col gap-5 overflow-y-auto px-4 pb-4'}>
           <div className="grid gap-2">
             <Label htmlFor="income-title">Nome</Label>
             <Input id="income-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ex.: Salário" autoFocus />
@@ -171,13 +167,30 @@ export function RecurringIncomeSheet({ open, onOpenChange, editTarget, isPending
             <Input id="income-origin" value={counterpartyName} onChange={(event) => setCounterpartyName(event.target.value)} placeholder="Ex.: Empresa Horizonte" />
           </div>
         </div>
-        <SheetFooter>
+  )
+  const footer = (
+        <SheetFooter className={embedded ? 'px-6 py-4' : undefined}>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>Cancelar</Button>
           <Button onClick={submit} disabled={!valid || isPending || (!editing && (!previewQuery.isSuccess || !previewQuery.data))}>
             {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
             {editing ? 'Salvar alterações' : 'Criar renda'}
           </Button>
         </SheetFooter>
+  )
+
+  if (embedded) return <>{fields}{embeddedFooterHost ? createPortal(footer, embeddedFooterHost) : null}</>
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>{editing ? 'Editar renda' : 'Nova renda recorrente'}</SheetTitle>
+          <SheetDescription>
+            Configure a fonte esperada. Banco e pessoa entram apenas quando o recebimento acontecer.
+          </SheetDescription>
+        </SheetHeader>
+        {fields}
+        {footer}
       </SheetContent>
     </Sheet>
   )

@@ -380,6 +380,8 @@ export interface Debt {
   paidAt?: string
   paymentTransactionId?: string
   parentId?: string
+  recurringExpenseRuleId?: string | null
+  recurringMonth?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -434,12 +436,30 @@ export interface RecurringIncomeRule {
   frequency: 'MONTHLY'
   dayOfMonth: number
   firstOccurrence: string
+    activeSince?: string | null
   counterpartyName?: string | null
   isActive: boolean
   deletedAt?: string | null
   createdAt: string
   updatedAt: string
 }
+
+  export interface RecurringExpenseRule {
+    id: string
+    userId: string
+    personId?: string | null
+    title: string
+    amount: number
+    frequency: 'MONTHLY'
+    dayOfMonth: number
+    firstOccurrence: string
+    activeSince?: string | null
+    creditorName?: string | null
+    isActive: boolean
+    deletedAt?: string | null
+    createdAt: string
+    updatedAt: string
+  }
 
 export interface AuthResponse {
   accessToken: string
@@ -454,6 +474,7 @@ export interface TransactionFilters {
   type?: TransactionType
   invoicePeriod?: boolean
   installmentsOnly?: boolean
+    subscriptionId?: string
 }
 
 export interface ApiError {

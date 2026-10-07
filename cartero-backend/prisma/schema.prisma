@@ -48,6 +48,8 @@ model User {
   subscriptions     Subscription[]
   recurringIncomeRules                RecurringIncomeRule[]
   recurringIncomeOccurrenceExclusions RecurringIncomeOccurrenceExclusion[]
+  recurringExpenseRules               RecurringExpenseRule[]
+  recurringExpenseOccurrenceExclusions RecurringExpenseOccurrenceExclusion[]
   salaryHistory     SalaryHistory[]
   personSettlementGroups PersonSettlementGroup[]
 }
@@ -312,6 +314,7 @@ model RecurringIncomeRule {
   frequency       RecurringIncomeFrequency @default(MONTHLY)
   dayOfMonth      Int
   firstOccurrence String
+  activeSince     String?
   counterpartyName String?
   isActive        Boolean                 @default(true)
   deletedAt       DateTime?
@@ -325,6 +328,50 @@ model RecurringIncomeRule {
   @@unique([id, userId])
   @@index([userId, isActive])
   @@index([userId, deletedAt])
+}
+
+enum RecurringExpenseFrequency {
+  MONTHLY
+}
+
+/// A monthly obligation that materializes Debt, never Transaction.
+model RecurringExpenseRule {
+  id              String                    @id @default(uuid())
+  userId          String
+  personId        String?
+  title           String
+  amount          Decimal
+  frequency       RecurringExpenseFrequency @default(MONTHLY)
+  dayOfMonth      Int
+  firstOccurrence String
+  activeSince     String?
+  creditorName    String?
+  isActive        Boolean                   @default(true)
+  deletedAt       DateTime?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  user                 User                                  @relation(fields: [userId], references: [id])
+  person               Person?                               @relation(fields: [personId], references: [id])
+  debts                Debt[]
+  occurrenceExclusions RecurringExpenseOccurrenceExclusion[]
+
+  @@unique([id, userId])
+  @@index([userId, isActive, deletedAt])
+}
+
+/// A deliberate per-competence deletion. Pause never writes this table.
+model RecurringExpenseOccurrenceExclusion {
+  id                     String   @id @default(uuid())
+  userId                 String
+  recurringExpenseRuleId String
+  recurringMonth         String
+  createdAt              DateTime @default(now())
+
+  user                 User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recurringExpenseRule RecurringExpenseRule @relation(fields: [recurringExpenseRuleId, userId], references: [id, userId], onDelete: Cascade)
+
+  @@unique([recurringExpenseRuleId, recurringMonth])
 }
 
 /// User intent to omit one competence from a recurring income source.
@@ -396,6 +443,8 @@ model Debt {
   personId             String?
   parentId             String?
   paymentTransactionId String?   @unique
+  recurringExpenseRuleId String?
+  recurringMonth         String?
   title                String
   creditorName         String
   amount               Decimal
@@ -411,7 +460,11 @@ model Debt {
   user               User         @relation(fields: [userId], references: [id])
   person             Person?      @relation(fields: [personId], references: [id])
   paymentTransaction Transaction? @relation("DebtPaymentLink", fields: [paymentTransactionId], references: [id])
+  recurringExpenseRule RecurringExpenseRule? @relation(fields: [recurringExpenseRuleId, userId], references: [id, userId], onDelete: Restrict)
   settlementMembership PersonSettlementDebt[]
+
+  @@unique([recurringExpenseRuleId, recurringMonth])
+  @@index([userId, recurringMonth])
 }
 
 model Receivable {
@@ -456,6 +509,7 @@ model Person {
 
   user         User          @relation(fields: [userId], references: [id])
   debts        Debt[]
+  recurringExpenseRules RecurringExpenseRule[]
   receivables  Receivable[]
   transactions Transaction[]
   settlementGroups PersonSettlementGroup[]

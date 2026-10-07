@@ -35,6 +35,7 @@ function buildHarness(setup: Setup = {}) {
     transactionCreates: [] as any[],
     transactionDeletes: [] as any[],
     debtDeletes: [] as any[],
+    recurringExpenseExclusions: [] as any[],
   };
 
   const debt = setup.debt ?? {
@@ -57,6 +58,7 @@ function buildHarness(setup: Setup = {}) {
   const prisma: any = {
     debt: {
       findUnique: vi.fn(async () => debt),
+      findUniqueOrThrow: vi.fn(async () => debt),
       findMany: vi.fn(async () => [debt]),
       updateMany: vi.fn(async () => ({ count: 1 })),
       update: vi.fn(async ({ data }: any) => {
@@ -117,15 +119,23 @@ function buildHarness(setup: Setup = {}) {
       delete: vi.fn(),
     },
     person: { findUnique: vi.fn(async () => ({ id: 'p1', name: 'Ana' })) },
+    recurringExpenseOccurrenceExclusion: {
+      createMany: vi.fn(async ({ data }: any) => {
+        writes.recurringExpenseExclusions.push(...data);
+        return { count: data.length };
+      }),
+    },
   };
   prisma.$transaction = vi.fn(async (fn: any) => {
     const debtDeleteCount = writes.debtDeletes.length;
     const transactionDeleteCount = writes.transactionDeletes.length;
+    const exclusionCount = writes.recurringExpenseExclusions.length;
     try {
       return await fn(prisma);
     } catch (error) {
       writes.debtDeletes.length = debtDeleteCount;
       writes.transactionDeletes.length = transactionDeleteCount;
+      writes.recurringExpenseExclusions.length = exclusionCount;
       throw error;
     }
   });
@@ -387,6 +397,27 @@ describe('Exclusão de dívida histórica', () => {
 
     expect(harness.writes.debtDeletes).toEqual(['debt-1']);
     expect(harness.writes.transactionDeletes).toHaveLength(0);
+  });
+
+  it('grava a exclusão da competência junto com a dívida recorrente', async () => {
+    const harness = buildHarness({
+      debt: {
+        ...paidDebt(),
+        recurringExpenseRuleId: 'expense-rule-1',
+        recurringMonth: '2026-09',
+        isPaid: false,
+        paymentTransactionId: null,
+      },
+    });
+
+    await harness.service.remove('debt-1', USER_ID);
+
+    expect(harness.writes.recurringExpenseExclusions).toEqual([{
+      userId: USER_ID,
+      recurringExpenseRuleId: 'expense-rule-1',
+      recurringMonth: '2026-09',
+    }]);
+    expect(harness.writes.debtDeletes).toEqual(['debt-1']);
   });
 
   it('exclui dívida histórica sem comprovante sem inventar transação', async () => {

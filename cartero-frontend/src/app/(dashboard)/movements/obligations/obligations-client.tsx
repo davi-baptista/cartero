@@ -73,6 +73,7 @@ import { cn } from '@/lib/utils'
 import { resolveReceivableDeletePolicy, canDeleteReceivable } from '@/lib/receivable-delete-policy'
 import { invalidateTransactionDependents } from '@/lib/transaction-dependent-queries'
 import { reconcileRecurringIncomePeriod } from '@/services/recurring-income.service'
+import { reconcileRecurringExpensePeriod } from '@/services/recurring-expense.service'
 
 type SettlementPaymentPayload = {
   paymentBankId?: string
@@ -94,14 +95,23 @@ async function reconcileObligationPeriod(
     staleTime: Infinity,
     gcTime: OBLIGATIONS_QUERY_GC_TIME,
   })
+  const expenseResult = await queryClient.fetchQuery({
+    queryKey: ['recurring-expense-reconcile', userId, period.year, period.month],
+    queryFn: () => reconcileRecurringExpensePeriod(period),
+    staleTime: Infinity,
+    gcTime: OBLIGATIONS_QUERY_GC_TIME,
+  })
   const overdueRefreshKey = [
     'recurring-income-overdue-refresh',
     userId,
     period.year,
     period.month,
   ] as const
-  if (result.created > 0 && !queryClient.getQueryData(overdueRefreshKey)) {
+  if ((result.created > 0 || expenseResult.created > 0) && !queryClient.getQueryData(overdueRefreshKey)) {
     await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['debts'] }),
+      queryClient.invalidateQueries({ queryKey: ['obligations', 'section'] }),
+      queryClient.invalidateQueries({ queryKey: ['obligations', 'summary'] }),
       queryClient.invalidateQueries({
         queryKey: ['obligations', 'section', 'OVERDUE'],
       }),

@@ -156,7 +156,7 @@ describe('itens 8 e 50: a identidade vem da URL', () => {
   const OBRIGATIONS = ler('../app/(dashboard)/movements/obligations/obligations-client.tsx')
   const PAGINAS = {
     Assinaturas: {
-      fonte: ler('../app/(dashboard)/subscriptions/page.tsx'),
+      fonte: ler('../app/(dashboard)/recurring/subscription-panel.tsx'),
       param: 'subscriptionId',
     },
   }

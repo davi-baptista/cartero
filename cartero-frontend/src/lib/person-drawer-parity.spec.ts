@@ -47,7 +47,7 @@ const FINANCIAL_SETTLEMENT_ROW = semComentarios(
   ler('../components/ui/financial-settlement-row.tsx'),
 )
 const INCOME_PAGE = semComentarios(
-  ler('../app/(dashboard)/income/page.tsx'),
+  ler('../app/(dashboard)/recurring/income-panel.tsx'),
 )
 const BUDGET_ROW = semComentarios(
   ler('../components/budget-drilldown-item.tsx'),

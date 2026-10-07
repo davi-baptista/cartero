@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { withPostgresSessionAdvisoryLock } from 'src/common/helpers/postgres-session-lock.helper';
 import {
@@ -6,6 +6,7 @@ import {
   RECURRING_INCOME_USER_BATCH_SIZE,
   type RecurringIncomeReconciliationSummary,
 } from './recurring-income.service';
+import { RecurringExpenseService } from 'src/recurring-expense/recurring-expense.service';
 
 const JOB_LOCK_KEY = 'recurring-income-scheduler';
 
@@ -14,6 +15,9 @@ export type RecurringIncomeJobResult =
   | ({
       status: 'completed' | 'partial-failure';
       durationMs: number;
+      recurringExpenses: Awaited<
+        ReturnType<RecurringExpenseService['ensureAll']>
+      >;
     } & RecurringIncomeReconciliationSummary);
 
 function safeErrorSummary(error: unknown): string {
@@ -29,6 +33,8 @@ export class RecurringIncomeJobService {
 
   constructor(
     private readonly recurringIncomeService: RecurringIncomeService,
+    @Optional()
+    private readonly recurringExpenseService?: RecurringExpenseService,
   ) {}
 
   /** Called only by the authenticated external cron endpoint. */
@@ -39,15 +45,25 @@ export class RecurringIncomeJobService {
     try {
       const locked = await withPostgresSessionAdvisoryLock(
         JOB_LOCK_KEY,
-        (assertLockHeld) =>
-          this.recurringIncomeService.ensureAll(
+        async (assertLockHeld) => {
+          const recurringIncome = await this.recurringIncomeService.ensureAll(
             now,
             RECURRING_INCOME_USER_BATCH_SIZE,
             assertLockHeld,
             (summary) => {
               progress = summary;
             },
-          ),
+          );
+          const recurringExpenses = this.recurringExpenseService
+            ? await this.recurringExpenseService.ensureAll(now)
+            : {
+                usersScanned: 0,
+                usersFailed: 0,
+                rulesReconciled: 0,
+                occurrencesCreated: 0,
+              };
+          return { ...recurringIncome, recurringExpenses };
+        },
       );
       if (!locked.acquired) {
         this.logger.warn(
@@ -61,7 +77,11 @@ export class RecurringIncomeJobService {
       }
 
       const result: RecurringIncomeJobResult = {
-        status: locked.value.usersFailed > 0 ? 'partial-failure' : 'completed',
+        status:
+          locked.value.usersFailed > 0 ||
+          locked.value.recurringExpenses.usersFailed > 0
+            ? 'partial-failure'
+            : 'completed',
         durationMs: Date.now() - startedAt,
         ...locked.value,
       };

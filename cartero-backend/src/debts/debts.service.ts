@@ -22,6 +22,8 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { assertDebtNotPaid } from 'src/common/helpers/settlement.guard';
 import { assertNotActivePersonSettlementMember } from 'src/common/helpers/person-settlement.guard';
+import { acquireTransactionAdvisoryLock } from 'src/common/helpers/advisory-lock.helper';
+import { recurringExpenseLockKey } from 'src/recurring-expense/recurring-expense.helper';
 import { CreateDebtDto } from 'src/debts/dto/create-debt.dto';
 import { UpdateDebtDto } from 'src/debts/dto/update-debt.dto';
 import { FindDebtsDto } from './dto/find-debts.dto';
@@ -199,12 +201,10 @@ export class DebtsService {
     delete debtDto.paymentBankId;
     delete debtDto.paymentDate;
     delete debtDto.paymentType;
-    const {
-      title: _title,
-      dueDate: _dueDate,
-      occurredAt: _occurredAt,
-      ...installmentSafeDto
-    } = debtDto;
+    const installmentSafeDto = { ...debtDto };
+    delete installmentSafeDto.title;
+    delete installmentSafeDto.dueDate;
+    delete installmentSafeDto.occurredAt;
 
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
@@ -346,12 +346,35 @@ export class DebtsService {
 
     return await this.prisma.$transaction(
       async (tx: Prisma.TransactionClient) => {
-        const debtsToDelete = await this.getDebtsByScope(
+        const candidates = await this.getDebtsByScope(
           tx,
           existing,
           userId,
           normalizedScope,
         );
+        const ruleIds = [
+          ...new Set(
+            candidates
+              .map((debt) => debt.recurringExpenseRuleId)
+              .filter((id): id is string => Boolean(id)),
+          ),
+        ].sort();
+        for (const ruleId of ruleIds) {
+          await acquireTransactionAdvisoryLock(
+            tx,
+            recurringExpenseLockKey(userId, ruleId),
+          );
+        }
+        // A materializer waiting on the same lock must observe this deletion
+        // and its exclusion in one committed state.
+        const debtsToDelete =
+          ruleIds.length > 0
+            ? await Promise.all(
+                candidates.map((debt) =>
+                  tx.debt.findUniqueOrThrow({ where: { id: debt.id, userId } }),
+                ),
+              )
+            : candidates;
 
         for (const debt of debtsToDelete) {
           if (debt.isPaid)
@@ -364,6 +387,18 @@ export class DebtsService {
         }
 
         for (const debt of debtsToDelete) {
+          if (debt.recurringExpenseRuleId && debt.recurringMonth) {
+            await tx.recurringExpenseOccurrenceExclusion.createMany({
+              data: [
+                {
+                  userId,
+                  recurringExpenseRuleId: debt.recurringExpenseRuleId,
+                  recurringMonth: debt.recurringMonth,
+                },
+              ],
+              skipDuplicates: true,
+            });
+          }
           await tx.debt.delete({
             where: { id: debt.id, userId },
           });

@@ -8,7 +8,7 @@ const debtDrawer = read("../app/(dashboard)/debts/debt-detail-drawer.tsx");
 const warningDialog = read("../app/(dashboard)/transactions/unmark-paid-warning-dialog.tsx");
 const personDrawer = read("../components/person-statement-drawer.tsx");
 const obligations = read("../app/(dashboard)/movements/obligations/obligations-client.tsx");
-const income = read("../app/(dashboard)/income/page.tsx");
+const income = read("../app/(dashboard)/recurring/income-panel.tsx");
 
 describe("settlement reversal language", () => {
   it("names a received receivable reversal as undoing receipt", () => {

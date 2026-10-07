@@ -207,7 +207,7 @@ describe('parte C: a geometria das seções tem uma autoridade', () => {
     ler('../components/invoice-details-drawer.tsx'),
   )
   const RENDA = semComentarios(
-    ler('../app/(dashboard)/income/page.tsx'),
+    ler('../app/(dashboard)/recurring/income-panel.tsx'),
   )
   const FINANCIAL_ROW = semComentarios(
     ler('../components/ui/financial-list-row.tsx'),

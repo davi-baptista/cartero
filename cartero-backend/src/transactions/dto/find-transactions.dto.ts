@@ -73,6 +73,10 @@ export class FindTransactionsDto {
   bankId?: string;
 
   @IsOptional()
+  @IsUUID()
+  subscriptionId?: string;
+
+  @IsOptional()
   @IsEnum(TransactionType)
   type?: TransactionType;
 }

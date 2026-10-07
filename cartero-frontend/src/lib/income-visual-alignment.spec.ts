@@ -1,16 +1,17 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const page = readFileSync(new URL('../app/(dashboard)/income/page.tsx', import.meta.url), 'utf-8')
+const page = readFileSync(new URL('../app/(dashboard)/recurring/income-panel.tsx', import.meta.url), 'utf-8')
 const rows = readFileSync(new URL('../components/ui/financial-list-row.tsx', import.meta.url), 'utf-8')
 const settlementRow = readFileSync(new URL('../components/ui/financial-settlement-row.tsx', import.meta.url), 'utf-8')
 const persons = readFileSync(new URL('../app/(dashboard)/persons/page.tsx', import.meta.url), 'utf-8')
 const avatar = readFileSync(new URL('../components/ui/financial-avatar.tsx', import.meta.url), 'utf-8')
 
 describe('income visual alignment contract', () => {
-  it('keeps Income focused on recurring sources and opens recurring creation directly', () => {
-    expect(page).toContain('onClick={openRecurringCreate}')
-    expect(page).toContain('Nenhuma renda recorrente cadastrada.')
+  it('keeps Income focused on recurring sources and embeds creation in the shared drawer', () => {
+    expect(page).toContain('createTarget && formHost && footerHost ? createPortal(')
+    expect(page).toContain('embedded embeddedFooterHost={footerHost}')
+    expect(page).toContain('Nenhuma receita recorrente cadastrada.')
     expect(page).not.toContain('chooserOpen')
     expect(page).not.toContain('Renda pontual')
     expect(page).not.toContain('Recebimentos pontuais')
@@ -21,10 +22,8 @@ describe('income visual alignment contract', () => {
     expect(page).toContain('<RecurringIncomeSheet')
   })
 
-  it('keeps the compact CTA and separates source occurrence groups', () => {
-    expect(page).toContain('<span>Adicionar</span>')
+  it('separates source occurrence groups', () => {
     expect(page).not.toContain('Adicionar renda</span>')
-    expect(page).toContain('onClick={openRecurringCreate}')
     expect(page).toContain('<DrawerSectionTitle title="Em atraso"')
     expect(page).toContain('<DrawerSectionTitle title="Em aberto"')
     expect(page).toContain('selectedOccurrenceGroups.overdue.length > 0')
@@ -52,7 +51,7 @@ describe('income visual alignment contract', () => {
     expect(drawer.indexOf('Editar renda')).toBeLessThan(drawer.indexOf('<DrawerSectionTitle title="Em atraso"'))
     expect(page).toContain('nextOpenIncomeOccurrenceOnOrAfter')
     expect(page).toContain('trailing={<FinancialRowTrailing amount={<>{formatCurrency(rule.amount)}')
-    expect(page).toContain("label={rule.isActive ? 'A RECEBER' : 'ENCERRADA'}")
+    expect(page).toContain("label={rule.isActive ? 'A RECEBER' : 'PAUSADA'}")
   })
 
   it('reuses one shared right-side presentation across Pessoas and Renda', () => {
@@ -110,7 +109,7 @@ describe('income visual alignment contract', () => {
 
   it('aligns recurring History with Open Occurrences through shared drawer authorities', () => {
     const openList = page.slice(page.indexOf('function OpenOccurrencesList'), page.indexOf('function HistoryOccurrencesList'))
-    const historyList = page.slice(page.indexOf('function HistoryOccurrencesList'), page.indexOf('export default function IncomePage'))
+    const historyList = page.slice(page.indexOf('function HistoryOccurrencesList'), page.indexOf('export function IncomePanel'))
     expect(page).toContain('<DrawerSectionTitle title="Em atraso"')
     expect(page).toContain('<DrawerSectionTitle title="Em aberto"')
     expect(page).toContain('<DrawerSectionHeading>Histórico</DrawerSectionHeading>')

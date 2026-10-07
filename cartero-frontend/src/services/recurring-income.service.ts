@@ -29,6 +29,11 @@ export async function getRecurringIncomes(): Promise<RecurringIncomeRule[]> {
   return data
 }
 
+export async function getRecurringIncome(id: string): Promise<RecurringIncomeRule> {
+  const { data } = await api.get<RecurringIncomeRule>(`/recurring-incomes/${id}`)
+  return data
+}
+
 export async function reconcileRecurringIncomePeriod(period: {
   month: number
   year: number

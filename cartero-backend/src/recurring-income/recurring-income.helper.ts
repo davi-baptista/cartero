@@ -66,6 +66,19 @@ export function defaultFirstOccurrence(
     : addRecurringMonths(currentMonth, 1);
 }
 
+/** A resumed rule may include this month only while its due day has not passed. */
+export function resumeRecurringMonth(
+  dayOfMonth: number,
+  now: Date,
+  timeZone: string,
+): string {
+  const today = financialCivilDay(now, timeZone);
+  const month = formatRecurringMonth(financialCivilParts(now, timeZone));
+  return occurrenceDateForMonth(month, dayOfMonth) >= today
+    ? month
+    : addRecurringMonths(month, 1);
+}
+
 export function materializationHorizon(now: Date, timeZone: string): string {
   return shiftCivilDate(financialCivilDay(now, timeZone), 30);
 }

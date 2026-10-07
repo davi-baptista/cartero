@@ -27,9 +27,13 @@ function harness() {
       return summary;
     }),
   };
+  const expenseService = {
+    ensureAll: vi.fn(async () => ({ usersScanned: 2, usersFailed: 0, rulesReconciled: 4, occurrencesCreated: 3 })),
+  };
   return {
     service,
-    job: new RecurringIncomeJobService(service as any),
+    expenseService,
+    job: new RecurringIncomeJobService(service as any, expenseService as any),
   };
 }
 
@@ -46,7 +50,7 @@ describe('RecurringIncomeJobService', () => {
   });
 
   it('logs start and finish with aggregate results', async () => {
-    const { service, job } = harness();
+    const { service, expenseService, job } = harness();
     lock.mockImplementation(async (_key, work) => ({
       acquired: true,
       value: await work(async () => undefined),
@@ -55,6 +59,9 @@ describe('RecurringIncomeJobService', () => {
     const result = await job.run(new Date('2026-10-01T12:00:00Z'));
 
     expect(result).toMatchObject({ status: 'completed', ...summary });
+    if (result.status !== 'completed') throw new Error('Expected completed job');
+    expect(result.recurringExpenses).toMatchObject({ rulesReconciled: 4, occurrencesCreated: 3 });
+    expect(expenseService.ensureAll).toHaveBeenCalledWith(new Date('2026-10-01T12:00:00Z'));
     expect(service.ensureAll).toHaveBeenCalledWith(
       new Date('2026-10-01T12:00:00Z'),
       RECURRING_INCOME_USER_BATCH_SIZE,

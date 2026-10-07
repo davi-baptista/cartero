@@ -1,169 +1,66 @@
 'use client'
 
 import { Pencil, Trash2, Pause, Play } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import {
-  DetailAmount,
-  DetailDrawer,
-  DetailFooter,
-  DetailList,
-  DetailNotice,
-  DetailRow,
-  DETAIL_ACTION_CLASS,
-} from '@/components/ui/detail-drawer'
-import {
-  ROW_AMOUNT_CLASS,
-} from '@/components/ui/financial-list-row'
+import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { DrawerIdentityHeader } from '@/components/ui/drawer-identity-header'
+import { FinancialListRow, FinancialRowTrailing } from '@/components/ui/financial-list-row'
+import { DrawerCompletionStatus, DrawerFinancialList, DrawerOutlineCard, DrawerSectionEmpty, DrawerSectionGroup, DrawerSectionHeading, DrawerSummaryCard, DrawerSummaryLabel, DrawerSummaryMeta, DrawerSummaryValue } from '@/components/ui/drawer-section'
+import { DRAWER_WIDE_CONTENT_INSET, DRAWER_WIDTH_WIDE, DRAWER_WIDE_VERTICAL_RHYTHM } from '@/components/ui/drawer-layout'
+import { getTransactions } from '@/services/transactions.service'
 import { bankDisplayName } from '@/lib/bank-display'
-import {
-  formatCurrency,
-  formatDate,
-  formatMonthYear,
-  TRANSACTION_TYPE_LABELS,
-} from '@/lib/formatters'
+import { formatCurrency, formatDate, formatMonthYear, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
+import { cn } from '@/lib/utils'
 import type { Subscription } from '@/types'
 
-/**
- * ══════════════════════════════════════════════════════════════════════════
- * Detalhe da assinatura
- * ══════════════════════════════════════════════════════════════════════════
- *
- * Mesma casca dos detalhes de transação, dívida e cobrança.
- *
- * A row expunha Pausar, Editar e Excluir — três ícones no hover do desktop
- * MAIS um `DropdownMenu` no mobile, duas implementações da mesma coisa para
- * manter em paralelo. A lista identifica; o detalhe administra.
- *
- * Nenhuma regra nova: os handlers são os mesmos que a lista já usava, com as
- * confirmações que já existiam.
- */
-export function SubscriptionDetailDrawer({
-  subscription,
-  onOpenChange,
-  onEdit,
-  onDelete,
-  onToggle,
-}: {
-  /** `null` mantém o drawer fechado. */
+function cycleLabel(cycle: string) {
+  const [year, month] = cycle.slice(0, 7).split('-').map(Number)
+  return formatMonthYear(month, year)
+}
+
+export function SubscriptionDetailDrawer({ subscription, onOpenChange, onEdit, onDelete, onToggle }: {
   subscription: Subscription | null
   onOpenChange: (open: boolean) => void
   onEdit: (subscription: Subscription) => void
   onDelete: (subscription: Subscription) => void
   onToggle: (subscription: Subscription) => void
 }) {
-  if (!subscription) return null
-
-  const inactive = !subscription.isActive
-
-  /** "2026-08" → "agosto de 2026", sem passar por `Date`. */
-  const cycleLabel = (cycle: string) => {
-    const [year, month] = cycle.slice(0, 7).split('-').map(Number)
-    return formatMonthYear(month, year)
-  }
-
-  return (
-    <DetailDrawer
-      open
-      onOpenChange={onOpenChange}
-      title={subscription.title}
-      description={`Assinatura · todo dia ${subscription.dayOfMonth}`}
-      footer={
-        <>
-          {/*
-            Pausar/retomar vem primeiro: é a ação corriqueira, e a única que a
-            row oferecia sem passar por confirmação.
-          */}
-        <DetailFooter>
-          <Button
-            variant="outline"
-            className={DETAIL_ACTION_CLASS}
-            onClick={() => onToggle(subscription)}
-          >
-            {inactive ? <Play className="size-4" /> : <Pause className="size-4" />}
-            {inactive ? 'Retomar' : 'Pausar'}
-          </Button>
-        </DetailFooter>
-
-        <DetailFooter className="border-t-0 pt-0">
-          <Button
-            variant="outline"
-            className={DETAIL_ACTION_CLASS}
-            onClick={() => onEdit(subscription)}
-          >
-            <Pencil className="size-4" />
-            Editar
-          </Button>
-          <Button
-            variant="destructive"
-            className={DETAIL_ACTION_CLASS}
-            onClick={() => onDelete(subscription)}
-          >
-            <Trash2 className="size-4" />
-            Excluir
-          </Button>
-        </DetailFooter>
-        </>
-      }
-    >
-      <DetailAmount label="Valor por cobrança">
-        <span className={ROW_AMOUNT_CLASS}>
-          −{formatCurrency(Number(subscription.amount))}
-        </span>
-      </DetailAmount>
-
-      <DetailList>
-        <DetailRow label="Status">{inactive ? 'Pausada' : 'Ativa'}</DetailRow>
-        <DetailRow label="Cobrança">
-          {/*
-            `nextCharge` vem do BACKEND, pela mesma regra que decide a
-            geração. Pausada não mostra data: inventar uma seria mentir sobre
-            o estado, e é justamente esse o dado que revela que a geração
-            parou.
-          */}
-          {inactive ? (
-            <span className="text-muted-foreground">
-              Sem cobranças enquanto estiver pausada
-            </span>
-          ) : subscription.nextCharge ? (
-            <>Próxima em {formatDate(subscription.nextCharge)}</>
-          ) : (
-            <>Todo dia {subscription.dayOfMonth}</>
-          )}
-        </DetailRow>
-        <DetailRow label="Forma">
-          {TRANSACTION_TYPE_LABELS[subscription.type]}
-        </DetailRow>
-        <DetailRow label="Banco">
-          {bankDisplayName(subscription.bank)}
-        </DetailRow>
-        {subscription.category && (
-          <DetailRow label="Categoria">{subscription.category.name}</DetailRow>
-        )}
-        <DetailRow label="Assinando desde">
-          {cycleLabel(subscription.startedAt)}
-        </DetailRow>
-        {subscription.lastGeneratedFor && (
-          <DetailRow label="Último ciclo">
-            {cycleLabel(subscription.lastGeneratedFor)}
-          </DetailRow>
-        )}
-        {subscription.description && (
-          <DetailRow label="Descrição" align="start">
-            <span className="whitespace-pre-wrap">
-              {subscription.description}
-            </span>
-          </DetailRow>
-        )}
-      </DetailList>
-
-      {inactive && subscription.activeSince && (
-        <DetailNotice>
-          Ao retomar, a cobrança recomeça a partir de{' '}
-          {cycleLabel(subscription.activeSince)} — os meses da pausa não são
-          gerados retroativamente.
-        </DetailNotice>
-      )}
-
-    </DetailDrawer>
-  )
+  const history = useQuery({
+    queryKey: ['subscription-history', subscription?.id],
+    queryFn: () => getTransactions({ subscriptionId: subscription!.id }),
+    enabled: Boolean(subscription?.id),
+  })
+  return <Sheet open={Boolean(subscription)} onOpenChange={onOpenChange}>
+    <SheetContent className={cn(DRAWER_WIDTH_WIDE, DRAWER_WIDE_VERTICAL_RHYTHM.headerContentGap)} showCloseButton={false}>
+      <DrawerIdentityHeader title={subscription?.title} description={`Cobrança automática · ${subscription?.isActive ? 'Ativa' : 'Pausada'}`} />
+      {subscription && <div className={cn('flex flex-1 flex-col overflow-y-auto subtle-scrollbar', DRAWER_WIDE_CONTENT_INSET, DRAWER_WIDE_VERTICAL_RHYTHM.sectionTopGap, 'pb-6')}>
+        <DrawerSummaryCard inset={false}>
+          <DrawerSummaryLabel emphasis="regular">Valor por cobrança</DrawerSummaryLabel>
+          <DrawerSummaryValue>{formatCurrency(Number(subscription.amount))}</DrawerSummaryValue>
+          <DrawerSummaryMeta className="mt-2">Dia {subscription.dayOfMonth} · {TRANSACTION_TYPE_LABELS[subscription.type]}</DrawerSummaryMeta>
+          <div className="mt-3"><DrawerCompletionStatus variant={subscription.isActive ? 'pending' : 'informational'}>{subscription.isActive ? 'Ativa' : 'Pausada'}</DrawerCompletionStatus></div>
+        </DrawerSummaryCard>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" className="gap-2" onClick={() => onEdit(subscription)}><Pencil className="size-3.5" /> Editar despesa</Button>
+          <Button variant="outline" className="gap-2" onClick={() => onToggle(subscription)}>{subscription.isActive ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}{subscription.isActive ? 'Pausar despesa' : 'Reativar despesa'}</Button>
+          <Button variant="destructive" className="gap-2" onClick={() => onDelete(subscription)}><Trash2 className="size-3.5" /> Excluir despesa</Button>
+        </div>
+        <DrawerOutlineCard variant="compact">
+          <p className="text-xs text-muted-foreground">Próxima cobrança</p>
+          <p className="mt-1 text-sm font-medium">{subscription.isActive ? subscription.nextCharge ? formatDate(subscription.nextCharge) : `Todo dia ${subscription.dayOfMonth}` : 'Sem cobranças enquanto estiver pausada'}</p>
+        </DrawerOutlineCard>
+        <DrawerOutlineCard variant="compact">
+          <p className="text-xs text-muted-foreground">Detalhes</p>
+          <p className="mt-1 text-sm">{bankDisplayName(subscription.bank)}{subscription.category ? ` · ${subscription.category.name}` : ''}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Desde {cycleLabel(subscription.startedAt)}</p>
+          {subscription.description && <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{subscription.description}</p>}
+        </DrawerOutlineCard>
+        <DrawerSectionGroup>
+          <DrawerSectionHeading>Histórico de lançamentos</DrawerSectionHeading>
+          {history.isLoading ? <DrawerSectionEmpty inset={false}>Carregando histórico…</DrawerSectionEmpty> : history.isError ? <DrawerSectionEmpty inset={false}>Não foi possível carregar o histórico.</DrawerSectionEmpty> : history.data?.length ? <DrawerFinancialList>{history.data.map((transaction) => <FinancialListRow key={transaction.id} ariaLabel={`Lançamento em ${formatDate(transaction.date)}`} title={formatDate(transaction.date)} meta={transaction.title} trailing={<FinancialRowTrailing amount={formatCurrency(transaction.amount)} label="LANÇADA" />} />)}</DrawerFinancialList> : <DrawerSectionEmpty inset={false}>Nenhuma cobrança lançada.</DrawerSectionEmpty>}
+        </DrawerSectionGroup>
+      </div>}
+    </SheetContent>
+  </Sheet>
 }

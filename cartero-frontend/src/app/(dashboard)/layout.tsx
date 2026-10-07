@@ -17,7 +17,6 @@ import {
   PiggyBank,
   Repeat,
   CalendarClock,
-  CircleDollarSign,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -201,19 +200,18 @@ const navItems = [
   { href: '/overview', label: 'Visão Geral', icon: LayoutDashboard },
   { href: '/budget', label: 'Orçamento', icon: PiggyBank },
   { href: '/movements', label: 'Movimentações', icon: ArrowDownUp },
-  { href: '/subscriptions', label: 'Assinaturas', icon: Repeat },
+  { href: '/recurring', label: 'Recorrentes', headerLabel: 'Planejamento', icon: Repeat },
   { href: '/commitments', label: 'Parcelas', icon: CalendarClock },
   { href: '/banks', label: 'Bancos', icon: Landmark },
   { href: '/categories', label: 'Categorias', icon: Tags },
-  { href: '/income', label: 'Renda', headerLabel: 'Planejamento', icon: CircleDollarSign },
   { href: '/persons', label: 'Pessoas', icon: Users },
 ]
 
 const navGroups = [
   { label: 'GERAL', items: navItems.filter(({ href }) => ['/overview', '/movements'].includes(href)) },
-  { label: 'PLANEJAMENTO', items: navItems.filter(({ href }) => ['/budget', '/income', '/commitments', '/subscriptions'].includes(href)) },
+  { label: 'PLANEJAMENTO', items: navItems.filter(({ href }) => ['/budget', '/recurring', '/commitments'].includes(href)) },
   { label: 'CONTAS', items: navItems.filter(({ href }) => ['/banks', '/persons'].includes(href)) },
-  { label: 'ORGANIZA\u00c7\u00c3O', items: [navItems[6]] },
+  { label: 'ORGANIZA\u00c7\u00c3O', items: navItems.filter(({ href }) => href === '/categories') },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

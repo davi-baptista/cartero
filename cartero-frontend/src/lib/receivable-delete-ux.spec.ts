@@ -20,7 +20,7 @@ const obligations = read(
 const editScope = read(
   "../app/(dashboard)/transactions/installment-scope-dialog.tsx",
 );
-const income = read("../app/(dashboard)/income/page.tsx");
+const income = read("../app/(dashboard)/recurring/income-panel.tsx");
 const overview = read("../components/overview-contextual-details.tsx");
 const personStatement = read("../components/person-statement-drawer.tsx");
 const dialogPrimitive = read("../components/ui/dialog.tsx");

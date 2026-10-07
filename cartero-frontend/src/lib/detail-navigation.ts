@@ -45,6 +45,8 @@ export const DETAIL_PARAMS = [
   'debtId',
   'receivableId',
   'subscriptionId',
+  'incomeRuleId',
+  'recurringExpenseRuleId',
   'transactionId',
   'invoiceId',
 ] as const

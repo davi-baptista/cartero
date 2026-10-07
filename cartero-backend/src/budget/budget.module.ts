@@ -6,9 +6,10 @@ import { SalaryModule } from 'src/salary/salary.module';
 import { BudgetV2Service } from './budget-v2.service';
 import { BudgetV2DrilldownService } from './budget-v2-drilldown.service';
 import { RecurringIncomeModule } from 'src/recurring-income/recurring-income.module';
+import { RecurringExpenseModule } from 'src/recurring-expense/recurring-expense.module';
 
 @Module({
-  imports: [CommonModule, SalaryModule, RecurringIncomeModule],
+  imports: [CommonModule, SalaryModule, RecurringIncomeModule, RecurringExpenseModule],
   providers: [BudgetService, BudgetV2Service, BudgetV2DrilldownService],
   controllers: [BudgetController],
 })

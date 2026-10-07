@@ -16,7 +16,7 @@ const receivableSheet = readFileSync(new URL('../app/(dashboard)/receivables/rec
 const dashboardLayout = readFileSync(new URL('../app/(dashboard)/layout.tsx', import.meta.url), 'utf8')
 const transactionDetailsDrawer = readFileSync(new URL('../components/transaction-details-drawer.tsx', import.meta.url), 'utf8')
 const personDrawer = readFileSync(new URL('../components/person-statement-drawer.tsx', import.meta.url), 'utf8')
-const incomePage = readFileSync(new URL('../app/(dashboard)/income/page.tsx', import.meta.url), 'utf8')
+const incomePage = readFileSync(new URL('../app/(dashboard)/recurring/income-panel.tsx', import.meta.url), 'utf8')
 const invoiceDrawer = readFileSync(new URL('../components/invoice-details-drawer.tsx', import.meta.url), 'utf8')
 const detailDrawer = readFileSync(new URL('../components/ui/detail-drawer.tsx', import.meta.url), 'utf8')
 

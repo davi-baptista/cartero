@@ -101,6 +101,14 @@ export type BudgetV2DrilldownItem =
       title: string;
       description: string | null;
       counterparty: string;
+    }
+  | {
+      kind: 'RECURRING_EXPENSE_PROJECTION';
+      id: string;
+      amount: string;
+      dueDate: string;
+      title: string;
+      counterparty: string;
     };
 
 export interface BudgetV2DrilldownResponse {

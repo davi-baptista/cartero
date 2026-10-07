@@ -217,7 +217,12 @@ export class SubscriptionsService {
     );
 
     return {
-      subscription: await this.findOne(subscription.id, userId, new Date(), timeZone),
+      subscription: await this.findOne(
+        subscription.id,
+        userId,
+        new Date(),
+        timeZone,
+      ),
       generation,
       alreadyExisted,
     };
@@ -399,7 +404,11 @@ export class SubscriptionsService {
      */
     const activeSince = reactivating
       ? formatCycle(
-          resumeCycle(dto.dayOfMonth ?? current.dayOfMonth, new Date(), timeZone),
+          resumeCycle(
+            dto.dayOfMonth ?? current.dayOfMonth,
+            new Date(),
+            timeZone,
+          ),
         )
       : undefined;
 
@@ -452,7 +461,14 @@ export class SubscriptionsService {
   ): Promise<GenerationPlanItem[]> {
     // `null` nos dois últimos: o preview de CRIAÇÃO não tem histórico nem
     // marco de ativação — é uma assinatura que ainda não existe.
-    const cycles = pendingCycles(startedAt, null, dayOfMonth, now, null, timeZone);
+    const cycles = pendingCycles(
+      startedAt,
+      null,
+      dayOfMonth,
+      now,
+      null,
+      timeZone,
+    );
     if (cycles.length === 0) return [];
 
     const bank = await this.entityValidation.validateBank(bankId, userId);
@@ -772,6 +788,8 @@ export class SubscriptionsService {
                   where: {
                     id: subscription.id,
                     lastGeneratedFor: markerBefore,
+                    isActive: true,
+                    activeSince: subscription.activeSince,
                   },
                   data: { lastGeneratedFor: formatCycle(cycle) },
                 });
@@ -818,7 +836,12 @@ export class SubscriptionsService {
             // ciclo, `count` é 0 e a transação inteira desfaz — inclusive o
             // lançamento e o incremento da fatura acima.
             const claimed = await tx.subscription.updateMany({
-              where: { id: subscription.id, lastGeneratedFor: markerBefore },
+              where: {
+                id: subscription.id,
+                lastGeneratedFor: markerBefore,
+                isActive: true,
+                activeSince: subscription.activeSince,
+              },
               data: { lastGeneratedFor: formatCycle(cycle) },
             });
             if (claimed.count === 0) throw new CycleAlreadyClaimedError();

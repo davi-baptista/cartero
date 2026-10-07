@@ -20,7 +20,7 @@ export class RecurringIncomeCronController {
     const result = await this.job.run();
     if (result.status === 'partial-failure') {
       throw new InternalServerErrorException({
-        message: 'Recurring income reconciliation finished with failures',
+        message: 'Recurring reconciliation finished with failures',
         code: 'RECURRING_INCOME_PARTIAL_FAILURE',
         summary: result,
       });

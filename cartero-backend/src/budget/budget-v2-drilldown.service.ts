@@ -21,6 +21,7 @@ import {
 } from './budget-v2-predicates.helper';
 import { BudgetV2PeriodPreset } from './budget-v2.types';
 import { RecurringIncomeService } from 'src/recurring-income/recurring-income.service';
+import { RecurringExpenseService } from 'src/recurring-expense/recurring-expense.service';
 import type { GetBudgetV2DrilldownDto } from './dto/get-budget-v2-drilldown.dto';
 import type {
   BudgetV2DrilldownItem,
@@ -298,6 +299,8 @@ export class BudgetV2DrilldownService {
     private readonly prisma: PrismaService,
     @Optional()
     private readonly recurringIncomeService?: RecurringIncomeService,
+    @Optional()
+    private readonly recurringExpenseService?: RecurringExpenseService,
   ) {}
 
   async getDrilldown(
@@ -465,7 +468,13 @@ export class BudgetV2DrilldownService {
         );
       }
       case BudgetV2Bucket.UPCOMING_DEBTS:
-        return this.loadDebtPageAndTotal(userId, date, cursor, limit);
+        return this.loadDebtPageAndTotal(
+          userId,
+          date,
+          cursor,
+          limit,
+          periodBounds?.period.startDate?.slice(0, 7) ?? today.slice(0, 7),
+        );
       case BudgetV2Bucket.UPCOMING_INVOICES:
         return this.loadInvoicePageAndTotal(userId, date, cursor, limit);
       default:
@@ -798,7 +807,32 @@ export class BudgetV2DrilldownService {
     dueDate: Prisma.DateTimeFilter,
     cursor: CursorPayload | null,
     limit: number,
+    projectionMonth?: string,
   ): Promise<PageResult> {
+    if (projectionMonth && this.recurringExpenseService) {
+      return this.prisma.$transaction(async (tx) => {
+        const projections = await this.recurringExpenseService!.projectMissingOccurrencesForMonth(
+          userId, projectionMonth, tx,
+        );
+        const where = debtBucketWhere(userId, dueDate);
+        const [debts, aggregate] = await Promise.all([
+          tx.debt.findMany({ where: withContinuation(where, dueDateIdCursorWhere(cursor)), select: debtSelect, orderBy: [{ dueDate: 'asc' }, { id: 'asc' }], take: limit + 1 }),
+          tx.debt.aggregate({ where, _sum: { amount: true } }),
+        ]);
+        const rows: SortableItem[] = debts.map((debt) => ({
+          amount: debt.amount, date: iso(debt.dueDate), kind: 'DEBT', id: debt.id,
+          item: { kind: 'DEBT', id: debt.id, amount: serializeMoney(debt.amount), dueDate: iso(debt.dueDate), title: debt.title, description: debt.description, counterparty: debt.person?.name ?? debt.creditorName },
+        }));
+        const matching = projections.filter((projection) => matchesDateFilter(projection.dueDate, dueDate));
+        rows.push(...matching.filter((projection) => !cursor || projection.dueDate.toISOString() > cursor.date || (projection.dueDate.toISOString() === cursor.date && projection.recurringExpenseRuleId > cursor.id)).map((projection) => ({
+          amount: projection.amount, date: iso(projection.dueDate), kind: 'DEBT', id: projection.recurringExpenseRuleId,
+          item: { kind: 'RECURRING_EXPENSE_PROJECTION' as const, id: projection.recurringExpenseRuleId, amount: serializeMoney(projection.amount), dueDate: iso(projection.dueDate), title: projection.title, counterparty: projection.creditorName ?? projection.title },
+        })));
+        rows.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+        const projectedTotal = matching.reduce((sum, projection) => sum.add(projection.amount), ZERO);
+        return { rows: rows.slice(0, limit + 1), total: (aggregate._sum.amount ?? ZERO).add(projectedTotal) };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    }
     const where = debtBucketWhere(userId, dueDate);
     const pageWhere = withContinuation(where, dueDateIdCursorWhere(cursor));
     const [debts, aggregate] = await Promise.all([

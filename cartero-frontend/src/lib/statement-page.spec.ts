@@ -26,7 +26,7 @@ const SHELL = readFileSync(
   'utf-8',
 )
 const INCOME = readFileSync(
-  new URL('../app/(dashboard)/income/page.tsx', import.meta.url),
+  new URL('../app/(dashboard)/recurring/income-panel.tsx', import.meta.url),
   'utf-8',
 )
 const MOTION_ROW = readFileSync(

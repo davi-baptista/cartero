@@ -18,7 +18,7 @@ describe('dashboard navigation grouping', () => {
       '/overview',
       '/budget',
       '/movements',
-      '/subscriptions',
+      '/recurring',
       '/commitments',
       '/banks',
       '/categories',

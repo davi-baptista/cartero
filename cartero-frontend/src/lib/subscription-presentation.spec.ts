@@ -3,15 +3,11 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const subscriptions = readFileSync(
-  resolve(__dirname, '../app/(dashboard)/subscriptions/page.tsx'),
+  resolve(__dirname, '../app/(dashboard)/recurring/subscription-panel.tsx'),
   'utf8',
 )
 const subscriptionDrawer = readFileSync(
   resolve(__dirname, '../app/(dashboard)/subscriptions/subscription-detail-drawer.tsx'),
-  'utf8',
-)
-const detailDrawerPrimitive = readFileSync(
-  resolve(__dirname, '../components/ui/detail-drawer.tsx'),
   'utf8',
 )
 
@@ -31,11 +27,10 @@ describe('subscription amount presentation', () => {
     expect(subscriptions).toContain('Pausada')
   })
 
-  it('keeps the detail amount neutral while preserving its sign and value', () => {
-    expect(subscriptionDrawer).toContain('<DetailAmount label="Valor por cobrança">')
-    expect(subscriptionDrawer).toContain('className={ROW_AMOUNT_CLASS}')
+  it('keeps the detail amount neutral in the shared recurring drawer', () => {
+    expect(subscriptionDrawer).toContain('<DrawerSummaryLabel emphasis="regular">Valor por cobrança</DrawerSummaryLabel>')
+    expect(subscriptionDrawer).toContain('<DrawerSummaryValue>{formatCurrency(Number(subscription.amount))}</DrawerSummaryValue>')
     expect(subscriptionDrawer).not.toContain('ROW_AMOUNT_TONE.out')
-    expect(subscriptionDrawer).toContain('−{formatCurrency(Number(subscription.amount))}')
-    expect(detailDrawerPrimitive).toContain('<div className="mt-1 text-foreground">{children}</div>')
+    expect(subscriptionDrawer).toContain("getTransactions({ subscriptionId: subscription!.id })")
   })
 })

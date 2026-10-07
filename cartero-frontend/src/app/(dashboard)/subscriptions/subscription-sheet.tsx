@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useForm, Controller, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -33,6 +34,7 @@ import { accountTodayDate } from '@/lib/date'
 import { useAuth } from '@/providers/auth-provider'
 import type { Category, Subscription } from '@/types'
 import { TransactionType } from '@/types'
+import { PROGRESSIVE_REVEAL_CLASS } from '@/components/ui/progressive-reveal'
 
 const schema = z.object({
   title: z.string().min(1, 'Título obrigatório'),
@@ -87,6 +89,8 @@ interface SubscriptionSheetProps {
   onOpenChange: (open: boolean) => void
   editSubscription?: Subscription | null
   onSubmit: (data: SubscriptionFormData) => Promise<void>
+  embedded?: boolean
+  embeddedFooterHost?: HTMLElement | null
 }
 
 /**
@@ -109,6 +113,8 @@ export function SubscriptionSheet({
   onOpenChange,
   editSubscription,
   onSubmit,
+  embedded = false,
+  embeddedFooterHost,
 }: SubscriptionSheetProps) {
   const isEdit = !!editSubscription
   const { user } = useAuth()
@@ -209,25 +215,11 @@ export function SubscriptionSheet({
   const willSkip = preview.filter((p) => p.skipped)
   const previewTotal = willCreate.length * (amount || 0)
 
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col sm:max-w-md" showCloseButton>
-        <SheetHeader className="px-6 pt-6 pb-0">
-          <SheetTitle>{isEdit ? 'Editar assinatura' : 'Nova assinatura'}</SheetTitle>
-          <SheetDescription>
-            {isEdit
-              ? 'Alterações valem dos próximos lançamentos em diante.'
-              : 'Um lançamento por mês, criado automaticamente no dia da cobrança.'}
-          </SheetDescription>
-        </SheetHeader>
-
-        {/* O footer fica fora do form e se liga por `form="subscription-form"`,
-            como nos demais drawers: assim ele não rola junto com os campos e
-            continua alcançável em formulários longos. */}
+  const fields = (
         <form
           id="subscription-form"
           onSubmit={handleSubmit(submit)}
-          className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5"
+          className={embedded ? `flex flex-col gap-4 ${PROGRESSIVE_REVEAL_CLASS}` : 'flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5'}
         >
           {/* `aria-invalid` + `aria-describedby` ligam o campo à sua mensagem
               de erro, como nos demais formulários. */}
@@ -461,8 +453,9 @@ export function SubscriptionSheet({
             <Input id="description" {...register('description')} />
           </div>
         </form>
-
-        <SheetFooter className="px-6 pb-6 pt-0">
+  )
+  const footer = (
+        <SheetFooter className={embedded ? 'px-6 py-4' : 'px-6 pb-6 pt-0'}>
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
@@ -472,9 +465,26 @@ export function SubscriptionSheet({
           </Button>
           <Button type="submit" form="subscription-form" disabled={isSubmitting}>
             {isSubmitting && <Loader2 className="size-4 animate-spin" />}
-            {isEdit ? 'Salvar alterações' : 'Criar assinatura'}
+            {isEdit ? 'Salvar alterações' : 'Criar cobrança'}
           </Button>
         </SheetFooter>
+  )
+
+  if (embedded) return <>{fields}{embeddedFooterHost ? createPortal(footer, embeddedFooterHost) : null}</>
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="flex w-full flex-col sm:max-w-md" showCloseButton>
+        <SheetHeader className="px-6 pt-6 pb-0">
+          <SheetTitle>{isEdit ? 'Editar cobrança automática' : 'Nova cobrança automática'}</SheetTitle>
+          <SheetDescription>
+            {isEdit
+              ? 'Alterações valem dos próximos lançamentos em diante.'
+              : 'Um lançamento por mês, criado automaticamente no dia da cobrança.'}
+          </SheetDescription>
+        </SheetHeader>
+        {fields}
+        {footer}
       </SheetContent>
     </Sheet>
   )

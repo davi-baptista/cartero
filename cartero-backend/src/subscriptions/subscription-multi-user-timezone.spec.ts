@@ -66,6 +66,7 @@ function buildHarness() {
       isActive: true,
     },
   ];
+  let pauseAtNextClaim = false;
 
   const prisma: any = {
     subscription: {
@@ -76,7 +77,12 @@ function buildHarness() {
       }),
       updateMany: vi.fn(async ({ where, data }: any) => {
         const target = subscriptions.find((s) => s.id === where.id);
-        if (!target || target.lastGeneratedFor !== where.lastGeneratedFor) {
+        if (pauseAtNextClaim && target) {
+          target.isActive = false;
+          pauseAtNextClaim = false;
+        }
+        if (!target || target.lastGeneratedFor !== where.lastGeneratedFor ||
+          target.isActive !== where.isActive || target.activeSince !== where.activeSince) {
           return { count: 0 };
         }
         writes.subscriptionUpdates.push({ id: where.id, ...data });
@@ -99,12 +105,22 @@ function buildHarness() {
       }),
     },
   };
-  prisma.$transaction = vi.fn(async (fn: any) => fn(prisma));
+  prisma.$transaction = vi.fn(async (fn: any) => {
+    const transactionCount = writes.transactions.length;
+    const markerCount = writes.subscriptionUpdates.length;
+    try {
+      return await fn(prisma);
+    } catch (error) {
+      writes.transactions.length = transactionCount;
+      writes.subscriptionUpdates.length = markerCount;
+      throw error;
+    }
+  });
 
   const validation = new EntityValidationService(prisma as PrismaService);
   const service = new SubscriptionsService(prisma as PrismaService, validation);
 
-  return { service, prisma, writes, subscriptions };
+  return { service, prisma, writes, subscriptions, pauseBeforeNextClaim: () => { pauseAtNextClaim = true; } };
 }
 
 describe('runForAll — TZ5: isolamento de timezone entre contas no mesmo lote', () => {
@@ -145,6 +161,17 @@ describe('runForAll — TZ5: isolamento de timezone entre contas no mesmo lote',
         expect(tx.userId).toBe('user-tokyo');
       }
     }
+  });
+
+  it('uma pausa concorrente antes da reivindicação reverte o lançamento em andamento', async () => {
+    const { service, writes, subscriptions, pauseBeforeNextClaim } = buildHarness();
+    pauseBeforeNextClaim();
+
+    await service.runForAll(REAL_BOUNDARY);
+
+    expect(subscriptions[0].isActive).toBe(false);
+    expect(writes.transactions.some((transaction) => transaction.title === 'Fortaleza sub')).toBe(false);
+    expect(writes.subscriptionUpdates.some((update) => update.id === 'sub-fortaleza')).toBe(false);
   });
 
 });

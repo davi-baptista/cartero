@@ -65,12 +65,12 @@ describe('FinancialAvatar', () => {
   it('is used by the approved shared financial surfaces', () => {
     for (const file of [
       '../components/ui/financial-settlement-row.tsx',
-      '../app/(dashboard)/income/page.tsx',
+      '../app/(dashboard)/recurring/income-panel.tsx',
       '../app/(dashboard)/movements/statement/page.tsx',
       '../components/person-statement-drawer.tsx',
       '../components/budget-drilldown-item.tsx',
       '../components/ui/status-list-row.tsx',
-      '../app/(dashboard)/subscriptions/page.tsx',
+      '../app/(dashboard)/recurring/subscription-panel.tsx',
     ]) {
       expect(read(file), file).toContain('FinancialAvatar')
     }
