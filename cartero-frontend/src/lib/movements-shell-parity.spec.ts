@@ -16,6 +16,19 @@ const componentInvocation = (source: string, name: string) =>
   source.match(new RegExp(`<${name}\\b[\\s\\S]*?\\n\\s*\\/>`))?.[0] ?? ''
 
 describe('Movements shell and obligations presentation parity', () => {
+  it('keeps the Recorrentes add action aligned with the title like Movimentações', () => {
+    const recurringHeader = recurring.slice(recurring.indexOf('return <div className="flex flex-col gap-6">'), recurring.indexOf('<Tabs value={tab}'))
+    expect(shell).toContain('flex min-w-0 items-start justify-between gap-1.5')
+    expect(shell).toContain('min-w-0 flex-1 space-y-1')
+    expect(shell).toContain('flex shrink-0 justify-end')
+    expect(recurringHeader).toContain('flex min-w-0 flex-wrap items-start justify-between gap-1.5')
+    expect(recurringHeader).toContain('min-w-min flex-1')
+    expect(recurringHeader).toContain('flex shrink-0 justify-end')
+    expect(recurringHeader).not.toContain('items-center')
+    expect(recurringHeader).toContain('Receitas e despesas que se repetem, sem precisar recriar todo mês.')
+    expect(recurringHeader).toContain('onClick={() => handleOpenChange(true)}')
+  })
+
   it('gives both views the Recorrentes post-divider rhythm through the same shell spacing', () => {
     expect(recurring).toContain('className="pt-4"')
     expect(shell).toContain('<section className="space-y-4">')
@@ -32,9 +45,10 @@ describe('Movements shell and obligations presentation parity', () => {
     expect(contextualHeading).toContain('infoContent={explanation}')
     expect(contextualHeading).toContain('infoLabel={`Sobre ${title.toLocaleLowerCase(\'pt-BR\')}`}')
     const titleRow = sharedHeading.slice(sharedHeading.indexOf('inline-flex'), sharedHeading.indexOf('</Popover>'))
-    expect(titleRow).toContain('<h2')
+    expect(sharedHeading).toContain("level === 1 ? 'h1' : 'h2'")
+    expect(titleRow).toContain('<Heading')
     expect(titleRow).toContain('<PopoverTrigger')
-    expect(sharedHeading.indexOf('<p className="mt-0.5')).toBeGreaterThan(sharedHeading.indexOf('</Popover>'))
+    expect(sharedHeading.indexOf('<p className={cn(')).toBeGreaterThan(sharedHeading.indexOf('</Popover>'))
     expect(sharedHeading).toContain('aria-label={infoLabel}')
     expect(sharedHeading).toContain('<PopoverContent')
     expect(statement).toContain('title="Extrato"')

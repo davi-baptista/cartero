@@ -75,9 +75,9 @@ export function RecurringClient() {
   }
 
   return <div className="flex flex-col gap-6">
-    <div className="flex items-center justify-between gap-4">
-      <div><h1 className="text-2xl font-semibold tracking-tight">Recorrentes</h1><p className="mt-0.5 text-sm text-muted-foreground">Receitas e despesas que se repetem, sem precisar recriar todo mês.</p></div>
-      <Button className="shrink-0 gap-2" onClick={() => handleOpenChange(true)} aria-label="Adicionar recorrência"><Plus className="size-4" /> Adicionar</Button>
+    <div className="flex min-w-0 flex-wrap items-start justify-between gap-1.5">
+      <div className="min-w-min flex-1"><h1 className="break-words text-2xl font-semibold tracking-tight">Recorrentes</h1><p className="mt-0.5 text-sm text-muted-foreground">Receitas e despesas que se repetem, sem precisar recriar todo mês.</p></div>
+      <div className="flex shrink-0 justify-end"><Button className="shrink-0 gap-2" onClick={() => handleOpenChange(true)} aria-label="Adicionar recorrência"><Plus className="size-4" /> Adicionar</Button></div>
     </div>
 
     <Tabs value={tab} onValueChange={(value) => setTab(value === 'expenses' ? 'expenses' : 'income')}>

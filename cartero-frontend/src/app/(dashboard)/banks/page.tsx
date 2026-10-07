@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Trash2, Landmark, ChevronRight, MoreVertical, Archive, ArchiveRestore, Pencil, ReceiptText } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { ContextHeading } from '@/components/ui/context-heading'
 import { QueryError } from '@/components/ui/query-error'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -693,14 +694,17 @@ export default function BanksPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Page header */}
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Bancos</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Gerencie seus bancos e cartões de crédito
-          </p>
-        </div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <ContextHeading
+          className="min-w-min flex-1"
+          level={1}
+          title="Bancos"
+          description="Gerencie seus bancos e cartões de crédito"
+          infoLabel="Sobre Bancos"
+          infoContent="Veja seus bancos e cartões e a fatura ligada ao mês selecionado. Você também pode abrir o histórico de faturas de cada cartão e arquivar contas que não usa mais."
+        />
         <Button
+          className="shrink-0"
           onClick={() => {
             setEditBank(null)
             setSheetOpen(true)

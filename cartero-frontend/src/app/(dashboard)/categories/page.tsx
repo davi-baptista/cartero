@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Tags, MoreVertical, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { ContextHeading } from '@/components/ui/context-heading'
 import { QueryError } from '@/components/ui/query-error'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -207,14 +208,17 @@ export default function CategoriesPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Page header */}
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Categorias</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Organize seus gastos por categoria
-          </p>
-        </div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <ContextHeading
+          className="min-w-min flex-1"
+          level={1}
+          title="Categorias"
+          description="Organize seus gastos por categoria"
+          infoLabel="Sobre Categorias"
+          infoContent="Use categorias para identificar seus gastos nas movimentações e acompanhar a distribuição por categoria na Visão Geral. Algumas categorias são mantidas pelo Cartero."
+        />
         <Button
+          className="shrink-0"
           onClick={() => {
             setEditCategory(null)
             setSheetOpen(true)

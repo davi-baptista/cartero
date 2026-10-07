@@ -6,6 +6,7 @@ import { ChevronRight, CircleAlert } from 'lucide-react'
 import { BudgetDrilldownDrawer } from '@/components/budget-drilldown-drawer'
 import { useMonthPeriod } from '@/components/month-nav'
 import { Button } from '@/components/ui/button'
+import { ContextHeading } from '@/components/ui/context-heading'
 import { QueryError } from '@/components/ui/query-error'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatCurrency } from '@/lib/formatters'
@@ -276,11 +277,16 @@ function BudgetContent({
   return (
     <div className="space-y-5 sm:space-y-7">
       <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight">Orçamento</h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">Uma visão do que entrou, saiu e ainda está pendente no Cartero.</p>
-        </div>
-        <Button type="button" variant="default" size="sm" onClick={onAllTimeChange}>
+        <ContextHeading
+          className="min-w-min flex-1"
+          level={1}
+          title="Orçamento"
+          description="Uma visão do que entrou, saiu e ainda está pendente no Cartero."
+          infoLabel="Sobre Orçamento"
+          infoContent="Veja entradas e saídas registradas, valores pendentes e o resultado após essas pendências. Alterne entre o mês selecionado e o período completo para mudar o recorte."
+          descriptionClassName="mt-2 max-w-2xl"
+        />
+        <Button type="button" variant="default" size="sm" className="shrink-0" onClick={onAllTimeChange}>
           {allTime ? 'Ver visão mensal' : 'Ver período completo'}
         </Button>
       </header>

@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Users, Loader2, MoreVertical, TriangleAlert, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ContextHeading } from '@/components/ui/context-heading'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -595,14 +596,17 @@ export default function PersonsPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Pessoas</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Contatos vinculados a dívidas e cobranças
-          </p>
-        </div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <ContextHeading
+          className="min-w-min flex-1"
+          level={1}
+          title="Pessoas"
+          description="Contatos vinculados a dívidas e cobranças"
+          infoLabel="Sobre Pessoas"
+          infoContent="Vincule pessoas a valores a pagar e a receber. Abra uma pessoa para acompanhar pendências e o histórico relacionado ao mês."
+        />
         <Button
+          className="shrink-0"
           onClick={() => {
             setEditTarget(null)
             setFormOpen(true)

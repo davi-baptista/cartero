@@ -48,8 +48,8 @@ describe('Parcelas — posição estrutural da série', () => {
     expect(page).toContain('item.endsAt && ` · termina ${monthLabel(item.endsAt)}`')
   })
   it('preserva a copy final da pÃ¡gina e da seÃ§Ã£o prÃ³pria', () => {
-    expect(page).toContain('Acompanhe suas compras parceladas,')
-    expect(page).toContain('o que ainda falta pagar e o impacto nos ')
+    expect(page).toContain('Acompanhe as parcelas que ainda vão vencer.')
+    expect(page).toContain('o reembolso não é calculado aqui.')
     expect(page).toContain('title="Parcelas em aberto"')
     expect(page).toContain('formatCurrency(total)} em aberto')
     expect(page).toContain('outstandingLabel(item.outstandingCount)')

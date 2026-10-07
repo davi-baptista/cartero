@@ -5,19 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { isNavItemActive } from '@/lib/nav-active-route'
 import { usePathname } from 'next/navigation'
-import {
-  LayoutDashboard,
-  ArrowDownUp,
-  Landmark,
-  Tags,
-  Users,
-  LogOut,
-  ChevronLeft,
-  ChevronRight,
-  PiggyBank,
-  Repeat,
-  CalendarClock,
-} from 'lucide-react'
+import { LogOut, ChevronLeft, ChevronRight } from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
@@ -40,6 +28,7 @@ import { TimezoneMismatchNotice } from '@/components/timezone-mismatch-notice'
 import { NavigationProgress } from '@/components/ui/navigation-progress'
 import { MonthNav, MonthPeriodProvider, useMonthPeriod } from '@/components/month-nav'
 import { SubscriptionRunner } from '@/components/subscription-runner'
+import { getNavigationGroup, navGroups } from '@/lib/dashboard-navigation'
 import Image from 'next/image'
 
 function SidebarNav({ pathname }: { pathname: string }) {
@@ -49,7 +38,7 @@ function SidebarNav({ pathname }: { pathname: string }) {
     <SidebarContent>
       {navGroups.map(({ label: groupLabel, items }) => (
         <SidebarGroup key={groupLabel} className="py-1.5">
-          <SidebarGroupLabel>{groupLabel}</SidebarGroupLabel>
+          <SidebarGroupLabel>{groupLabel.toLocaleUpperCase('pt-BR')}</SidebarGroupLabel>
           <SidebarGroupContent>
           <SidebarMenu className="gap-0.5">
             {items.map(({ href, label, icon: Icon }) => {
@@ -196,24 +185,6 @@ function HeaderMonthNav({ pathname }: { pathname: string }) {
   )
 }
 
-const navItems = [
-  { href: '/overview', label: 'Visão Geral', icon: LayoutDashboard },
-  { href: '/budget', label: 'Orçamento', icon: PiggyBank },
-  { href: '/movements', label: 'Movimentações', icon: ArrowDownUp },
-  { href: '/recurring', label: 'Recorrentes', headerLabel: 'Planejamento', icon: Repeat },
-  { href: '/commitments', label: 'Parcelas', icon: CalendarClock },
-  { href: '/banks', label: 'Bancos', icon: Landmark },
-  { href: '/categories', label: 'Categorias', icon: Tags },
-  { href: '/persons', label: 'Pessoas', icon: Users },
-]
-
-const navGroups = [
-  { label: 'GERAL', items: navItems.filter(({ href }) => ['/overview', '/movements'].includes(href)) },
-  { label: 'PLANEJAMENTO', items: navItems.filter(({ href }) => ['/budget', '/recurring', '/commitments'].includes(href)) },
-  { label: 'CONTAS', items: navItems.filter(({ href }) => ['/banks', '/persons'].includes(href)) },
-  { label: 'ORGANIZA\u00c7\u00c3O', items: navItems.filter(({ href }) => href === '/categories') },
-]
-
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, logout, isLoading } = useAuth()
   const router = useRouter()
@@ -288,11 +259,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     .join('')
     .toUpperCase()
 
-  const currentPage = navItems.find((item) => pathname.startsWith(item.href))
-  const currentPageLabel = pathname.startsWith('/movements')
-    ? undefined
-    : currentPage?.headerLabel ?? currentPage?.label ?? (pathname === '/profile' ? 'Meu perfil' : undefined)
-  const isPlanningHeader = currentPage?.href === '/income'
+  const currentPageLabel = getNavigationGroup(pathname) ?? (pathname === '/profile' ? 'Meu perfil' : undefined)
 
   return (
     <MonthPeriodProvider>
@@ -367,7 +334,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {currentPageLabel && (
                 <>
                   <div className="hidden h-4 w-px shrink-0 bg-border sm:block" aria-hidden />
-                  <span className={`hidden truncate text-sm sm:block ${isPlanningHeader ? 'font-normal text-muted-foreground' : 'font-medium'}`}>
+                  <span className="hidden truncate text-sm font-medium sm:block">
                     {currentPageLabel}
                   </span>
                 </>

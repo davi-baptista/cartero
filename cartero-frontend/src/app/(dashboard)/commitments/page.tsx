@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { CalendarClock, Loader2, RotateCcw, TriangleAlert } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { ContextHeading } from '@/components/ui/context-heading'
 import { getCommitments, type ActiveInstallment, type ForecastMonth } from '@/services/commitments.service'
 import { formatCurrency } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
@@ -116,10 +117,13 @@ export default function CommitmentsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Parcelas</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">Acompanhe suas compras parceladas, o que ainda falta pagar e o impacto nos próximos meses.</p>
-      </div>
+      <ContextHeading
+        level={1}
+        title="Parcelas"
+        description="Acompanhe as parcelas que ainda vão vencer."
+        infoLabel="Sobre Parcelas"
+        infoContent="Aqui aparecem compras parceladas com parcelas futuras, distribuídas por mês. Sua parte e as parcelas de outras pessoas são mostradas separadamente; o reembolso não é calculado aqui."
+      />
 
       {isLoading ? (
         <div className="flex flex-col gap-6"><Skeleton className="h-44 w-full rounded-xl" /><Skeleton className="h-32 w-full rounded-xl" /></div>
