@@ -1,11 +1,11 @@
 'use client'
 
-import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Info, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ContextHeading } from '@/components/ui/context-heading'
 import { Label } from '@/components/ui/label'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DRAWER_SCROLL_REGION_CLASS } from '@/components/ui/drawer-layout'
@@ -28,13 +28,6 @@ function choiceClass(selected: boolean) {
       : 'border-border text-muted-foreground hover:bg-muted/50',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
   )
-}
-
-function RecurringInfo({ label, children }: { label: string; children: ReactNode }) {
-  return <Popover>
-    <PopoverTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label={label} />}><Info className="size-4" /></PopoverTrigger>
-    <PopoverContent side="bottom" align="start" className="max-w-xs text-sm">{children}</PopoverContent>
-  </Popover>
 }
 
 export function RecurringClient() {
@@ -96,16 +89,24 @@ export function RecurringClient() {
         <div className="pt-1"><div aria-hidden className="border-t border-border/60" /></div>
       </div>
       <TabsContent value="income" keepMounted className="pt-4">
-        <div className="mb-3 flex items-start gap-2">
-          <div><h2 className="text-sm font-medium">Receitas recorrentes</h2><p className="mt-0.5 text-sm text-muted-foreground">Salários e outras entradas que se repetem.</p></div>
-          <RecurringInfo label="Sobre receitas recorrentes">Cadastre entradas que se repetem, como salário e aluguel recebido. Elas ficam previstas até você registrar o recebimento.</RecurringInfo>
+        <div className="mb-3">
+          <ContextHeading
+            title="Receitas recorrentes"
+            description="Salários e outras entradas que se repetem."
+            infoLabel="Sobre receitas recorrentes"
+            infoContent="Cadastre entradas que se repetem, como salário e aluguel recebido. Elas ficam previstas até você registrar o recebimento."
+          />
         </div>
         <IncomePanel createTarget={open && activeTarget === 'income'} formHost={formHost} footerHost={footerHost} onCreated={() => handleCreated('income')} onClose={() => setOpen(false)} />
       </TabsContent>
       <TabsContent value="expenses" keepMounted className="pt-4">
-        <div className="mb-6 flex items-start gap-2">
-          <div><h2 className="text-sm font-medium">Despesas recorrentes</h2><p className="mt-0.5 text-sm text-muted-foreground">Aluguel, assinaturas e outras contas que se repetem.</p></div>
-          <RecurringInfo label="Sobre despesas recorrentes">Cadastre contas que se repetem, como aluguel, internet e assinaturas. Algumas são lançadas automaticamente; outras ficam em aberto até você registrar o pagamento.</RecurringInfo>
+        <div className="mb-6">
+          <ContextHeading
+            title="Despesas recorrentes"
+            description="Aluguel, assinaturas e outras contas que se repetem."
+            infoLabel="Sobre despesas recorrentes"
+            infoContent="Cadastre contas que se repetem, como aluguel, internet e assinaturas. Algumas são lançadas automaticamente; outras ficam em aberto até você registrar o pagamento."
+          />
         </div>
         <div className="space-y-10">
           <SubscriptionPanel createTarget={open && activeTarget === 'automatic'} formHost={formHost} footerHost={footerHost} onCreated={() => handleCreated('automatic')} onClose={() => setOpen(false)} />
