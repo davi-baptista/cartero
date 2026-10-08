@@ -355,7 +355,7 @@ export function SubscriptionPanel({ createTarget, formHost, footerHost, onCreate
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-medium">Cobranças automáticas</h2>
+        <h2 className="text-sm font-medium">Lançamentos automáticos</h2>
         {!isLoading && activeCount > 0 ? <p className="text-xs text-muted-foreground">{formatCurrency(monthlyTotal)} / mês · {activeCount} ativa{activeCount > 1 ? 's' : ''}</p> : null}
       </div>
 

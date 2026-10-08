@@ -104,8 +104,8 @@ export function recurringIncomeOccurrenceDates(
   input: { firstOccurrence: string; dayOfMonth: number },
   now: Date,
   timeZone: string,
+  horizonDate = materializationHorizon(now, timeZone),
 ): RecurringIncomeOccurrenceDate[] {
-  const horizonDate = materializationHorizon(now, timeZone);
   const horizonMonth = horizonDate.slice(0, 7);
   let month = input.firstOccurrence;
   const occurrences: RecurringIncomeOccurrenceDate[] = [];
@@ -121,6 +121,32 @@ export function recurringIncomeOccurrenceDates(
   return occurrences;
 }
 
+function incomeMaterializationHorizon(
+  input: { firstOccurrence: string; dayOfMonth: number },
+  now: Date,
+  timeZone: string,
+): string {
+  const currentMonth = formatRecurringMonth(financialCivilParts(now, timeZone));
+  const nextDueMonth = defaultFirstOccurrence(now, input.dayOfMonth, timeZone);
+  // A future-start rule may begin next calendar month, but not months away.
+  const eligibleMonth =
+    input.firstOccurrence <= addRecurringMonths(currentMonth, 1) &&
+    input.firstOccurrence > nextDueMonth
+      ? input.firstOccurrence
+      : nextDueMonth;
+  return occurrenceDateForMonth(eligibleMonth, input.dayOfMonth);
+}
+
+/** Income creates every past due occurrence and only the next not-yet-due month. */
+export function incomeOccurrenceDates(
+  input: { firstOccurrence: string; dayOfMonth: number },
+  now: Date,
+  timeZone: string,
+): RecurringIncomeOccurrenceDate[] {
+  const horizonDate = incomeMaterializationHorizon(input, now, timeZone);
+  return recurringIncomeOccurrenceDates(input, now, timeZone, horizonDate);
+}
+
 /** Preview authority shared with materialization; it does not write data. */
 export function previewRecurringIncome(
   input: { firstOccurrence: string; dayOfMonth: number; amount: number },
@@ -129,8 +155,8 @@ export function previewRecurringIncome(
 ): RecurringIncomePreview {
   const today = financialCivilDay(now, timeZone);
   const currentMonth = formatRecurringMonth(financialCivilParts(now, timeZone));
-  const horizonDate = materializationHorizon(now, timeZone);
-  const occurrences = recurringIncomeOccurrenceDates(
+  const horizonDate = incomeMaterializationHorizon(input, now, timeZone);
+  const occurrences = incomeOccurrenceDates(
     { firstOccurrence: input.firstOccurrence, dayOfMonth: input.dayOfMonth },
     now,
     timeZone,

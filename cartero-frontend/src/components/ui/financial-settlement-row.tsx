@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Undo2 } from 'lucide-react'
 import { FinancialAvatar } from '@/components/ui/financial-avatar'
 import { FinancialListRow, ROW_HISTORY_TITLE_TONE, ROW_HIGHLIGHT_CLASS } from '@/components/ui/financial-list-row'
 import { cn } from '@/lib/utils'
@@ -45,7 +46,7 @@ export function FinancialSettlementRow({
       onView={onView}
       leadingAction={
         <FinancialAvatar
-          icon={leadingIcon}
+          icon={leadingIcon ?? (resolved ? <Undo2 className="size-4 text-muted-foreground" aria-hidden="true" /> : undefined)}
           disabled={actionDisabled}
           loading={actionLoading}
           onClick={onToggleStatus}

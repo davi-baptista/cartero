@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addRecurringMonths,
   defaultFirstOccurrence,
+  incomeOccurrenceDates,
   materializationHorizon,
   occurrenceDateForMonth,
   previewRecurringIncome,
@@ -45,6 +46,32 @@ describe('recurring income civil calendar', () => {
     );
   });
 
+  it('keeps all overdue months and only the next not-yet-due income month', () => {
+    const occurrences = incomeOccurrenceDates(
+      { firstOccurrence: '2026-06', dayOfMonth: 5 },
+      new Date('2026-10-08T12:00:00Z'),
+      zone,
+    );
+    expect(occurrences.map(({ dueDate }) => dueDate)).toEqual([
+      '2026-06-05',
+      '2026-07-05',
+      '2026-08-05',
+      '2026-09-05',
+      '2026-10-05',
+      '2026-11-05',
+    ]);
+  });
+
+  it('does not include the month after an occurrence due today', () => {
+    expect(
+      incomeOccurrenceDates(
+        { firstOccurrence: '2026-10', dayOfMonth: 1 },
+        new Date('2026-10-01T12:00:00Z'),
+        zone,
+      ),
+    ).toEqual([{ month: '2026-10', dueDate: '2026-10-01' }]);
+  });
+
   it('previews past and upcoming occurrences with the same horizon authority', () => {
     expect(
       previewRecurringIncome(
@@ -59,7 +86,7 @@ describe('recurring income civil calendar', () => {
       currentMonthCount: 1,
       nextOccurrenceDate: '2026-10-05',
       totalAmount: 70000,
-      horizonDate: '2026-10-23',
+      horizonDate: '2026-10-05',
     });
   });
 
@@ -88,7 +115,7 @@ describe('recurring income civil calendar', () => {
         zone,
       ),
     ).toMatchObject({
-      horizonDate: '2026-10-31',
+      horizonDate: '2026-10-01',
       occurrenceCount: 8,
       overdueCount: 7,
       currentMonthCount: 1,
@@ -141,7 +168,7 @@ describe('recurring income civil calendar', () => {
         zone,
       ),
     ).toMatchObject({
-      horizonDate: '2027-01-14',
+      horizonDate: '2027-01-01',
       occurrenceCount: 3,
       overdueCount: 2,
       currentMonthCount: 1,

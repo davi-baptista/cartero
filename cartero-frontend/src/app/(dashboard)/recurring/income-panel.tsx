@@ -73,8 +73,8 @@ function OpenOccurrencesList({ occurrences, today, onSelect, onReceive }: { occu
             onView={() => onSelect(occurrence)}
             statusActionLabel={`Marcar ${occurrence.title} como recebido`}
             title={formatDate(occurrence.dueDate)}
-            meta={<span className={overdue ? 'text-destructive' : 'text-muted-foreground'}>{overdue ? 'Em atraso' : 'A receber'}</span>}
-            trailing={<FinancialRowTrailing amount={formatCurrency(occurrence.amount)} label="A RECEBER" />}
+            meta={overdue ? undefined : <span className="text-muted-foreground">A receber</span>}
+            trailing={<FinancialRowTrailing amount={formatCurrency(occurrence.amount)} label="A RECEBER" labelTone={overdue ? 'text-destructive' : undefined} />}
           />
         )
       })}
@@ -280,10 +280,10 @@ export function IncomePanel({ createTarget, formHost, footerHost, onCreated, onC
                   return <div className="mt-3"><DrawerCompletionStatus variant={status.tone}>{status.label}</DrawerCompletionStatus></div>
                 })()}
               </DrawerSummaryCard>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button variant="outline" className="gap-2" onClick={() => openRecurringEdit(selectedRule)}><Pencil className="size-3.5" /> Editar renda</Button>
                 <Button variant="outline" className="gap-2" onClick={() => recurringUpdateMutation.mutate({ id: selectedRule.id, payload: { isActive: !selectedRule.isActive } })}>{selectedRule.isActive ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}{selectedRule.isActive ? 'Pausar receita' : 'Reativar receita'}</Button>
-                <Button variant="destructive" className="gap-2" onClick={() => setDeleteTarget(selectedRule)}><Trash2 className="size-3.5" /> Excluir renda</Button>
+                <Button variant="destructive" className="gap-2" onClick={() => setDeleteTarget(selectedRule)}><Trash2 className="size-3.5" /> Excluir receita</Button>
               </div>
               <DrawerOutlineCard variant="compact">
                 <p className="text-xs text-muted-foreground">Próxima ocorrência</p>

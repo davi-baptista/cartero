@@ -265,6 +265,32 @@ function buildHarness() {
 }
 
 describe('RecurringIncomeService', () => {
+  it('creates overdue income and only the next future occurrence', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-08T12:00:00Z'));
+    try {
+      const harness = buildHarness();
+      await harness.service.create(USER_ID, {
+        title: 'Salário',
+        amount: 5000,
+        dayOfMonth: 5,
+        firstOccurrence: '2026-06',
+        counterpartyName: 'Empresa',
+      });
+      expect([...harness.receivables.keys()]).toEqual([
+        'rule-1:2026-06',
+        'rule-1:2026-07',
+        'rule-1:2026-08',
+        'rule-1:2026-09',
+        'rule-1:2026-10',
+        'rule-1:2026-11',
+      ]);
+      expect(harness.receivables.has('rule-1:2026-12')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('rolls back create and every occurrence when initial materialization fails', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-09-23T12:00:00Z'));
@@ -453,6 +479,80 @@ describe('RecurringIncomeService', () => {
       `recurring-income-occurrences:${USER_ID}:${source.id}`,
       `recurring-income-occurrences:${USER_ID}:${source.id}`,
       `recurring-income-occurrences:${USER_ID}:${source.id}`,
+    ]);
+  });
+
+  it('applies the same future limit to explicit reconcile and job materialization', async () => {
+    const harness = buildHarness();
+    harness.rules.set('rule-1', rule({ firstOccurrence: '2026-06' }));
+    const now = new Date('2026-10-08T12:00:00Z');
+
+    expect(
+      await harness.service.reconcileForUserPeriod(USER_ID, 12, 2026, now),
+    ).toEqual({ month: '2026-12', created: 0 });
+    expect(
+      await harness.service.reconcileForUserPeriod(USER_ID, 11, 2026, now),
+    ).toEqual({ month: '2026-11', created: 1 });
+    await harness.service.ensureAll(now);
+    await harness.service.ensureAll(now);
+    expect([...harness.receivables.keys()]).toEqual([
+      'rule-1:2026-11',
+      'rule-1:2026-06',
+      'rule-1:2026-07',
+      'rule-1:2026-08',
+      'rule-1:2026-09',
+      'rule-1:2026-10',
+    ]);
+    expect(harness.receivables.has('rule-1:2026-12')).toBe(false);
+  });
+
+  it('uses the same next-month policy after pause, resume, and early receipt', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-08T12:00:00Z'));
+    try {
+      const harness = buildHarness();
+      harness.rules.set('rule-1', rule({ firstOccurrence: '2026-06' }));
+      await harness.service.update('rule-1', USER_ID, { isActive: false });
+      await harness.service.update('rule-1', USER_ID, { isActive: true });
+      expect([...harness.receivables.keys()]).toEqual(['rule-1:2026-11']);
+
+      const future = harness.receivables.get('rule-1:2026-11');
+      future.isPaid = true;
+      future.paymentTransactionId = 'payment-1';
+      await harness.service.ensureForUser(USER_ID, new Date());
+      expect([...harness.receivables.keys()]).toEqual(['rule-1:2026-11']);
+      expect(future.isPaid).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('leaves a legacy extra future snapshot intact without creating another', async () => {
+    const harness = buildHarness();
+    const source = rule({ firstOccurrence: '2026-10' });
+    harness.rules.set(source.id, source);
+    const legacy = {
+      id: 'legacy-december',
+      userId: USER_ID,
+      recurringIncomeRuleId: source.id,
+      recurringMonth: '2026-12',
+      title: 'Snapshot legado',
+      amount: new Prisma.Decimal(4000),
+      dueDate: new Date('2026-12-05T00:00:00Z'),
+      isPaid: false,
+    };
+    harness.receivables.set('rule-1:2026-12', legacy);
+
+    await harness.service.ensureForUser(
+      USER_ID,
+      new Date('2026-10-08T12:00:00Z'),
+    );
+    expect(harness.receivables.get('rule-1:2026-12')).toBe(legacy);
+    expect(legacy.title).toBe('Snapshot legado');
+    expect([...harness.receivables.keys()]).toEqual([
+      'rule-1:2026-12',
+      'rule-1:2026-10',
+      'rule-1:2026-11',
     ]);
   });
 
@@ -721,7 +821,7 @@ describe('RecurringIncomeService', () => {
     }
   });
 
-  it('does not materialize beyond the inclusive +30 horizon', async () => {
+  it('materializes the next due month even when it is beyond thirty days', async () => {
     const harness = buildHarness();
     harness.rules.set(
       'rule-1',
@@ -732,7 +832,7 @@ describe('RecurringIncomeService', () => {
       USER_ID,
       new Date('2026-09-23T12:00:00Z'),
     );
-    expect(harness.receivables.size).toBe(0);
+    expect([...harness.receivables.keys()]).toEqual(['rule-1:2026-10']);
   });
 
   it('concurrent ensures converge to one receivable per competence', async () => {

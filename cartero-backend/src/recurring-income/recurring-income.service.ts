@@ -23,7 +23,7 @@ import {
   previewRecurringIncome,
   isRecurringMonth,
   occurrenceDateForMonth,
-  recurringIncomeOccurrenceDates,
+  incomeOccurrenceDates,
   resumeRecurringMonth,
 } from './recurring-income.helper';
 
@@ -173,7 +173,13 @@ export class RecurringIncomeService {
     });
     let created = 0;
     for (const { id } of rules) {
-      created += await this.materializeRuleForMonth(id, userId, targetMonth);
+      created += await this.materializeRuleForMonth(
+        id,
+        userId,
+        targetMonth,
+        now,
+        timeZone,
+      );
     }
     return { month: targetMonth, created };
   }
@@ -717,6 +723,8 @@ export class RecurringIncomeService {
     ruleId: string,
     userId: string,
     month: string,
+    now: Date,
+    timeZone: string,
   ): Promise<number> {
     return this.prisma.$transaction(async (tx) => {
       await acquireTransactionAdvisoryLock(
@@ -735,12 +743,12 @@ export class RecurringIncomeService {
       ) {
         return 0;
       }
-      return this.materializeOccurrencesWithTx(tx, rule, [
-        {
-          month,
-          dueDate: occurrenceDateForMonth(month, rule.dayOfMonth),
-        },
-      ]);
+      const occurrence = incomeOccurrenceDates(rule, now, timeZone).find(
+        (candidate) => candidate.month === month,
+      );
+      return occurrence
+        ? this.materializeOccurrencesWithTx(tx, rule, [occurrence])
+        : 0;
     });
   }
 
@@ -757,7 +765,7 @@ export class RecurringIncomeService {
     if (!rule.isActive || rule.deletedAt) {
       return { rule, attempted: 0, created: 0 };
     }
-    const occurrences = recurringIncomeOccurrenceDates(
+    const occurrences = incomeOccurrenceDates(
       {
         firstOccurrence: rule.firstOccurrence,
         dayOfMonth: rule.dayOfMonth,

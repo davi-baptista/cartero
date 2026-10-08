@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { DrawerCompletionStatus } from '@/components/ui/drawer-section'
 
 const subscriptions = readFileSync(
   resolve(__dirname, '../app/(dashboard)/recurring/subscription-panel.tsx'),
@@ -32,5 +34,17 @@ describe('subscription amount presentation', () => {
     expect(subscriptionDrawer).toContain('<DrawerSummaryValue>{formatCurrency(Number(subscription.amount))}</DrawerSummaryValue>')
     expect(subscriptionDrawer).not.toContain('ROW_AMOUNT_TONE.out')
     expect(subscriptionDrawer).toContain("getTransactions({ subscriptionId: subscription!.id })")
+  })
+
+  it('colors active green and paused muted without changing their status icons', () => {
+    expect(subscriptionDrawer).toContain("variant={subscription.isActive ? 'pending' : 'informational'}")
+    expect(subscriptionDrawer).toContain("className={subscription.isActive ? 'text-paid' : 'text-muted-foreground'}")
+
+    const active = renderToStaticMarkup(DrawerCompletionStatus({ variant: 'pending', className: 'text-paid', children: 'Ativa' }))
+    const paused = renderToStaticMarkup(DrawerCompletionStatus({ variant: 'informational', className: 'text-muted-foreground', children: 'Pausada' }))
+    expect(active).toContain('text-paid')
+    expect(active).not.toContain('text-pending')
+    expect(paused).toContain('text-muted-foreground')
+    expect(paused).not.toContain('text-primary')
   })
 })

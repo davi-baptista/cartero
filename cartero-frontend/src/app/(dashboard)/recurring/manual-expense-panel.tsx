@@ -43,11 +43,12 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/providers/auth-provider'
 import type { Debt, RecurringExpenseRule, TransactionType } from '@/types'
 
-function DueRows({ rows, onView, onToggle, resolved }: {
+function DueRows({ rows, onView, onToggle, resolved, overdue = false }: {
   rows: Debt[]
   onView: (debt: Debt) => void
   onToggle: (debt: Debt) => void
   resolved: boolean
+  overdue?: boolean
 }) {
   if (rows.length === 0) return <DrawerSectionEmpty inset={false}>Nenhuma ocorrência.</DrawerSectionEmpty>
   return <DrawerFinancialList>{rows.map((debt) => <FinancialSettlementRow
@@ -59,7 +60,7 @@ function DueRows({ rows, onView, onToggle, resolved }: {
     ariaLabel={`Abrir ${debt.title}`}
     title={formatDate(debt.dueDate)}
     meta={resolved ? `Paga em ${debt.paidAt ? formatDate(debt.paidAt) : 'data não informada'}` : debt.creditorName}
-    trailing={<FinancialRowTrailing amount={formatCurrency(debt.amount)} label={resolved ? 'PAGA' : 'A PAGAR'} />}
+    trailing={<FinancialRowTrailing amount={formatCurrency(debt.amount)} label={resolved ? 'PAGA' : 'A PAGAR'} labelTone={overdue ? 'text-destructive' : undefined} />}
   />)}</DrawerFinancialList>
 }
 
@@ -153,8 +154,8 @@ export function ManualExpensePanel({ createTarget, formHost, footerHost, onCreat
 
   const listFailed = Boolean((rulesQuery.error || debtsQuery.error) && !(rulesQuery.isLoading || debtsQuery.isLoading))
   return <div className="flex flex-col gap-3">
-    <h2 className="text-sm font-medium">Contas para pagar</h2>
-    {listFailed ? <QueryError message="Não foi possível carregar as despesas recorrentes." isFetching={rulesQuery.isFetching || debtsQuery.isFetching} onRetry={() => { void rulesQuery.refetch(); void debtsQuery.refetch() }} /> : rulesQuery.isLoading || debtsQuery.isLoading ? <div className="space-y-2">{[1, 2].map((item) => <Skeleton key={item} className="h-16 w-full" />)}</div> : rules.length === 0 ? <div className="rounded-xl border border-dashed border-border/70 px-6 py-10 text-center"><CircleAlert className="mx-auto size-6 text-muted-foreground" /><p className="mt-3 text-sm font-medium">Nenhuma conta recorrente cadastrada.</p><p className="mt-1 text-sm text-muted-foreground">Aluguel e outras contas podem ficar em aberto até você registrar o pagamento.</p></div> : <FinancialRowList variant="page">{rules.map((rule, index) => {
+    <h2 className="text-sm font-medium">Contas com pagamento manual</h2>
+    {listFailed ? <QueryError message="Não foi possível carregar as despesas recorrentes." isFetching={rulesQuery.isFetching || debtsQuery.isFetching} onRetry={() => { void rulesQuery.refetch(); void debtsQuery.refetch() }} /> : rulesQuery.isLoading || debtsQuery.isLoading ? <div className="space-y-2">{[1, 2].map((item) => <Skeleton key={item} className="h-16 w-full" />)}</div> : rules.length === 0 ? <div className="rounded-xl border border-dashed border-border/70 px-6 py-10 text-center"><CircleAlert className="mx-auto size-6 text-muted-foreground" /><p className="mt-3 text-sm font-medium">Nenhuma conta com pagamento manual cadastrada.</p><p className="mt-1 text-sm text-muted-foreground">Crie contas recorrentes que ficam em aberto até você marcá-las como pagas.</p></div> : <FinancialRowList variant="page">{rules.map((rule, index) => {
       const due = debts.filter((debt) => debt.recurringExpenseRuleId === rule.id && !debt.isPaid).sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]
       const late = due && due.dueDate.slice(0, 10) < today
       return <MotionRow key={rule.id} index={index} separator={false} className={financialDrawerRowSurfaceClass('animatedWrapper')}>
@@ -178,7 +179,7 @@ export function ManualExpensePanel({ createTarget, formHost, footerHost, onCreat
             <Button variant="destructive" className="gap-2" onClick={() => setDeleteTarget(selectedRule)}><Trash2 className="size-3.5" /> Excluir despesa</Button>
           </div>
           <DrawerOutlineCard variant="compact"><p className="text-xs text-muted-foreground">Próximo vencimento</p><p className="mt-1 text-sm font-medium">{nextDue ? formatDate(nextDue.dueDate) : 'Nenhum em aberto'}</p></DrawerOutlineCard>
-          {overdue.length > 0 ? <DrawerSectionGroup><DrawerSectionHeading><DrawerSectionTitle title="Em atraso" count={overdue.length} /></DrawerSectionHeading><DueRows rows={overdue} onView={setSelectedDebt} onToggle={togglePayment} resolved={false} /></DrawerSectionGroup> : null}
+          {overdue.length > 0 ? <DrawerSectionGroup><DrawerSectionHeading><DrawerSectionTitle title="Em atraso" count={overdue.length} /></DrawerSectionHeading><DueRows rows={overdue} onView={setSelectedDebt} onToggle={togglePayment} resolved={false} overdue /></DrawerSectionGroup> : null}
           {open.length > 0 ? <DrawerSectionGroup><DrawerSectionHeading><DrawerSectionTitle title="Em aberto" count={open.length} /></DrawerSectionHeading><DueRows rows={open} onView={setSelectedDebt} onToggle={togglePayment} resolved={false} /></DrawerSectionGroup> : null}
           <DrawerSectionGroup><DrawerSectionHeading>Histórico</DrawerSectionHeading><DueRows rows={history} onView={setSelectedDebt} onToggle={togglePayment} resolved /></DrawerSectionGroup>
         </div> : null}

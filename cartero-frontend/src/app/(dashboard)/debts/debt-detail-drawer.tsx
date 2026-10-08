@@ -154,7 +154,7 @@ export function DebtDetailDrawer({
         <DetailRow label="Status">
           {debt.isPaid ? 'Paga' : overdue ? 'Em atraso' : 'A pagar'}
         </DetailRow>
-        <DetailRow label="Credor">{counterparty}</DetailRow>
+        {!debt.recurringExpenseRuleId && <DetailRow label="Credor">{counterparty}</DetailRow>}
         <DetailRow label="Lançada em">{formatDate(debt.occurredAt)}</DetailRow>
         <DetailRow label="Vencimento">{formatDate(debt.dueDate)}</DetailRow>
         {debt.isPaid && (

@@ -159,9 +159,11 @@ export function DrawerSummaryMeta({ children, className }: { children: ReactNode
 export function DrawerCompletionStatus({
   children,
   variant = 'success',
+  className,
 }: {
   children: ReactNode
   variant?: 'success' | 'destructive' | 'pending' | 'informational'
+  className?: string
 }) {
   const Icon = variant === 'success'
     ? Check
@@ -180,6 +182,7 @@ export function DrawerCompletionStatus({
           : variant === 'informational'
             ? 'text-primary'
             : 'text-destructive',
+      className,
     )}>
       <Icon className="size-3.5" aria-hidden />
       {children}

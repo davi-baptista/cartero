@@ -1,5 +1,8 @@
 import { readFileSync } from 'node:fs'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { FinancialRowTrailing } from '@/components/ui/financial-list-row'
 
 const page = readFileSync(new URL('../app/(dashboard)/movements/obligations/obligations-client.tsx', import.meta.url), 'utf8')
 const service = readFileSync(new URL('../services/obligations.service.ts', import.meta.url), 'utf8')
@@ -34,11 +37,37 @@ describe('Movimentações obligations UI contract', () => {
     expect(page).toContain('Vence em ${shortDate(date)}')
     expect(page).toContain('Recebido')
     expect(page).toContain('Pago')
-    expect(page).toContain('trailing={<span className={`${ROW_AMOUNT_CLASS} ${ROW_AMOUNT_TONE.neutral}`}>{amount}</span>}')
+    expect(page).toContain('<span className={`${ROW_AMOUNT_CLASS} ${ROW_AMOUNT_TONE.neutral}`}>{amount}</span>')
     expect(page).not.toContain('trailingDate')
     expect(page).toContain("? 'text-destructive'")
     expect(page).toContain("? 'text-pending'")
     expect(page).toContain('variant="page"')
+  })
+
+  it.each([
+    ['RECEIVABLE', 'OVERDUE', 'A RECEBER', true],
+    ['DEBT', 'OVERDUE', 'A PAGAR', true],
+    ['RECEIVABLE', 'OPEN', 'A RECEBER', false],
+    ['DEBT', 'OPEN', 'A PAGAR', false],
+  ])('renders %s in %s with the canonical open status', (_domain, _section, label, overdue) => {
+    const html = renderToStaticMarkup(createElement(FinancialRowTrailing, {
+      amount: 'R$ 100,00',
+      label,
+      labelTone: overdue ? 'text-destructive' : undefined,
+    }))
+    const [amountSpan, statusSpan] = html.match(/<span[^>]*>[^<]*<\/span>/g) ?? []
+    expect(amountSpan).toContain('R$ 100,00')
+    expect(amountSpan).not.toContain('text-destructive')
+    expect(statusSpan).toContain(label)
+    expect(statusSpan).toContain(overdue ? 'text-destructive' : 'text-muted-foreground/70')
+  })
+
+  it('maps open row domains and overdue sections without changing history or actions', () => {
+    expect(page).toContain("label={row.domain === 'RECEIVABLE' ? 'A RECEBER' : 'A PAGAR'}")
+    expect(page).toContain("labelTone={section === 'OVERDUE' ? 'text-destructive' : undefined}")
+    expect(page).toContain("trailing={section === 'HISTORY'")
+    expect(page).not.toContain('Em atraso</')
+    expect(page).toContain('onToggleStatus={() => onSettle(row, section)}')
   })
 
   it('does not infer total section counts from cursor pages', () => {
@@ -59,6 +88,16 @@ describe('Movimentações obligations UI contract', () => {
     expect(page).toContain('<ReceivableDetailDrawer')
     expect(page).toContain("useDetailNavigation('debtId')")
     expect(page).toContain("useDetailNavigation('receivableId')")
+  })
+
+  it('uses the shared empty action for open and overdue rows and keeps undo in history', () => {
+    expect(page).toContain("resolved={section === 'HISTORY'}")
+    expect(page).toContain('onToggleStatus={() => onSettle(row, section)}')
+    expect(page).not.toContain('leadingIcon={section ===')
+    expect(page).not.toContain('<Check className=')
+    expect(rows).toContain('resolved ? <Undo2')
+    expect(rows).toContain('onClick={onToggleStatus}')
+    expect(rows).toContain('ariaLabel={statusActionLabel}')
   })
 
   it('keeps reversal warning only when a history row has a linked payment transaction', () => {

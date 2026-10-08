@@ -4,13 +4,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { skipToken, useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { Check, Search, Undo2, X } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DrawerSectionEmpty, FinancialRowList } from '@/components/ui/drawer-section'
 import { FinancialSettlementRow } from '@/components/ui/financial-settlement-row'
 import { MotionRow } from '@/components/ui/motion-row'
 import { financialDrawerRowSurfaceClass } from '@/components/ui/financial-drawer-row-surface'
-import { ROW_AMOUNT_CLASS, ROW_AMOUNT_TONE, ROW_RESOLVED_TONE } from '@/components/ui/financial-list-row'
+import { FinancialRowTrailing, ROW_AMOUNT_CLASS, ROW_AMOUNT_TONE, ROW_RESOLVED_TONE } from '@/components/ui/financial-list-row'
 import { QueryError } from '@/components/ui/query-error'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -350,9 +350,6 @@ function ObligationSectionView({
                 <FinancialSettlementRow
                   variant="page"
                   resolved={section === 'HISTORY'}
-                  leadingIcon={section === 'HISTORY'
-                    ? <Undo2 className="size-4 text-muted-foreground" aria-hidden="true" />
-                    : <Check className="size-4 text-muted-foreground" aria-hidden="true" />}
                   onToggleStatus={() => onSettle(row, section)}
                   onView={() => onView(row)}
                   title={row.title}
@@ -367,7 +364,13 @@ function ObligationSectionView({
                       )}
                     </>
                   )}
-                  trailing={<span className={`${ROW_AMOUNT_CLASS} ${ROW_AMOUNT_TONE.neutral}`}>{amount}</span>}
+                  trailing={section === 'HISTORY'
+                    ? <span className={`${ROW_AMOUNT_CLASS} ${ROW_AMOUNT_TONE.neutral}`}>{amount}</span>
+                    : <FinancialRowTrailing
+                        amount={amount}
+                        label={row.domain === 'RECEIVABLE' ? 'A RECEBER' : 'A PAGAR'}
+                        labelTone={section === 'OVERDUE' ? 'text-destructive' : undefined}
+                      />}
                   ariaLabel={`Abrir ${row.title}: ${temporalLabel}`}
                   statusActionLabel={`${actionLabel}: ${row.title}`}
                   actionDisabled={pendingRowKey === rowKey}
