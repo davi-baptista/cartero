@@ -28,12 +28,13 @@ import {
   SelectTrigger,
 } from '@/components/ui/select'
 import { DatePicker } from '@/components/ui/date-picker'
-import { TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
+import { InlineBankCreate } from '@/components/financial/inline-bank-create'
+import { InlineCategoryCreate } from '@/components/financial/inline-category-create'
+import { PaymentMethodChoice } from '@/components/financial/payment-method-choice'
 import { DRAWER_SCROLL_REGION_CLASS } from '@/components/ui/drawer-layout'
 import { PROGRESSIVE_REVEAL_CLASS } from '@/components/ui/progressive-reveal'
 import {
   KIND_LABELS,
-  PAYMENT_METHODS,
   clearIncompatibleFields,
   kindOf,
   type PaymentMethod,
@@ -50,11 +51,11 @@ import { cn } from '@/lib/utils'
 import { bankDisplayName, isSelectableBank } from '@/lib/bank-display'
 import { accountToday } from '@/lib/date'
 import { resolveCategoryIcon } from '@/lib/category-icons'
-import { getBanks, createBank } from '@/services/banks.service'
-import { getCategories, createCategory } from '@/services/categories.service'
+import { getBanks } from '@/services/banks.service'
+import { getCategories } from '@/services/categories.service'
 import { getPersons, createPerson } from '@/services/persons.service'
 import { previewTransaction } from '@/services/transactions.service'
-import type { Transaction, Bank, Category, Person } from '@/types'
+import type { Transaction, Bank, Person } from '@/types'
 import { TransactionType } from '@/types'
 import { belongsToSeries } from '@/lib/installment-series'
 
@@ -173,66 +174,7 @@ export function TransactionSheet({
   const { data: categories = [] } = useQuery({ queryKey: ['categories'], queryFn: getCategories })
   const { data: persons = [] } = useQuery({ queryKey: ['persons'], queryFn: getPersons })
 
-  // ── Inline bank create ──
-  const [showBankCreate, setShowBankCreate] = useState(false)
   const [showOptionalBank, setShowOptionalBank] = useState(false)
-  const [newBank, setNewBank] = useState({ name: '', dueDate: '', daysAfterClose: '7' })
-  const bankNameRef = useRef<HTMLInputElement>(null)
-
-  const createBankMut = useMutation({
-    mutationFn: createBank,
-    onSuccess: (bank) => {
-      qc.setQueryData<Bank[]>(['banks'], (old) => [...(old ?? []), bank])
-      qc.invalidateQueries({ queryKey: ['banks'] })
-      setValue('bankId', bank.id)
-      setShowBankCreate(false)
-      setShowOptionalBank(Boolean(editTarget?.bankId && !editTarget.bank?.isSystem) || Boolean(createDefaults?.bankId))
-      setNewBank({ name: '', dueDate: '', daysAfterClose: '7' })
-    },
-    onError: () => toast.error('Não foi possível criar o banco.'),
-  })
-
-  function handleOpenBankCreate() {
-    setShowBankCreate(true)
-    setTimeout(() => bankNameRef.current?.focus(), 0)
-  }
-
-  function handleConfirmBankCreate() {
-    const name = newBank.name.trim()
-    const due = Number(newBank.dueDate)
-    const daysAfterClose = Number(newBank.daysAfterClose)
-    if (!name || !due || !daysAfterClose) return
-    createBankMut.mutate({ name, invoiceDueDate: due, invoiceDueDaysAfterClose: daysAfterClose })
-  }
-
-  // ── Inline category create ──
-  const [showCategoryCreate, setShowCategoryCreate] = useState(false)
-  const [newCategoryName, setNewCategoryName] = useState('')
-  const categoryNameRef = useRef<HTMLInputElement>(null)
-
-  const createCategoryMut = useMutation({
-    mutationFn: createCategory,
-    onSuccess: (category) => {
-      qc.setQueryData<Category[]>(['categories'], (old) => [...(old ?? []), category])
-      qc.invalidateQueries({ queryKey: ['categories'] })
-      setValue('categoryId', category.id)
-      setShowCategoryCreate(false)
-      setNewCategoryName('')
-    },
-    onError: () => toast.error('Não foi possível criar a categoria.'),
-  })
-
-  function handleOpenCategoryCreate() {
-    setShowCategoryCreate(true)
-    setTimeout(() => categoryNameRef.current?.focus(), 0)
-  }
-
-  function handleConfirmCategoryCreate() {
-    const name = newCategoryName.trim()
-    if (!name) return
-    createCategoryMut.mutate({ name })
-  }
-
   // ── Inline person create ──
   /**
    * Se a compra é para outra pessoa. Fica em estado local, não no formulário:
@@ -516,12 +458,8 @@ export function TransactionSheet({
     if (open) {
       submittingRef.current = false
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setShowBankCreate(false)
       setShowOptionalBank(Boolean(editTarget?.bankId && !editTarget.bank?.isSystem) || Boolean(createDefaults?.bankId))
-      setShowCategoryCreate(false)
       setShowPersonCreate(false)
-      setNewBank({ name: '', dueDate: '', daysAfterClose: '7' })
-      setNewCategoryName('')
       setNewPersonName('')
       setEntryIntent(
         editTarget
@@ -664,28 +602,7 @@ export function TransactionSheet({
   ) : null
 
   const paymentMethodChoice = selectedKind === 'expense' ? (
-    <div className={cn('space-y-1.5', scrollManagedByParent && PROGRESSIVE_REVEAL_CLASS)}>
-      <Label>Forma de pagamento</Label>
-      <div className="grid grid-cols-2 gap-2">
-        {PAYMENT_METHODS.map((method) => (
-          <button
-            key={method}
-            type="button"
-            aria-pressed={selectedType === method}
-            onClick={() => handleMethodChange(method)}
-            className={cn(
-              'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-              selectedType === method
-                ? 'border-primary bg-primary/10 text-foreground'
-                : 'border-border text-muted-foreground hover:bg-muted/50',
-            )}
-          >
-            {TRANSACTION_TYPE_LABELS[method]}
-          </button>
-        ))}
-      </div>
-      {errors.type && <p className="text-xs text-destructive">{errors.type.message}</p>}
-    </div>
+    <PaymentMethodChoice value={selectedType === TransactionType.INCOME || selectedType === TransactionType.INVOICE_PAYMENT ? null : selectedType as PaymentMethod} onChange={handleMethodChange} error={errors.type?.message} className={scrollManagedByParent ? PROGRESSIVE_REVEAL_CLASS : undefined} />
   ) : null
 
   const progressiveChoices = hideContextualQuestions ? null : leadingContent ? (
@@ -853,80 +770,14 @@ export function TransactionSheet({
               {showBankSelector && !bankIsRequired && (
                 <button
                   type="button"
-                  onClick={() => { setValue('bankId', undefined, { shouldDirty: true }); setShowOptionalBank(false); setShowBankCreate(false) }}
+                  onClick={() => { setValue('bankId', undefined, { shouldDirty: true }); setShowOptionalBank(false); }}
                   className="self-start text-xs text-muted-foreground transition-colors hover:text-foreground"
                 >
                   Remover banco
                 </button>
               )}
 
-              {showBankSelector && (showBankCreate ? (
-                <div className="space-y-1.5">
-                  <Input
-                    ref={bankNameRef}
-                    value={newBank.name}
-                    onChange={(e) => setNewBank((b) => ({ ...b, name: e.target.value }))}
-                    placeholder="Nome do banco"
-                    className="h-8 text-sm"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); handleConfirmBankCreate() }
-                      if (e.key === 'Escape') { setShowBankCreate(false); setNewBank({ name: '', dueDate: '', daysAfterClose: '7' }) }
-                    }}
-                  />
-                  <div className="flex gap-1.5">
-                    <Input
-                      type="number"
-                      min={1}
-                      max={31}
-                      value={newBank.daysAfterClose}
-                      onChange={(e) => setNewBank((b) => ({ ...b, daysAfterClose: e.target.value }))}
-                      placeholder="Dias entre datas"
-                      className="h-8 text-sm"
-                    />
-                    <Input
-                      type="number"
-                      min={1}
-                      max={31}
-                      value={newBank.dueDate}
-                      onChange={(e) => setNewBank((b) => ({ ...b, dueDate: e.target.value }))}
-                      placeholder="Dia vencimento"
-                      className="h-8 text-sm"
-                    />
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 shrink-0"
-                      disabled={!newBank.name.trim() || !newBank.dueDate || !newBank.daysAfterClose || createBankMut.isPending}
-                      onClick={handleConfirmBankCreate}
-                      aria-label="Confirmar"
-                    >
-                      {createBankMut.isPending
-                        ? <Loader2 className="size-3.5 animate-spin" />
-                        : <Check className="size-3.5" />}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 shrink-0"
-                      onClick={() => { setShowBankCreate(false); setNewBank({ name: '', dueDate: '', daysAfterClose: '7' }) }}
-                      aria-label="Cancelar"
-                    >
-                      <X className="size-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleOpenBankCreate}
-                  className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  <Plus className="size-3" />
-                  Novo banco
-                </button>
-              ))}
+              {showBankSelector && <InlineBankCreate onCreated={(bank) => { setValue('bankId', bank.id, { shouldDirty: true }); setShowOptionalBank(true) }} />}
             </div>
             {errors.bankId && <p className="text-xs text-destructive">{errors.bankId.message}</p>}
           </div>}
@@ -984,53 +835,7 @@ export function TransactionSheet({
                 <p className="text-[11px] text-muted-foreground">
                   Categoria definida pela assinatura.
                 </p>
-              ) : showCategoryCreate ? (
-                <div className="flex gap-1.5">
-                  <Input
-                    ref={categoryNameRef}
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    placeholder="Nome da categoria"
-                    className="h-8 text-sm"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); handleConfirmCategoryCreate() }
-                      if (e.key === 'Escape') { setShowCategoryCreate(false); setNewCategoryName('') }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 shrink-0"
-                    disabled={!newCategoryName.trim() || createCategoryMut.isPending}
-                    onClick={handleConfirmCategoryCreate}
-                    aria-label="Confirmar"
-                  >
-                    {createCategoryMut.isPending
-                      ? <Loader2 className="size-3.5 animate-spin" />
-                      : <Check className="size-3.5" />}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 shrink-0"
-                    onClick={() => { setShowCategoryCreate(false); setNewCategoryName('') }}
-                    aria-label="Cancelar"
-                  >
-                    <X className="size-3.5" />
-                  </Button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleOpenCategoryCreate}
-                  className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  <Plus className="size-3" />
-                  Nova categoria
-                </button>
-              )}
+              ) : <InlineCategoryCreate onCreated={(category) => setValue('categoryId', category.id, { shouldDirty: true })} />}
             </div>
             {errors.categoryId && <p className="text-xs text-destructive">{errors.categoryId.message}</p>}
           </div>

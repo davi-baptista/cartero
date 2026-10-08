@@ -345,7 +345,7 @@ model RecurringExpenseRule {
   dayOfMonth      Int
   firstOccurrence String
   activeSince     String?
-  creditorName    String?
+  description     String?
   isActive        Boolean                   @default(true)
   deletedAt       DateTime?
   createdAt       DateTime                  @default(now())

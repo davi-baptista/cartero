@@ -16,20 +16,13 @@ export class CreateSubscriptionDto {
   @IsString()
   title: string;
 
-  @IsUUID()
-  bankId: string;
-
-  /**
-   * Categoria do lançamento gerado. Omitida cai na categoria de sistema
-   * "Assinatura", que mantém o cadastro rápido — o campo existe para quem
-   * quer classificar (Netflix em Streaming), não como obrigação.
-   *
-   * A posse é validada no serviço: um id de categoria de outro usuário é
-   * recusado, porque o frontend não é fonte de segurança.
-   */
   @IsOptional()
   @IsUUID()
-  categoryId?: string;
+  bankId?: string;
+
+  /** Categoria escolhida pelo usuário; posse e origem são validadas no serviço. */
+  @IsUUID()
+  categoryId: string;
 
   @IsEnum(TransactionType)
   type: TransactionType;

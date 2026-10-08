@@ -23,7 +23,7 @@ interface Setup {
   subscriptions?: Record<string, unknown>[];
   bank?: ReturnType<typeof makeBank>;
   invoice?: ReturnType<typeof makeInvoice> | null;
-  category?: { id: string; userId: string };
+  category?: { id: string; userId: string; isSystem?: boolean };
   /** Ids que `runForSubscription` deve fazer falhar. */
   failFor?: string[];
 }
@@ -58,7 +58,11 @@ function buildHarness(setup: Setup = {}) {
         ...subscription,
         bank,
         user: { timeZone: 'America/Fortaleza' },
-        category: setup.category ?? { id: 'cat-1', name: 'Assinatura' },
+        category: setup.category ?? {
+          id: 'cat-1',
+          name: 'Streaming',
+          isSystem: false,
+        },
       })),
       findMany: vi.fn(async () =>
         (setup.subscriptions ?? [subscription]).map((sub) => ({
@@ -100,7 +104,12 @@ function buildHarness(setup: Setup = {}) {
     category: {
       findUnique: vi.fn(
         async () =>
-          setup.category ?? { id: 'cat-1', userId: USER_ID, name: 'Streaming' },
+          setup.category ?? {
+            id: 'cat-1',
+            userId: USER_ID,
+            name: 'Streaming',
+            isSystem: false,
+          },
       ),
       findFirst: vi.fn(async () => ({
         id: 'cat-sys',
@@ -112,7 +121,7 @@ function buildHarness(setup: Setup = {}) {
       update: vi.fn(async ({ data }: any) => ({ id: 'cat-sys', ...data })),
     },
     user: {
-    findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Fortaleza' })),
+      findUniqueOrThrow: vi.fn(async () => ({ timeZone: 'America/Fortaleza' })),
     },
   };
   prisma.$transaction = vi.fn(async (fn: any) => fn(prisma));
@@ -125,16 +134,33 @@ function buildHarness(setup: Setup = {}) {
   const originalRemove = service.remove.bind(service);
   const originalFindAll = service.findAll.bind(service);
   const originalFindOne = service.findOne.bind(service);
-  (service as any).create = (userId: string, dto: any, timeZone?: string | null) =>
-    originalCreate(userId, dto, timeZone ?? defaultTimeZone);
-  (service as any).update = (id: string, userId: string, dto: any, timeZone?: string | null) =>
-    originalUpdate(id, userId, dto, timeZone ?? defaultTimeZone);
-  (service as any).remove = (id: string, userId: string, timeZone?: string | null) =>
-    originalRemove(id, userId, timeZone ?? defaultTimeZone);
-  (service as any).findAll = (userId: string, now?: Date, timeZone?: string | null) =>
-    originalFindAll(userId, now, timeZone ?? defaultTimeZone);
-  (service as any).findOne = (id: string, userId: string, now?: Date, timeZone?: string | null) =>
-    originalFindOne(id, userId, now, timeZone ?? defaultTimeZone);
+  (service as any).create = (
+    userId: string,
+    dto: any,
+    timeZone?: string | null,
+  ) => originalCreate(userId, dto, timeZone ?? defaultTimeZone);
+  (service as any).update = (
+    id: string,
+    userId: string,
+    dto: any,
+    timeZone?: string | null,
+  ) => originalUpdate(id, userId, dto, timeZone ?? defaultTimeZone);
+  (service as any).remove = (
+    id: string,
+    userId: string,
+    timeZone?: string | null,
+  ) => originalRemove(id, userId, timeZone ?? defaultTimeZone);
+  (service as any).findAll = (
+    userId: string,
+    now?: Date,
+    timeZone?: string | null,
+  ) => originalFindAll(userId, now, timeZone ?? defaultTimeZone);
+  (service as any).findOne = (
+    id: string,
+    userId: string,
+    now?: Date,
+    timeZone?: string | null,
+  ) => originalFindOne(id, userId, now, timeZone ?? defaultTimeZone);
 
   // Injeta falha controlada, para testar isolamento sem depender de erro real.
   if (setup.failFor?.length) {
@@ -168,21 +194,40 @@ describe('Categoria configurável', () => {
     expect(data.categoryId).toBe('cat-streaming');
   });
 
-  it('sem escolha, cai na categoria de sistema — cadastro rápido', async () => {
+  it('recusa criar uma regra sem categoria e não aciona o fallback de sistema', async () => {
     const harness = buildHarness();
 
-    await harness.service.create(USER_ID, {
-      title: 'Spotify',
-      bankId: 'bank-1',
-      type: 'PIX',
-      amount: 21.9,
-      dayOfMonth: 5,
-      startedAt: '2026-08',
-    } as any);
+    await expect(
+      harness.service.create(USER_ID, {
+        title: 'Spotify',
+        bankId: 'bank-1',
+        type: 'PIX',
+        amount: 21.9,
+        dayOfMonth: 5,
+        startedAt: '2026-08',
+      } as any),
+    ).rejects.toThrow('Selecione uma categoria');
 
-    const data = harness.prisma.subscription.create.mock.calls[0][0].data;
-    expect(data.categoryId).toBe('cat-sys');
-    expect(harness.prisma.category.findFirst).toHaveBeenCalled();
+    expect(harness.prisma.subscription.create).not.toHaveBeenCalled();
+    expect(harness.prisma.category.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('recusa categoria de sistema mesmo quando seu id é enviado', async () => {
+    const harness = buildHarness({
+      category: { id: 'cat-sys', userId: USER_ID, isSystem: true },
+    });
+    await expect(
+      harness.service.create(USER_ID, {
+        title: 'Spotify',
+        bankId: 'bank-1',
+        categoryId: 'cat-sys',
+        type: 'PIX',
+        amount: 21.9,
+        dayOfMonth: 5,
+        startedAt: '2026-08',
+      } as any),
+    ).rejects.toThrow('categoria própria');
+    expect(harness.prisma.subscription.create).not.toHaveBeenCalled();
   });
 
   it('recusa categoria de outro usuário', async () => {
@@ -228,6 +273,118 @@ describe('Categoria configurável', () => {
         categoryId: 'cat-de-outro',
       } as any),
     ).rejects.toThrow(/[Cc]ategoria/);
+  });
+
+  it('exige categoria válida também na prévia retroativa', async () => {
+    const harness = buildHarness();
+    const now = new Date('2026-10-31T12:00:00Z');
+    await expect(
+      harness.service.previewFor(
+        USER_ID,
+        'bank-1',
+        undefined as any,
+        12,
+        '2026-09',
+        'PIX' as any,
+        now,
+        'America/Fortaleza',
+      ),
+    ).rejects.toThrow('Selecione uma categoria');
+    await expect(
+      harness.service.previewFor(
+        USER_ID,
+        'bank-1',
+        'cat-1',
+        12,
+        '2026-09',
+        'PIX' as any,
+        now,
+        'America/Fortaleza',
+      ),
+    ).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ skipped: false })]),
+    );
+    harness.prisma.category.findUnique = vi.fn(async () => null);
+    await expect(
+      harness.service.previewFor(
+        USER_ID,
+        'bank-1',
+        'cat-foreign',
+        12,
+        '2026-09',
+        'PIX' as any,
+        now,
+        'America/Fortaleza',
+      ),
+    ).rejects.toThrow(/[Cc]ategoria/);
+  });
+
+  it('mantém geração legada, mas exige categoria própria ao salvar sua configuração', async () => {
+    const legacy = {
+      id: 'sub-1',
+      userId: USER_ID,
+      bankId: 'bank-1',
+      categoryId: 'cat-sys',
+      title: 'Netflix',
+      type: 'PIX',
+      amount: 39.9,
+      description: null,
+      dayOfMonth: 12,
+      startedAt: '2026-10',
+      activeSince: null,
+      lastGeneratedFor: null,
+      isActive: true,
+    };
+    const harness = buildHarness({
+      subscription: legacy,
+      category: { id: 'cat-sys', userId: USER_ID, isSystem: true },
+    });
+    await (harness.service as any).runForSubscription(
+      legacy,
+      new Date('2026-10-31T12:00:00Z'),
+      'America/Fortaleza',
+    );
+    expect(harness.writes.transactions[0].categoryId).toBe('cat-sys');
+    await expect(
+      harness.service.update('sub-1', USER_ID, { title: 'Novo nome' } as any),
+    ).rejects.toThrow('Selecione uma categoria');
+    await expect(
+      harness.service.update('sub-1', USER_ID, { isActive: false } as any),
+    ).resolves.toBeDefined();
+    harness.prisma.category.findUnique = vi.fn(async () => ({
+      id: 'cat-nova',
+      userId: USER_ID,
+      isSystem: false,
+    }));
+    await expect(
+      harness.service.update('sub-1', USER_ID, {
+        title: 'Novo nome',
+        categoryId: 'cat-nova',
+      } as any),
+    ).resolves.toBeDefined();
+    expect(harness.writes.subscriptionUpdates.at(-1).categoryId).toBe(
+      'cat-nova',
+    );
+    expect(harness.writes.transactions).toHaveLength(1);
+  });
+
+  it('futuros ciclos usam a categoria atual da regra sem reclassificar histórico', async () => {
+    const harness = buildHarness();
+    await harness.service.update('sub-1', USER_ID, {
+      categoryId: 'cat-nova',
+    } as any);
+    expect(harness.writes.transactions).toHaveLength(0);
+    await (harness.service as any).runForSubscription(
+      {
+        ...harness.subscription,
+        categoryId: 'cat-nova',
+        type: 'PIX',
+        startedAt: '2026-10',
+      },
+      new Date('2026-10-31T12:00:00Z'),
+      'America/Fortaleza',
+    );
+    expect(harness.writes.transactions[0].categoryId).toBe('cat-nova');
   });
 });
 

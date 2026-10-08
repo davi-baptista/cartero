@@ -128,6 +128,65 @@ describe('manual recurring expense lifecycle', () => {
     vi.useRealTimers();
   });
 
+  it('uses the title as Debt creditor and copies optional description without a person', async () => {
+    const h = harness();
+    await h.service.create(USER, {
+      title: 'Internet',
+      amount: 120,
+      dayOfMonth: 10,
+      firstOccurrence: '2026-10',
+      description: 'Plano residencial',
+    });
+    expect(h.rules.get('rule-1')).toMatchObject({
+      description: 'Plano residencial',
+      personId: undefined,
+    });
+    expect(h.debts.get('rule-1:2026-10')).toMatchObject({
+      creditorName: 'Internet',
+      description: 'Plano residencial',
+      personId: undefined,
+      isPaid: false,
+    });
+  });
+
+  it('keeps materialized snapshots and legacy person while new occurrences use updated description', async () => {
+    const h = harness();
+    await h.service.create(USER, {
+      title: 'Aluguel',
+      amount: 1000,
+      dayOfMonth: 10,
+      firstOccurrence: '2026-10',
+    });
+    h.rules.get('rule-1').personId = 'legacy-person';
+    h.debts.get('rule-1:2026-10').isPaid = true;
+    await h.service.reconcileForUserPeriod(USER, 11, 2026);
+    await h.service.update('rule-1', USER, {
+      title: 'Aluguel novo',
+      amount: 1100,
+      dayOfMonth: 12,
+      description: 'Novo contrato',
+    });
+    expect(h.rules.get('rule-1').personId).toBe('legacy-person');
+    expect(h.debts.get('rule-1:2026-10')).toMatchObject({
+      title: 'Aluguel',
+      creditorName: 'Aluguel',
+      description: undefined,
+      isPaid: true,
+    });
+    expect(h.debts.get('rule-1:2026-11')).toMatchObject({
+      title: 'Aluguel',
+      description: undefined,
+      isPaid: false,
+    });
+    await h.service.reconcileForUserPeriod(USER, 12, 2026);
+    expect(h.debts.get('rule-1:2026-12')).toMatchObject({
+      title: 'Aluguel novo',
+      creditorName: 'Aluguel novo',
+      description: 'Novo contrato',
+      personId: 'legacy-person',
+    });
+  });
+
   it('clamps month end and inserts a cycle only once', async () => {
     const h = harness();
     await h.service.create(USER, {

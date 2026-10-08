@@ -15,6 +15,6 @@ export class CreateRecurringExpenseDto {
   @IsNumber() @Min(0.01) amount: number;
   @IsInt() @Min(1) @Max(31) dayOfMonth: number;
   @IsString() @Matches(/^\d{4}-(0[1-9]|1[0-2])$/) firstOccurrence: string;
-  @IsOptional() @IsString() @MaxLength(120) creditorName?: string;
+  @IsOptional() @IsString() description?: string;
   @IsOptional() @IsUUID() personId?: string;
 }

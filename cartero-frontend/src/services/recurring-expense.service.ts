@@ -6,12 +6,12 @@ export type CreateRecurringExpensePayload = {
   amount: number
   dayOfMonth: number
   firstOccurrence: string
-  creditorName?: string
+  description?: string
   personId?: string
 }
 
-export type UpdateRecurringExpensePayload = Partial<Omit<CreateRecurringExpensePayload, 'firstOccurrence' | 'creditorName' | 'personId'>> & {
-  creditorName?: string | null
+export type UpdateRecurringExpensePayload = Partial<Omit<CreateRecurringExpensePayload, 'firstOccurrence' | 'description' | 'personId'>> & {
+  description?: string | null
   personId?: string | null
   isActive?: boolean
 }

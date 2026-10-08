@@ -121,10 +121,7 @@ export interface Subscription {
   id: string
   userId: string
   bankId: string
-  /**
-   * Categoria dos lançamentos gerados. Escolhida pelo usuário; sem escolha,
-   * cai na categoria de sistema "Assinatura".
-   */
+  /** Categoria da regra; regras legadas podem apontar para a categoria de sistema. */
   categoryId: string
   title: string
   type: TransactionType
@@ -454,7 +451,7 @@ export interface RecurringIncomeRule {
     dayOfMonth: number
     firstOccurrence: string
     activeSince?: string | null
-    creditorName?: string | null
+    description?: string | null
     isActive: boolean
     deletedAt?: string | null
     createdAt: string

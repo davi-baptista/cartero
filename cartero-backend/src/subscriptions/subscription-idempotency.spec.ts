@@ -113,6 +113,7 @@ const dto = (overrides: Record<string, unknown> = {}) =>
   ({
     title: 'Netflix',
     bankId: 'bank-1',
+    categoryId: 'cat-1',
     type: 'PIX',
     amount: 39.9,
     dayOfMonth: 12,

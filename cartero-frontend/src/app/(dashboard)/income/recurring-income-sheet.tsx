@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { CurrencyInput } from '@/components/ui/currency-input'
 import { Label } from '@/components/ui/label'
 import { previewRecurringIncome, type CreateRecurringIncomePayload, type RecurringIncomePreview, type UpdateRecurringIncomePayload } from '@/services/recurring-income.service'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { CompetenceMonthYearFields } from '@/components/financial/competence-month-year-fields'
 import { formatCurrency } from '@/lib/formatters'
 import { PROGRESSIVE_REVEAL_CLASS } from '@/components/ui/progressive-reveal'
 
@@ -125,17 +125,7 @@ export function RecurringIncomeSheet({ open, onOpenChange, editTarget, isPending
           {!editing ? (
             <div className="grid gap-2">
               <Label>Renda desde</Label>
-              <div className="grid grid-cols-2 gap-2">
-                <Select value={firstMonth} onValueChange={(value) => setFirstMonth(value ?? '')}>
-                  <SelectTrigger className="w-full min-w-0" aria-label="Mês da renda desde">
-                    <SelectValue placeholder="Selecionar mês" />
-                  </SelectTrigger>
-                  <SelectContent className="min-w-[10rem]">
-                    {Array.from({ length: 12 }, (_, index) => { const value = String(index + 1).padStart(2, '0'); const rawLabel = new Intl.DateTimeFormat('pt-BR', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(2020, index, 1))); const label = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1); return <SelectItem key={value} value={value}>{label}</SelectItem> })}
-                  </SelectContent>
-                </Select>
-                <Input aria-label="Ano da renda desde" type="number" min={1900} max={9999} placeholder="Ano" value={firstYear} onChange={(event) => setFirstYear(event.target.value.replace(/\D/g, '').slice(0, 4))} />
-              </div>
+              <CompetenceMonthYearFields month={firstMonth} year={firstYear} onMonthChange={setFirstMonth} onYearChange={setFirstYear} monthAriaLabel="Mês da renda desde" yearAriaLabel="Ano da renda desde" />
               <p className="text-xs text-muted-foreground">A competência inicial define quais recebimentos elegíveis serão materializados.</p>
               {previewQuery.isError ? (
                 <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground" role="status">

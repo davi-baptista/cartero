@@ -37,22 +37,36 @@ const SECRET = 'segredo-de-teste';
 
 const env = { get: () => SECRET } as unknown as EnvService;
 
-const jwt = new JwtService({ secret: SECRET, signOptions: { expiresIn: '15m' } });
+const jwt = new JwtService({
+  secret: SECRET,
+  signOptions: { expiresIn: '15m' },
+});
 
 function signAccessToken(sub: string) {
   return jwt.sign({ sub, tokenUse: 'access' });
 }
 
-function buildPrisma(usersById: Record<string, { id: string; timeZone: string }>) {
+function buildPrisma(
+  usersById: Record<string, { id: string; timeZone: string }>,
+) {
   return {
     user: {
       findUnique: vi.fn(
-        async ({ where, select }: { where: { id: string }; select?: Record<string, boolean> }) => {
+        async ({
+          where,
+          select,
+        }: {
+          where: { id: string };
+          select?: Record<string, boolean>;
+        }) => {
           const row = usersById[where.id];
           if (!row) return null;
           if (!select) return row;
           return Object.fromEntries(
-            Object.keys(select).map((key) => [key, row[key as keyof typeof row]]),
+            Object.keys(select).map((key) => [
+              key,
+              row[key as keyof typeof row],
+            ]),
           );
         },
       ),
@@ -85,10 +99,9 @@ describe('JwtStrategy — principal autenticado carrega a timezone persistida', 
     });
     const strategy = new JwtStrategy(env, prisma);
 
-    const payload = jwt.verify(signAccessToken('u1'), { secret: SECRET }) as Record<
-      string,
-      unknown
-    >;
+    const payload = jwt.verify(signAccessToken('u1'), {
+      secret: SECRET,
+    });
     expect(payload.timeZone).toBeUndefined();
 
     const principal = await strategy.validate(payload as never);
@@ -120,7 +133,9 @@ describe('JwtStrategy — principal autenticado carrega a timezone persistida', 
     const prisma = buildPrisma({});
     const strategy = new JwtStrategy(env, prisma);
 
-    const payload = jwt.verify(signAccessToken('deleted-user'), { secret: SECRET });
+    const payload = jwt.verify(signAccessToken('deleted-user'), {
+      secret: SECRET,
+    });
 
     await expect(strategy.validate(payload)).rejects.toThrow();
   });
@@ -131,22 +146,33 @@ describe('JwtStrategy — principal autenticado carrega a timezone persistida', 
       `JwtStrategy.validate` recebe nunca carrega `timeZone` — só é possível
       chegar até esse campo consultando `payload.sub` no Prisma.
     */
-    const payload = jwt.verify(signAccessToken('u1'), { secret: SECRET }) as Record<
-      string,
-      unknown
-    >;
+    const payload = jwt.verify(signAccessToken('u1'), {
+      secret: SECRET,
+    });
     expect(Object.keys(payload)).not.toContain('timeZone');
   });
 });
 
 describe('CommitmentsController — recebe a timezone do principal autenticado', () => {
   it('B3: o controller repassa user.timeZone (agora DB-backed) ao service', async () => {
-    const service = { getCommitments: vi.fn().mockResolvedValue({ installments: [], subscriptions: [] }) };
-    const controller = new CommitmentsController(service as unknown as CommitmentsService);
+    const service = {
+      getCommitments: vi
+        .fn()
+        .mockResolvedValue({ installments: [], subscriptions: [] }),
+    };
+    const controller = new CommitmentsController(
+      service as unknown as CommitmentsService,
+    );
 
-    await controller.getCommitments({ id: 'u1', timeZone: 'America/Fortaleza' });
+    await controller.getCommitments({
+      id: 'u1',
+      timeZone: 'America/Fortaleza',
+    });
 
-    expect(service.getCommitments).toHaveBeenCalledWith('u1', 'America/Fortaleza');
+    expect(service.getCommitments).toHaveBeenCalledWith(
+      'u1',
+      'America/Fortaleza',
+    );
   });
 
   it('P3 (estrutural): o controller nunca aplica `?? algumaZonaPadrão` sobre user.timeZone', () => {
@@ -188,14 +214,16 @@ describe('SubscriptionsController — recebe a timezone do principal autenticado
   });
 
   it('B5: GET /subscriptions/preview repassa a timezone persistida', async () => {
-    await controller.preview(
-      { id: 'u1', timeZone: 'Asia/Tokyo' },
-      { bankId: 'b1', dayOfMonth: 10 } as never,
-    );
+    await controller.preview({ id: 'u1', timeZone: 'Asia/Tokyo' }, {
+      bankId: 'b1',
+      categoryId: 'cat-1',
+      dayOfMonth: 10,
+    } as never);
 
     expect(service.previewFor).toHaveBeenCalledWith(
       'u1',
       'b1',
+      'cat-1',
       10,
       undefined,
       undefined,
@@ -205,7 +233,10 @@ describe('SubscriptionsController — recebe a timezone do principal autenticado
   });
 
   it('B5: GET /subscriptions/:id (findOne) repassa a timezone persistida', async () => {
-    await controller.findOne('sub-1', { id: 'u1', timeZone: 'America/Fortaleza' });
+    await controller.findOne('sub-1', {
+      id: 'u1',
+      timeZone: 'America/Fortaleza',
+    });
 
     expect(service.findOne).toHaveBeenCalledWith(
       'sub-1',
@@ -224,15 +255,27 @@ describe('SubscriptionsController — recebe a timezone do principal autenticado
 
   it('PATCH /subscriptions/:id (update) repassa a timezone persistida', async () => {
     const dto = { title: 'Netflix Premium' } as never;
-    await controller.update('sub-1', { id: 'u1', timeZone: 'America/Fortaleza' }, dto);
+    await controller.update(
+      'sub-1',
+      { id: 'u1', timeZone: 'America/Fortaleza' },
+      dto,
+    );
 
-    expect(service.update).toHaveBeenCalledWith('sub-1', 'u1', dto, 'America/Fortaleza');
+    expect(service.update).toHaveBeenCalledWith(
+      'sub-1',
+      'u1',
+      dto,
+      'America/Fortaleza',
+    );
   });
 
   it('POST /subscriptions/run (runForUser) preservado — NÃO depende do principal para timezone (já re-consulta o Prisma)', async () => {
     await controller.run({ id: 'u1', timeZone: 'America/Fortaleza' });
 
     expect(service.runForUser).toHaveBeenCalledWith('u1');
-    expect(service.runForUser).not.toHaveBeenCalledWith('u1', expect.anything());
+    expect(service.runForUser).not.toHaveBeenCalledWith(
+      'u1',
+      expect.anything(),
+    );
   });
 });

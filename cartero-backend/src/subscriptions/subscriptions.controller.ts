@@ -67,7 +67,11 @@ export class SubscriptionsController {
   @Get()
   @UseGuards(JwtAuthGuard)
   findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.subscriptionsService.findAll(user.id, new Date(), user.timeZone);
+    return this.subscriptionsService.findAll(
+      user.id,
+      new Date(),
+      user.timeZone,
+    );
   }
 
   /**
@@ -79,10 +83,14 @@ export class SubscriptionsController {
    */
   @Get('preview')
   @UseGuards(JwtAuthGuard)
-  preview(@CurrentUser() user: AuthenticatedUser, @Query() query: PreviewSubscriptionDto) {
+  preview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: PreviewSubscriptionDto,
+  ) {
     return this.subscriptionsService.previewFor(
       user.id,
       query.bankId,
+      query.categoryId,
       query.dayOfMonth,
       query.startedAt,
       query.type,
@@ -111,7 +119,10 @@ export class SubscriptionsController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSubscriptionDto) {
+  create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateSubscriptionDto,
+  ) {
     return this.subscriptionsService.create(user.id, dto, user.timeZone);
   }
 

@@ -53,9 +53,8 @@ export class RecurringExpenseService {
   }
 
   async create(userId: string, dto: CreateRecurringExpenseDto) {
-    const person = dto.personId
-      ? await this.validation.validatePerson(dto.personId, userId)
-      : null;
+    if (dto.personId)
+      await this.validation.validatePerson(dto.personId, userId);
     const timeZone = await this.accountTimeZone(userId);
     return this.prisma.$transaction(async (tx) => {
       const rule = await tx.recurringExpenseRule.create({
@@ -66,10 +65,7 @@ export class RecurringExpenseService {
           frequency: 'MONTHLY',
           dayOfMonth: dto.dayOfMonth,
           firstOccurrence: dto.firstOccurrence,
-          creditorName:
-            dto.creditorName === null
-              ? null
-              : (dto.creditorName ?? person?.name),
+          description: dto.description,
           personId: dto.personId,
         },
       });
@@ -101,9 +97,8 @@ export class RecurringExpenseService {
   }
 
   async update(id: string, userId: string, dto: UpdateRecurringExpenseDto) {
-    const person = dto.personId
-      ? await this.validation.validatePerson(dto.personId, userId)
-      : null;
+    if (dto.personId)
+      await this.validation.validatePerson(dto.personId, userId);
     const timeZone = await this.accountTimeZone(userId);
     return this.prisma.$transaction(async (tx) => {
       await acquireTransactionAdvisoryLock(
@@ -124,10 +119,7 @@ export class RecurringExpenseService {
           title: dto.title,
           amount: dto.amount,
           dayOfMonth: dto.dayOfMonth,
-          creditorName:
-            dto.creditorName === null
-              ? null
-              : (dto.creditorName ?? person?.name),
+          description: dto.description,
           personId: dto.personId,
           isActive: dto.isActive,
           activeSince: resuming
@@ -233,7 +225,6 @@ export class RecurringExpenseService {
       amount: Prisma.Decimal;
       dueDate: Date;
       title: string;
-      creditorName: string | null;
     }>
   > {
     if (!isRecurringMonth(month))
@@ -252,7 +243,6 @@ export class RecurringExpenseService {
         amount: true,
         dayOfMonth: true,
         title: true,
-        creditorName: true,
       },
     });
     if (rules.length === 0) return [];
@@ -287,7 +277,6 @@ export class RecurringExpenseService {
         amount: rule.amount,
         dueDate: parseDateOnly(occurrenceDateForMonth(month, rule.dayOfMonth)),
         title: rule.title,
-        creditorName: rule.creditorName,
       }));
   }
 
@@ -358,7 +347,8 @@ export class RecurringExpenseService {
         userId: rule.userId,
         personId: rule.personId,
         title: rule.title,
-        creditorName: rule.creditorName ?? rule.title,
+        creditorName: rule.title,
+        description: rule.description,
         amount: rule.amount,
         occurredAt: parseDateOnly(dueDate),
         dueDate: parseDateOnly(dueDate),

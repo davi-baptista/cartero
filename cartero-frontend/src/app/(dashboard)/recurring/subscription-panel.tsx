@@ -32,6 +32,7 @@ import {
 } from '@/services/subscriptions.service'
 import { formatCurrency, formatDate, TRANSACTION_TYPE_LABELS } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
+import { isSelectableBank } from '@/lib/bank-display'
 import { invalidateRecurringDependents } from '@/lib/recurring-invalidation'
 import type { Subscription } from '@/types'
 
@@ -64,7 +65,7 @@ function SubscriptionRow({
       meta={
         <>
           <span className="shrink-0">{TRANSACTION_TYPE_LABELS[subscription.type]}</span>
-          {subscription.bank && (
+          {subscription.bank && isSelectableBank(subscription.bank) && (
             <>
               <span aria-hidden>·</span>
               <span className="truncate">{subscription.bank.name}</span>
@@ -341,14 +342,14 @@ export function SubscriptionPanel({ createTarget, formHost, footerHost, onCreate
     const { title, bankId, categoryId, type, amount, description, dayOfMonth } = data
     await updateMut.mutateAsync({
       id: editTarget.id,
-      payload: { title, bankId, categoryId, type, amount, description, dayOfMonth },
+      payload: { title, bankId: bankId || null, categoryId, type, amount, description, dayOfMonth },
     })
   }
 
   async function handleCreateSubmit(data: SubscriptionFormData) {
     // A chave acompanha a tentativa: um retry do mesmo submit reusa a mesma
     // e o backend devolve a assinatura já criada em vez de duplicá-la.
-    await createMut.mutateAsync({ ...data, creationKey: currentCreationKey() })
+    await createMut.mutateAsync({ ...data, bankId: data.bankId || undefined, creationKey: currentCreationKey() })
   }
 
   return (

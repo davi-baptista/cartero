@@ -151,13 +151,10 @@ export function ManualExpensePanel({ createTarget, formHost, footerHost, onCreat
     else paymentMutation.mutate({ id: debt.id, isPaid: false })
   }
 
-  if ((rulesQuery.error || debtsQuery.error) && !(rulesQuery.isLoading || debtsQuery.isLoading)) {
-    return <QueryError message="Não foi possível carregar as despesas recorrentes." isFetching={rulesQuery.isFetching || debtsQuery.isFetching} onRetry={() => { void rulesQuery.refetch(); void debtsQuery.refetch() }} />
-  }
-
+  const listFailed = Boolean((rulesQuery.error || debtsQuery.error) && !(rulesQuery.isLoading || debtsQuery.isLoading))
   return <div className="flex flex-col gap-3">
     <h2 className="text-sm font-medium">Contas para pagar</h2>
-    {rulesQuery.isLoading || debtsQuery.isLoading ? <div className="space-y-2">{[1, 2].map((item) => <Skeleton key={item} className="h-16 w-full" />)}</div> : rules.length === 0 ? <div className="rounded-xl border border-dashed border-border/70 px-6 py-10 text-center"><CircleAlert className="mx-auto size-6 text-muted-foreground" /><p className="mt-3 text-sm font-medium">Nenhuma conta recorrente cadastrada.</p><p className="mt-1 text-sm text-muted-foreground">Aluguel e outras contas podem ficar em aberto até você registrar o pagamento.</p></div> : <FinancialRowList variant="page">{rules.map((rule, index) => {
+    {listFailed ? <QueryError message="Não foi possível carregar as despesas recorrentes." isFetching={rulesQuery.isFetching || debtsQuery.isFetching} onRetry={() => { void rulesQuery.refetch(); void debtsQuery.refetch() }} /> : rulesQuery.isLoading || debtsQuery.isLoading ? <div className="space-y-2">{[1, 2].map((item) => <Skeleton key={item} className="h-16 w-full" />)}</div> : rules.length === 0 ? <div className="rounded-xl border border-dashed border-border/70 px-6 py-10 text-center"><CircleAlert className="mx-auto size-6 text-muted-foreground" /><p className="mt-3 text-sm font-medium">Nenhuma conta recorrente cadastrada.</p><p className="mt-1 text-sm text-muted-foreground">Aluguel e outras contas podem ficar em aberto até você registrar o pagamento.</p></div> : <FinancialRowList variant="page">{rules.map((rule, index) => {
       const due = debts.filter((debt) => debt.recurringExpenseRuleId === rule.id && !debt.isPaid).sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]
       const late = due && due.dueDate.slice(0, 10) < today
       return <MotionRow key={rule.id} index={index} separator={false} className={financialDrawerRowSurfaceClass('animatedWrapper')}>
@@ -172,7 +169,7 @@ export function ManualExpensePanel({ createTarget, formHost, footerHost, onCreat
           <DrawerSummaryCard inset={false}>
             <DrawerSummaryLabel emphasis="regular">Valor esperado por mês</DrawerSummaryLabel>
             <DrawerSummaryValue>{formatCurrency(selectedRule.amount)}</DrawerSummaryValue>
-            <DrawerSummaryMeta className="mt-2">Dia {selectedRule.dayOfMonth} · {selectedRule.creditorName ?? selectedRule.title}</DrawerSummaryMeta>
+            <DrawerSummaryMeta className="mt-2">Dia {selectedRule.dayOfMonth} · {selectedRule.title}</DrawerSummaryMeta>
             <div className="mt-3"><DrawerCompletionStatus variant={overdue.length > 0 ? 'destructive' : selectedRule.isActive ? 'pending' : 'informational'}>{overdue.length > 0 ? 'Em atraso' : selectedRule.isActive ? 'Ativa' : 'Pausada'}</DrawerCompletionStatus></div>
           </DrawerSummaryCard>
           <div className="flex flex-wrap gap-2">

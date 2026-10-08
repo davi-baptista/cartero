@@ -26,9 +26,9 @@ export async function getSubscription(id: string): Promise<Subscription> {
 
 export interface CreateSubscriptionPayload {
   title: string
-  bankId: string
-  /** Omitida cai na categoria de sistema "Assinatura". */
-  categoryId?: string
+  bankId?: string
+  /** Categoria própria escolhida pelo usuário. */
+  categoryId: string
   /**
    * Chave desta TENTATIVA de criação.
    *
@@ -57,7 +57,7 @@ export async function createSubscription(
 /** `startedAt` não entra: é imutável depois de criada. */
 export async function updateSubscription(
   id: string,
-  payload: Partial<Omit<CreateSubscriptionPayload, 'startedAt'> & { isActive: boolean }>,
+  payload: Partial<Omit<CreateSubscriptionPayload, 'startedAt' | 'bankId'> & { bankId: string | null; isActive: boolean }>,
 ): Promise<Subscription> {
   const { data } = await api.patch<Subscription>(`/subscriptions/${id}`, payload)
   return data
@@ -69,7 +69,8 @@ export async function deleteSubscription(id: string): Promise<void> {
 
 /** Simula a geração sem criar nada — alimenta o aviso de início retroativo. */
 export async function previewSubscription(params: {
-  bankId: string
+  bankId?: string
+  categoryId: string
   dayOfMonth: number
   startedAt: string
   type: TransactionType

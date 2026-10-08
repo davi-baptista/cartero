@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   HttpException,
   Injectable,
   Logger,
@@ -8,6 +9,7 @@ import { Bank, Prisma, Subscription, TransactionType } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { EntityValidationService } from 'src/common/entity-validation.service';
 import {
+  findOrCreateSystemBank,
   findOrCreateInvoice,
   getInvoicePeriodForDate,
 } from 'src/common/helpers/invoice.helper';
@@ -18,11 +20,6 @@ import {
   pendingCycles,
   resumeCycle,
 } from 'src/common/helpers/subscription.helper';
-import {
-  SUBSCRIPTION_CATEGORY_COLOR,
-  SUBSCRIPTION_CATEGORY_NAME,
-  SYSTEM_CATEGORY_ICON,
-} from 'src/common/constants/system-categories';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
 
@@ -191,14 +188,17 @@ export class SubscriptionsService {
     dto: CreateSubscriptionDto,
     timeZone: string | null = null,
   ): Promise<SubscriptionCreateResult> {
-    await this.entityValidation.validateBank(dto.bankId, userId);
-
-    const category = await this.resolveCategory(userId, dto.categoryId);
+    const category = await this.requireSelectableCategory(
+      userId,
+      dto.categoryId,
+    );
+    const bankId = await this.resolveBankId(userId, dto.bankId, dto.type);
 
     const { subscription, alreadyExisted } = await this.claimSubscription(
       userId,
       dto,
       category.id,
+      bankId,
     );
 
     /**
@@ -243,10 +243,11 @@ export class SubscriptionsService {
     userId: string,
     dto: CreateSubscriptionDto,
     categoryId: string,
+    bankId: string,
   ): Promise<{ subscription: Subscription; alreadyExisted: boolean }> {
     const data = {
       userId,
-      bankId: dto.bankId,
+      bankId,
       categoryId,
       title: dto.title,
       type: dto.type,
@@ -335,29 +336,45 @@ export class SubscriptionsService {
     return summary;
   }
 
-  /**
-   * Categoria do lançamento gerado.
-   *
-   * Escolhida pelo usuário quando informada — `validateCategory` garante a
-   * posse, porque um id vindo do corpo da requisição não prova nada. Omitida,
-   * cai na categoria de sistema "Assinatura", que mantém o cadastro rápido e
-   * deixa os lançamentos identificáveis no extrato.
-   *
-   * O `findOrCreateSystemCategory` é reusado em vez de buscar por nome: ele já
-   * trata unicidade `(userId, name)` e não cria uma segunda "Assinatura".
-   */
-  private async resolveCategory(userId: string, categoryId?: string) {
-    if (categoryId) {
-      return await this.entityValidation.validateCategory(categoryId, userId);
+  /** Novas configurações só aceitam categorias próprias e selecionáveis. */
+  private async requireSelectableCategory(userId: string, categoryId?: string) {
+    if (!categoryId) {
+      throw new BadRequestException('Selecione uma categoria');
     }
-
-    return await this.entityValidation.findOrCreateSystemCategory(
-      this.prisma,
+    const category = await this.entityValidation.validateCategory(
+      categoryId,
       userId,
-      SUBSCRIPTION_CATEGORY_NAME,
-      SYSTEM_CATEGORY_ICON,
-      SUBSCRIPTION_CATEGORY_COLOR,
     );
+    if (category.isSystem) {
+      throw new BadRequestException('Selecione uma categoria própria');
+    }
+    return category;
+  }
+
+  /** Mesmo banco interno usado por Transactions sem banco informado. */
+  private async resolveBankId(
+    userId: string,
+    bankId: string | null | undefined,
+    type: TransactionType,
+  ): Promise<string> {
+    if (bankId) {
+      const bank = await this.entityValidation.validateBank(bankId, userId);
+      if (bank.isSystem) {
+        throw new BadRequestException(
+          'O banco sistêmico não pode ser informado pela API',
+        );
+      }
+      return bank.id;
+    }
+    if (type === TransactionType.CREDIT_CARD) {
+      throw new BadRequestException(
+        'Compras no crédito exigem um banco/cartão',
+      );
+    }
+    const bank = await this.prisma.$transaction((tx) =>
+      findOrCreateSystemBank(tx, userId),
+    );
+    return bank.id;
   }
 
   async update(
@@ -368,8 +385,22 @@ export class SubscriptionsService {
   ) {
     const current = await this.findOne(id, userId, new Date(), timeZone);
 
-    if (dto.bankId)
-      await this.entityValidation.validateBank(dto.bankId, userId);
+    const effectiveType = dto.type ?? current.type;
+    const bankId =
+      dto.bankId !== undefined
+        ? await this.resolveBankId(userId, dto.bankId, effectiveType)
+        : undefined;
+    if (effectiveType === TransactionType.CREDIT_CARD && !bankId) {
+      const bank = await this.entityValidation.validateBank(
+        current.bankId,
+        userId,
+      );
+      if (bank.isSystem) {
+        throw new BadRequestException(
+          'Compras no crédito exigem um banco/cartão',
+        );
+      }
+    }
 
     /**
      * Reativar uma assinatura cujo banco foi arquivado.
@@ -381,13 +412,25 @@ export class SubscriptionsService {
      * banco, então esta era a porta aberta.
      */
     const reactivating = dto.isActive === true && !current.isActive;
-    if (reactivating && !dto.bankId) {
+    if (reactivating && bankId === undefined) {
       await this.entityValidation.validateBank(current.bankId, userId);
     }
 
-    // Trocar a categoria exige posse; o id vem do corpo da requisição.
-    if (dto.categoryId) {
-      await this.entityValidation.validateCategory(dto.categoryId, userId);
+    // Toggle de pausa/retomada mantém regras legadas intactas. Salvar uma nova
+    // configuração de regra legada exige uma categoria escolhida pelo usuário.
+    const changesConfiguration = [
+      dto.title,
+      dto.bankId,
+      dto.categoryId,
+      dto.type,
+      dto.amount,
+      dto.description,
+      dto.dayOfMonth,
+    ].some((value) => value !== undefined);
+    if (dto.categoryId !== undefined) {
+      await this.requireSelectableCategory(userId, dto.categoryId);
+    } else if (changesConfiguration && current.category?.isSystem) {
+      throw new BadRequestException('Selecione uma categoria');
     }
 
     /**
@@ -421,7 +464,7 @@ export class SubscriptionsService {
       where: { id },
       data: {
         title: dto.title,
-        bankId: dto.bankId,
+        bankId,
         categoryId: dto.categoryId,
         type: dto.type,
         amount: dto.amount,
@@ -452,13 +495,20 @@ export class SubscriptionsService {
    */
   async previewFor(
     userId: string,
-    bankId: string,
+    bankId: string | undefined,
+    categoryId: string,
     dayOfMonth: number,
     startedAt: string,
     type: TransactionType,
     now: Date = new Date(),
     timeZone: string | null = null,
   ): Promise<GenerationPlanItem[]> {
+    await this.requireSelectableCategory(userId, categoryId);
+    if (type === TransactionType.CREDIT_CARD && !bankId) {
+      throw new BadRequestException(
+        'Compras no crédito exigem um banco/cartão',
+      );
+    }
     // `null` nos dois últimos: o preview de CRIAÇÃO não tem histórico nem
     // marco de ativação — é uma assinatura que ainda não existe.
     const cycles = pendingCycles(
@@ -471,13 +521,21 @@ export class SubscriptionsService {
     );
     if (cycles.length === 0) return [];
 
-    const bank = await this.entityValidation.validateBank(bankId, userId);
+    const bank = bankId
+      ? await this.entityValidation.validateBank(bankId, userId)
+      : null;
+    if (bank?.isSystem) {
+      throw new BadRequestException(
+        'O banco sistêmico não pode ser informado pela API',
+      );
+    }
     const plan: GenerationPlanItem[] = [];
 
     for (const cycle of cycles) {
       const date = chargeDateForCycle(cycle, dayOfMonth);
       const paid =
         type === TransactionType.CREDIT_CARD &&
+        bank !== null &&
         (await this.isInvoicePaid(userId, bank, date));
       plan.push({
         cycle: formatCycle(cycle),

@@ -1,6 +1,14 @@
 import { TransactionType } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsUUID, Matches, Max, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsUUID,
+  Matches,
+  Max,
+  Min,
+} from 'class-validator';
 
 /**
  * Parâmetros da simulação de geração.
@@ -11,8 +19,12 @@ import { IsEnum, IsInt, IsUUID, Matches, Max, Min } from 'class-validator';
  * produzindo datas inválidas serializadas como `null`, sem erro nenhum.
  */
 export class PreviewSubscriptionDto {
+  @IsOptional()
   @IsUUID()
-  bankId: string;
+  bankId?: string;
+
+  @IsUUID()
+  categoryId: string;
 
   @Type(() => Number)
   @IsInt()

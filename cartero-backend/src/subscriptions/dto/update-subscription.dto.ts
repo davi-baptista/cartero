@@ -23,7 +23,7 @@ export class UpdateSubscriptionDto {
 
   @IsOptional()
   @IsUUID()
-  bankId?: string;
+  bankId?: string | null;
 
   /**
    * Trocar a categoria afeta só os próximos lançamentos. Os já gerados

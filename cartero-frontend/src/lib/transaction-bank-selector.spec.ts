@@ -22,9 +22,7 @@ describe('transaction bank selector — optional bank UX', () => {
   })
 
   it('shows bank creation only after the bank section exists', () => {
-    expect(SHEET).toContain('onClick={handleOpenBankCreate}')
-    expect(SHEET).toContain('{showBankSelector && (showBankCreate ? (')
-    expect(SHEET).toContain('Novo banco')
+    expect(SHEET).toContain('{showBankSelector && <InlineBankCreate')
   })
 
   it('does not hide an existing real bank in edit mode', () => {
@@ -39,7 +37,7 @@ describe('transaction bank selector — optional bank UX', () => {
 
   it('progressively reveals expense methods and details', () => {
     expect(SHEET).toContain("const paymentMethodChoice = selectedKind === 'expense' ? (")
-    expect(SHEET).toContain('<Label>Forma de pagamento</Label>')
+    expect(SHEET).toContain('<PaymentMethodChoice')
     expect(SHEET).toContain('{selectedType && (')
     expect(SHEET).toContain('scrollManagedByParent && PROGRESSIVE_REVEAL_CLASS')
     expect(SHEET).toContain("disabled={isSubmitting || (!isEditing && !selectedType)}")

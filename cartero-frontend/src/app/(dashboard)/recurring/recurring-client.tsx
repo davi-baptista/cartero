@@ -134,10 +134,10 @@ export function RecurringClient() {
           {kind === 'expense' ? <section className={cn('space-y-1.5', PROGRESSIVE_REVEAL_CLASS)}>
             <Label>Como essa despesa funciona?</Label>
             <div className="grid grid-cols-2 gap-2" role="group" aria-label="Modo da despesa recorrente">
-              <button type="button" aria-pressed={expenseMode === 'automatic'} onClick={() => setChoice((current) => selectRecurringExpenseMode(current, 'automatic'))} className={choiceClass(expenseMode === 'automatic')}>Cobrança automática</button>
-              <button type="button" aria-pressed={expenseMode === 'manual'} onClick={() => setChoice((current) => selectRecurringExpenseMode(current, 'manual'))} className={choiceClass(expenseMode === 'manual')}>Eu registro o pagamento</button>
+              <button type="button" aria-pressed={expenseMode === 'automatic'} onClick={() => setChoice((current) => selectRecurringExpenseMode(current, 'automatic'))} className={choiceClass(expenseMode === 'automatic')}>Lançamento automático</button>
+              <button type="button" aria-pressed={expenseMode === 'manual'} onClick={() => setChoice((current) => selectRecurringExpenseMode(current, 'manual'))} className={choiceClass(expenseMode === 'manual')}>Eu marco como pago</button>
             </div>
-            {expenseMode ? <p className="text-xs text-muted-foreground">{expenseMode === 'automatic' ? 'O lançamento acontece automaticamente.' : 'A conta fica em aberto até você registrar que pagou.'}</p> : null}
+              {expenseMode ? <p className="text-xs text-muted-foreground">{expenseMode === 'automatic' ? 'O gasto é lançado automaticamente.' : 'A conta fica em aberto até você marcar como paga.'}</p> : null}
           </section> : null}
 
           <div ref={setFormHost} className={activeTarget ? 'w-full' : 'hidden'} />

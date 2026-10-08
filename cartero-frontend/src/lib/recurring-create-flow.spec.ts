@@ -16,6 +16,10 @@ const manual = readFileSync(new URL('../app/(dashboard)/recurring/manual-expense
 const incomeForm = readFileSync(new URL('../app/(dashboard)/income/recurring-income-sheet.tsx', import.meta.url), 'utf8')
 const automaticForm = readFileSync(new URL('../app/(dashboard)/subscriptions/subscription-sheet.tsx', import.meta.url), 'utf8')
 const manualForm = readFileSync(new URL('../app/(dashboard)/recurring/recurring-expense-sheet.tsx', import.meta.url), 'utf8')
+const movementForm = readFileSync(new URL('../app/(dashboard)/transactions/transaction-sheet.tsx', import.meta.url), 'utf8')
+const bankCreate = readFileSync(new URL('../components/financial/inline-bank-create.tsx', import.meta.url), 'utf8')
+const categoryCreate = readFileSync(new URL('../components/financial/inline-category-create.tsx', import.meta.url), 'utf8')
+const paymentMethods = readFileSync(new URL('../components/financial/payment-method-choice.tsx', import.meta.url), 'utf8')
 
 describe('Recurring create drawer', () => {
   it('opens the one shared Sheet directly from the only Add button, without chooser dialogs', () => {
@@ -58,7 +62,7 @@ describe('Recurring create drawer', () => {
       expect(form).toContain('createPortal(footer, embeddedFooterHost)')
     }
     expect(incomeForm).toContain('Criar renda')
-    expect(automaticForm).toContain('Criar cobrança')
+    expect(automaticForm).toContain('Criar despesa')
     expect(manualForm).toContain('Criar despesa')
   })
 
@@ -120,5 +124,65 @@ describe('Recurring create drawer', () => {
     expect(flow).toContain('{expenseMode ? <p className="text-xs text-muted-foreground">')
     expect(flow).toContain("kind === 'expense' ? <section")
     expect(flow).toContain('<Sheet open={open} onOpenChange={handleOpenChange}')
+    expect(flow).toContain('Lançamento automático')
+    expect(flow).toContain('Eu marco como pago')
+    expect(flow).toContain('O gasto é lançado automaticamente.')
+    expect(flow).toContain('A conta fica em aberto até você marcar como paga.')
+  })
+
+  it('keeps the manual rule simple while persisting description and preserving legacy person on edit', () => {
+    expect(manualForm).toContain('Descrição (opcional)')
+    expect(manualForm).toContain('description: description.trim() || null')
+    expect(manualForm).not.toContain('Credor</Label>')
+    expect(manualForm).not.toContain('Pessoa vinculada')
+    expect(manualForm).not.toContain('personId:')
+  })
+
+  it('uses full-width automatic controls and the Movements contextual creators', () => {
+    expect(automaticForm).toContain('<PaymentMethodChoice')
+    expect(automaticForm).toContain('className="w-full" aria-label="Categoria"')
+    expect(automaticForm).toContain('className="w-full" aria-label="Dia da cobrança"')
+    expect(automaticForm).toContain('<CompetenceMonthYearFields')
+    expect(automaticForm).toContain('<InlineBankCreate')
+    expect(automaticForm).toContain('<InlineCategoryCreate')
+    expect(movementForm).toContain('<InlineBankCreate')
+    expect(movementForm).toContain('<InlineCategoryCreate')
+    expect(movementForm).toContain('<PaymentMethodChoice')
+    expect(bankCreate).toContain('Criar banco')
+    expect(categoryCreate).toContain('Criar categoria')
+    expect(bankCreate).toContain("setQueryData<Bank[]>(['banks']")
+    expect(categoryCreate).toContain("setQueryData<Category[]>(['categories']")
+    expect(paymentMethods).toContain('PAYMENT_METHODS.map')
+    expect(automaticForm).toContain('Primeira competência')
+    expect(automaticForm).toContain('Criar despesa')
+  })
+
+  it('reveals automatic fields after a payment method and shares the competence control', () => {
+    expect(automaticForm).toContain('type: undefined')
+    expect(automaticForm).toContain('onChange={field.onChange}')
+    expect(automaticForm).toContain('{(isEdit || hasPaymentMethod) &&')
+    expect(automaticForm).toContain('disabled={isSubmitting || !hasPaymentMethod || !categoryId || !isValid}')
+    expect(incomeForm).toContain('<CompetenceMonthYearFields')
+    expect(manualForm).toContain('<CompetenceMonthYearFields')
+    expect(automaticForm).toContain('<CompetenceMonthYearFields')
+    expect(automaticForm).not.toContain('cycleOptions(')
+  })
+
+  it('follows Movements optional bank disclosure without weakening credit validation', () => {
+    expect(automaticForm).toContain('onClick={() => setShowOptionalBank(true)}')
+    expect(automaticForm).toContain("setValue('bankId', undefined, { shouldDirty: true, shouldValidate: true })")
+    expect(automaticForm).toContain('bankIsRequired ? bankField : null')
+    expect(automaticForm).toContain('!bankIsRequired ? bankField : null')
+    expect(movementForm).toContain('Adicionar banco (opcional)')
+    expect(automatic).toContain('bankId: bankId || null')
+  })
+
+  it('keeps category empty until the user chooses or creates one', () => {
+    expect(automaticForm).toContain("categoryId: z.string().min(1, 'Selecione uma categoria')")
+    expect(automaticForm).toContain("categoryId: ''")
+    expect(automaticForm).toContain('placeholder="Selecione uma categoria"')
+    expect(automaticForm).not.toContain('Assinatura (padrão)')
+    expect(automaticForm).toContain("setValue('categoryId', category.id, { shouldDirty: true, shouldValidate: true })")
+    expect(automaticForm).toContain('!!categoryId &&')
   })
 })
