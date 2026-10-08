@@ -1,5 +1,6 @@
 'use client'
 
+import { useCallback, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
@@ -15,12 +16,16 @@ type Props = {
 
 /** O mesmo controle de mês e ano usado em Renda desde. */
 export function CompetenceMonthYearFields({ month, year, onMonthChange, onYearChange, monthAriaLabel, yearAriaLabel, disabled = false }: Props) {
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null)
+  const setTrigger = useCallback((trigger: HTMLButtonElement | null) => {
+    setPortalContainer(trigger?.closest<HTMLElement>('[data-slot="sheet-content"]') ?? null)
+  }, [])
   return <div className="grid grid-cols-2 gap-2">
     <Select value={month} onValueChange={(value) => onMonthChange(value ?? '')} disabled={disabled}>
-      <SelectTrigger className="w-full min-w-0" aria-label={monthAriaLabel}>
+      <SelectTrigger ref={setTrigger} className="w-full min-w-0" aria-label={monthAriaLabel}>
         <SelectValue placeholder="Selecionar mês" />
       </SelectTrigger>
-      <SelectContent className="min-w-[10rem]">
+      <SelectContent portalContainer={portalContainer} alignItemWithTrigger={false} className="min-w-[10rem]">
         {Array.from({ length: 12 }, (_, index) => {
           const value = String(index + 1).padStart(2, '0')
           const rawLabel = new Intl.DateTimeFormat('pt-BR', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(2020, index, 1)))
