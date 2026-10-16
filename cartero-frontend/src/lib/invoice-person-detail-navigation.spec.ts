@@ -95,16 +95,15 @@ describe('Fatura: a identidade vem da URL', () => {
 
 describe('Pessoa: a identidade vem da URL', () => {
   it('a linha escreve o param', () => {
-    expect(PESSOAS).toContain('onView={isEmpty ? undefined : () => openPerson(person.id)}')
-    expect(PESSOAS).toContain('interactive={!isEmpty}')
-    expect(PESSOAS).toContain('inactive={isEmpty}')
+    expect(PESSOAS).toContain('onView={() => openPerson(person.id)}')
     expect(PESSOAS).toContain("searchParams.get('personId')")
   })
 
-  it('row vazia não oferece abertura, clique ou chevron', () => {
+  it('row vazia também abre o drawer canônico', () => {
     expect(PESSOAS).toContain('const isEmpty =')
-    expect(PESSOAS).toContain('interactive={!isEmpty}')
-    expect(PESSOAS).toContain('inactive={isEmpty}')
+    expect(PESSOAS).toContain('onView={() => openPerson(person.id)}')
+    expect(PESSOAS).toContain('<PersonStatementDrawer')
+    expect(PESSOAS).not.toContain('interactive={!isEmpty}')
   })
 
   it('o state que era autoridade do extrato sumiu', () => {

@@ -212,11 +212,10 @@ describe('a fatura aberta pertence ao mês exibido', () => {
 
   it('item 11: banco sem fatura no mês não ganha invoiceId inventado', () => {
     /*
-      A row sem fatura não recebe `onView`: não existe ramo capaz de produzir
-      um id — nem verdadeiro, nem falso.
+      A row sem fatura abre o banco vazio, sem fabricar um invoiceId.
     */
     const banksCode = code(BANKS)
-    expect(banksCode).toContain('invoice ? () => onOpenInvoice(invoice.id) : undefined')
+    expect(banksCode).toContain('invoice ? () => onOpenInvoice(invoice.id) : () => onOpenEmpty(bank.id)')
     expect(banksCode).not.toContain('nearest.invoice.id')
   })
 })

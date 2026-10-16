@@ -1109,6 +1109,7 @@ export function PersonStatementDrawer({
       <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className={cn('flex w-full flex-col', DRAWER_WIDTH_WIDE, DRAWER_WIDE_VERTICAL_RHYTHM.headerContentGap)} showCloseButton={false}>
         <DrawerIdentityHeader
+          inset="wide"
           title={person?.name}
           description="Extrato consolidado de dívidas e cobranças"
           action={(

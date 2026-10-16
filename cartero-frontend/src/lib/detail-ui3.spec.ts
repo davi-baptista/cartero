@@ -109,17 +109,14 @@ describe('parte A: `A ACERTAR` não pode dizer `Pagar` nem `Receber`', () => {
     expect(nextItemLabel(null, HOJE, 'settle')).toBeNull()
   })
 
-  it('a direção sai do STATUS, não de um opcional no call site', () => {
-    /*
-      Um parâmetro opcional que a página precisa lembrar de passar é o mesmo
-      bug esperando o próximo consumidor. `rowLabelDirection` deriva do status
-      que a row já calculou.
-    */
+  it('a direção usa o status, com prioridade ao evento vencido da seção', () => {
+    /* O atraso usa a direção do item vencido; nas demais seções, a direção
+       continua derivada do status da row. */
     const PERSONS = semComentarios(
       ler('../app/(dashboard)/persons/page.tsx'),
     )
 
-    expect(PERSONS).toContain('rowLabelDirection(status, balance.nextItem)')
+    expect(PERSONS).toContain("section === 'overdue' ? displayItem?.direction : rowLabelDirection(status, displayItem)")
   })
 })
 

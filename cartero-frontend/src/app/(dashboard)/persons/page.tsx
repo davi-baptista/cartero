@@ -26,13 +26,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { MotionRow } from '@/components/ui/motion-row'
+import { financialDrawerRowSurfaceClass } from '@/components/ui/financial-drawer-row-surface'
+import { FinancialRowList } from '@/components/ui/drawer-section'
 import {
   FinancialListRow,
   FinancialRowTrailing,
   ROW_AMOUNT_TONE,
   ROW_ICON_BG_CLASS,
   ROW_ICON_CLASS,
-  ROW_INACTIVE_AVATAR_CLASS,
   ROW_INACTIVE_TRAILING_CLASS,
 } from '@/components/ui/financial-list-row'
 import { nextItemLabel } from '@/lib/person-next-item'
@@ -40,12 +41,12 @@ import {
   personRowsCycle,
   sortPersonRowsForMonth,
 } from '@/lib/person-month-order'
-import { personsSummaryLines } from '@/lib/persons-summary-text'
+import { PERSON_MONTH_SECTION_ORDER, PERSON_MONTH_SECTION_TITLE, groupPersonMonthRows } from '@/lib/person-month-sections'
 import {
-  hasOpenObligation,
-  hasPeriodActivity,
   PERSON_ROW_LABEL,
   PERSON_ROW_TONE,
+  personCompactBalanceLabel,
+  personSectionNetLabel,
   personAmountTone,
   personRowAmount,
   personRowStatus,
@@ -214,6 +215,9 @@ const VAZIO = {
   /* Nada em aberto dos dois lados — é o que faz a row cair em EMPTY. */
   receivablePending: 0,
   debtPending: 0,
+  overdueReceivablePending: 0,
+  overdueDebtPending: 0,
+  overdueNextItem: null,
   periodReceivableTotal: 0,
   periodDebtTotal: 0,
   settledReceivablesCount: 0,
@@ -377,6 +381,8 @@ export default function PersonsPage() {
     data: balances,
     isLoading: balancesLoading,
     isError: balancesError,
+    isFetching: balancesFetching,
+    refetch: refetchBalances,
   } = useQuery({
     queryKey: ['persons', 'monthly-summary', period],
     queryFn: () => getPersonsMonthlySummary(period),
@@ -514,83 +520,25 @@ export default function PersonsPage() {
     )
   }, [persons, balanceById, balancesLoading, period, today])
 
-  /*
-    ── O resumo sai das MESMAS linhas ──
+  const personSections = useMemo(
+    () => groupPersonMonthRows(orderedPersons.map((person) => ({
+      person,
+      balance: balanceById.get(person.id) ?? VAZIO,
+    }))),
+    [orderedPersons, balanceById],
+  )
 
-    Derivado no cliente, não pedido ao backend: todas as rows já chegaram
-    completas na mesma resposta, então somá-las é determinístico e um segundo
-    contrato só criaria uma fonte a mais para divergir.
-
-    Positivo entra em "a receber", negativo em "a pagar" pelo valor absoluto,
-    zero não move nada. É agregação VISUAL — não compensa pessoas entre si,
-    não quita e não escreve nada.
-  */
+  /* O topo agrega os dois lados em aberto do lote mensal, sem compensá-los. */
   const summary = useMemo(() => {
-    /*
-      ══════════════════════════════════════════════════════════════════════
-      O resumo segue o MESMO modo da lista
-      ══════════════════════════════════════════════════════════════════════
-
-      ACTIVE  → outstanding: "quanto ainda falta acertar no mês"
-      SETTLED → histórico:   "quanto o mês movimentou"
-
-      Somava sempre o histórico, então uma competência com R$ 500 a receber e
-      R$ 300 já recebidos anunciava R$ 500 — o mesmo desencontro que a row
-      tinha. E media pendência por `Math.abs(netBalance)`, que é zero quando
-      há R$ 200 abertos de cada lado.
-
-      Os totais por LADO, não pelo líquido de cada pessoa: quem tem R$ 500 a
-      receber e R$ 200 a pagar contribui com os dois números, não com R$ 300
-      num deles.
-    */
-    let outstandingReceber = 0
-    let outstandingPagar = 0
-    let historicoReceber = 0
-    let historicoPagar = 0
-    let comPendencia = 0
-    let comMovimento = 0
+    let openToReceive = 0
+    let openToPay = 0
 
     for (const b of balances ?? []) {
-      outstandingReceber += b.receivablePending
-      outstandingPagar += b.debtPending
-      historicoReceber += b.periodReceivableTotal
-      historicoPagar += b.periodDebtTotal
-      if (hasOpenObligation(b)) comPendencia += 1
-      if (hasPeriodActivity(b)) comMovimento += 1
+      openToReceive += b.receivablePending
+      openToPay += b.debtPending
     }
 
-    /*
-      ── O total NÃO alterna de universo ──
-
-      Havia um `const ativo = comPendencia > 0` decidindo se o resumo somava
-      outstanding ou histórico. O mesmo lugar da tela mudava de significado
-      sem avisar: receber R$ 400 fazia o total cair de R$ 1.000 para R$ 600,
-      como se o mês tivesse movimentado menos do que movimentou.
-
-      Agora o total e a composição são SEMPRE históricos, e o que falta vai
-      para a linha própria de "Em aberto". O mês movimentou o que movimentou.
-
-      As ROWS continuam alternando, e isso é intencional — cada superfície
-      responde uma pergunta diferente.
-    */
-    const toReceive = historicoReceber
-    const toPay = historicoPagar
-
-    return {
-      toReceive,
-      toPay,
-      net: toReceive - toPay,
-      /* O progresso é bilateral: os dois lados viajam separados. */
-      openToReceive: outstandingReceber,
-      openToPay: outstandingPagar,
-      /*
-        A contagem, não a soma dos líquidos: R$ 200 de cada lado dá líquido
-        zero com duas obrigações vivas, e "Tudo em dia" ali seria falso.
-      */
-      outstanding: comPendencia,
-      /* Distingue "nenhum movimento" de "tudo resolvido". */
-      comMovimento,
-    }
+    return { openToReceive, openToPay }
   }, [balances])
 
   return (
@@ -617,70 +565,38 @@ export default function PersonsPage() {
         </Button>
       </div>
 
-      {/*
-        Resumo do mês.
-
-        O seletor mensal NÃO vive aqui: ele está na barra superior, com o das
-        outras páginas mensais. O `sm:flex-row sm:justify-between` que este
-        bloco tinha existia só para acomodá-lo ao lado — sem ele, o resumo
-        ocupa a própria linha.
-      */}
       <div>
-        <div>
-          <p className="text-xs font-medium text-muted-foreground">
-            Saldo com pessoas de{' '}
-            {formatMonthOfYear(period.month, period.year)}
+        <p className="text-[11px] font-medium text-muted-foreground">
+          Valores em aberto com pessoas de {formatMonthOfYear(period.month, period.year)}
+        </p>
+        {balancesLoading ? (
+          <Skeleton className="mt-1.5 h-7 w-32" />
+        ) : balancesError ? (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Não foi possível calcular os saldos do mês.
           </p>
-          {/*
-            "Saldo" sozinho seria confundido com saldo bancário; o rótulo diz
-            de qual universo estamos falando.
-          */}
-          {balancesLoading ? (
-            <Skeleton className="mt-1.5 h-7 w-32" />
-          ) : balancesError ? (
-            <p className="mt-1 text-sm text-muted-foreground">
-              Não foi possível calcular os saldos do mês.
+        ) : (
+          <>
+            <div className="mt-1 flex flex-wrap gap-x-8 gap-y-2">
+              <div>
+                <p className="text-[11px] text-muted-foreground">A receber em aberto</p>
+                <p className="text-[22px] font-semibold tabular-nums tracking-[-0.02em]">{formatCurrency(summary.openToReceive)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground">A pagar em aberto</p>
+                <p className="text-[22px] font-semibold tabular-nums tracking-[-0.02em]">{formatCurrency(summary.openToPay)}</p>
+              </div>
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Saldo líquido em aberto: {summary.openToReceive - summary.openToPay >= 0 ? '+' : '−'}{formatCurrency(Math.abs(summary.openToReceive - summary.openToPay))}
             </p>
-          ) : (
-            <>
-              {/*
-                Neutro, como o total de Bancos.
-
-                Era verde quando positivo e vermelho quando negativo — direção
-                do dinheiro pela cor. Mas a direção já está no sinal do número
-                e nos componentes abaixo, e o verde ficava indistinguível do
-                verde de "tudo resolvido".
-              */}
-              <p className="mt-0.5 text-[22px] font-semibold tabular-nums tracking-[-0.02em]">
-                {formatCurrency(summary.net)}
-              </p>
-              {personsSummaryLines(summary).map((linha) => (
-                <p
-                  key={linha.kind}
-                  className={cn(
-                    'mt-0.5 text-[11px]',
-                    /*
-                      Só a conclusão ganha cor — o mesmo `text-paid` e o mesmo
-                      "Tudo em dia" que Bancos usa. A composição é informação
-                      estrutural e fica muted, sem semântica direcional.
-                    */
-                    linha.kind === 'settled'
-                      ? 'font-medium text-paid'
-                      : 'text-muted-foreground',
-                  )}
-                >
-                  {linha.text}
-                </p>
-              ))}
-            </>
-          )}
-        </div>
-
+          </>
+        )}
       </div>
 
       {/* List */}
-      <div className="border-t border-border">
-        {isLoading ? (
+      <div>
+        {isLoading || balancesLoading ? (
           <div>
             {Array.from({ length: 4 }).map((_, i) => (
               <div
@@ -696,7 +612,7 @@ export default function PersonsPage() {
               </div>
             ))}
           </div>
-        ) : isError ? (
+        ) : isError || balancesError ? (
           /*
             Erro não é lista vazia.
 
@@ -712,7 +628,7 @@ export default function PersonsPage() {
               <TriangleAlert className="size-5 text-destructive/70" aria-hidden />
             </div>
             <p className="text-sm font-medium">
-              Não foi possível carregar as pessoas
+              {balancesError ? 'Não foi possível carregar os saldos do mês' : 'Não foi possível carregar as pessoas'}
             </p>
             <p className="mt-1 max-w-xs text-xs text-muted-foreground">
               Verifique sua conexão e tente novamente.
@@ -721,15 +637,15 @@ export default function PersonsPage() {
               variant="outline"
               size="sm"
               className="mt-5 gap-1.5"
-              disabled={isFetching}
-              onClick={() => void refetch()}
+              disabled={isFetching || balancesFetching}
+              onClick={() => { void refetch(); void refetchBalances() }}
             >
-              {isFetching ? (
+              {isFetching || balancesFetching ? (
                 <Loader2 className="size-3.5 animate-spin" aria-hidden />
               ) : (
                 <RotateCcw className="size-3.5" aria-hidden />
               )}
-              {isFetching ? 'Carregando…' : 'Tentar novamente'}
+              {isFetching || balancesFetching ? 'Carregando…' : 'Tentar novamente'}
             </Button>
           </div>
         ) : isSuccess && persons.length === 0 ? (
@@ -743,9 +659,19 @@ export default function PersonsPage() {
             </p>
           </div>
         ) : (
-          <div>
-            {orderedPersons.map((person, i) => {
-              const balance = balanceById.get(person.id) ?? VAZIO
+          <div className="space-y-6 pt-2 pb-5">
+            {PERSON_MONTH_SECTION_ORDER.filter((section) => personSections.groups[section].length > 0).map((section) => (
+              <section key={section} className="space-y-2" aria-labelledby={`persons-${section}`}>
+                <h2 id={`persons-${section}`} className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-sm font-medium">
+                  <span>{PERSON_MONTH_SECTION_TITLE[section]}</span>
+                  {section !== 'empty' && (
+                    <span className={cn('ml-auto text-right text-xs font-medium sm:text-sm', ROW_AMOUNT_TONE.neutral)}>
+                      {personSectionNetLabel(personSections.totals[section].receive, personSections.totals[section].pay, section === 'history' ? 'history' : 'open')}
+                    </span>
+                  )}
+                </h2>
+                <FinancialRowList variant="page" spaced>
+                    {personSections.groups[section].map(({ person, balance }, i) => {
 
               /*
                 ── O valor depende do MODO ──
@@ -758,11 +684,15 @@ export default function PersonsPage() {
                 no meio: com R$ 500 a receber e R$ 300 já recebidos, a row
                 seguia dizendo R$ 500 quando o número útil era R$ 200.
 
-                A troca é sinalizada pelo trailing (`SALDO FINAL`), senão
-                quitar o último item faria o valor SUBIR e pareceria bug.
+                O rótulo histórico (RECEBIDO/PAGO/SALDO) sinaliza
+                a troca de base, senão quitar o último item faria o valor SUBIR
+                e pareceria bug.
               */
               const status = personRowStatus(balance)
               const net = personRowAmount(balance)
+              const displayItem = section === 'overdue' ? balance.overdueNextItem : balance.nextItem
+              const rowReceive = section === 'history' ? balance.periodReceivableTotal : balance.receivablePending
+              const rowPay = section === 'history' ? balance.periodDebtTotal : balance.debtPending
 
               /*
                 Resolvido não tem subtexto.
@@ -781,9 +711,9 @@ export default function PersonsPage() {
                   urgente, escolhida pela policy de sempre.
                 */
                 nextItemLabel(
-                  balance.nextItem,
+                  displayItem,
                   today,
-                  rowLabelDirection(status, balance.nextItem),
+                  section === 'overdue' ? displayItem?.direction : rowLabelDirection(status, displayItem),
                 ),
                 balance.settledAt,
               )
@@ -798,7 +728,7 @@ export default function PersonsPage() {
                 Aberto mantém a régua canônica de urgência (vermelho no
                 atraso, âmbar em ≤7 dias, neutro no resto).
               */
-              const prazoTone = rowSubtextTone(status, balance.nextItem)
+              const prazoTone = rowSubtextTone(status, displayItem)
 
               /*
                 ── O valor é NEUTRO ──
@@ -808,9 +738,9 @@ export default function PersonsPage() {
                 aberto saía da mesma cor de um já recebido — dois estados que
                 pedem ações opostas.
 
-                A direção continua dita pelo sinal do valor e pelo texto do
-                trailing. Mesmo princípio de Bancos, onde o valor da fatura não
-                tem cor e o status carrega o significado.
+                A direção fica no rótulo compacto sob o valor. Mesmo princípio
+                de Bancos, onde o valor da fatura não tem cor e o status carrega
+                o significado.
               */
               /*
                 O tom vem do MODO, não do valor.
@@ -824,9 +754,10 @@ export default function PersonsPage() {
               const label = PERSON_ROW_LABEL[status]
               const labelTone = PERSON_ROW_TONE[status]
               const isEmpty = !balancesLoading && !balancesError && status === 'empty'
+              const compactLabel = isEmpty ? label : personCompactBalanceLabel(rowReceive, rowPay, section === 'history' ? 'history' : 'open')
 
               return (
-              <MotionRow key={person.id} index={i}>
+              <MotionRow key={person.id} index={i} separator={false} className={financialDrawerRowSurfaceClass('animatedWrapper')}>
                 {/*
                   Row e kebab são IRMÃOS, no padrão de Bancos: aninhar um
                   `button` dentro de outro é HTML inválido e quebra teclado.
@@ -835,17 +766,13 @@ export default function PersonsPage() {
                   Editar/Excluir de Pessoa continuam onde estavam — mover
                   essas ações para um drawer não faz parte desta tarefa.
                 */}
-                <div className="group relative border-b border-border last:border-b-0">
+                <div className="group relative">
                   <FinancialListRow
-                    onView={isEmpty ? undefined : () => openPerson(person.id)}
-                    interactive={!isEmpty}
-                    inactive={isEmpty}
+                    variant="page"
+                    onView={() => openPerson(person.id)}
                     ariaLabel={`Ver extrato de ${person.name}`}
                     /* Espaço à direita para o kebab sobreposto não cobrir o valor. */
-                    className={cn(
-                      'pr-10 sm:pr-12',
-                      isEmpty && 'text-muted-foreground',
-                    )}
+                    className="pr-10 sm:pr-12"
                     leading={
                       /*
                         A inicial escala junto com o container, como o glyph
@@ -856,7 +783,7 @@ export default function PersonsPage() {
                       <div
                         className={cn(
                           ROW_ICON_CLASS,
-                          isEmpty ? ROW_INACTIVE_AVATAR_CLASS : ROW_ICON_BG_CLASS,
+                          ROW_ICON_BG_CLASS,
                           'text-sm font-semibold sm:text-[15px]',
                         )}
                       >
@@ -903,7 +830,7 @@ export default function PersonsPage() {
                           {label}
                         </span>
                       ) : (
-                        <FinancialRowTrailing amount={formatCurrency(net)} label={label} amountTone={tone} labelTone={labelTone} />
+                        <FinancialRowTrailing amount={formatCurrency(net)} label={compactLabel} amountTone={tone} labelTone={labelTone} />
                       )
                     }
                   />
@@ -931,7 +858,10 @@ export default function PersonsPage() {
                 </div>
               </MotionRow>
               )
-            })}
+                    })}
+                </FinancialRowList>
+              </section>
+            ))}
           </div>
         )}
       </div>

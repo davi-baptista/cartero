@@ -40,6 +40,11 @@ export interface PersonMonthlyBalance {
   netBalance: number
   receivablePending: number
   debtPending: number
+  /** Pendências já vencidas, por direção, no mesmo recorte mensal do saldo. */
+  overdueReceivablePending: number
+  overdueDebtPending: number
+  /** Vencido mais antigo, considerando as duas direções. */
+  overdueNextItem: NextSettlementItem | null
   /**
    * O acerto mais urgente do MESMO lado do saldo, ou `null`.
    *

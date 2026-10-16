@@ -357,64 +357,29 @@ describe('a ordem das perguntas define o modo', () => {
   })
 })
 
-describe('S1-S6: o resumo segue o mesmo modo', () => {
-  it('S1/S2: o outstanding vai para a linha de "Em aberto"', () => {
-    /*
-      Ele continua sendo somado — mudou o DESTINO. Antes disputava o valor
-      principal com o histórico; agora tem linha própria, e o total ficou
-      estável.
-    */
-    expect(PERSONS).toContain('outstandingReceber += b.receivablePending')
-    expect(PERSONS).toContain('outstandingPagar += b.debtPending')
-    expect(PERSONS).toContain('openToReceive: outstandingReceber')
-    expect(PERSONS).toContain('openToPay: outstandingPagar')
+describe('S1-S6: o topo operacional mantém as direções brutas', () => {
+  it('soma cada lado em aberto separadamente', () => {
+    expect(PERSONS).toContain('openToReceive += b.receivablePending')
+    expect(PERSONS).toContain('openToPay += b.debtPending')
+    expect(PERSONS).toContain('return { openToReceive, openToPay }')
   })
 
-  it('o total NÃO alterna mais de universo', () => {
-    /*
-      A regressão que esta fase remove: `const ativo = comPendencia > 0`
-      decidia se o valor grande era outstanding ou histórico, e o mesmo lugar
-      da tela mudava de significado quando o usuário recebia algo.
-    */
+  it('não alterna o valor principal para o histórico após uma quitação', () => {
     expect(PERSONS).not.toContain('const ativo = comPendencia > 0')
-    expect(PERSONS).not.toContain('ativo ? outstandingReceber')
-    expect(PERSONS).not.toContain('ativo ? outstandingPagar')
+    expect(PERSONS).not.toContain('historicoReceber += b.periodReceivableTotal')
+    expect(PERSONS).not.toContain('historicoPagar += b.periodDebtTotal')
   })
 
-  it('S3: sem pendência, volta ao histórico', () => {
-    expect(PERSONS).toContain('historicoReceber += b.periodReceivableTotal')
-    expect(PERSONS).toContain('historicoPagar += b.periodDebtTotal')
+  it('guarda o histórico nas seções por direção', () => {
+    expect(PERSONS).toContain('groupPersonMonthRows(')
+    expect(PERSONS).toContain("section === 'history' ? balance.periodReceivableTotal")
+    expect(PERSONS).toContain("section === 'history' ? balance.periodDebtTotal")
   })
 
-  it('S1b: o total é histórico PURO, sem mistura', () => {
-    /*
-      Os dois universos continuam separados — o que mudou é que cada um tem
-      seu lugar fixo. Somá-los produziria um número que não responde a
-      nenhuma das duas perguntas.
-    */
-    expect(PERSONS).toContain('const toReceive = historicoReceber')
-    expect(PERSONS).toContain('const toPay = historicoPagar')
-    expect(PERSONS).not.toContain('toReceive += b.periodReceivableTotal')
-    expect(PERSONS).not.toContain('historicoReceber += b.receivablePending')
-  })
-
-  it('S5b: a contagem de pendência não passa pelo líquido', () => {
-    /*
-      Terceiro guardião do net-zero: `Math.abs(netBalance)` é zero com R$ 200
-      de cada lado, e o resumo anunciaria "Tudo em dia" com trabalho pendente.
-    */
+  it('o líquido secundário usa apenas as duas pendências abertas', () => {
+    expect(PERSONS).toContain('Saldo líquido em aberto:')
+    expect(PERSONS).toContain('summary.openToReceive - summary.openToPay')
     expect(PERSONS).not.toContain('Math.abs(b.netBalance)')
-    expect(PERSONS).toContain('hasOpenObligation(b)')
-  })
-
-  it('S5: a pendência é medida por CONTAGEM, não por soma', () => {
-    /*
-      `Math.abs(netBalance)` somado dá zero com R$ 200 de cada lado, e o
-      resumo anunciaria "Tudo em dia" com trabalho pendente.
-    */
-    expect(PERSONS).toContain('if (hasOpenObligation(b)) comPendencia += 1')
-    expect(PERSONS).toContain('outstanding: comPendencia')
-    expect(PERSONS).not.toContain('outstanding += Math.abs(b.netBalance)')
   })
 })
 

@@ -311,28 +311,30 @@ describe('P-9: a page aplica a policy', () => {
       `subtextTone` delega a `timingUrgency`. Um `atrasado && 'text-destructive'`
       solto voltaria a cobrir só uma das pontas.
     */
-    expect(code).toContain('rowSubtextTone(status, balance.nextItem)')
+    expect(code).toContain('rowSubtextTone(status, displayItem)')
+    expect(code).toContain("section === 'overdue' ? balance.overdueNextItem : balance.nextItem")
     expect(code).not.toContain("atrasado && 'text-destructive'")
   })
 
   it('S4: o valor do resumo é neutro', () => {
-    const resumo = code.slice(code.indexOf('Saldo com pessoas'))
-    const bloco = resumo.slice(0, resumo.indexOf('{/* List */}'))
+    const resumo = code.slice(code.indexOf('Valores em aberto com pessoas'))
+    const bloco = resumo.slice(0, resumo.indexOf('Saldo líquido em aberto:'))
 
-    expect(bloco).not.toContain("summary.net > 0 && 'text-receivable'")
-    expect(bloco).not.toContain("summary.net < 0 && 'text-destructive'")
+    expect(bloco).toContain('formatCurrency(summary.openToReceive)')
+    expect(bloco).not.toContain('text-receivable')
+    expect(bloco).not.toContain('text-destructive')
   })
 
-  it('S2/S5: o resumo sai das linhas, e só a conclusão tem cor', () => {
-    expect(code).toContain('personsSummaryLines(summary)')
-    expect(code).toContain("linha.kind === 'settled'")
-    expect(code).toContain("'font-medium text-paid'")
-    expect(code).toContain("'text-muted-foreground'")
+  it('S2/S5: o topo separa as duas obrigações abertas e identifica o líquido', () => {
+    expect(code).toContain('formatCurrency(summary.openToReceive)')
+    expect(code).toContain('formatCurrency(summary.openToPay)')
+    expect(code).toContain('Saldo líquido em aberto:')
   })
 
-  it('o resumo do topo soma o período', () => {
-    expect(code).toContain('b.periodReceivableTotal')
-    expect(code).toContain('b.periodDebtTotal')
+  it('o resumo do topo soma apenas pendências em aberto', () => {
+    expect(code).toContain('openToReceive += b.receivablePending')
+    expect(code).toContain('openToPay += b.debtPending')
+    expect(code).not.toContain('historicoReceber += b.periodReceivableTotal')
   })
 
   it('O11: a ordenação escolhe a policy pelo ciclo do mês', () => {

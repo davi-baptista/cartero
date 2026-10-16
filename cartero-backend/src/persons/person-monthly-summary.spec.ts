@@ -87,7 +87,9 @@ function build({ persons = [], debts = [], receivables = [] }: Cenario) {
     debt: { findMany: debtFind },
     receivable: { findMany: receivableFind },
     user: {
-      findUniqueOrThrow: vi.fn().mockResolvedValue({ timeZone: 'America/Fortaleza' }),
+      findUniqueOrThrow: vi
+        .fn()
+        .mockResolvedValue({ timeZone: 'America/Fortaleza' }),
     },
   } as unknown as PrismaService;
 
@@ -100,6 +102,30 @@ function build({ persons = [], debts = [], receivables = [] }: Cenario) {
 }
 
 describe('itens 6 e 34: a lista concorda com o detalhe', () => {
+  it('expõe atraso nos dois lados mesmo quando nextItem segue o saldo dominante', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-16T12:00:00Z'));
+    try {
+      const { service } = build({
+        persons: [pessoa('p1', 'Mariana')],
+        receivables: [cobranca('r1', 'p1', 500, '2026-10-25T12:00:00Z')],
+        debts: [divida('d1', 'p1', 100, '2026-10-05T12:00:00Z')],
+      });
+
+      const [linha] = await service.monthlySummary(USER_ID, {
+        year: 2026,
+        month: 10,
+      });
+      expect(linha.netBalance).toBe(400);
+      expect(linha.nextItem?.direction).toBe('receive');
+      expect(linha.overdueReceivablePending).toBe(0);
+      expect(linha.overdueDebtPending).toBe(100);
+      expect(linha.overdueNextItem?.direction).toBe('pay');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('o saldo é o mesmo que os helpers canônicos produzem', async () => {
     /*
       Não recalculamos à mão: o esperado sai dos MESMOS helpers. Se a regra

@@ -69,7 +69,7 @@ describe('L1-L4: o rótulo carrega a competência', () => {
     expect(PAGE).toContain(
       'formatMonthOfYear(period.month, period.year)',
     )
-    expect(PAGE).toContain('Saldo com pessoas de')
+    expect(PAGE).toContain('Valores em aberto com pessoas de')
     expect(PAGE).toContain('useMonthPeriod()')
   })
 
@@ -82,16 +82,15 @@ describe('L1-L4: o rótulo carrega a competência', () => {
     */
     const PAGE = semComentarios(ler('../app/(dashboard)/persons/page.tsx'))
 
-    /* Não existe `Saldo com pessoas` que não seja seguido de `de`. */
-    expect(PAGE).not.toMatch(/Saldo com pessoas(?! de)/)
-    expect(PAGE).toMatch(/Saldo com pessoas de/)
+    /* O título do resumo permanece vinculado à competência selecionada. */
+    expect(PAGE).toMatch(/Valores em aberto com pessoas de \{formatMonthOfYear\(period\.month, period\.year\)\}/)
   })
 
   it('L4: o rótulo NÃO deriva do relógio', () => {
     const PAGE = semComentarios(ler('../app/(dashboard)/persons/page.tsx'))
     const bloco = PAGE.slice(
-      PAGE.indexOf('Saldo com pessoas de'),
-      PAGE.indexOf('Saldo com pessoas de') + 220,
+      PAGE.indexOf('Valores em aberto com pessoas de'),
+      PAGE.indexOf('Valores em aberto com pessoas de') + 220,
     )
 
     expect(bloco).not.toContain('new Date()')
@@ -400,13 +399,15 @@ describe('H1-H4: o histórico continua estável', () => {
   })
 })
 
-describe('§19: tons — só a conclusão ganha cor', () => {
-  it('a página pinta apenas `settled`', () => {
-    const PAGE = semComentarios(ler('../app/(dashboard)/persons/page.tsx'))
-
-    expect(PAGE).toContain("linha.kind === 'settled'")
-    expect(PAGE).toContain('font-medium text-paid')
-    expect(PAGE).toContain('text-muted-foreground')
+describe('§19: tons do resumo superior', () => {
+  it('o resumo mantém valores brutos em tom neutro', () => {
+    const PAGE = ler('../app/(dashboard)/persons/page.tsx')
+    const bloco = PAGE.slice(PAGE.indexOf('Valores em aberto com pessoas de'), PAGE.indexOf('{/* List */}'))
+    expect(bloco).toContain('summary.openToReceive')
+    expect(bloco).toContain('summary.openToPay')
+    expect(bloco).toContain('Saldo líquido em aberto:')
+    expect(bloco).toContain('text-muted-foreground')
+    expect(bloco).not.toContain('text-paid')
   })
 
   it('nada de verde para receber nem vermelho para pagar', () => {
@@ -415,10 +416,10 @@ describe('§19: tons — só a conclusão ganha cor', () => {
       RESOLVIDO no produto, e usá-lo aqui faria dinheiro que talvez entre
       parecer dinheiro que entrou.
     */
-    const PAGE = semComentarios(ler('../app/(dashboard)/persons/page.tsx'))
+    const PAGE = ler('../app/(dashboard)/persons/page.tsx')
     const bloco = PAGE.slice(
-      PAGE.indexOf('personsSummaryLines(summary)'),
-      PAGE.indexOf('personsSummaryLines(summary)') + 900,
+      PAGE.indexOf('Valores em aberto com pessoas de'),
+      PAGE.indexOf('{/* List */}'),
     )
 
     expect(bloco).not.toContain('text-receivable')

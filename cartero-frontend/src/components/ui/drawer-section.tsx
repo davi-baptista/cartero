@@ -62,15 +62,20 @@ export function FinancialRowList({
   children,
   variant = 'page',
   inset = false,
+  spaced = false,
 }: {
   children: ReactNode
   variant?: 'page' | 'drawer'
   /** Apply the drawer horizontal gutter when its parent scroller is edge-to-edge. */
   inset?: boolean
+  /** Individual page surfaces have their own rounded lower edge and spacing. */
+  spaced?: boolean
 }) {
   return (
     <div className={cn(
-      'divide-y divide-border/60',
+      spaced
+        ? 'flex flex-col gap-2 [&>*]:rounded-lg [&>*]:border-b [&>*]:border-border/60 [&>*:last-child]:border-b-0'
+        : 'divide-y divide-border/60',
       variant === 'drawer' && inset && DRAWER_WIDE_CONTENT_GUTTER,
     )}>
       {children}

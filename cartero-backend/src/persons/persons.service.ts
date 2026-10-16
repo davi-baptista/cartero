@@ -32,6 +32,7 @@ import { aggregateSettledAt } from 'src/common/helpers/aggregate-settlement.help
 import {
   belongsToCompetence,
   belongsToHistoryCompetence,
+  dueStateOf,
   dueMonthOf,
   nextSettlementItem,
   referenceMonthOf,
@@ -204,9 +205,16 @@ export class PersonsService {
       }
     }
 
+    const now = new Date();
     return persons.map((person) => {
       const bucket = porPessoa.get(person.id)!;
       const summary = buildPersonSummary(bucket.receivables, bucket.debts);
+      const overdueReceivables = bucket.receivables.filter(
+        (item) => dueStateOf(item, competence, now, timeZone) === 'overdue',
+      );
+      const overdueDebts = bucket.debts.filter(
+        (item) => dueStateOf(item, competence, now, timeZone) === 'overdue',
+      );
 
       return {
         id: person.id,
@@ -218,6 +226,15 @@ export class PersonsService {
         netBalance: summary.netBalance,
         receivablePending: summary.receivablePending,
         debtPending: summary.debtPending,
+        // A classificação da pessoa considera os dois lados, mesmo quando o
+        // próximo item mostrado na row segue apenas o lado do saldo líquido.
+        overdueReceivablePending: sumAmounts(overdueReceivables),
+        overdueDebtPending: sumAmounts(overdueDebts),
+        overdueNextItem: nextSettlementItem(
+          overdueReceivables,
+          overdueDebts,
+          0,
+        ),
         /*
           ── O histórico da competência ──
 

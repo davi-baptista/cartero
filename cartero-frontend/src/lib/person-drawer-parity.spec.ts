@@ -67,7 +67,10 @@ describe('objetivo 1: a seção "Em aberto" segue o padrão de Fatura', () => {
       passavam neste teste e ainda assim podiam divergir na edição seguinte.
     */
     expect(DRAWER).toContain('<DrawerIdentityHeader')
-    expect(IDENTITY_HEADER).toContain('SheetHeader className="px-6 pb-0 pt-6"')
+    expect(IDENTITY_HEADER).toContain("inset === 'wide' ? DRAWER_WIDE_CONTENT_INSET : 'px-6'")
+    expect(DRAWER).toMatch(/<DrawerIdentityHeader\s+inset="wide"/)
+    expect(DRAWER).toContain("className={cn('h-auto flex-wrap border-0 px-4', DRAWER_WIDE_VERTICAL_RHYTHM.sectionHeadingPadding)}")
+    expect(DRAWER).toContain("className={cn('h-auto border-0 px-4', DRAWER_WIDE_VERTICAL_RHYTHM.sectionHeadingPadding)}")
     expect(IDENTITY_HEADER).toContain('SheetTitle className="min-w-0 flex-1 break-words"')
     expect(FATURA).toContain('DrawerSectionHeader')
     expect(DRAWER).toContain('DrawerSectionHeader')

@@ -80,7 +80,8 @@ describe('B1-B5: o mês vem do contexto do app', () => {
 describe('B16-B21: o detalhe da fatura vive na URL', () => {
   it('B16: a row abre o drawer, sem página intermediária', () => {
     expect(BANKS).toContain("useDetailNavigation('invoiceId')")
-    expect(BANKS).toContain('onOpenInvoice={detail.open}')
+    expect(BANKS).toContain('onOpenInvoice={(id) => { setEmptyBankId(null); detail.open(id) }}')
+    expect(BANKS).toContain('onOpenEmpty={setEmptyBankId}')
     expect(BANKS).toContain('onOpenInvoice(invoice.id)')
   })
 
@@ -90,7 +91,7 @@ describe('B16-B21: o detalhe da fatura vive na URL', () => {
       replace e lê o id da URL. Um `useState` paralelo (`selectedInvoice`)
       quebraria Back/Forward em silêncio.
     */
-    expect(BANKS).toContain('onOpenChange={(open) => !open && detail.close()}')
+    expect(BANKS).toContain('onOpenChange={(open) => { if (!open) { detail.close(); setEmptyBankId(null) } }}')
     expect(BANKS).not.toContain('selectedInvoice')
     expect(BANKS).not.toContain('setOpenInvoice')
   })

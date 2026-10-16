@@ -74,7 +74,7 @@ describe('invoice detail data identity', () => {
   })
 
   it('keeps Banks keyed and invoice detail data scoped to its target ID', () => {
-    expect(banksPage).toContain("key={detail.openId ?? 'none'}")
+    expect(banksPage).toContain("key={detail.openId ?? emptyBankId ?? 'none'}")
     expect(invoiceDrawer).toContain("queryKey: ['invoice', invoiceId]")
     expect(invoiceDrawer).toContain('invoiceForDetailId(invoiceQueryData, invoiceId)')
     expect(invoiceDrawer).toContain('isLoading || !invoice')

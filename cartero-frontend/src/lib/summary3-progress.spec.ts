@@ -137,14 +137,14 @@ describe('P1-P4: o cenário canônico da fase', () => {
     expect(linha(depois, 'open')).toBe('Restam R$ 600,00 a receber')
   })
 
-  it('P2: o total principal é histórico — a página o calcula assim', () => {
+  it('P2: o resumo superior mantém os dois lados brutos em aberto', () => {
     const PAGE = semComentarios(ler('../app/(dashboard)/persons/page.tsx'))
 
-    expect(PAGE).toContain('const toReceive = historicoReceber')
-    expect(PAGE).toContain('const toPay = historicoPagar')
-    expect(PAGE).toContain('net: toReceive - toPay')
-    /* A alternância que a fase remove. */
-    expect(PAGE).not.toContain('const ativo = comPendencia > 0')
+    expect(PAGE).toContain('openToReceive += b.receivablePending')
+    expect(PAGE).toContain('openToPay += b.debtPending')
+    expect(PAGE).toContain('formatCurrency(summary.openToReceive)')
+    expect(PAGE).toContain('formatCurrency(summary.openToPay)')
+    expect(PAGE).toContain('summary.openToReceive - summary.openToPay')
   })
 })
 
@@ -289,12 +289,15 @@ describe('P10: as ROWS não mudaram de contrato', () => {
 })
 
 describe('cores do resumo de Pessoas', () => {
-  const PAGE = semComentarios(ler('../app/(dashboard)/persons/page.tsx'))
+  const PAGE = ler('../app/(dashboard)/persons/page.tsx')
+  const resumo = PAGE.slice(PAGE.indexOf('Valores em aberto com pessoas de'), PAGE.indexOf('{/* List */}'))
 
-  it('só a conclusão ganha cor', () => {
-    expect(PAGE).toContain("linha.kind === 'settled'")
-    expect(PAGE).toContain('font-medium text-paid')
-    expect(PAGE).toContain('text-muted-foreground')
+  it('os valores brutos e o líquido têm apresentação neutra', () => {
+    expect(resumo).toContain('summary.openToReceive')
+    expect(resumo).toContain('summary.openToPay')
+    expect(resumo).toContain('Saldo líquido em aberto:')
+    expect(resumo).toContain('text-muted-foreground')
+    expect(resumo).not.toContain('text-paid')
   })
 
   it('nada de verde para receber nem vermelho para pagar', () => {
@@ -302,11 +305,6 @@ describe('cores do resumo de Pessoas', () => {
       Verde significa RESOLVIDO no produto. Usá-lo para "a receber" fazia
       dinheiro que talvez entre parecer dinheiro que entrou.
     */
-    const resumo = PAGE.slice(
-      PAGE.indexOf('personsSummaryLines(summary)'),
-      PAGE.indexOf('personsSummaryLines(summary)') + 900,
-    )
-
     expect(resumo).not.toContain('text-receivable')
     expect(resumo).not.toContain('text-destructive')
   })
@@ -472,20 +470,14 @@ describe('B1-B9: o progresso de Bancos', () => {
     expect(FONTE).toContain('row.invoice.status !== InvoiceStatus.PAID')
   })
 
-  it('a página pinta só o pago de verde', () => {
-    const PAGE = semComentarios(ler('../app/(dashboard)/banks/page.tsx'))
-    const inicio = PAGE.indexOf('linha.paid')
-    const bloco = PAGE.slice(inicio - 120, inicio + 260)
-
-    /* O pago é a parte concluída. */
-    expect(bloco).toContain('text-paid')
-    expect(bloco).toContain('formatCurrency(linha.paid)')
-    /*
-      O restante fica neutro: pendência é o estado normal de um mês em curso,
-      e pintar os dois faria a linha inteira parecer conclusão.
-    */
-    const doRestante = bloco.slice(bloco.indexOf('linha.remaining') - 90)
-    expect(doRestante).not.toContain('text-paid')
+  it('a página mostra o pago como dado secundário e deixa o status por último', () => {
+    const PAGE = ler('../app/(dashboard)/banks/page.tsx')
+    const bloco = PAGE.slice(PAGE.indexOf('Faturas em aberto de'), PAGE.indexOf('{/*', PAGE.indexOf('Faturas em aberto de')))
+    expect(bloco).toContain('formatCurrency(monthSummary.unpaid)')
+    expect(bloco).toContain('formatCurrency(monthSummary.total - monthSummary.unpaid)')
+    expect(bloco.indexOf('pago no mês')).toBeLessThan(bloco.indexOf('summaryStatus.label'))
+    expect(bloco).toContain('summaryStatus.tone')
+    expect(bloco).not.toContain('text-paid')
   })
 })
 

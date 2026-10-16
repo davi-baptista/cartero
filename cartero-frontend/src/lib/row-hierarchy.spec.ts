@@ -105,7 +105,7 @@ describe('Pessoas ganhou o subtexto', () => {
       A direcao agora vem do STATUS, nao do item: uma row bilateral net-zero
       diz "Acertar", nao "Receber"/"Pagar".
     */
-    expect(PERSONS).toContain('rowLabelDirection(status, balance.nextItem)')
+    expect(PERSONS).toContain("section === 'overdue' ? displayItem?.direction : rowLabelDirection(status, displayItem)")
     /*
       Resolvido agora OMITE o subtexto em vez de substituí-lo: o trailing já
       diz RECEBIDO, e a versão anterior exibia o mesmo estado duas vezes.
@@ -143,7 +143,8 @@ describe('Pessoas ganhou o subtexto', () => {
       usa o verde de conclusão, aberto delega à régua. A régua continua sendo
       `timingUrgency` — o que este teste protege.
     */
-    expect(PERSONS).toContain('rowSubtextTone(status, balance.nextItem)')
+    expect(PERSONS).toContain('rowSubtextTone(status, displayItem)')
+    expect(PERSONS).toContain("section === 'overdue' ? balance.overdueNextItem : balance.nextItem")
     expect(PERSONS).not.toContain("atrasado && 'text-destructive'")
 
     const view = code(ler('./person-period-view.ts'))

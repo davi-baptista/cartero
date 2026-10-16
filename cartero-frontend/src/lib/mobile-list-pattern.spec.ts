@@ -146,7 +146,7 @@ describe('Parte C: a row de Banco segue o padrão de Pessoas', () => {
       "Sem fatura" em vez de um valor que ninguém gastou.
     */
     expect(BANKS).toContain('Sem fatura')
-    expect(BANKS).toContain('invoice ? () => onOpenInvoice(invoice.id) : undefined')
+    expect(BANKS).toContain('invoice ? () => onOpenInvoice(invoice.id) : () => onOpenEmpty(bank.id)')
   })
 
   it('itens 30-31: a composição financeira sai da linha do banco', () => {

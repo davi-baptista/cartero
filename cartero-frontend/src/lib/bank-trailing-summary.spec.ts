@@ -335,16 +335,10 @@ describe('a página consome as policies compartilhadas', () => {
     expect(presenter).toContain('BANK_TRAILING_TONE[state]')
   })
 
-  it('o resumo sai da policy, não de ifs na JSX', () => {
-    expect(code).toContain('bankMonthSummaryLines(')
-    /*
-      `currentPeriod()` sem argumento caía no default `null` e derrubava a
-      página com "Missing account timezone" para QUALQUER usuário — não é
-      caso de conta legada, é `requireAccountTimeZone` explodindo em toda
-      renderização da aba ativa. A timezone da conta precisa vir explícita.
-    */
-    expect(code).toContain('monthCycleOf(period, currentPeriod(user?.timeZone ?? null))')
-    expect(code).not.toContain('currentPeriod())')
+  it('o estado final do resumo sai da policy do mês selecionado', () => {
+    expect(code).toContain('summarizeBankMonth(bankRows)')
+    expect(code).toContain('bankMonthSummaryStatus(monthSummary)')
+    expect(code).toContain('summaryStatus.label')
     expect(code).not.toContain('monthSummary.paidCount > 0 &&')
   })
 
@@ -364,7 +358,7 @@ describe('a página consome as policies compartilhadas', () => {
   it('a urgência continua concentrada nas rows', () => {
     /* Pendência não é urgência: nenhum âmbar no resumo. */
     const resumoJsx = code.slice(
-      code.indexOf('bankMonthSummaryLines(monthSummary)'),
+      code.indexOf('Faturas em aberto de'),
       code.indexOf('role="tablist"'),
     )
     expect(resumoJsx).not.toContain('text-pending')
@@ -482,18 +476,12 @@ describe('os rótulos de ciclo NÃO são mais renderizados', () => {
     expect(tudoPago).toEqual([{ kind: 'settled', text: 'Tudo em dia' }])
   })
 
-  it('a página renderiza os dois lados do progresso, sem prefixo de ciclo', () => {
-    /*
-      "Faltam X para quitar" virou "R$ X pago · R$ Y para quitar": dizer só o
-      que falta escondia o progresso — pagar a primeira de três faturas mudava
-      um número sem informar que algo tinha sido resolvido.
-    */
+  it('a página preserva o valor pago e exibe a situação por último', () => {
     const pagina = ler('../app/(dashboard)/banks/page.tsx')
 
-    expect(pagina).not.toContain('Faltam{')
-    expect(pagina).toContain('linha.paid')
-    expect(pagina).toContain('pago ·')
-    expect(pagina).toContain('para quitar')
+    expect(pagina).toContain('monthSummary.total - monthSummary.unpaid')
+    expect(pagina).toContain('pago no mês')
+    expect(pagina.indexOf('pago no mês')).toBeLessThan(pagina.indexOf('{summaryStatus.label}'))
     expect(pagina).not.toContain('withSeparator')
   })
 })
@@ -528,20 +516,13 @@ describe('a fatura paga tinge o prazo de verde', () => {
     )
   })
 
-  it('o resumo não usa mais cor de contexto', () => {
-    /*
-      O `text-primary` (azul) existia para o rótulo de ciclo: os tons de valor
-      — âmbar, vermelho, verde — já significam prazo e resolução, e reusar um
-      deles no ciclo sugeriria que o MÊS era urgente ou resolvido.
-
-      Sem rótulo, o resumo tem só dois tons: muted na composição e na pendência,
-      `text-paid` em "Tudo em dia". Nenhuma cor de orientação sobrou.
-    */
+  it('o azul informativo identifica só a parte de outras pessoas', () => {
     const resumoJsx = code.slice(
-      code.indexOf('bankMonthSummaryLines('),
-      code.indexOf('{/* Invoice list */}'),
+      code.indexOf('Faturas em aberto de'),
+      code.indexOf('role="tablist"'),
     )
 
-    expect(resumoJsx).not.toContain('text-primary')
+    expect(resumoJsx).toContain('<span className="text-primary">{formatCurrency(bankSections.unpaidThirdParty)}</span> de outras pessoas')
+    expect(resumoJsx).toContain('summaryStatus.tone')
   })
 })

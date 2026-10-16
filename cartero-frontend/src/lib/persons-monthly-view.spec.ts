@@ -91,13 +91,9 @@ describe('itens 18 e 53: o resumo do mês', () => {
     expect(code(PAGINA)).toContain('for (const b of balances ?? [])')
     expect(code(PAGINA)).not.toContain('summaryFromApi')
 
-    /*
-      Passou a somar o PERÍODO, não o saldo aberto: somando `netBalance`, um
-      mês inteiramente quitado exibia R$ 0,00 e a leitura histórica desaparecia
-      junto com a pendência.
-    */
-    expect(code(PAGINA)).toContain('b.periodReceivableTotal')
-    expect(code(PAGINA)).toContain('b.periodDebtTotal')
+    expect(code(PAGINA)).toContain('openToReceive += b.receivablePending')
+    expect(code(PAGINA)).toContain('openToPay += b.debtPending')
+    expect(code(PAGINA)).toContain('personSections.totals[section]')
   })
 })
 
@@ -294,7 +290,8 @@ describe('itens 13, 40 e 57: a página entrou no design system', () => {
       Editar/Excluir de Pessoa permanecem onde estavam — movê-los para um
       drawer não fazia parte desta tarefa.
     */
-    expect(PAGINA).toContain('<div className="group relative border-b border-border last:border-b-0">')
+    expect(PAGINA).toContain('<div className="group relative">')
+    expect(PAGINA).toContain('<FinancialRowList variant="page" spaced>')
     expect(PAGINA).toContain('absolute top-1/2 right-1')
     expect(PAGINA).toContain('Editar')
     expect(PAGINA).toContain('Remover')
@@ -313,7 +310,8 @@ describe('itens 12, 43 e 44: a lista continua sendo de contatos', () => {
       `persons`, então quem não tem movimento continua aparecendo (no fim,
       pela policy de prioridade).
     */
-    expect(PAGINA).toContain('{orderedPersons.map((person, i) => {')
+    expect(PAGINA).toContain('orderedPersons.map((person) => ({')
+    expect(PAGINA).toContain('personSections.groups[section].map(({ person, balance }, i) => {')
     expect(PAGINA).toContain('persons.map((person) => {')
     expect(PAGINA).toContain('balanceById.get(person.id)')
     /*
@@ -354,7 +352,8 @@ describe('itens 12, 43 e 44: a lista continua sendo de contatos', () => {
       aconteceu" de "aconteceu e foi resolvido", que antes diziam a mesma
       coisa.
     */
-    expect(PAGINA).toContain('personsSummaryLines(summary)')
+    expect(PAGINA).toContain('PERSON_MONTH_SECTION_TITLE[section]')
+    expect(code(ler('./person-month-sections.ts'))).toContain("empty: 'Sem movimento no período'")
 
     const resumo = code(ler('./persons-summary-text.ts'))
     expect(resumo).toContain('Nenhuma movimentação neste mês')

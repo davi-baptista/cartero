@@ -72,7 +72,7 @@ import {
   openDeleteDialogKey,
   scopeDialogKey,
 } from '@/lib/transaction-dialog-keys'
-import type { Transaction } from '@/types'
+import type { Bank, Transaction } from '@/types'
 import { InvoiceStatus, TransactionType, InstallmentScope } from '@/types'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -298,11 +298,16 @@ function CategoryChart({
 export function InvoiceDetailsDrawer({
   invoiceId,
   bankId,
+  bank,
+  period,
   open,
   onOpenChange,
 }: {
   invoiceId: string | null
   bankId: string
+  /** Contexto de um banco ativo cujo mês ainda não possui invoice. */
+  bank?: Pick<Bank, 'id' | 'name' | 'isSystem' | 'isArchived'> | null
+  period?: { month: number; year: number }
   open: boolean
   onOpenChange: (v: boolean) => void
 }) {
@@ -559,7 +564,8 @@ export function InvoiceDetailsDrawer({
       )
     : null
   /** Fatura paga é imutável: o total registrado tem de refletir o que foi pago. */
-  const canEditTransactions = Boolean(invoice) && !isPaid
+  const emptyBankMode = !invoiceId && Boolean(bank && period)
+  const canEditTransactions = (Boolean(invoice) && !isPaid) || (emptyBankMode && !bank?.isArchived)
 
   /**
    * Criar a partir da fatura já define banco e tipo.
@@ -570,12 +576,12 @@ export function InvoiceDetailsDrawer({
    * seguinte. Um dia no miolo do mês é inequívoco e fácil de editar.
    */
   const createDefaults = useMemo(() => {
-    if (!invoice) return undefined
+    if (!invoice && !emptyBankMode) return undefined
     return {
-      bankId: invoice.bankId,
+      bankId: invoice?.bankId ?? bankId,
       type: TransactionType.CREDIT_CARD,
     }
-  }, [invoice])
+  }, [invoice, emptyBankMode, bankId])
 
   /**
    * Editar abre o formulário direto, como na página de transações.
@@ -649,7 +655,9 @@ export function InvoiceDetailsDrawer({
     setTxSheetOpen(false)
     setEditTx(null)
   }
-  const monthYear = invoice ? capitalize(formatMonthYear(invoice.month, invoice.year)) : ''
+  const monthYear = invoice
+    ? capitalize(formatMonthYear(invoice.month, invoice.year))
+    : period ? capitalize(formatMonthYear(period.month, period.year)) : ''
   const total = invoice ? Number(invoice.totalAmount) : 0
   const txCount = invoice?.transactions?.length ?? 0
   // Parte do total que já tem dono (pessoa vinculada) — o resto é o que
@@ -698,7 +706,8 @@ export function InvoiceDetailsDrawer({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className={cn('flex w-full flex-col p-0', DRAWER_WIDTH_WIDE, DRAWER_WIDE_VERTICAL_RHYTHM.headerContentGap)} showCloseButton={false}>
         <DrawerIdentityHeader
-          title={invoice ? (invoice.bank?.isSystem ? 'Cartão' : bankDisplayName(invoice.bank, 'Cartão')) : <Skeleton className="h-6 w-36" />}
+          inset="wide"
+          title={invoice ? (invoice.bank?.isSystem ? 'Cartão' : bankDisplayName(invoice.bank, 'Cartão')) : bank ? bankDisplayName(bank, 'Cartão') : <Skeleton className="h-6 w-36" />}
           description={(
             <span className="block truncate">
               Fatura · {monthYear}
@@ -716,7 +725,7 @@ export function InvoiceDetailsDrawer({
             </Button>
           ) : undefined}
         />
-        {isLoading || !invoice ? (
+        {!emptyBankMode && (isLoading || !invoice) ? (
           <div className="flex flex-1 flex-col">
             <div className="border-b px-6 py-4">
               <Skeleton className="h-3 w-24" />
@@ -729,13 +738,13 @@ export function InvoiceDetailsDrawer({
             </div>
           </div>
         ) : (
-          <div className={cn('flex min-h-0 flex-1 flex-col', DRAWER_WIDE_VERTICAL_RHYTHM.sectionTopGap)}>
+          <div className={cn('subtle-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto', DRAWER_WIDE_VERTICAL_RHYTHM.sectionTopGap)}>
             <DrawerSummaryCard>
               <DrawerSummaryLabel>Total da fatura</DrawerSummaryLabel>
               <DrawerSummaryValue tracking="tight" className="text-foreground">
                 {formatCurrency(total)}
               </DrawerSummaryValue>
-              {reimbursableTotal > 0 && (
+              {invoice && reimbursableTotal > 0 && (
                 <p className="mt-3 text-xs text-muted-foreground">
                   <span className="text-foreground/80">{formatCurrency(ownTotal)}</span> sua parte ·{' '}
                   <span className="text-receivable">{formatCurrency(reimbursableTotal)}</span> de outras pessoas
@@ -750,14 +759,14 @@ export function InvoiceDetailsDrawer({
               )}
             </DrawerSummaryCard>
 
-            <CategoryChart
+            {invoice && <CategoryChart
               transactions={invoice.transactions}
               selectedCategory={selectedCategory}
               onSelectCategory={handleSelectCategory}
-            />
+            />}
 
             {/* Transaction list */}
-            <div className="subtle-scrollbar flex-1 overflow-y-auto">
+            <div>
               <DrawerSectionGroup>
                 <DrawerSectionHeader
                   className={cn('h-auto border-0 px-4', DRAWER_WIDE_VERTICAL_RHYTHM.sectionHeadingPadding)}
@@ -790,7 +799,7 @@ export function InvoiceDetailsDrawer({
                     <p className="mt-1 text-xs text-muted-foreground">
                       {selectedCategory
                         ? 'Nenhuma transação nesta categoria.'
-                        : 'Esta fatura não tem transações registradas.'}
+                        : emptyBankMode ? 'Adicione uma transação de crédito para criar a fatura.' : 'Esta fatura não tem transações registradas.'}
                     </p>
                   </div>
                 ) : (
@@ -882,7 +891,7 @@ export function InvoiceDetailsDrawer({
         initialKind="expense"
         hideContextualQuestions
         hideBankField
-        contextualTitle={`Nova transação · ${invoice?.bank ? bankDisplayName(invoice.bank, 'Cartão') : 'Cartão'}`}
+        contextualTitle={`Nova transação · ${bankDisplayName(invoice?.bank ?? bank, 'Cartão')}`}
         timeZone={user?.timeZone}
       />
 

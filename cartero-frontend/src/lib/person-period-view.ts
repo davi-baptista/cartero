@@ -1,6 +1,7 @@
 import type { LabelDirection, NextSettlementItem } from '@/lib/person-next-item'
 import { timingUrgency } from '@/lib/invoice-timing'
-import { formatDate } from '@/lib/formatters'
+import { formatCurrency, formatDate } from '@/lib/formatters'
+import { formatObligationSectionNet } from '@/lib/obligations-presentation'
 import { ROW_RESOLVED_TONE } from '@/components/ui/financial-list-row'
 
 /**
@@ -160,7 +161,8 @@ export function personRowStatus(b: PeriodBalance): PersonRowStatus {
 }
 
 /**
- * Copy oficial do trailing. Texto, nunca só cor.
+ * Rótulos base do estado. A página Pessoas usa a apresentação compacta abaixo
+ * para explicitar quando o número é líquido de dois lados.
  *
  * `SALDO FINAL` substituiu `RECEBIDO`/`PAGO` no estado resolvido: o número
  * daquela row é o saldo HISTÓRICO do mês, não o que falta, e a mudança de
@@ -176,6 +178,47 @@ export const PERSON_ROW_LABEL: Record<PersonRowStatus, string> = {
   toSettle: 'A ACERTAR',
   finalBalance: 'SALDO FINAL',
   empty: 'SEM SALDO',
+}
+
+/** Compact label for the displayed net, keeping bilateral amounts in their own data. */
+export function personCompactBalanceLabel(
+  receive: number,
+  pay: number,
+  mode: 'open' | 'history',
+): string {
+  const hasReceive = receive > EPSILON
+  const hasPay = pay > EPSILON
+  if (mode === 'history') {
+    if (hasReceive && !hasPay) return 'RECEBIDO'
+    if (hasPay && !hasReceive) return 'PAGO'
+    return 'SALDO'
+  }
+  if (!hasReceive && !hasPay) return 'SEM SALDO'
+  if (hasReceive && hasPay) {
+    const net = receive - pay
+    return Math.abs(net) <= EPSILON ? 'PENDÊNCIAS' : 'SALDO'
+  }
+  return hasReceive ? 'A RECEBER' : 'A PAGAR'
+}
+
+/** Section total in the same inline format as Movimentações, with bilateral net identified as saldo. */
+export function personSectionNetLabel(
+  receive: number,
+  pay: number,
+  mode: 'open' | 'history',
+): string {
+  const net = receive - pay
+  const hasReceive = receive > EPSILON
+  const hasPay = pay > EPSILON
+
+  if (Math.abs(net) <= EPSILON) return `${formatCurrency(0)} de saldo`
+
+  if (hasReceive && hasPay) {
+    return `${net > 0 ? '+' : '−'}${formatCurrency(Math.abs(net))} de saldo`
+  }
+
+  if (mode === 'open') return formatObligationSectionNet(String(net))
+  return `${net > 0 ? '+' : '−'}${formatCurrency(Math.abs(net))} ${net > 0 ? 'recebido' : 'pago'}`
 }
 
 /**

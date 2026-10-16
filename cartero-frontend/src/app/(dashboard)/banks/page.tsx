@@ -18,6 +18,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { MotionRow } from '@/components/ui/motion-row'
+import { financialDrawerRowSurfaceClass } from '@/components/ui/financial-drawer-row-surface'
+import { FinancialRowList } from '@/components/ui/drawer-section'
 import { BankSheet, type BankFormData } from './bank-sheet'
 import { BillingConfigDialog } from './billing-config-dialog'
 import {
@@ -44,23 +46,15 @@ import {
 import { cn } from '@/lib/utils'
 import type { Bank, Invoice } from '@/types'
 import { invoiceRowPresentation } from '@/lib/invoice-row-presenter'
-import {
-  bankMonthSummaryLines,
-  monthCycleOf,
-} from '@/lib/bank-month-summary-lines'
+import { BANK_MONTH_SECTION_ORDER, BANK_MONTH_SECTION_TITLE, bankMonthSummaryStatus, groupBankMonthRows } from '@/lib/bank-month-sections'
 import {
   BANK_TRAILING_LABEL,
   banksForPeriod,
   summarizeBankMonth,
 } from '@/lib/bank-invoice-selection'
-import {
-  currentPeriod,
-  useMonthPeriod,
-  type MonthPeriod,
-} from '@/components/month-nav'
+import { useMonthPeriod, type MonthPeriod } from '@/components/month-nav'
 import { useDetailNavigation } from '@/lib/detail-navigation'
 import { InvoiceDetailsDrawer } from '@/components/invoice-details-drawer'
-import { useAuth } from '@/providers/auth-provider'
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -92,6 +86,7 @@ function BankRow({
   amount,
   period,
   onOpenInvoice,
+  onOpenEmpty,
   onEdit,
   onArchive,
   onDelete,
@@ -103,6 +98,7 @@ function BankRow({
   amount: number
   period: MonthPeriod
   onOpenInvoice: (invoiceId: string) => void
+  onOpenEmpty: (bankId: string) => void
   onEdit: () => void
   onArchive: () => void
   onDelete: () => void
@@ -126,7 +122,7 @@ function BankRow({
   */
   const ariaLabel = invoice
     ? `Abrir fatura de ${monthLabel} do ${bank.name}. ${formatCurrency(amount)}.`
-    : `${bank.name} não tem fatura em ${monthLabel}.`
+    : `Abrir ${bank.name}. Sem fatura em ${monthLabel}.`
 
   return (
     /*
@@ -135,7 +131,7 @@ function BankRow({
       O menu é IRMÃO da row, não filho: aninhar `button` dentro de `a`/`button`
       é HTML inválido e quebra teclado. A sobreposição resolve sem isso.
     */
-    <div className="group relative border-b border-border last:border-b-0">
+    <div className="group relative">
       <FinancialListRow
         /*
           Click abre o DETALHE da fatura, não uma página intermediária.
@@ -145,17 +141,15 @@ function BankRow({
           fatura que interessa já está determinada, então a página do meio
           deixou de ter o que decidir.
 
-          Sem fatura no mês não há detalhe a abrir: `onView` fica ausente e a
-          row não finge ser clicável.
+          Sem fatura no mês, a row abre o mesmo drawer com contexto do banco
+          e uma opção para adicionar a primeira transação de crédito.
         */
-        onView={invoice ? () => onOpenInvoice(invoice.id) : undefined}
-        interactive={invoice !== null}
-        inactive={invoice === null}
+        variant="page"
+        onView={invoice ? () => onOpenInvoice(invoice.id) : () => onOpenEmpty(bank.id)}
         ariaLabel={ariaLabel}
         /* Espaço à direita para o kebab sobreposto não cobrir o valor. */
         className={cn(
           'pr-10 sm:pr-12',
-          !invoice && 'text-muted-foreground',
         )}
         leading={
           <div className={cn(
@@ -434,13 +428,13 @@ function ArchivedBankRow({
 
 export default function BanksPage() {
   const qc = useQueryClient()
-  const { user } = useAuth()
 
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editBank, setEditBank] = useState<Bank | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Bank | null>(null)
   const [archiveTarget, setArchiveTarget] = useState<Bank | null>(null)
   const [tab, setTab] = useState<'active' | 'archived'>('active')
+  const [emptyBankId, setEmptyBankId] = useState<string | null>(null)
   /**
    * Edição pendente de confirmação, quando o ciclo muda.
    *
@@ -487,7 +481,13 @@ export default function BanksPage() {
     por falta de `selection` — e reordena quando a resposta chega. Era esse o
     piscar de ~1s ao entrar na página.
   */
-  const { data: invoices = [], isLoading: invoicesLoading } = useQuery({
+  const {
+    data: invoices = [],
+    isLoading: invoicesLoading,
+    isError: invoicesError,
+    isFetching: invoicesFetching,
+    refetch: refetchInvoices,
+  } = useQuery({
     queryKey: ['invoices'],
     queryFn: () => getInvoices(),
   })
@@ -524,6 +524,15 @@ export default function BanksPage() {
   )
 
   const monthSummary = useMemo(() => summarizeBankMonth(bankRows), [bankRows])
+  const bankSections = useMemo(() => groupBankMonthRows(bankRows), [bankRows])
+  const summaryStatus = bankMonthSummaryStatus(monthSummary)
+  const emptyBank = bankRows.find((row) => row.bank.id === emptyBankId && row.invoice === null)?.bank ?? null
+
+  useEffect(() => {
+    // A invoice pode surgir após Adicionar; descarte a seleção local então.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (emptyBankId && !invoicesLoading && !isLoading && !emptyBank) setEmptyBankId(null)
+  }, [emptyBankId, emptyBank, invoicesLoading, isLoading])
 
   /*
     A fatura aberta precisa pertencer ao mês exibido.
@@ -715,118 +724,34 @@ export default function BanksPage() {
         </Button>
       </div>
 
-      {/*
-        Resumo da competência, no lugar que Pessoas usa para "Saldo com
-        pessoas".
-
-        O total inclui as faturas PAGAS: elas pertencem ao ciclo, e tirá-las
-        faria o número encolher sozinho quando o usuário pagasse — como se o
-        gasto não tivesse existido. "Quanto ainda falta" é outra pergunta, e
-        aparece na linha de apoio em vez de disputar o mesmo número.
-      */}
       {tab === 'active' && (
         <div>
           <p className="text-xs font-medium text-muted-foreground">
-            Faturas de {formatMonthYear(period.month, period.year)}
+            Faturas em aberto de {formatMonthYear(period.month, period.year)}
           </p>
           {invoicesLoading || isLoading ? (
             <Skeleton className="mt-1.5 h-7 w-32" />
+          ) : isError || invoicesError ? (
+            <p className="mt-1 text-sm text-muted-foreground">Não foi possível calcular as faturas do mês.</p>
           ) : (
             <>
               <p className="mt-0.5 text-[22px] font-semibold tabular-nums tracking-[-0.02em]">
-                {formatCurrency(monthSummary.total)}
+                {formatCurrency(monthSummary.unpaid)}
               </p>
-              {/*
-                Cada linha só aparece quando acrescenta um fato que o total
-                não conta. A regra vive em `bankMonthSummaryLines`, para o
-                resumo não voltar a repetir o número de cima.
-
-                Duas linhas no máximo: acima disso o bloco começa a competir
-                com a lista, que é o conteúdo principal da tela.
-              */}
-              {bankMonthSummaryLines(
-                monthSummary,
-                monthCycleOf(period, currentPeriod(user?.timeZone ?? null)),
-              ).map((linha) => {
-                if (linha.kind === 'composition') {
-                  return (
-                    <p
-                      key={linha.kind}
-                      className="mt-0.5 text-[11px] text-muted-foreground"
-                    >
-                      {linha.parts.map((part, i) => (
-                        <span key={part.kind}>
-                          {i > 0 && (
-                            <span
-                              className="mx-1.5 text-muted-foreground/40"
-                              aria-hidden
-                            >
-                              ·
-                            </span>
-                          )}
-                          {/*
-                            Verde só em "de outras pessoas" — o mesmo tom que o
-                            Orçamento usa para o dinheiro que volta.
-                          */}
-                          <span
-                            className={cn(
-                              'font-medium',
-                              part.kind === 'thirdParty' && 'text-receivable',
-                            )}
-                          >
-                            {formatCurrency(part.amount)}
-                          </span>{' '}
-                          {part.kind === 'own' ? 'sua parte' : 'de outras pessoas'}
-                        </span>
-                      ))}
-                    </p>
-                  )
-                }
-
-                if (linha.kind === 'cycle') {
-                  return (
-                    <p
-                      key={linha.kind}
-                      className="mt-0.5 text-[11px] text-muted-foreground"
-                    >
-                      {/*
-                        Só o progresso de quitação.
-
-                        O rótulo do ciclo ("Faturas atuais"/"Faturas futuras")
-                        saiu: dizia em que mês estamos, e o seletor no topo mais
-                        a label "Faturas de setembro 2026" já dizem isso duas
-                        vezes acima.
-
-                        ── Os dois lados do progresso ──
-
-                        Dizia só "Faltam X para quitar", e o que já havia sido
-                        resolvido ficava invisível: pagar a primeira de três
-                        faturas mudava um número sem informar que algo tinha
-                        sido feito.
-
-                        Só o PAGO recebe verde — é a parte concluída. O que
-                        falta segue neutro: pendência é o estado normal de um
-                        mês em curso, e pintar os dois faria a linha inteira
-                        parecer conclusão.
-                      */}
-                      <span className="font-medium text-paid">
-                        {formatCurrency(linha.paid)}
-                      </span>{' '}
-                      pago ·{' '}
-                      <span className="font-medium">
-                        {formatCurrency(linha.remaining)}
-                      </span>{' '}
-                      para quitar
-                    </p>
-                  )
-                }
-
-                return (
-                  <p key={linha.kind} className="mt-0.5 text-[11px]">
-                    <span className="font-medium text-paid">{linha.text}</span>
-                  </p>
-                )
-              })}
+              {bankSections.unpaidThirdParty > 0 && (
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {formatCurrency(bankSections.unpaidOwn)} sua parte ·{' '}
+                  <span className="text-primary">{formatCurrency(bankSections.unpaidThirdParty)}</span> de outras pessoas
+                </p>
+              )}
+              {monthSummary.total - monthSummary.unpaid > 0 && (
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {formatCurrency(monthSummary.total - monthSummary.unpaid)} pago no mês
+                </p>
+              )}
+              <p className={cn('mt-0.5 text-[11px]', summaryStatus.tone)}>
+                {summaryStatus.label}
+              </p>
             </>
           )}
         </div>
@@ -870,14 +795,7 @@ export default function BanksPage() {
       )}
 
       {/* Bank list */}
-      <div
-        className={cn(
-          'border-border',
-          tab === 'archived' || (archivedBanks?.length ?? 0) > 0
-            ? ''
-            : 'border-t',
-        )}
-      >
+      <div>
         {tab === 'archived' ? (
           archivedLoading ? (
             <div>
@@ -910,12 +828,12 @@ export default function BanksPage() {
               ))}
             </div>
           )
-        ) : isError ? (
+        ) : isError || invoicesError ? (
           /* Falha de API não pode virar "Nenhum banco cadastrado". */
           <QueryError
-            message="Não foi possível carregar seus bancos"
-            isFetching={isFetching}
-            onRetry={() => void refetch()}
+            message={invoicesError ? 'Não foi possível carregar as faturas' : 'Não foi possível carregar seus bancos'}
+            isFetching={isFetching || invoicesFetching}
+            onRetry={() => { void refetch(); void refetchInvoices() }}
           />
         ) : /*
           Espera as DUAS respostas: sem as faturas a ordem seria provisória, e
@@ -953,41 +871,36 @@ export default function BanksPage() {
             </Button>
           </div>
         ) : (
-          <div>
-            {bankRows.map(({ bank, invoice, amount }, i) => (
-              <MotionRow key={bank.id} index={i}>
-                {/*
-                  Row e kebab dividem o trabalho, como em Pessoas: a linha
-                  mostra o mês e abre a fatura; o menu administra o BANCO.
-
-                  As ações voltaram para cá porque viviam na página do banco —
-                  que deixou de ser o caminho principal quando o click passou a
-                  abrir o detalhe direto. Sem isso, editar um cartão exigiria
-                  descobrir uma rota que a interface não oferece mais.
-                */}
-                <BankRow
-                  bank={bank}
-                  invoice={invoice}
-                  amount={amount}
-                  period={period}
-                  onOpenInvoice={detail.open}
-                  /*
-                    O alvo E a abertura, nas duas ordens que importam.
-
-                    Faltava o `setSheetOpen(true)`: o menu definia qual banco
-                    editar e o drawer — controlado por `sheetOpen` — nunca
-                    abria. O clique não fazia nada visível, e editar um cartão
-                    exigia entrar em "Ver todas as faturas" para achar o lápis.
-                  */
-                  onEdit={() => {
-                    setEditBank(bank)
-                    setSheetOpen(true)
-                  }}
-                  onArchive={() => archiveMut.mutate(bank.id)}
-                  onDelete={() => setDeleteTarget(bank)}
-                  isArchiving={archiveMut.isPending}
-                />
-              </MotionRow>
+          <div className="space-y-6 pt-2 pb-5">
+            {BANK_MONTH_SECTION_ORDER.filter((section) => bankSections.groups[section].length > 0).map((section) => (
+              <section key={section} className="space-y-2" aria-labelledby={`banks-${section}`}>
+                <h2 id={`banks-${section}`} className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-sm font-medium">
+                  <span>{BANK_MONTH_SECTION_TITLE[section]}</span>
+                  {section !== 'noInvoice' && (
+                    <span className="ml-auto text-right text-xs font-medium tabular-nums text-foreground sm:text-sm">
+                      {formatCurrency(bankSections.totals[section])} {section === 'history' ? 'pago' : 'a pagar'}
+                    </span>
+                  )}
+                </h2>
+                <FinancialRowList variant="page" spaced>
+                    {bankSections.groups[section].map(({ bank, invoice, amount }, i) => (
+                      <MotionRow key={bank.id} index={i} separator={false} className={financialDrawerRowSurfaceClass('animatedWrapper')}>
+                        <BankRow
+                          bank={bank}
+                          invoice={invoice}
+                          amount={amount}
+                          period={period}
+                          onOpenInvoice={(id) => { setEmptyBankId(null); detail.open(id) }}
+                          onOpenEmpty={setEmptyBankId}
+                          onEdit={() => { setEditBank(bank); setSheetOpen(true) }}
+                          onArchive={() => archiveMut.mutate(bank.id)}
+                          onDelete={() => setDeleteTarget(bank)}
+                          isArchiving={archiveMut.isPending}
+                        />
+                      </MotionRow>
+                    ))}
+                </FinancialRowList>
+              </section>
             ))}
           </div>
         )}
@@ -1001,11 +914,13 @@ export default function BanksPage() {
         vazar de uma fatura para a seguinte.
       */}
       <InvoiceDetailsDrawer
-        key={detail.openId ?? 'none'}
+        key={detail.openId ?? emptyBankId ?? 'none'}
         invoiceId={detail.openId}
-        bankId={openInvoiceBankId ?? ''}
-        open={detail.openId !== null && openInvoiceBankId !== null}
-        onOpenChange={(open) => !open && detail.close()}
+        bankId={openInvoiceBankId ?? emptyBankId ?? ''}
+        bank={emptyBank}
+        period={period}
+        open={(detail.openId !== null && openInvoiceBankId !== null) || emptyBank !== null}
+        onOpenChange={(open) => { if (!open) { detail.close(); setEmptyBankId(null) } }}
       />
 
       {/*

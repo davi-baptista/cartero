@@ -57,7 +57,7 @@ describe('income visual alignment contract', () => {
   it('reuses one shared right-side presentation across Pessoas and Renda', () => {
     expect(rows).toContain('export function FinancialRowTrailing')
     expect(rows).toContain('ROW_TRAILING_LABEL_CLASS')
-    expect(persons).toContain('<FinancialRowTrailing amount={formatCurrency(net)}')
+    expect(persons).toContain('<FinancialRowTrailing amount={formatCurrency(net)} label={compactLabel}')
     expect(page).toContain('<FinancialRowTrailing amount={formatCurrency(occurrence.amount)}')
     expect(page).toContain('label="A RECEBER"')
   })
