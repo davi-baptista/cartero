@@ -2,20 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Trash2, Landmark, ChevronRight, MoreVertical, Archive, ArchiveRestore, Pencil, ReceiptText } from 'lucide-react'
+import { Plus, Trash2, Landmark, ChevronRight, Archive, ArchiveRestore } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { ContextHeading } from '@/components/ui/context-heading'
 import { QueryError } from '@/components/ui/query-error'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { MotionRow } from '@/components/ui/motion-row'
 import { financialDrawerRowSurfaceClass } from '@/components/ui/financial-drawer-row-surface'
@@ -27,7 +21,6 @@ import {
   createBank,
   updateBank,
   deleteBank,
-  archiveBank,
   restoreBank,
   previewBillingConfig,
 } from '@/services/banks.service'
@@ -87,10 +80,6 @@ function BankRow({
   period,
   onOpenInvoice,
   onOpenEmpty,
-  onEdit,
-  onArchive,
-  onDelete,
-  isArchiving,
 }: {
   bank: Bank
   /** A fatura DESTA competência, ou `null` quando o mês não teve fatura. */
@@ -99,12 +88,7 @@ function BankRow({
   period: MonthPeriod
   onOpenInvoice: (invoiceId: string) => void
   onOpenEmpty: (bankId: string) => void
-  onEdit: () => void
-  onArchive: () => void
-  onDelete: () => void
-  isArchiving: boolean
 }) {
-  const router = useRouter()
   const initial = bank.name[0]?.toUpperCase() ?? '?'
   const monthLabel = formatMonthYear(period.month, period.year)
   /*
@@ -125,12 +109,7 @@ function BankRow({
     : `Abrir ${bank.name}. Sem fatura em ${monthLabel}.`
 
   return (
-    /*
-      ── Row inteira clicável, no padrão de Pessoas ──
-
-      O menu é IRMÃO da row, não filho: aninhar `button` dentro de `a`/`button`
-      é HTML inválido e quebra teclado. A sobreposição resolve sem isso.
-    */
+    /* Row inteira clicável, no padrão de Pessoas. */
     <div className="group relative">
       <FinancialListRow
         /*
@@ -147,10 +126,6 @@ function BankRow({
         variant="page"
         onView={invoice ? () => onOpenInvoice(invoice.id) : () => onOpenEmpty(bank.id)}
         ariaLabel={ariaLabel}
-        /* Espaço à direita para o kebab sobreposto não cobrir o valor. */
-        className={cn(
-          'pr-10 sm:pr-12',
-        )}
         leading={
           <div className={cn(
             ROW_ICON_CLASS,
@@ -250,46 +225,6 @@ function BankRow({
         }
       />
 
-      {/*
-        Gestão do BANCO, separada do conteúdo financeiro do mês — a mesma
-        divisão que Pessoas usa. Sobreposto à direita, irmão da row.
-      */}
-      <div className="absolute top-1/2 right-1 -translate-y-1/2">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            aria-label={`Mais opções de ${bank.name}`}
-          >
-            <MoreVertical className="size-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onEdit}>
-              <Pencil className="size-3.5" />
-              Editar
-            </DropdownMenuItem>
-            {/*
-              O histórico completo do cartão continua existindo: a rota
-              dedicada não foi removida, só deixou de ser o caminho obrigatório
-              para chegar a uma fatura.
-            */}
-            <DropdownMenuItem onClick={() => router.push(`/banks/${bank.id}/invoices`)}>
-              <ReceiptText className="size-3.5" />
-              Ver todas as faturas
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onArchive} disabled={isArchiving}>
-              <Archive className="size-3.5" />
-              Arquivar
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={onDelete}
-              className="text-destructive focus:text-destructive"
-            >
-              <Trash2 className="size-3.5" />
-              Excluir
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
     </div>
   )
 }
@@ -386,27 +321,16 @@ function ArchivedBankRow({
           Restaurar
         </Button>
 
-        {/* Arquivar não é caminho para excluir: um banco com histórico
-            continua indelével, e o backend recusa. O item só aparece para o
-            que realmente está vazio. */}
+        {/* Um arquivado vazio ainda pode ser excluído. */}
         {bank.canDelete !== false && (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              aria-label="Mais opções"
-            >
-              <MoreVertical className="size-3.5" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={() => onDelete(bank)}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="size-3.5" />
-                Excluir
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger render={<Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-8" aria-label={`Excluir banco ${bank.name}`} onClick={() => onDelete(bank)} />}>
+                <Trash2 className="size-4" aria-hidden />
+              </TooltipTrigger>
+              <TooltipContent>Excluir banco</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
 
         <Link
@@ -432,7 +356,6 @@ export default function BanksPage() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editBank, setEditBank] = useState<Bank | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Bank | null>(null)
-  const [archiveTarget, setArchiveTarget] = useState<Bank | null>(null)
   const [tab, setTab] = useState<'active' | 'archived'>('active')
   const [emptyBankId, setEmptyBankId] = useState<string | null>(null)
   /**
@@ -623,20 +546,6 @@ export default function BanksPage() {
   function invalidateBankLists() {
     qc.invalidateQueries({ queryKey: ['banks'] })
   }
-
-  const archiveMut = useMutation({
-    mutationFn: archiveBank,
-    onSuccess: (_data, id) => {
-      invalidateBankLists()
-      const name = banks?.find((bank) => bank.id === id)?.name
-      toast.success(name ? `${name} arquivado` : 'Banco arquivado')
-      setArchiveTarget(null)
-    },
-    // Assinatura ativa volta com BANK_HAS_ACTIVE_SUBSCRIPTIONS e uma mensagem
-    // que já diz o que fazer — pausar ou mover a assinatura.
-    onError: (error) =>
-      toast.error(apiErrorMessage(error, 'Erro ao arquivar banco')),
-  })
 
   const restoreMut = useMutation({
     mutationFn: restoreBank,
@@ -892,10 +801,6 @@ export default function BanksPage() {
                           period={period}
                           onOpenInvoice={(id) => { setEmptyBankId(null); detail.open(id) }}
                           onOpenEmpty={setEmptyBankId}
-                          onEdit={() => { setEditBank(bank); setSheetOpen(true) }}
-                          onArchive={() => archiveMut.mutate(bank.id)}
-                          onDelete={() => setDeleteTarget(bank)}
-                          isArchiving={archiveMut.isPending}
                         />
                       </MotionRow>
                     ))}
@@ -963,15 +868,13 @@ export default function BanksPage() {
         title="Excluir banco"
         description={
           targetHasHistory ? (
-            // Fallback de corrida: o menu já oferece Arquivar quando há
-            // histórico, então isto só aparece se algo foi criado no banco
-            // entre o carregamento da lista e o clique.
+            // Fallback de corrida: um vínculo pode surgir entre o carregamento
+            // da lista de arquivados e a confirmação da exclusão.
             <>
               <strong className="text-foreground">{deleteTarget?.name}</strong>{' '}
-              passou a ter histórico financeiro e não pode mais ser excluído.
+              possui histórico financeiro e não pode mais ser excluído.
               <span className="mt-2 block text-xs">
-                Use <strong className="text-foreground">Arquivar</strong> para
-                tirá-lo dos novos lançamentos sem perder o histórico.
+                O banco já está arquivado; as faturas e transações permanecem acessíveis.
               </span>
             </>
           ) : (
@@ -996,33 +899,6 @@ export default function BanksPage() {
         }}
       />
 
-      {/*
-        Arquivar precisa dizer o que PRESERVA, não só o que muda.
-        "O banco será arquivado" não responde à dúvida real de quem clica:
-        as faturas somem? as parcelas são canceladas? A descrição responde
-        antes de a pergunta ser feita.
-      */}
-      <ConfirmDialog
-        open={archiveTarget !== null}
-        title={`Arquivar ${archiveTarget?.name ?? 'banco'}?`}
-        description={
-          <>
-            Ele deixará de aparecer em novos lançamentos. Seu histórico,
-            faturas e parcelas existentes serão preservados.
-            <span className="mt-2 block text-xs">
-              As faturas continuam fechando, vencendo e podendo ser pagas — e
-              você pode restaurá-lo quando quiser.
-            </span>
-          </>
-        }
-        confirmLabel="Arquivar"
-        cancelLabel="Cancelar"
-        isPending={archiveMut.isPending}
-        onCancel={() => setArchiveTarget(null)}
-        onConfirm={() => {
-          if (archiveTarget) archiveMut.mutate(archiveTarget.id)
-        }}
-      />
     </div>
   )
 }

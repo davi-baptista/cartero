@@ -28,7 +28,7 @@ describe('Recurring create drawer', () => {
     expect(flow).toContain('<Sheet open={open} onOpenChange={handleOpenChange} onOpenChangeComplete={handleOpenChangeComplete}>')
     expect(flow).not.toContain('<Dialog')
     expect(flow).toContain('<SheetTitle className="text-lg leading-snug">Adicionar recorrência</SheetTitle>')
-    expect(flow).toContain('<SheetDescription>Selecione o que você quer cadastrar.</SheetDescription>')
+    expect(flow).toContain('Escolha uma opção para continuar.')
   })
 
   it('uses the same segmented control treatment as Movements for both questions', () => {
@@ -120,8 +120,9 @@ describe('Recurring create drawer', () => {
   })
 
   it('shows only the selected drawer explanations', () => {
-    expect(flow).toContain('{kind ? <p className="text-xs text-muted-foreground">')
-    expect(flow).toContain('{expenseMode ? <p className="text-xs text-muted-foreground">')
+    expect(flow.match(/<SheetDescription>/g)).toHaveLength(1)
+    expect(flow).not.toContain('{kind ? <p')
+    expect(flow).not.toContain('{expenseMode ? <p')
     expect(flow).toContain("kind === 'expense' ? <section")
     expect(flow).toContain('<Sheet open={open} onOpenChange={handleOpenChange}')
     expect(flow).toContain('Lançamento automático')

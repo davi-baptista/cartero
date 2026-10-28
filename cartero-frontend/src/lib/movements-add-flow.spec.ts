@@ -23,10 +23,8 @@ const detailDrawer = readFileSync(new URL('../components/ui/detail-drawer.tsx', 
 
 describe('Movements unified add flow', () => {
   it('reveals only the selected decision descriptions within the existing drawer', () => {
-    expect(flow).toContain("intent ? <p className=\"text-xs text-muted-foreground\">{INTENT_DESCRIPTIONS[intent]}</p> : null")
-    expect(flow).toContain("const activeChoice = intent === 'happened' ? transactionKind : selectedTarget")
-    expect(flow).toContain('{activeChoice ? (')
-    expect(flow).toContain('{TARGET_DESCRIPTIONS[activeChoice]}')
+    expect(flow).toContain("activeTarget ? TARGET_DESCRIPTIONS[activeTarget] : intent ? INTENT_DESCRIPTIONS[intent] : 'Escolha uma opção para continuar.'")
+    expect(flow.match(/<SheetDescription>/g)).toHaveLength(1)
     expect(flow).toContain("happened: 'Registre algo que já entrou ou saiu.'")
     expect(flow).toContain("upcoming: 'Deixe salvo o que ainda precisa ser pago ou recebido.'")
     expect(flow).toContain("expense: 'Registre uma saída que já aconteceu.'")
@@ -98,7 +96,7 @@ describe('Movements unified add flow', () => {
   it('keeps canonical creation in M6 and route-local sheets limited to detail editing', () => {
     expect(flow).toContain('<DebtSheet')
     expect(flow).toContain('<ReceivableSheet')
-    expect(flow).toContain("{ target: 'receivable', title: 'A receber' }")
+    expect(flow).toContain("{ target: 'receivable', title: 'Vou receber' }")
     expect(flow).toContain('<ReceivableSheet')
     expect(flow).toContain('mode="receivable"')
     expect(flow).toContain('handleReceivableSubmit(data)')
@@ -130,10 +128,10 @@ describe('Movements unified add flow', () => {
     expect(flow).toContain("{ value: 'happened', label: 'J\u00e1 aconteceu' }")
     expect(flow).toContain("{ value: 'upcoming', label: 'Vai acontecer' }")
     expect(flow).toContain("intent === 'happened' ? 'O que aconteceu?' : 'O que vai acontecer?'")
-    expect(flow).toContain("{ target: 'expense', title: 'Gasto' }")
-    expect(flow).toContain("{ target: 'income', title: 'Receita' }")
-    expect(flow).toContain("{ target: 'receivable', title: 'A receber' }")
-    expect(flow).toContain("{ target: 'debt', title: 'D\u00edvida' }")
+    expect(flow).toContain("{ target: 'expense', title: 'Gastei' }")
+    expect(flow).toContain("{ target: 'income', title: 'Recebi' }")
+    expect(flow).toContain("{ target: 'receivable', title: 'Vou receber' }")
+    expect(flow).toContain("{ target: 'debt', title: 'Vou pagar' }")
     expect(flow).toContain('PROGRESSIVE_REVEAL_CLASS')
     expect(flow).not.toContain('Voltar')
     expect(flow).not.toContain('Step 1')

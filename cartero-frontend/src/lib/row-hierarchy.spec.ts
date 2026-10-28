@@ -193,13 +193,13 @@ describe('as duas páginas usam o mesmo primitive', () => {
     }
   })
 
-  it('o kebab continua irmão da row nas duas', () => {
-    /* Aninhar `button` dentro de `button` é HTML inválido e quebra teclado. */
+  it('as rows abrem o detalhe sem botões de gestão aninhados', () => {
     for (const [nome, fonte] of [
       ['Bancos', BANKS],
       ['Pessoas', PERSONS],
     ] as const) {
-      expect(fonte, nome).toContain('absolute top-1/2 right-1 -translate-y-1/2')
+      expect(fonte, nome).not.toContain('absolute top-1/2 right-1 -translate-y-1/2')
+      expect(fonte, nome).toContain('onView=')
     }
   })
 })

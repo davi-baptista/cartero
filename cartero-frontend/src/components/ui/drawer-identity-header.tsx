@@ -26,14 +26,14 @@ export function DrawerIdentityHeader({
     <SheetHeader className={cn('pb-0 pt-6', inset === 'wide' ? DRAWER_WIDE_CONTENT_INSET : 'px-6')}>
       <div className="flex min-w-0 items-start gap-3">
         <SheetTitle className="min-w-0 flex-1 break-words">{title}</SheetTitle>
-        <div className="ml-auto flex shrink-0 items-start gap-2">
+        <div className="ml-auto flex shrink-0 items-start gap-1 sm:gap-2">
           {action}
           <SheetClose
             render={
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="size-8 shrink-0 p-0"
+                className="size-10 shrink-0 p-0 sm:size-8"
                 aria-label="Fechar drawer"
               />
             }

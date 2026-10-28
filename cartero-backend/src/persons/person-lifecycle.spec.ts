@@ -24,11 +24,15 @@ import { USER_ID } from 'src/common/testing/fixtures';
 
 function buildHarness(
   person = { id: 'person-1', userId: USER_ID, name: 'Eva' },
+  settlementGroups = 0,
 ) {
   const deletes: string[] = [];
   const updates: any[] = [];
 
   const prisma: any = {
+    personSettlementGroup: {
+      count: vi.fn().mockResolvedValue(settlementGroups),
+    },
     person: {
       findUnique: vi.fn(async () => person),
       delete: vi.fn(async ({ where }: any) => {
@@ -88,6 +92,18 @@ describe('Excluir pessoa', () => {
     await expect(
       harness.service.remove('person-1', USER_ID),
     ).resolves.toBeUndefined();
+  });
+
+  it('bloqueia remoção quando existem grupos de quitação vinculados', async () => {
+    const harness = buildHarness(undefined, 1);
+    await expect(
+      harness.service.remove('person-1', USER_ID),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'PERSON_HAS_SETTLEMENT_GROUPS',
+      }),
+    });
+    expect(harness.deletes).toEqual([]);
   });
 });
 

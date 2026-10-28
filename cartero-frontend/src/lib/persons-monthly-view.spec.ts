@@ -282,19 +282,11 @@ describe('itens 13, 40 e 57: a página entrou no design system', () => {
     expect(code(ler('./person-period-view.ts'))).toContain("'muted' : 'neutral'")
   })
 
-  it('item 16: o kebab é IRMÃO da row, não filho', () => {
-    /*
-      `FinancialListRow` renderiza um `button`; aninhar outro dentro é HTML
-      inválido e quebra teclado. É o mesmo arranjo já usado em Bancos.
-
-      Editar/Excluir de Pessoa permanecem onde estavam — movê-los para um
-      drawer não fazia parte desta tarefa.
-    */
-    expect(PAGINA).toContain('<div className="group relative">')
+  it('item 16: a row abre o drawer, que concentra a gestão', () => {
     expect(PAGINA).toContain('<FinancialRowList variant="page" spaced>')
-    expect(PAGINA).toContain('absolute top-1/2 right-1')
-    expect(PAGINA).toContain('Editar')
-    expect(PAGINA).toContain('Remover')
+    expect(PAGINA).toContain('onView={() => openPerson(person.id)}')
+    expect(PAGINA).not.toContain('absolute top-1/2 right-1')
+    expect(DRAWER).toContain('<DrawerManagementActions')
   })
 })
 

@@ -30,22 +30,18 @@ const BANKS = semComentarios(ler('../app/(dashboard)/banks/page.tsx'))
 const ROTA_CARTAO = semComentarios(
   ler('../app/(dashboard)/banks/[id]/invoices/page.tsx'),
 )
+const DRAWER = semComentarios(ler('../components/invoice-details-drawer.tsx'))
 
 describe('F1-F5: as duas entradas, uma implementação', () => {
-  it('F1: `Editar` de `/banks` abre o drawer', () => {
-    const handler = BANKS.slice(
-      BANKS.indexOf('onEdit={() => {'),
-      BANKS.indexOf('onEdit={() => {') + 140,
-    )
-
-    expect(handler).toContain('setEditBank(bank)')
-    expect(handler).toContain('setSheetOpen(true)')
+  it('F1: `Editar` de `/banks` fica no drawer da entidade', () => {
+    expect(BANKS).toContain('<InvoiceDetailsDrawer')
+    expect(DRAWER).toContain('onEdit={() => setBankEditOpen(true)}')
+    expect(DRAWER).toContain('<BankSheet')
   })
 
-  it('F2: o alvo é o banco da row, não um fixo', () => {
-    /* `setEditBank(bank)` — a variável do map, não um índice ou o primeiro. */
-    expect(BANKS).toContain('setEditBank(bank)')
-    expect(BANKS).toContain('editTarget={editBank}')
+  it('F2: o alvo é o banco carregado no drawer', () => {
+    expect(BANKS).toContain('bankId={openInvoiceBankId ?? emptyBankId ??')
+    expect(DRAWER).toContain('editTarget={bankInfo ?? null}')
   })
 
   it('F3: fechar o drawer limpa o alvo', () => {

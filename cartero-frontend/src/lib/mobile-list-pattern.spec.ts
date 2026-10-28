@@ -125,9 +125,8 @@ describe('Parte C: a row de Banco segue o padrão de Pessoas', () => {
       BANKS.indexOf('function RowSkeleton'),
     )
 
-    expect(rowAtiva).toContain('MoreVertical')
-    expect(rowAtiva).toContain('absolute top-1/2 right-1')
-    expect(rowAtiva).toContain('pr-10 sm:pr-12')
+    expect(rowAtiva).not.toContain('<DropdownMenu')
+    expect(rowAtiva).not.toContain('pr-10 sm:pr-12')
   })
 
   it('a row abre o detalhe da fatura, sem página intermediária', () => {
@@ -471,7 +470,8 @@ describe('Gerenciamento do banco mudou de superfície', () => {
       empurraria o usuário para um erro. A listagem já fazia essa distinção —
       ela foi movida, não recriada com outra regra.
     */
-    expect(PAGINA_DO_BANCO).toContain('bank.canDelete === false')
+    expect(PAGINA_DO_BANCO).toContain('bank.canArchive')
+    expect(PAGINA_DO_BANCO).toContain('bank.canDelete')
     expect(PAGINA_DO_BANCO).toContain('Arquivar banco')
   })
 

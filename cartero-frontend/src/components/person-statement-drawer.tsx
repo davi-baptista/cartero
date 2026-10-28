@@ -89,7 +89,7 @@ import {
   undoAndDeleteRecurringIncomeReceived,
   updateReceivableSettlementDate,
 } from '@/services/receivables.service'
-import { getPersonStatement, settlePerson, undoPersonSettlement } from '@/services/persons.service'
+import { getPersonStatement, settlePerson, undoPersonSettlement, updatePerson, deletePerson } from '@/services/persons.service'
 import {
   competenceCard,
   competenceCardSign,
@@ -107,7 +107,11 @@ import {
   DrawerSummaryValue,
 } from '@/components/ui/drawer-section'
 import { DrawerIdentityHeader } from '@/components/ui/drawer-identity-header'
+import { DrawerManagementActions } from '@/components/ui/drawer-management-actions'
+import { PersonFormSheet } from '@/components/person-form-sheet'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
+  DRAWER_WIDE_CONTENT_INSET,
   DRAWER_WIDTH_WIDE,
   DRAWER_WIDE_VERTICAL_RHYTHM,
 } from '@/components/ui/drawer-layout'
@@ -365,6 +369,36 @@ export function PersonStatementDrawer({
 }) {
   const qc = useQueryClient()
   const { user } = useAuth()
+  const [editPersonOpen, setEditPersonOpen] = useState(false)
+  const [deletePersonOpen, setDeletePersonOpen] = useState(false)
+  const updatePersonMut = useMutation({
+    mutationFn: ({ name, phone }: { name: string; phone: string }) => updatePerson(person!.id, { name, phone: phone || null }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['persons'] })
+      qc.invalidateQueries({ queryKey: ['person', person?.id] })
+      qc.invalidateQueries({ queryKey: ['debts'] })
+      qc.invalidateQueries({ queryKey: ['receivables'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['budget-v2'] })
+      setEditPersonOpen(false)
+      toast.success('Pessoa atualizada')
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, 'Erro ao salvar pessoa')),
+  })
+  const deletePersonMut = useMutation({
+    mutationFn: () => deletePerson(person!.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['persons'] })
+      qc.invalidateQueries({ queryKey: ['debts'] })
+      qc.invalidateQueries({ queryKey: ['receivables'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['budget-v2'] })
+      setDeletePersonOpen(false)
+      toast.success('Pessoa removida')
+      onClose()
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, 'Erro ao remover pessoa')),
+  })
 
   const { startDate, endDate } = monthBounds(period)
   const [markPaidDebt, setMarkPaidDebt] = useState<Debt | null>(null)
@@ -930,6 +964,7 @@ export function PersonStatementDrawer({
       (data?.period.settledDebts.length ?? 0),
     settledAt: competenceSettledAt,
   })
+  const hasStatementAction = !monthSummary.isEmpty || historyItemCount > 0
 
   /*
     Itens ainda não vencidos DENTRO da competência — o universo que a quitação
@@ -1112,24 +1147,7 @@ export function PersonStatementDrawer({
           inset="wide"
           title={person?.name}
           description="Extrato consolidado de dívidas e cobranças"
-          action={(
-            <DropdownMenu>
-              <DropdownMenuTrigger className={buttonVariants({ variant: 'default', size: 'sm', className: 'shrink-0 gap-1.5' })}>
-                <FileText className="size-3.5" />
-                Extrato
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-48">
-                <DropdownMenuItem onClick={downloadStatementPdf}>
-                  <Download className="size-3.5" />
-                  Baixar PDF
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={shareStatementPdf}>
-                  <Share2 className="size-3.5" />
-                  Compartilhar PDF
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          action={person && <DrawerManagementActions entity="pessoa" onEdit={() => setEditPersonOpen(true)} onDelete={() => setDeletePersonOpen(true)} />}
         />
           {/*
             A ação de adicionar saiu daqui para o cabeçalho de "Em aberto".
@@ -1221,6 +1239,7 @@ export function PersonStatementDrawer({
                 MESMO recuo das seções: antes ele herdava o `px-6` do scroller
                 e somava o próprio `px-4`, duas camadas para o mesmo respiro.
               */}
+              <div className={cn('flex flex-col', hasStatementAction ? 'gap-3' : DRAWER_WIDE_VERTICAL_RHYTHM.sectionTopGap)}>
               <DrawerSummaryCard>
                 <DrawerSummaryLabel>
                   {/*
@@ -1261,9 +1280,6 @@ export function PersonStatementDrawer({
                           </span>
                         </span>
                       </div>
-                      {cardCompetencia.settledNote && (
-                        <DrawerCompletionStatus>{cardCompetencia.settledNote}</DrawerCompletionStatus>
-                      )}
                     </div>
 
                     {/*
@@ -1290,6 +1306,9 @@ export function PersonStatementDrawer({
                         de períodos anteriores
                       </p>
                     )}
+                    {cardCompetencia.settledNote && (
+                      <div className="mt-3"><DrawerCompletionStatus>{cardCompetencia.settledNote}</DrawerCompletionStatus></div>
+                    )}
                   </>
                 )}
                 {cardCompetencia.mode === 'open' && (() => {
@@ -1308,6 +1327,20 @@ export function PersonStatementDrawer({
                   )
                 })()}
               </DrawerSummaryCard>
+
+              {hasStatementAction && (
+                <div className={cn('flex justify-end', DRAWER_WIDE_CONTENT_INSET)}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className={buttonVariants({ variant: 'default', size: 'sm', className: 'gap-1.5' })}>
+                      <FileText className="size-3.5" />Extrato
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="min-w-48">
+                      <DropdownMenuItem onClick={downloadStatementPdf}><Download className="size-3.5" />Baixar PDF</DropdownMenuItem>
+                      <DropdownMenuItem onClick={shareStatementPdf}><Share2 className="size-3.5" />Compartilhar PDF</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )}
 
               {/*
                 ── Em aberto ──
@@ -1394,6 +1427,7 @@ export function PersonStatementDrawer({
                   </DrawerFinancialList>
                 )}
               </DrawerSectionGroup>
+              </div>
 
               {/*
                 ── Histórico ──
@@ -1483,6 +1517,29 @@ export function PersonStatementDrawer({
         </div>
       </SheetContent>
       </Sheet>
+
+      <PersonFormSheet
+        open={editPersonOpen}
+        onOpenChange={setEditPersonOpen}
+        editTarget={person}
+        onSubmit={async (name, phone) => { await updatePersonMut.mutateAsync({ name, phone }) }}
+      />
+      <Dialog open={deletePersonOpen} onOpenChange={(next) => { if (!next && !deletePersonMut.isPending) setDeletePersonOpen(false) }}>
+        <DialogContent showCloseButton={false} className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Remover pessoa</DialogTitle>
+            <DialogDescription>
+              Remover <strong className="text-foreground">{person?.name}</strong> apaga apenas o contato.
+              Dívidas, cobranças e transações continuam no histórico com o nome preservado.
+              Pessoas com quitações vinculadas não podem ser removidas.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" disabled={deletePersonMut.isPending} onClick={() => setDeletePersonOpen(false)}>Cancelar</Button>
+            <Button variant="destructive" disabled={deletePersonMut.isPending} onClick={() => deletePersonMut.mutate()}>Remover</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ReceivableDetailDrawer
         receivable={detailReceivable}

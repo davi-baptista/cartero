@@ -113,13 +113,13 @@ describe('itens 1 e 7: as duas mutations usam a mesma lista', () => {
     'utf-8',
   )
 
-  it('pagar e reabrir passam pelo helper', () => {
+  it('pagar, reabrir e atualizar o banco passam pelo helper', () => {
     /*
       Eram duas listas escritas à mão, e já divergiam: reabrir invalidava
       `budget`, pagar não. Mexem no mesmo fato — `Invoice.status`.
     */
     const chamadas = DRAWER.match(/invalidateInvoiceDependents\(/g) ?? []
-    expect(chamadas.length).toBe(2)
+    expect(chamadas.length).toBe(3)
   })
 
   it('nenhuma das duas mutations de STATUS mantém lista própria', () => {

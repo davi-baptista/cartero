@@ -334,7 +334,7 @@ describe('o drawer aplica a policy', () => {
   it('o card é informacional e o CTA vive no heading de Em aberto', () => {
     const card = DRAWER.slice(
       DRAWER.indexOf('<DrawerSummaryCard'),
-      DRAWER.indexOf('<DrawerSummaryCard') + 1800,
+      DRAWER.indexOf('</DrawerSummaryCard>') + '</DrawerSummaryCard>'.length,
     )
     const headerStart = DRAWER.indexOf('<DrawerSectionHeader')
     const header = DRAWER.slice(headerStart, headerStart + 2200)

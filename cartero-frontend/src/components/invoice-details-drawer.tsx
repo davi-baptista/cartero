@@ -83,6 +83,11 @@ import {
   DRAWER_WIDE_VERTICAL_RHYTHM,
 } from '@/components/ui/drawer-layout'
 import { DrawerIdentityHeader } from '@/components/ui/drawer-identity-header'
+import { DrawerManagementActions } from '@/components/ui/drawer-management-actions'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { BankSheet, type BankFormData } from '@/app/(dashboard)/banks/bank-sheet'
+import { BillingConfigDialog } from '@/app/(dashboard)/banks/billing-config-dialog'
+import { getBank, updateBank, deleteBank, archiveBank, previewBillingConfig } from '@/services/banks.service'
 import { FinancialAvatar } from '@/components/ui/financial-avatar'
 import { FinancialListRow, FinancialRowTrailing } from '@/components/ui/financial-list-row'
 import { invoiceSummaryStatusPresentation } from '@/lib/invoice-timing'
@@ -313,6 +318,72 @@ export function InvoiceDetailsDrawer({
 }) {
   const qc = useQueryClient()
   const { user } = useAuth()
+  const [bankEditOpen, setBankEditOpen] = useState(false)
+  const [bankDeleteOpen, setBankDeleteOpen] = useState(false)
+  const [bankArchiveOpen, setBankArchiveOpen] = useState(false)
+  const [billingConfirm, setBillingConfirm] = useState<BankFormData | null>(null)
+  const { data: bankInfo } = useQuery({
+    queryKey: ['bank', bankId],
+    queryFn: () => getBank(bankId),
+    enabled: open && Boolean(bankId),
+  })
+  const { data: billingPreview, isFetching: billingPreviewLoading } = useQuery({
+    queryKey: ['bank-billing-preview', bankId, billingConfirm?.invoiceDueDate, billingConfirm?.invoiceDueDaysAfterClose],
+    queryFn: () => previewBillingConfig(bankId, {
+      invoiceDueDate: billingConfirm!.invoiceDueDate,
+      invoiceDueDaysAfterClose: billingConfirm!.invoiceDueDaysAfterClose,
+    }),
+    enabled: billingConfirm !== null,
+  })
+  const updateBankMut = useMutation({
+    mutationFn: (data: BankFormData) => updateBank(bankId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['banks'] })
+      qc.invalidateQueries({ queryKey: ['bank', bankId] })
+      invalidateInvoiceDependents(qc, { bankId })
+      qc.invalidateQueries({ queryKey: ['budget-v2'] })
+      setBankEditOpen(false)
+      setBillingConfirm(null)
+      toast.success('Banco atualizado')
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, 'Erro ao atualizar banco')),
+  })
+  const archiveBankMut = useMutation({
+    mutationFn: () => archiveBank(bankId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['banks'] })
+      qc.invalidateQueries({ queryKey: ['bank', bankId] })
+      setBankArchiveOpen(false)
+      toast.success('Banco arquivado')
+      onOpenChange(false)
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, 'Erro ao arquivar banco')),
+  })
+  const deleteBankMut = useMutation({
+    mutationFn: () => deleteBank(bankId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['banks'] })
+      setBankDeleteOpen(false)
+      toast.success('Banco excluído')
+      onOpenChange(false)
+    },
+    onError: (error) => {
+      if (isApiErrorCode(error, 'BANK_HAS_HISTORY')) {
+        void qc.invalidateQueries({ queryKey: ['bank', bankId] })
+        void qc.invalidateQueries({ queryKey: ['banks'] })
+      }
+      toast.error(apiErrorMessage(error, 'Erro ao excluir banco'))
+    },
+  })
+  async function handleBankSubmit(data: BankFormData) {
+    if (!bankInfo) return
+    if (data.invoiceDueDate !== bankInfo.invoiceDueDate || data.invoiceDueDaysAfterClose !== bankInfo.invoiceDueDaysAfterClose) {
+      setBankEditOpen(false)
+      setBillingConfirm(data)
+      return
+    }
+    await updateBankMut.mutateAsync(data)
+  }
   const [reopenConfirm, setReopenConfirm] = useState(false)
   const [paymentConfirm, setPaymentConfirm] = useState(false)
   const [paymentDate, setPaymentDate] = useState(todayDateValue())
@@ -707,23 +778,15 @@ export function InvoiceDetailsDrawer({
       <SheetContent side="right" className={cn('flex w-full flex-col p-0', DRAWER_WIDTH_WIDE, DRAWER_WIDE_VERTICAL_RHYTHM.headerContentGap)} showCloseButton={false}>
         <DrawerIdentityHeader
           inset="wide"
-          title={invoice ? (invoice.bank?.isSystem ? 'Cartão' : bankDisplayName(invoice.bank, 'Cartão')) : bank ? bankDisplayName(bank, 'Cartão') : <Skeleton className="h-6 w-36" />}
+          title={bankInfo ? bankDisplayName(bankInfo, 'Cartão') : invoice ? (invoice.bank?.isSystem ? 'Cartão' : bankDisplayName(invoice.bank, 'Cartão')) : bank ? bankDisplayName(bank, 'Cartão') : <Skeleton className="h-6 w-36" />}
           description={(
             <span className="block truncate">
               Fatura · {monthYear}
             </span>
           )}
-          action={canMarkPaid ? (
-            <Button size="sm" className="shrink-0 gap-1.5" onClick={() => { setPaymentDate(todayDateValue()); setPaymentBankId(''); setPaymentConfirm(true) }} disabled={markPaidMut.isPending}>
-              {markPaidMut.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
-              Pagar
-            </Button>
-          ) : isPaid ? (
-            <Button size="sm" className="shrink-0 gap-1.5" onClick={() => setReopenConfirm(true)} disabled={reopenMut.isPending}>
-              {reopenMut.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Undo2 className="size-3.5" />}
-              Reabrir
-            </Button>
-          ) : undefined}
+          action={bankInfo && !bankInfo.isSystem
+            ? <DrawerManagementActions entity="banco" onEdit={() => setBankEditOpen(true)} onDelete={() => setBankDeleteOpen(true)} />
+            : undefined}
         />
         {!emptyBankMode && (isLoading || !invoice) ? (
           <div className="flex flex-1 flex-col">
@@ -769,7 +832,7 @@ export function InvoiceDetailsDrawer({
             <div>
               <DrawerSectionGroup>
                 <DrawerSectionHeader
-                  className={cn('h-auto border-0 px-4', DRAWER_WIDE_VERTICAL_RHYTHM.sectionHeadingPadding)}
+                  className={cn('h-auto flex-wrap border-0 px-4', DRAWER_WIDE_VERTICAL_RHYTHM.sectionHeadingPadding)}
                   title={(
                     <DrawerSectionTitle
                       title="Transações"
@@ -778,16 +841,29 @@ export function InvoiceDetailsDrawer({
                       className="text-sm font-medium text-foreground"
                     />
                   )}
-                  action={canEditTransactions && !selectedCategory ? (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="cursor-pointer gap-1 px-2"
-                      onClick={() => { setEditTx(null); setTxSheetOpen(true) }}
-                    >
-                      <Plus className="size-3.5" />
-                      Adicionar
-                    </Button>
+                  action={(canMarkPaid || isPaid || (canEditTransactions && !selectedCategory)) ? (
+                    <div className="ml-auto flex shrink-0 items-center gap-2">
+                      {canMarkPaid ? (
+                        <Button size="sm" className="gap-1.5" onClick={() => { setPaymentDate(todayDateValue()); setPaymentBankId(''); setPaymentConfirm(true) }} disabled={markPaidMut.isPending}>
+                          {markPaidMut.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}Pagar
+                        </Button>
+                      ) : isPaid ? (
+                        <Button size="sm" className="gap-1.5" onClick={() => setReopenConfirm(true)} disabled={reopenMut.isPending}>
+                          {reopenMut.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Undo2 className="size-3.5" />}Reabrir
+                        </Button>
+                      ) : null}
+                      {canEditTransactions && !selectedCategory && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="cursor-pointer gap-1 px-2"
+                          onClick={() => { setEditTx(null); setTxSheetOpen(true) }}
+                        >
+                          <Plus className="size-3.5" />
+                          Adicionar
+                        </Button>
+                      )}
+                    </div>
                   ) : undefined}
                 />
                 {txs.length === 0 ? (
@@ -822,6 +898,48 @@ export function InvoiceDetailsDrawer({
           </div>
         )}
       </SheetContent>
+
+      <BankSheet open={bankEditOpen} onOpenChange={setBankEditOpen} editTarget={bankInfo ?? null} onSubmit={handleBankSubmit} period={period} />
+      <BillingConfigDialog
+        open={billingConfirm !== null}
+        bankName={bankInfo?.name ?? 'banco'}
+        preview={billingPreview}
+        isLoading={billingPreviewLoading && !billingPreview}
+        isPending={updateBankMut.isPending}
+        onCancel={() => setBillingConfirm(null)}
+        onConfirm={() => { if (billingConfirm) updateBankMut.mutate(billingConfirm) }}
+      />
+      <ConfirmDialog
+        open={bankDeleteOpen}
+        title="Excluir banco"
+        description={bankInfo?.canDelete === false
+          ? <>{bankInfo.name} possui histórico financeiro e não pode ser excluído. {bankInfo.canArchive
+            ? 'Você pode arquivá-lo sem perder faturas, parcelas e transações.'
+            : 'Há assinaturas ativas vinculadas. Pause ou mova essas assinaturas antes de arquivar.'}</>
+          : <>Tem certeza que deseja excluir {bankInfo?.name}? Esta ação não pode ser desfeita.</>}
+        confirmLabel={bankInfo?.canDelete === false ? bankInfo.canArchive ? 'Arquivar banco' : 'Entendi' : 'Excluir'}
+        cancelLabel={bankInfo?.canDelete === false ? 'Fechar' : 'Cancelar'}
+        variant={bankInfo?.canDelete === false ? 'default' : 'destructive'}
+        isPending={deleteBankMut.isPending}
+        onCancel={() => setBankDeleteOpen(false)}
+        onConfirm={() => {
+          if (bankInfo?.canDelete === false) {
+            setBankDeleteOpen(false)
+            if (bankInfo.canArchive) setBankArchiveOpen(true)
+          } else if (bankInfo) deleteBankMut.mutate()
+        }}
+      />
+      <ConfirmDialog
+        open={bankArchiveOpen}
+        title={`Arquivar ${bankInfo?.name ?? 'banco'}?`}
+        description="Ele deixará de aparecer em novos lançamentos. Histórico, faturas e parcelas serão preservados; as faturas ainda poderão ser pagas. Você poderá restaurá-lo."
+        confirmLabel="Arquivar"
+        cancelLabel="Cancelar"
+        variant="default"
+        isPending={archiveBankMut.isPending}
+        onCancel={() => setBankArchiveOpen(false)}
+        onConfirm={() => { if (bankInfo?.canArchive) archiveBankMut.mutate() }}
+      />
 
       {selectedTx && (
         <TransactionDetailsDrawer

@@ -26,6 +26,8 @@ const code = (s: string) =>
 
 const BANKS = code(ler('../app/(dashboard)/banks/page.tsx'))
 const PERSONS = code(ler('../app/(dashboard)/persons/page.tsx'))
+const INVOICE_DRAWER = code(ler('../components/invoice-details-drawer.tsx'))
+const INVOICES_PAGE = code(ler('../app/(dashboard)/banks/[id]/invoices/page.tsx'))
 const LAYOUT = code(ler('../app/(dashboard)/layout.tsx'))
 
 describe('B1-B5: o mês vem do contexto do app', () => {
@@ -119,15 +121,30 @@ describe('B16-B21: o detalhe da fatura vive na URL', () => {
 })
 
 describe('B20: a gestão do banco continua acessível', () => {
+  it('mantém ações financeiras no heading de Transações, com arquivamento confirmado', () => {
+    const belowCard = INVOICE_DRAWER.slice(INVOICE_DRAWER.indexOf('</DrawerSummaryCard>'), INVOICE_DRAWER.indexOf('{invoice && <CategoryChart'))
+    expect(belowCard).not.toContain('Pagar')
+    expect(belowCard).not.toContain('Reabrir')
+    expect(belowCard).not.toContain('Ver todas as faturas')
+    const heading = INVOICE_DRAWER.slice(INVOICE_DRAWER.indexOf('title="Transações"'), INVOICE_DRAWER.indexOf('{txs.length === 0'))
+    expect(heading).toContain('canMarkPaid ? (')
+    expect(heading).toContain(') : isPaid ? (')
+    expect(heading).toContain('canEditTransactions && !selectedCategory')
+    expect(heading.indexOf('Pagar')).toBeLessThan(heading.indexOf('Adicionar'))
+    expect(heading.indexOf('Reabrir')).toBeLessThan(heading.indexOf('Adicionar'))
+    expect(INVOICE_DRAWER).toContain('if (bankInfo.canArchive) setBankArchiveOpen(true)')
+    expect(INVOICE_DRAWER).toContain('onConfirm={() => { if (bankInfo?.canArchive) archiveBankMut.mutate() }}')
+    expect(INVOICE_DRAWER).not.toContain('canViewBankHistory')
+  })
   it('o kebab administra o BANCO, a row mostra o mês', () => {
     /*
       As ações viviam na página do cartão, que deixou de ser o caminho
       principal. Sem trazê-las de volta, editar um banco exigiria descobrir
       uma rota que a interface não oferece mais.
     */
-    expect(BANKS).toContain('aria-label={`Mais opções de ${bank.name}`}')
-    expect(BANKS).toContain('onArchive={')
-    expect(BANKS).toContain('onDelete={')
+    const row = BANKS.slice(BANKS.indexOf('function BankRow'), BANKS.indexOf('function RowSkeleton'))
+    expect(row).not.toContain('<DropdownMenu')
+    expect(INVOICE_DRAWER).toContain('<DrawerManagementActions entity="banco"')
   })
 
   it('`Editar` ABRE o drawer, não só define o alvo', () => {
@@ -140,21 +157,12 @@ describe('B20: a gestão do banco continua acessível', () => {
       Verificar as DUAS chamadas é o que prende a regressão; a string do
       handler sozinha passava com o bug presente.
     */
-    const handler = BANKS.slice(
-      BANKS.indexOf('onEdit={() => {'),
-      BANKS.indexOf('onEdit={() => {') + 140,
-    )
-
-    expect(handler).toContain('setEditBank(bank)')
-    expect(handler).toContain('setSheetOpen(true)')
+    expect(INVOICE_DRAWER).toContain('onEdit={() => setBankEditOpen(true)}')
+    expect(INVOICE_DRAWER).toContain('<BankSheet open={bankEditOpen}')
   })
 
-  it('B21: a rota dedicada continua existindo, agora pelo menu', () => {
-    /*
-      Ela não foi removida — só deixou de ser obrigatória. O histórico
-      completo do cartão continua tendo um caminho.
-    */
-    expect(BANKS).toContain('/banks/${bank.id}/invoices')
+  it('B21: a página dedicada de histórico continua existindo', () => {
+    expect(INVOICES_PAGE).toContain('export default function BankInvoicesPage()')
   })
 })
 
@@ -178,8 +186,9 @@ describe('a página segue o sistema visual de Pessoas', () => {
       ['Bancos', BANKS],
       ['Pessoas', PERSONS],
     ] as const) {
-      expect(fonte, nome).toContain('absolute top-1/2 right-1 -translate-y-1/2')
-      expect(fonte, nome).toContain('pr-10 sm:pr-12')
+      const start = fonte.indexOf(nome === 'Bancos' ? 'function BankRow' : 'personSections.groups[section].map')
+      const end = fonte.indexOf(nome === 'Bancos' ? 'function RowSkeleton' : '</MotionRow>', start)
+      expect(fonte.slice(start, end), nome).not.toContain('<DropdownMenu')
     }
   })
 

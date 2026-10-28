@@ -80,9 +80,24 @@ export class BanksService {
   async findOne(id: string, userId: string) {
     // Leitura: um banco arquivado precisa continuar abrindo — é por essa tela
     // que se chega às faturas pendentes dele e ao botão de restaurar.
-    return await this.entityValidationService.validateBank(id, userId, {
+    const bank = await this.entityValidationService.validateBank(id, userId, {
       allowArchived: true,
     });
+    const [transactions, invoices, subscriptions, activeSubscriptions] =
+      await Promise.all([
+        this.prisma.transaction.count({ where: { bankId: id, userId } }),
+        this.prisma.invoice.count({ where: { bankId: id, userId } }),
+        this.prisma.subscription.count({ where: { bankId: id, userId } }),
+        this.prisma.subscription.count({
+          where: { bankId: id, userId, isActive: true },
+        }),
+      ]);
+    return {
+      ...bank,
+      canDelete: transactions === 0 && invoices === 0 && subscriptions === 0,
+      canArchive:
+        !bank.isSystem && !bank.isArchived && activeSubscriptions === 0,
+    };
   }
 
   /**
@@ -111,9 +126,25 @@ export class BanksService {
         },
       },
     });
+    const activeSubscriptions =
+      banks.length > 0
+        ? await this.prisma.subscription.findMany({
+            where: {
+              userId,
+              bankId: { in: banks.map((bank) => bank.id) },
+              isActive: true,
+            },
+            select: { bankId: true },
+          })
+        : [];
+    const banksWithActiveSubscriptions = new Set(
+      activeSubscriptions.map((item) => item.bankId),
+    );
 
     return banks.map((bank) => ({
       ...bank,
+      canArchive:
+        !bank.isArchived && !banksWithActiveSubscriptions.has(bank.id),
       // Mesma condição de `remove`: qualquer vínculo é histórico que a
       // exclusão destruiria.
       canDelete:

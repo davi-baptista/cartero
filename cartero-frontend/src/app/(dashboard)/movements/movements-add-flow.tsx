@@ -52,12 +52,12 @@ const TARGET_DESCRIPTIONS: Record<MovementAddTarget, string> = {
 
 const TARGETS: Record<AddIntent, Array<{ target: MovementAddTarget; title: string }>> = {
   happened: [
-    { target: 'expense', title: 'Gasto' },
-    { target: 'income', title: 'Receita' },
+    { target: 'expense', title: 'Gastei' },
+    { target: 'income', title: 'Recebi' },
   ],
   upcoming: [
-    { target: 'receivable', title: 'A receber' },
-    { target: 'debt', title: 'Dívida' },
+    { target: 'receivable', title: 'Vou receber' },
+    { target: 'debt', title: 'Vou pagar' },
   ],
 }
 
@@ -83,7 +83,6 @@ function DecisionQuestions({
       : 'border-border text-muted-foreground hover:bg-muted/50',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
   )
-  const activeChoice = intent === 'happened' ? transactionKind : selectedTarget
 
   return (
     <div className="space-y-4">
@@ -102,7 +101,6 @@ function DecisionQuestions({
             </button>
           ))}
         </div>
-        {intent ? <p className="text-xs text-muted-foreground">{INTENT_DESCRIPTIONS[intent]}</p> : null}
       </section>
 
       {intent && (
@@ -131,11 +129,6 @@ function DecisionQuestions({
               )
             })}
           </div>
-          {activeChoice ? (
-            <p className="text-xs text-muted-foreground">
-              {TARGET_DESCRIPTIONS[activeChoice]}
-            </p>
-          ) : null}
         </section>
       )}
     </div>
@@ -266,7 +259,9 @@ export function MovementsAddFlow() {
       <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-md" showCloseButton>
         <SheetHeader className="shrink-0 gap-1 border-b border-border px-6 py-5 pr-14">
           <SheetTitle className="text-lg leading-snug">Adicionar movimentação</SheetTitle>
-          <SheetDescription>Selecione o que você quer registrar.</SheetDescription>
+          <SheetDescription>
+            {activeTarget ? TARGET_DESCRIPTIONS[activeTarget] : intent ? INTENT_DESCRIPTIONS[intent] : 'Escolha uma opção para continuar.'}
+          </SheetDescription>
         </SheetHeader>
 
         <div className={cn(DRAWER_SCROLL_REGION_CLASS, 'flex flex-col gap-4 px-6 py-5')}>

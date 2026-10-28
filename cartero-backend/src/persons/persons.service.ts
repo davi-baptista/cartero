@@ -309,9 +309,33 @@ export class PersonsService {
   async remove(id: string, userId: string) {
     await this.entityValidationService.validatePerson(id, userId);
 
-    await this.prisma.person.delete({
-      where: { id, userId },
+    const settlementGroups = await this.prisma.personSettlementGroup.count({
+      where: { personId: id, userId },
     });
+    if (settlementGroups > 0) {
+      throw new ConflictException({
+        code: 'PERSON_HAS_SETTLEMENT_GROUPS',
+        message:
+          'Esta pessoa possui quitações vinculadas e não pode ser removida. O histórico financeiro foi preservado.',
+      });
+    }
+
+    try {
+      await this.prisma.person.delete({ where: { id, userId } });
+    } catch (error) {
+      // A quitação pode ser criada depois da contagem e antes do DELETE.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2003'
+      ) {
+        throw new ConflictException({
+          code: 'PERSON_HAS_SETTLEMENT_GROUPS',
+          message:
+            'Esta pessoa possui quitações vinculadas e não pode ser removida. O histórico financeiro foi preservado.',
+        });
+      }
+      throw error;
+    }
 
     return;
   }

@@ -286,7 +286,7 @@ function BudgetContent({
           infoContent="Veja entradas e saídas registradas, valores pendentes e o resultado após essas pendências. Alterne entre o mês selecionado e o período completo para mudar o recorte."
           descriptionClassName="mt-2 max-w-2xl"
         />
-        <Button type="button" variant="default" size="sm" className="shrink-0" onClick={onAllTimeChange}>
+        <Button type="button" variant="default" className="shrink-0" onClick={onAllTimeChange}>
           {allTime ? 'Ver visão mensal' : 'Ver período completo'}
         </Button>
       </header>

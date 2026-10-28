@@ -4,27 +4,11 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Users, Loader2, MoreVertical, TriangleAlert, RotateCcw } from 'lucide-react'
+import { Plus, Users, Loader2, TriangleAlert, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ContextHeading } from '@/components/ui/context-heading'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { periodFromDate, useMonthPeriod } from '@/components/month-nav'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { MotionRow } from '@/components/ui/motion-row'
 import { financialDrawerRowSurfaceClass } from '@/components/ui/financial-drawer-row-surface'
 import { FinancialRowList } from '@/components/ui/drawer-section'
@@ -50,6 +34,7 @@ import {
   personAmountTone,
   personRowAmount,
   personRowStatus,
+  peopleMonthSummaryStatus,
   rowLabelDirection,
   rowSubtext,
   rowSubtextTone,
@@ -57,22 +42,12 @@ import {
 import { formatCurrency, formatMonthOfYear } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-  SheetFooter,
-} from '@/components/ui/sheet'
-import {
 } from '@/services/debts.service'
 import {
   getPersons,
   getPerson,
   getPersonsMonthlySummary,
   createPerson,
-  updatePerson,
-  deletePerson,
 } from '@/services/persons.service'
 import { detailHref, liveLocation } from '@/lib/detail-navigation'
 import { useDetailEntity } from '@/lib/use-detail-entity'
@@ -83,10 +58,10 @@ import {
 import {
 } from '@/lib/person-statement'
 import { PersonStatementDrawer } from '@/components/person-statement-drawer'
+import { PersonFormSheet } from '@/components/person-form-sheet'
 import { accountToday } from '@/lib/date'
 import { resolvePersonTargetId } from '@/lib/person-detail-state'
 import { useAuth } from '@/providers/auth-provider'
-import type { Person } from '@/types'
 
 // ─── Statement sheet ─────────────────────────────────────────────────────────
 
@@ -101,118 +76,8 @@ import type { Person } from '@/types'
 
 // ─── Person form sheet ────────────────────────────────────────────────────────
 
-function PersonFormSheet({
-  open,
-  onOpenChange,
-  editTarget,
-  onSubmit,
-}: {
-  open: boolean
-  onOpenChange: (o: boolean) => void
-  editTarget: Person | null
-  onSubmit: (name: string, phone: string) => Promise<void>
-}) {
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  useEffect(() => {
-    if (open) {
-      setName(editTarget?.name ?? '')
-      setPhone(editTarget?.phone ?? '')
-    }
-  }, [open, editTarget])
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name.trim()) return
-    setSubmitting(true)
-    try {
-      await onSubmit(name.trim(), phone.trim())
-      setName('')
-      setPhone('')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      {/*
-        Largura e scroll alinhados aos outros drawers (`sm:max-w-md`).
-
-        Com `sm:max-w-sm` e um form sem `overflow-y-auto`, em notebook o
-        conteúdo empurrava o footer para fora da área visível — o botão de
-        salvar ficava inalcançável.
-      */}
-      <SheetContent side="right" className="flex w-full flex-col sm:max-w-md" showCloseButton>
-        <SheetHeader className="px-6 pt-6 pb-0">
-          <SheetTitle>{editTarget ? 'Editar pessoa' : 'Nova pessoa'}</SheetTitle>
-          <SheetDescription>
-            {editTarget ? 'Atualize o nome.' : 'Cadastre um contato para vincular dívidas e cobranças.'}
-          </SheetDescription>
-        </SheetHeader>
-
-        <form
-          id="person-form"
-          onSubmit={handleSubmit}
-          className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5"
-        >
-          <div className="space-y-1.5">
-            <Label htmlFor="name">Nome</Label>
-            <Input
-              id="name"
-              placeholder="Ex: Fabricio, Maria..."
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="phone">WhatsApp (opcional)</Label>
-            <Input
-              id="phone"
-              type="tel"
-              inputMode="tel"
-              placeholder="Ex: (85) 99999-9999"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Inclua o DDD. O código do Brasil (+55) será adicionado automaticamente.
-            </p>
-          </div>
-        </form>
-
-        <SheetFooter className="shrink-0 border-t border-border/60 px-6 pb-6 pt-4">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={submitting}
-          >
-            Cancelar
-          </Button>
-          <Button type="submit" form="person-form" disabled={submitting || !name.trim()}>
-            {submitting && <Loader2 className="size-4 animate-spin" />}
-            {editTarget ? 'Salvar' : 'Criar pessoa'}
-          </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
-  )
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
-/**
- * Balanço neutro para contato sem linha no lote.
- *
- * Acontece enquanto os saldos carregam, e para quem foi criado depois da
- * resposta. Zerar tudo é o estado honesto: nada foi movimentado que saibamos.
- */
 const VAZIO = {
   netBalance: 0,
-  /* Nada em aberto dos dois lados — é o que faz a row cair em EMPTY. */
   receivablePending: 0,
   debtPending: 0,
   overdueReceivablePending: 0,
@@ -223,7 +88,6 @@ const VAZIO = {
   settledReceivablesCount: 0,
   settledDebtsCount: 0,
   nextItem: null,
-  /* Sem movimento, nada terminou: não há data de conclusão a afirmar. */
   settledAt: null,
 } as const
 
@@ -235,8 +99,6 @@ export default function PersonsPage() {
   const periodParam = searchParams.get('period')
 
   const [formOpen, setFormOpen] = useState(false)
-  const [editTarget, setEditTarget] = useState<Person | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<Person | null>(null)
 
   /*
     ══════════════════════════════════════════════════════════════════════
@@ -431,42 +293,8 @@ export default function PersonsPage() {
     onError: () => toast.error('Erro ao criar pessoa — tente novamente'),
   })
 
-  const updateMut = useMutation({
-    mutationFn: ({ id, name, phone }: { id: string; name: string; phone: string }) =>
-      updatePerson(id, { name, phone: phone || null }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['persons'] })
-      qc.invalidateQueries({ queryKey: ['debts'] })
-      qc.invalidateQueries({ queryKey: ['receivables'] })
-      setFormOpen(false)
-      setEditTarget(null)
-      toast.success('Pessoa atualizada')
-    },
-    onError: () => toast.error('Erro ao salvar — tente novamente'),
-  })
-
-  const deleteMut = useMutation({
-    mutationFn: (id: string) => deletePerson(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['persons'] })
-      qc.invalidateQueries({ queryKey: ['debts'] })
-      qc.invalidateQueries({ queryKey: ['receivables'] })
-      toast.success('Pessoa removida')
-    },
-    onError: () => toast.error('Erro ao remover — tente novamente'),
-  })
-
   async function handleFormSubmit(name: string, phone: string) {
-    if (editTarget) {
-      await updateMut.mutateAsync({ id: editTarget.id, name, phone })
-    } else {
-      await createMut.mutateAsync({ name, phone })
-    }
-  }
-
-  function handleEdit(person: Person) {
-    setEditTarget(person)
-    setFormOpen(true)
+    await createMut.mutateAsync({ name, phone })
   }
 
   /* Acesso por id — a lista de contatos e a de saldos vêm de queries distintas. */
@@ -540,6 +368,7 @@ export default function PersonsPage() {
 
     return { openToReceive, openToPay }
   }, [balances])
+  const summaryStatus = peopleMonthSummaryStatus(balances ?? [])
 
   return (
     <div className="flex flex-col gap-6">
@@ -556,7 +385,6 @@ export default function PersonsPage() {
         <Button
           className="shrink-0"
           onClick={() => {
-            setEditTarget(null)
             setFormOpen(true)
           }}
         >
@@ -590,6 +418,7 @@ export default function PersonsPage() {
             <p className="mt-1 text-[11px] text-muted-foreground">
               Saldo líquido em aberto: {summary.openToReceive - summary.openToPay >= 0 ? '+' : '−'}{formatCurrency(Math.abs(summary.openToReceive - summary.openToPay))}
             </p>
+            {summaryStatus && <p className={cn('mt-0.5 text-[11px]', summaryStatus.tone)}>{summaryStatus.label}</p>}
           </>
         )}
       </div>
@@ -758,21 +587,11 @@ export default function PersonsPage() {
 
               return (
               <MotionRow key={person.id} index={i} separator={false} className={financialDrawerRowSurfaceClass('animatedWrapper')}>
-                {/*
-                  Row e kebab são IRMÃOS, no padrão de Bancos: aninhar um
-                  `button` dentro de outro é HTML inválido e quebra teclado.
-                  O menu se sobrepõe à direita.
-
-                  Editar/Excluir de Pessoa continuam onde estavam — mover
-                  essas ações para um drawer não faz parte desta tarefa.
-                */}
                 <div className="group relative">
                   <FinancialListRow
                     variant="page"
                     onView={() => openPerson(person.id)}
                     ariaLabel={`Ver extrato de ${person.name}`}
-                    /* Espaço à direita para o kebab sobreposto não cobrir o valor. */
-                    className="pr-10 sm:pr-12"
                     leading={
                       /*
                         A inicial escala junto com o container, como o glyph
@@ -835,26 +654,6 @@ export default function PersonsPage() {
                     }
                   />
 
-                  <div className="absolute top-1/2 right-1 -translate-y-1/2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                        aria-label={`Mais opções de ${person.name}`}
-                      >
-                        <MoreVertical className="size-3.5" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEdit(person)}>
-                          <Pencil className="size-3.5" />
-                          Editar
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setDeleteTarget(person)} className="text-destructive focus:text-destructive">
-                          <Trash2 className="size-3.5" />
-                          Remover
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
                 </div>
               </MotionRow>
               )
@@ -869,11 +668,8 @@ export default function PersonsPage() {
       {/* Person form sheet */}
       <PersonFormSheet
         open={formOpen}
-        onOpenChange={(o) => {
-          setFormOpen(o)
-          if (!o) setEditTarget(null)
-        }}
-        editTarget={editTarget}
+        onOpenChange={setFormOpen}
+        editTarget={null}
         onSubmit={handleFormSubmit}
       />
 
@@ -891,48 +687,6 @@ export default function PersonsPage() {
         onClose={closePerson}
         period={period}
       />
-
-      {/* Delete confirm */}
-      <Dialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent showCloseButton={false} className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Remover pessoa</DialogTitle>
-            {/*
-              A cópia diz o que de fato acontece.
-
-              O FK `personId` é `ON DELETE SET NULL` em Debt, Receivable e
-              Transaction, e o nome da contraparte foi gravado em
-              `creditorName`/`debtorName` na criação — então os registros
-              sobrevivem E continuam legíveis. Por isso a exclusão é permitida
-              mesmo com pendências: ela encerra o cadastro do contato, não os
-              compromissos.
-            */}
-            <DialogDescription>
-              Remover{' '}
-              <strong className="text-foreground">{deleteTarget?.name}</strong>{' '}
-              apaga apenas o contato. As dívidas, cobranças e transações
-              continuam no histórico, com o nome dela preservado — nenhum valor
-              é excluído.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              Cancelar
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (deleteTarget) {
-                  deleteMut.mutate(deleteTarget.id)
-                  setDeleteTarget(null)
-                }
-              }}
-            >
-              Remover
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
     </div>
   )

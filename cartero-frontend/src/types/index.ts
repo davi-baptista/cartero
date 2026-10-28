@@ -57,6 +57,8 @@ export interface Bank {
    * o servidor aplica.
    */
   canDelete?: boolean
+  /** Backend eligibility for archive; active subscriptions block it. */
+  canArchive?: boolean
   _count?: {
     transactions: number
     invoices: number

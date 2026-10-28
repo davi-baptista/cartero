@@ -496,6 +496,8 @@ export default function BankInvoicesPage() {
     if (!inv) return
     if (inv.status === InvoiceStatus.PAID) {
       const idx = paidInvoices.findIndex((i) => i.id === detail.openId)
+      // Keep deep-linked historical invoices visible on arrival.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (idx >= PAID_VISIBLE) setHistoryExpanded(true)
     } else if (inv.status === InvoiceStatus.OPEN || inv.status === InvoiceStatus.CLOSED) {
       const idx = activeInvoices.findIndex((i) => i.id === detail.openId)
@@ -600,12 +602,13 @@ export default function BankInvoicesPage() {
                     "Excluir" ali empurraria o usuário para um erro. A mesma
                     distinção que a listagem fazia — preservada, não recriada.
                   */}
-                  {bank.canDelete === false ? (
+                  {!bank.isArchived && bank.canArchive && (
                     <DropdownMenuItem onClick={() => setArchiveOpen(true)}>
                       <Archive className="size-3.5" />
                       Arquivar banco
                     </DropdownMenuItem>
-                  ) : (
+                  )}
+                  {bank.canDelete && (
                     <DropdownMenuItem
                       onClick={() => setDeleteOpen(true)}
                       className="text-destructive focus:text-destructive"

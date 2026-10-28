@@ -39,7 +39,7 @@ describe('contextual create polish', () => {
   })
 
   it('uses the shared button typography for the bank Add action', () => {
-    const addAction = invoiceDrawer.slice(invoiceDrawer.indexOf('title="Transações"'), invoiceDrawer.indexOf('title="Transações"') + 900)
+    const addAction = invoiceDrawer.slice(invoiceDrawer.indexOf('title="Transações"'), invoiceDrawer.indexOf('{txs.length === 0'))
     expect(addAction).toContain('size="sm"')
     expect(addAction).toContain('className="cursor-pointer gap-1 px-2"')
     expect(addAction).not.toContain('text-[11px]')

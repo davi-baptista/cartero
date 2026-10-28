@@ -65,6 +65,12 @@ function buildHarness(options: {
     },
     invoice: { count: vi.fn().mockResolvedValue(options.invoices ?? 0) },
     subscription: {
+      findMany: vi.fn(async ({ where }: any) =>
+        (options.activeSubscriptions ?? 0) > 0 &&
+        where.bankId.in.includes(bank.id)
+          ? [{ bankId: bank.id }]
+          : [],
+      ),
       // `remove` conta todas; `archive` conta só as ativas. O duplo papel é
       // resolvido pelo filtro que cada chamada usa.
       count: vi.fn(async ({ where }: any) =>
@@ -330,5 +336,15 @@ describe('BanksService.findAll — recorte por status', () => {
     const [bank] = await harness.service.findAll(USER_ID);
 
     expect(bank.canDelete).toBe(false);
+    expect(bank.canArchive).toBe(true);
+  });
+
+  it('assinatura ativa bloqueia arquivamento na listagem e no detalhe', async () => {
+    const harness = buildHarness({ subscriptions: 1, activeSubscriptions: 1 });
+    const [bank] = await harness.service.findAll(USER_ID);
+    const detail = await harness.service.findOne(bank.id, USER_ID);
+    expect(bank.canArchive).toBe(false);
+    expect(detail.canArchive).toBe(false);
+    expect(detail.canDelete).toBe(false);
   });
 });

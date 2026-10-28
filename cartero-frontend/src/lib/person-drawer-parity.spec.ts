@@ -110,7 +110,7 @@ describe('objetivo 1: a seção "Em aberto" segue o padrão de Fatura', () => {
 
   it('o botão usa a escala de Fatura', () => {
     expect(DRAWER).toContain('className="h-7 cursor-pointer gap-1 px-2"')
-    const addAction = FATURA.slice(FATURA.indexOf('title="Transações"'), FATURA.indexOf('title="Transações"') + 900)
+    const addAction = FATURA.slice(FATURA.indexOf('title="Transações"'), FATURA.indexOf('{txs.length === 0'))
     expect(addAction).toContain('size="sm"')
     expect(addAction).toContain('className="cursor-pointer gap-1 px-2"')
     expect(addAction).not.toContain('text-[11px]')
@@ -124,13 +124,14 @@ describe('objetivo 1: a seção "Em aberto" segue o padrão de Fatura', () => {
   it('mantém o menu compacto e os dois CTAs superiores em primary', () => {
     expect(DRAWER).toContain('variant="default"')
     expect(IDENTITY_HEADER).toContain('flex min-w-0 items-start gap-3')
-    expect(IDENTITY_HEADER).toContain('ml-auto flex shrink-0 items-start gap-2')
-    expect(DRAWER).toContain("buttonVariants({ variant: 'default', size: 'sm', className: 'shrink-0 gap-1.5' })")
+    expect(IDENTITY_HEADER).toContain('ml-auto flex shrink-0 items-start gap-1 sm:gap-2')
+    expect(DRAWER).toContain('<DrawerManagementActions entity="pessoa"')
+    expect(DRAWER.indexOf('>Extrato')).toBeGreaterThan(DRAWER.indexOf('</DrawerSummaryCard>'))
     expect(DRAWER).toContain('Extrato')
     expect(DRAWER).not.toContain('Extrato em PDF')
     expect(DRAWER).not.toContain('absolute top-3 right-12')
     expect(DRAWER).toContain('showCloseButton={false}')
-    expect(IDENTITY_HEADER).toContain('className="size-8 shrink-0 p-0"')
+    expect(IDENTITY_HEADER).toContain('className="size-10 shrink-0 p-0 sm:size-8"')
   })
 
   it('mantém os valores monetários neutros e o status de atraso', () => {

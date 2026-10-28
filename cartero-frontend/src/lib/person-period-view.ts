@@ -1,4 +1,5 @@
 import type { LabelDirection, NextSettlementItem } from '@/lib/person-next-item'
+import type { PersonMonthlyBalance } from '@/services/persons.service'
 import { timingUrgency } from '@/lib/invoice-timing'
 import { formatCurrency, formatDate } from '@/lib/formatters'
 import { formatObligationSectionNet } from '@/lib/obligations-presentation'
@@ -112,6 +113,23 @@ export function hasPeriodActivity(b: PeriodBalance): boolean {
  */
 export function hasOpenObligation(b: PeriodBalance): boolean {
   return b.receivablePending > EPSILON || b.debtPending > EPSILON
+}
+
+/** Final line of the monthly people summary; each direction is considered separately. */
+export function peopleMonthSummaryStatus(balances: readonly Pick<
+  PersonMonthlyBalance,
+  'overdueReceivablePending' | 'overdueDebtPending' | 'receivablePending' | 'debtPending' | 'settledReceivablesCount' | 'settledDebtsCount'
+>[]) {
+  if (balances.some((b) => b.overdueReceivablePending > EPSILON || b.overdueDebtPending > EPSILON)) {
+    return { label: 'Há valores em atraso', tone: 'text-destructive' }
+  }
+  if (balances.some((b) => b.receivablePending > EPSILON || b.debtPending > EPSILON)) {
+    return { label: 'Há valores em aberto', tone: 'text-muted-foreground' }
+  }
+  if (balances.some((b) => b.settledReceivablesCount + b.settledDebtsCount > 0)) {
+    return { label: 'Tudo quitado', tone: 'font-medium text-paid' }
+  }
+  return null
 }
 
 /** O líquido do que AINDA falta acertar — o valor do modo ACTIVE. */
